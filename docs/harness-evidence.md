@@ -56,6 +56,13 @@ available for an external HTTPS bridge and validates the documented
 `X-Telegram-Bot-Api-Secret-Token` header. Tests use sanitized deterministic HTTP
 responses and do not contain a bot token or private message.
 
+The activation command is separately covered by a daemon-level fake transport
+test. It sends a unique correlated question through HTTP and SQLite, injects an
+authorized Telegram update that replies to the delivered message ID, and proves
+durable Telegram resolution with no question or answer in command output. This
+proves the local control loop, not Bot API reachability; the latter still
+requires a credentialed canary.
+
 ## Official contract sources
 
 - [Codex hooks](https://learn.chatgpt.com/docs/hooks) documents `Stop` input,
@@ -82,5 +89,6 @@ responses and do not contain a bot token or private message.
 The checked-in hook payloads are sanitized official examples adapted into
 synthetic fixtures, not private local transcripts. Adapter and continuation
 tests prove our parser and emitted JSON match the documented contracts. A live
-harness round trip would consume model quota and is therefore deliberately not
-claimed. `docs/progress.md` keeps that as an open canary task.
+harness round trip would consume model quota and a real Telegram round trip
+requires account credentials, so neither is claimed. `docs/progress.md` keeps
+both as explicit activation tasks.

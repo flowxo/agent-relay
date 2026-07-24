@@ -36,10 +36,14 @@ export function renderDeliveryMessage(
     event.failure?.message ??
     event.lastAssistantMessage ??
     "No bounded summary was supplied.";
+  const content =
+    event.request === undefined || event.request.question === summary
+      ? summary
+      : `${summary}\n\nQuestion: ${event.request.question}`;
   const text = [
     `${state}`,
     "",
-    redactText(summary, 1_500),
+    redactText(content, 1_500),
     "",
     `${event.harness}/${event.surface} · session ${shortSession}`,
   ].join("\n");

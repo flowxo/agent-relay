@@ -19,6 +19,7 @@ import {
 } from "@agent-relay/protocol";
 
 import { RelayClient } from "./client.js";
+import { runTelegramCanary } from "./canary.js";
 import { startDaemon } from "./daemon.js";
 import { observeHarnessVersions, runDoctor } from "./doctor.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
@@ -450,13 +451,36 @@ async function main(): Promise<void> {
     output({ ingest: result, drain: await client.drain() });
     return;
   }
+  if (command === "telegram-canary") {
+    const daemonStatus = await client.status();
+    if (daemonStatus.transport !== "telegram") {
+      throw new Error(
+        "telegram-canary requires a daemon using the real Telegram transport",
+      );
+    }
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const machineId =
+      environment("AGENT_RELAY_MACHINE_ID") ??
+      (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const result = await runTelegramCanary({
+      client,
+      machineId,
+      projectPath: process.cwd(),
+      waitMs: integerFlag(args, "--wait-ms", 2 * 60_000),
+      pollIntervalMs: integerFlag(args, "--poll-interval-ms", 500),
+    });
+    output(result);
+    process.exitCode =
+      result.outcome === "answered" && result.resolvedBy === "telegram" ? 0 : 1;
+    return;
+  }
 
   await mkdir(dirname(join(stateDir, "placeholder")), {
     recursive: true,
     mode: 0o700,
   });
   process.stderr.write(
-    "Usage: agent-relay daemon|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary\n",
+    "Usage: agent-relay daemon|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary|telegram-canary\n",
   );
   process.exitCode = 2;
 }

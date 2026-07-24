@@ -1,3 +1,4 @@
+export * from "./canary.js";
 export * from "./client.js";
 export * from "./daemon.js";
 export * from "./doctor.js";

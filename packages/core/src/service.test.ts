@@ -81,6 +81,32 @@ describe("RelayService durable delivery loop", () => {
     store.close();
   });
 
+  it("renders a distinct correlated question in the notification", async () => {
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport);
+    service.ingest(
+      event({
+        eventId: "evt_render_question_12345678",
+        type: "input.required",
+        summary: "The agent needs an operator decision.",
+        request: {
+          correlationId: "correlation_render_question_12345678",
+          kind: "input",
+          question: "Which deployment should continue?",
+          expiresAt: "2026-07-24T12:05:00.000Z",
+        },
+      }),
+    );
+
+    await service.drain();
+
+    expect(transport.deliveries[0]?.message.text).toContain(
+      "Question: Which deployment should continue?",
+    );
+    store.close();
+  });
+
   it("queues offline failures and delivers once after the retry deadline", async () => {
     const testClock = clock();
     const store = new RelayStore();

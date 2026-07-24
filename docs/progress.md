@@ -53,13 +53,19 @@
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
   the real user home.
-- `pnpm check` passes all 96 tests across 16 test files, including the
+- A bounded `telegram-canary` command now refuses the fake transport and proves
+  the real send/reply path when credentials are present. Its daemon-level test
+  exercises synthetic delivery, authorized Telegram HTTP reply intake,
+  replied-to-message correlation, durable resolution, exact challenge matching,
+  and transcript-free result output against the fake transport.
+- `pnpm check` passes all 102 tests across 17 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
-  retention, log rotation, and Telegram poll/webhook intake. The check also
-  validates formatting, lint, types, capability drift, and compiled package
-  exports. `pnpm audit --prod` reports no known vulnerabilities.
+  retention, log rotation, Telegram poll/webhook intake, and the activation
+  canary. The check also validates formatting, lint, types, capability drift,
+  and compiled package exports. `pnpm audit --prod` reports no known
+  vulnerabilities.
 
 ## Assumptions and open risks
 
@@ -90,10 +96,19 @@
   health probe supplies evidence.
 - Branch `codex/initial-mvp` is published in
   [PR #1](https://github.com/flowxo/agent-relay/pull/1).
+- Credential discovery on 2026-07-24 found no Telegram or daemon values in the
+  process environment, no repository credential file beyond `.env.example`, and
+  no available Doppler or 1Password CLI. No credential values were printed or
+  added to git. The recommended activation path is a dedicated BotFather bot and
+  private operator chat, with values supplied through a secret manager or a
+  mode-`0600`, gitignored `.env.activation` file.
 
 ## Next action
 
-Run credentialed activation canaries when a dedicated bot and model quota are
-available: real Bot API send/reply, then one live stop/resume per harness.
-Before enabling Cursor permission automation, replace its evolving permission
-fixture with a sanitized live capture.
+The implementation and fake round trip can continue without credentials and are
+complete. Credentialed evidence now requires an account action: supply a
+dedicated Telegram bot token, chat ID, and operator ID without committing them,
+then run the bounded real `telegram-canary`. With explicit approval to consume
+model quota, run one short live stop/resume canary per harness. Before enabling
+Cursor permission automation, replace its evolving permission fixture with a
+sanitized live capture.

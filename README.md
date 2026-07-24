@@ -212,12 +212,44 @@ share a single SQLite first-writer-wins transition. Telegram retains pending Bot
 API updates for no longer than 24 hours; Agent Relay's longer-lived request
 state does not extend that upstream delivery window.
 
+### Telegram activation canary
+
+Use a dedicated bot and private chat. Keep the three values in a secret manager
+or a local, mode-`0600`, gitignored environment file; never paste them into an
+issue, PR, fixture, or log. Start the daemon with all three variables present:
+
+```sh
+# Terminal 1
+set -a
+. ./.env.activation
+set +a
+pnpm relay daemon
+```
+
+Then run the bounded round trip from another terminal:
+
+```sh
+# Terminal 2 (source the same file if daemon authentication is configured)
+set -a
+. ./.env.activation
+set +a
+pnpm relay telegram-canary --wait-ms 120000
+```
+
+The command refuses the fake transport. It sends a unique correlated question
+and waits up to two minutes for a direct Telegram reply containing exactly
+`relay-canary-ok`. Success requires real Bot API delivery, authorized
+chat/operator routing, replied-to-message correlation, and durable resolution by
+Telegram. The result omits the question and answer text and exits non-zero for a
+delivery failure, timeout, terminal answer, or mismatched reply.
+
 ## Current boundary
 
-Supervisor tests use real local child exit codes/signals and an end-to-end fake
-Telegram reply. Bot API delivery and polling use deterministic HTTP fixtures; a
-real token canary has not been run. A model-backed late-resume canary has not
-been run because it would consume harness quota. Native hooks still do not prove
-crashes, Cursor IDE late resume remains explicitly unsupported, and an
-interactive child must exit before its session can be resumed through a new CLI
-process.
+Supervisor tests use real local child exit codes/signals. A daemon-level
+activation test covers a complete fake Telegram delivery and HTTP reply,
+including authorized routing and durable resolution. Bot API delivery and
+polling use deterministic HTTP fixtures; a real token canary has not been run. A
+model-backed late-resume canary has not been run because it would consume
+harness quota. Native hooks still do not prove crashes, Cursor IDE late resume
+remains explicitly unsupported, and an interactive child must exit before its
+session can be resumed through a new CLI process.
