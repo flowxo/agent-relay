@@ -42,14 +42,14 @@
 - A real Telegram token and operator account have not been used. Bot API
   behavior is proven against deterministic HTTP fixtures; real delivery remains
   an integration canary.
-- Branch `codex/initial-mvp` is pushed and reviewable. Draft PR creation is
-  externally blocked: GitHub returned HTTP 500 through the connector, CLI
-  GraphQL, current REST API, and authenticated web UI on 2026-07-24. No PR was
-  created.
+- Branch `codex/initial-mvp` is pushed and reviewable in draft PR
+  [#1](https://github.com/flowxo/agent-relay/pull/1). GitHub's PR service
+  returned HTTP 500 through automated paths on 2026-07-24; the operator created
+  the draft through the recovered web UI.
 
 ## Next action
 
-Retry the draft PR once GitHub's PR service accepts writes, then begin Milestone
-3 with an opt-in harness supervisor so `process.exited` is emitted only from
-owned child-process evidence. Before enabling permission automation, replace the
-Cursor permission fixture with a sanitized live capture.
+Review PR #1, then begin Milestone 3 with an opt-in harness supervisor so
+`process.exited` is emitted only from owned child-process evidence. Before
+enabling permission automation, replace the Cursor permission fixture with a
+sanitized live capture.
