@@ -1,0 +1,18 @@
+{
+  "name": "@agent-relay/harnesses",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "capabilities:check": "tsx scripts/check-capability-doc.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agent-relay/protocol": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "stop",
+  "conversation_id": "cursor-conversation-0001",
+  "status": "completed",
+  "loop_count": 0,
+  "workspace_roots": ["/workspace/example"],
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl"
+}

@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "Stop",
+  "cwd": "/workspace/example",
+  "stop_hook_active": false
+}
