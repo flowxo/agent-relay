@@ -29,17 +29,37 @@
   `process.exited` event. SQLite resume commands provide atomic ownership and an
   audited claimed/running/succeeded/failed lifecycle. A fake Telegram end-to-end
   test resumes the exact stopped Codex session once.
-- Milestone 4 recovery work is underway. The fallback spool now applies deep
-  secret redaction and per-record/segment byte caps, atomically isolates
-  concurrent replay workers, durably ingests parser diagnostics, retains only
-  failed lines, and recovers pending or crash-interrupted segments. The daemon
-  replays automatically at startup and on reconnect intervals.
-- `pnpm check` passes all 70 tests across ten test files, including the
-  SQLite-backed daemon, retry/dead-letter recovery, malformed ingress, hook
-  fallback privacy, inline and late continuation, real owned-child exit
-  observation, stale answer rejection, fallback replay recovery, and
-  concurrent-session isolation. `pnpm audit --prod` reports no known
-  vulnerabilities.
+- Milestone 4 is green locally. The fallback spool applies deep secret redaction
+  and bounded lossless rotation, atomically isolates replay workers, retains
+  failed records, and durably reports malformed input. The daemon replays at
+  startup and reconnect intervals.
+- Installation is idempotent and transactional across the exact Codex, Claude,
+  and Cursor user config paths. Clean install, repeated install, upgrade,
+  uninstall preservation, malformed-config preflight, partial rollback, and path
+  quoting are covered. Private backups and atomic writes protect existing
+  configuration; uninstall leaves state, logs, credentials, and unrelated hooks
+  untouched.
+- Doctor checks the launcher, installed hook counts, SQLite and capability
+  records, harness availability, and the exact locally tested versions. Version
+  drift is a warning and a missing executable is a failure.
+- Retention expires stale requests and prunes only terminal/proven-inactive
+  records in bounded batches. Redacted rotating logs have fixed size/count
+  limits and surface file-write failures through a fallback logger.
+- Telegram reply intake defaults to local Bot API long polling. It validates
+  update arrays, routes updates in order, advances offsets only after handling,
+  retries diagnosed failures, and shuts down active polls cleanly. Webhook mode
+  uses Telegram's secret independently of daemon bearer authentication.
+- A compiled-distribution canary in an isolated temporary home proved dry-run
+  install, install, healthy doctor output against all three local harness
+  versions, idempotent reinstall, and ownership-safe uninstall without touching
+  the real user home.
+- `pnpm check` passes all 96 tests across 16 test files, including the
+  SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
+  privacy, inline and late continuation, owned-child exit observation, stale
+  answer rejection, concurrent-session isolation, installation rollback,
+  retention, log rotation, and Telegram poll/webhook intake. The check also
+  validates formatting, lint, types, capability drift, and compiled package
+  exports. `pnpm audit --prod` reports no known vulnerabilities.
 
 ## Assumptions and open risks
 
@@ -54,8 +74,10 @@
   normal duplicates, but a process crash after Telegram accepts a message and
   before the receipt commits remains an at-least-once duplicate window.
 - A real Telegram token and operator account have not been used. Bot API
-  behavior is proven against deterministic HTTP fixtures; real delivery remains
-  an integration canary.
+  delivery, polling, retry, and shutdown behavior are proven against
+  deterministic HTTP fixtures; real delivery remains an integration canary.
+- Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
+  Local request retention cannot recover an upstream update after that window.
 - A model-backed late-resume canary has not been run because it would consume
   harness quota. Local proof covers the official argv contracts, real child
   process observation, durable command ownership, and the complete fake Telegram
@@ -66,13 +88,12 @@
 - The supervisor never labels inactivity as a hang. `suspected_stalled` exists
   as a distinct state, but emission remains disabled until a harness-specific
   health probe supplies evidence.
-- Branch `codex/initial-mvp` is pushed and reviewable in draft PR
-  [#1](https://github.com/flowxo/agent-relay/pull/1). GitHub's PR service
-  returned HTTP 500 through automated paths on 2026-07-24; the operator created
-  the draft through the recovered web UI.
+- Branch `codex/initial-mvp` is published in
+  [PR #1](https://github.com/flowxo/agent-relay/pull/1).
 
 ## Next action
 
-Continue Milestone 4 with idempotent install/doctor flows for hook registration,
-retention controls, and log rotation. Before enabling permission automation,
-replace the Cursor permission fixture with a sanitized live capture.
+Run credentialed activation canaries when a dedicated bot and model quota are
+available: real Bot API send/reply, then one live stop/resume per harness.
+Before enabling Cursor permission automation, replace its evolving permission
+fixture with a sanitized live capture.

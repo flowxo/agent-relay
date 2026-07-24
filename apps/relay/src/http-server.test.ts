@@ -136,6 +136,30 @@ describe("relay HTTP daemon", () => {
     await runtime.close();
   });
 
+  it("runs bounded retention maintenance and rejects unsafe limits", async () => {
+    const runtime = await setup();
+    await expect(
+      runtime.client.maintainRetention({ deliveredDays: 30, limit: 100 }),
+    ).resolves.toMatchObject({
+      requestsExpired: 0,
+      events: 0,
+      diagnostics: 0,
+    });
+    const response = await fetch(
+      `${runtime.baseUrl}/v1/maintenance/retention`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deliveredDays: 0 }),
+      },
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid-payload",
+    });
+    await runtime.close();
+  });
+
   it("rejects malformed payloads with actionable issues and logs the failure", async () => {
     const runtime = await setup();
     const response = await fetch(`${runtime.baseUrl}/v1/events`, {
@@ -231,6 +255,28 @@ describe("relay HTTP daemon", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({
       code: "telegram-webhook-unauthorized",
+    });
+    await runtime.close();
+  });
+
+  it("authenticates a Telegram webhook independently from the daemon bearer token", async () => {
+    const runtime = await setup(
+      "synthetic-daemon-secret",
+      "synthetic-webhook-secret",
+    );
+    const response = await fetch(`${runtime.baseUrl}/v1/telegram/updates`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": "synthetic-webhook-secret",
+      },
+      body: JSON.stringify({ update_id: 901 }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      outcome: "unsupported",
+      updateId: 901,
     });
     await runtime.close();
   });

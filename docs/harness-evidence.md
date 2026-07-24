@@ -16,6 +16,23 @@ The local help output proves that all three CLIs expose a session-resume entry
 point. It also proves that Codex App Server is installed and exposes a
 structured transport. These checks do not invoke a model or incur API cost.
 
+## Installer observations
+
+The official hook references were rechecked on 2026-07-24 before implementing
+the installer:
+
+- Codex discovers user hooks at `~/.codex/hooks.json`, uses nested matcher
+  groups and command handlers, and requires non-managed hooks to be reviewed and
+  trusted.
+- Claude Code stores user hooks inside `~/.claude/settings.json` under the same
+  nested event/group/handler shape.
+- Cursor stores user hooks in `~/.cursor/hooks.json` with `version: 1` and flat
+  command-handler arrays per event.
+
+The installer fixtures preserve unrelated entries in each of those shapes.
+Cursor permission hooks remain excluded from the default patch because their
+evolving payload still lacks a sanitized live capture in this repository.
+
 ## Supervisor observations
 
 The Milestone 3 test process launches owned Node.js children and observes a
@@ -23,6 +40,21 @@ non-zero exit, self-delivered `SIGTERM`, and `ENOENT` startup failure through
 Node's child-process contract. The supervisor preserves those statuses and
 records only bounded exit metadata; it inherits stdio and does not capture
 command output. These fixtures do not invoke a model.
+
+## Telegram adapter observations
+
+Telegram's official Bot API documentation was rechecked on 2026-07-24. Local
+reply intake defaults to `getUpdates` long polling because the daemon binds to
+loopback. The implementation sends an offset one greater than the highest
+handled update, limits intake to messages and callback queries, and relies on
+the durable update claim when Telegram repeats an unconfirmed update.
+
+The official contract states that `getUpdates` and webhooks are mutually
+exclusive, `timeout` is expressed in seconds, `limit` is bounded from 1 through
+100, and updates are retained for no longer than 24 hours. Webhook mode remains
+available for an external HTTPS bridge and validates the documented
+`X-Telegram-Bot-Api-Secret-Token` header. Tests use sanitized deterministic HTTP
+responses and do not contain a bot token or private message.
 
 ## Official contract sources
 
@@ -39,6 +71,11 @@ command output. These fixtures do not invoke a model.
   document the `stop` payload and `followup_message`.
 - [Cursor CLI usage](https://docs.cursor.com/en/cli/using) documents session
   resume.
+- [Telegram Bot API](https://core.telegram.org/bots/api) documents `getUpdates`,
+  offsets, long-poll timeouts, update limits, allowed update filters, webhook
+  exclusivity, and webhook secret headers.
+- [Telegram Bot FAQ](https://core.telegram.org/bots/faq) documents the 24-hour
+  pending-update retention boundary.
 
 ## Evidence boundary
 

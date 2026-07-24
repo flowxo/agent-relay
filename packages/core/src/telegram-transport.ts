@@ -28,6 +28,28 @@ const failureSchema = z
   })
   .passthrough();
 
+const polledUpdateSchema = z
+  .object({
+    update_id: z.number().int().nonnegative(),
+  })
+  .passthrough();
+
+const getUpdatesSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    result: z.array(polledUpdateSchema),
+  })
+  .passthrough();
+
+export type TelegramPolledUpdate = z.infer<typeof polledUpdateSchema>;
+
+export interface TelegramGetUpdatesOptions {
+  offset?: number;
+  limit?: number;
+  timeoutSeconds?: number;
+  signal?: AbortSignal;
+}
+
 export interface TelegramTransportOptions {
   token: string;
   chatId: string;
@@ -112,12 +134,70 @@ export class TelegramBotTransport implements InteractiveNotificationTransport {
     });
   }
 
+  public async getUpdates(
+    options: TelegramGetUpdatesOptions = {},
+  ): Promise<TelegramPolledUpdate[]> {
+    const offset = options.offset;
+    const limit = options.limit ?? 100;
+    const timeoutSeconds = options.timeoutSeconds ?? 30;
+    if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0)) {
+      throw new Error("Telegram update offset must be a non-negative integer");
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("Telegram update limit must be between 1 and 100");
+    }
+    if (
+      !Number.isSafeInteger(timeoutSeconds) ||
+      timeoutSeconds < 1 ||
+      timeoutSeconds > 50
+    ) {
+      throw new Error(
+        "Telegram long-poll timeout must be between 1 and 50 seconds",
+      );
+    }
+
+    const body = await this.callApi(
+      "getUpdates",
+      {
+        ...(offset === undefined ? {} : { offset }),
+        limit,
+        timeout: timeoutSeconds,
+        allowed_updates: ["message", "callback_query"],
+      },
+      timeoutSeconds * 1_000 + 5_000,
+      options.signal,
+    );
+    const parsed = getUpdatesSuccessSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new TransportError(
+        "Telegram getUpdates response did not include a valid update array",
+        "telegram-malformed-response",
+        false,
+      );
+    }
+    return parsed.data.result;
+  }
+
   private async callApi(
     method: string,
     payload: Record<string, unknown>,
+    timeoutMs = this.timeoutMs,
+    externalSignal?: AbortSignal,
   ): Promise<unknown> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let externallyAborted = externalSignal?.aborted ?? false;
+    const abortFromExternal = (): void => {
+      externallyAborted = true;
+      controller.abort();
+    };
+    if (externallyAborted) {
+      controller.abort();
+    } else {
+      externalSignal?.addEventListener("abort", abortFromExternal, {
+        once: true,
+      });
+    }
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await this.fetchImplementation(
@@ -134,14 +214,21 @@ export class TelegramBotTransport implements InteractiveNotificationTransport {
         error instanceof Error &&
         (error.name === "AbortError" || controller.signal.aborted);
       throw new TransportError(
-        aborted
-          ? "Telegram request timed out"
-          : "Telegram request failed before receiving a response",
-        aborted ? "telegram-timeout" : "telegram-network",
-        true,
+        externallyAborted
+          ? "Telegram request was cancelled"
+          : aborted
+            ? "Telegram request timed out"
+            : "Telegram request failed before receiving a response",
+        externallyAborted
+          ? "telegram-aborted"
+          : aborted
+            ? "telegram-timeout"
+            : "telegram-network",
+        !externallyAborted,
       );
     } finally {
       clearTimeout(timer);
+      externalSignal?.removeEventListener("abort", abortFromExternal);
     }
 
     let body: unknown;

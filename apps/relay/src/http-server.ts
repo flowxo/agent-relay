@@ -20,6 +20,18 @@ const drainSchema = z
 
 const diagnosticLimitSchema = z.coerce.number().int().min(1).max(500);
 
+const retentionSchema = z
+  .object({
+    deliveredDays: z.number().int().min(1).max(3_650).optional(),
+    deadLetterDays: z.number().int().min(1).max(3_650).optional(),
+    requestDays: z.number().int().min(1).max(3_650).optional(),
+    diagnosticDays: z.number().int().min(1).max(3_650).optional(),
+    telegramUpdateDays: z.number().int().min(1).max(3_650).optional(),
+    sessionDays: z.number().int().min(1).max(3_650).optional(),
+    limit: z.number().int().min(1).max(50_000).optional(),
+  })
+  .strict();
+
 const terminalResolutionSchema = z
   .object({
     answer: z.string().min(1).max(4_000),
@@ -161,8 +173,12 @@ export function createRelayHttpServer(
   return createServer(async (request, response) => {
     const at = new Date().toISOString();
     try {
-      assertAuthorized(request, options.token);
       const url = new URL(request.url ?? "/", "http://relay.local");
+      const isTelegramWebhook =
+        request.method === "POST" && url.pathname === "/v1/telegram/updates";
+      if (!isTelegramWebhook || options.telegramWebhookSecret === undefined) {
+        assertAuthorized(request, options.token);
+      }
 
       if (request.method === "GET" && url.pathname === "/v1/health") {
         sendJson(response, 200, { healthy: true });
@@ -369,6 +385,40 @@ export function createRelayHttpServer(
           await readJson(request, maxBodyBytes),
         );
         sendJson(response, 200, await service.drain(command.limit));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/maintenance/retention"
+      ) {
+        const command = retentionSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        sendJson(
+          response,
+          200,
+          service.maintainRetention({
+            ...(command.deliveredDays === undefined
+              ? {}
+              : { deliveredDays: command.deliveredDays }),
+            ...(command.deadLetterDays === undefined
+              ? {}
+              : { deadLetterDays: command.deadLetterDays }),
+            ...(command.requestDays === undefined
+              ? {}
+              : { requestDays: command.requestDays }),
+            ...(command.diagnosticDays === undefined
+              ? {}
+              : { diagnosticDays: command.diagnosticDays }),
+            ...(command.telegramUpdateDays === undefined
+              ? {}
+              : { telegramUpdateDays: command.telegramUpdateDays }),
+            ...(command.sessionDays === undefined
+              ? {}
+              : { sessionDays: command.sessionDays }),
+            ...(command.limit === undefined ? {} : { limit: command.limit }),
+          }),
+        );
         return;
       }
 

@@ -145,4 +145,104 @@ describe("TelegramBotTransport", () => {
     );
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain("editMessageText");
   });
+
+  it("long-polls only supported reply updates and returns validated update ids", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          result: [
+            {
+              update_id: 73,
+              message: { message_id: 9, chat: { id: 10001 }, text: "yes" },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await expect(
+      transport.getUpdates({
+        offset: 70,
+        limit: 25,
+        timeoutSeconds: 20,
+      }),
+    ).resolves.toEqual([
+      {
+        update_id: 73,
+        message: { message_id: 9, chat: { id: 10001 }, text: "yes" },
+      },
+    ]);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      offset: number;
+      limit: number;
+      timeout: number;
+      allowed_updates: string[];
+    };
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("getUpdates");
+    expect(body).toEqual({
+      offset: 70,
+      limit: 25,
+      timeout: 20,
+      allowed_updates: ["message", "callback_query"],
+    });
+  });
+
+  it("rejects a malformed getUpdates response without retrying poison data", async () => {
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({ ok: true, result: [{ update_id: "wrong" }] }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    });
+
+    await expect(transport.getUpdates()).rejects.toMatchObject({
+      code: "telegram-malformed-response",
+      retryable: false,
+    });
+  });
+
+  it("cancels an active long poll promptly during shutdown", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(
+      async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+    const controller = new AbortController();
+    const polling = transport.getUpdates({
+      timeoutSeconds: 50,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(polling).rejects.toMatchObject({
+      code: "telegram-aborted",
+      retryable: false,
+    });
+  });
 });

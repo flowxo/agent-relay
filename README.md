@@ -27,10 +27,50 @@ under `packages/harnesses/fixtures`.
 No bot token, transcript, credential, hostname, username, or raw working path is
 required for the contract test suite.
 
+## Safe installation
+
+Build once, inspect the exact changes, then install user-level hooks:
+
+```sh
+pnpm build
+node apps/relay/dist/cli.js install --dry-run
+node apps/relay/dist/cli.js install
+node apps/relay/dist/cli.js doctor
+```
+
+The installer creates one exact-path launcher under `~/.agent-relay/bin` and
+minimally patches `~/.codex/hooks.json`, `~/.claude/settings.json`, and
+`~/.cursor/hooks.json`. Existing hooks and unrelated settings are preserved.
+Every changed existing config receives a private timestamped backup. All target
+files are preflighted before mutation, writes are atomic, and a partial failure
+rolls back earlier writes.
+
+Codex installs `Stop` and `PermissionRequest`; Claude installs `Stop`,
+`StopFailure`, and `PermissionRequest`. Cursor installs only `stop` until its
+permission fixture has a sanitized live capture. Cursor defaults to IDE
+capabilities; pass `--cursor-surface cli` for a CLI-only installation. A
+supervised Cursor child always overrides that surface to CLI.
+
+Codex requires new or changed command hooks to be reviewed in `/hooks`. Claude's
+`/hooks` browser and Cursor's trusted-workspace hook view provide corresponding
+runtime verification. `doctor` checks the files, exact-path launcher, installed
+harness binaries, tested versions, SQLite schema, and capability records.
+Version drift is a warning; a missing binary or hook is a failure.
+
+Safe uninstall removes only entries carrying Agent Relay's ownership marker and
+its launcher/manifest. It preserves user hooks, unrelated settings, SQLite,
+fallback records, logs, credentials, and config backups:
+
+```sh
+node apps/relay/dist/cli.js uninstall --dry-run
+node apps/relay/dist/cli.js uninstall
+```
+
 ## Local loop
 
 The daemon binds to loopback, uses SQLite as the source of truth, and selects
-the fake Telegram transport unless all required Telegram settings are present.
+the fake Telegram transport unless both the Telegram token and chat ID are
+present.
 
 ```sh
 # Terminal 1
@@ -85,6 +125,27 @@ The command exits non-zero while any segment remains pending. Invalid or
 oversized lines become durable bounded diagnostics rather than being silently
 discarded; raw invalid input is never sent to Telegram.
 
+## Retention and logs
+
+The daemon expires stale open requests, then applies bounded batches to terminal
+requests, delivered events, dead letters, diagnostics, Telegram update IDs, and
+provably inactive sessions. Open work and claimed/running resume commands are
+never pruned. Defaults retain delivered history for 30 days and dead letters and
+diagnostics for 90 days:
+
+```sh
+pnpm relay maintain --retention-days 30 \
+  --dead-letter-retention-days 90 \
+  --diagnostic-retention-days 90
+```
+
+Maintenance runs at daemon startup and hourly. The daemon writes redacted JSON
+lines to stderr and `~/.agent-relay/relay.ndjson`; the file defaults to 4 MiB
+with five total segments. Configure these bounds through the
+`AGENT_RELAY_*_RETENTION_DAYS`, `AGENT_RELAY_LOG_PATH`,
+`AGENT_RELAY_LOG_MAX_BYTES`, and `AGENT_RELAY_LOG_FILES` variables shown in
+[`.env.example`](.env.example). File-write failures are also emitted to stderr.
+
 ## Supervised CLI processes
 
 Milestone 3 adds an opt-in launcher for CLI processes whose exit status must be
@@ -128,19 +189,35 @@ Copy the names from [`.env.example`](.env.example) into your secret manager or
 shell environment. Do not commit values. The daemon activates the Bot API
 adapter only when both `AGENT_RELAY_TELEGRAM_TOKEN` and
 `AGENT_RELAY_TELEGRAM_CHAT_ID` exist. Reply routing additionally requires the
-numeric `AGENT_RELAY_TELEGRAM_OPERATOR_ID`. An HTTP webhook bridge should also
-set `AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET`; Agent Relay verifies it against
-Telegram's `X-Telegram-Bot-Api-Secret-Token` header before processing updates.
+numeric `AGENT_RELAY_TELEGRAM_OPERATOR_ID`.
+
+The default `AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll` uses Bot API long polling,
+so a daemon bound to loopback can receive replies without a public HTTP
+deployment. The next poll confirms only update IDs that the reply router has
+handled. A crash before confirmation can replay an update, and the durable
+SQLite claim makes that replay harmless. Poll and routing errors are logged with
+bounded exponential retry.
+
+Set `AGENT_RELAY_TELEGRAM_UPDATE_MODE=webhook` only when an external HTTPS
+bridge is available. Webhook mode requires
+`AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET`; the `/v1/telegram/updates` route verifies
+Telegram's `X-Telegram-Bot-Api-Secret-Token` independently from the daemon
+bearer token. Telegram does not permit `getUpdates` while a webhook is
+configured, so remove the bot's webhook before switching back to poll mode.
 
 The reply router accepts only the configured operator and chat, deduplicates
 Telegram `update_id`, correlates text through Telegram's replied-to message ID,
 and uses opaque callback tokens for fixed choices. Terminal and Telegram answers
-share a single SQLite first-writer-wins transition.
+share a single SQLite first-writer-wins transition. Telegram retains pending Bot
+API updates for no longer than 24 hours; Agent Relay's longer-lived request
+state does not extend that upstream delivery window.
 
 ## Current boundary
 
 Supervisor tests use real local child exit codes/signals and an end-to-end fake
-Telegram reply. A model-backed late-resume canary has not been run because it
-would consume harness quota. Native hooks still do not prove crashes, Cursor IDE
-late resume remains explicitly unsupported, and an interactive child must exit
-before its session can be resumed through a new CLI process.
+Telegram reply. Bot API delivery and polling use deterministic HTTP fixtures; a
+real token canary has not been run. A model-backed late-resume canary has not
+been run because it would consume harness quota. Native hooks still do not prove
+crashes, Cursor IDE late resume remains explicitly unsupported, and an
+interactive child must exit before its session can be resumed through a new CLI
+process.

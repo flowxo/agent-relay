@@ -11,6 +11,8 @@ import type {
   IngestResult,
   PendingRequestRecord,
   ReplyRouteResult,
+  RetentionOptions,
+  RetentionResult,
   ResumeClaimResult,
   ResumeCommandRecord,
   ResolutionResult,
@@ -175,6 +177,15 @@ export class RelayClient {
     return await this.request<DrainResult>("/v1/deliveries/drain", {
       method: "POST",
       body: JSON.stringify({ limit }),
+    });
+  }
+
+  public async maintainRetention(
+    options: RetentionOptions = {},
+  ): Promise<RetentionResult> {
+    return await this.request<RetentionResult>("/v1/maintenance/retention", {
+      method: "POST",
+      body: JSON.stringify(options),
     });
   }
 

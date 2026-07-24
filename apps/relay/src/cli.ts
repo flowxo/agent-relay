@@ -5,7 +5,11 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { JsonLineLogger } from "@agent-relay/core";
+import {
+  CompositeLogger,
+  JsonLineLogger,
+  RotatingFileLogger,
+} from "@agent-relay/core";
 import { HARNESS_CAPABILITIES } from "@agent-relay/harnesses";
 import {
   HarnessSchema,
@@ -16,14 +20,20 @@ import {
 
 import { RelayClient } from "./client.js";
 import { startDaemon } from "./daemon.js";
-import { runDoctor } from "./doctor.js";
+import { observeHarnessVersions, runDoctor } from "./doctor.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
+import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
 import { runSupervisor } from "./supervisor.js";
 
+function environment(name: string): string | undefined {
+  const value = process.env[name];
+  return value === undefined || value.length === 0 ? undefined : value;
+}
+
 const stateDir =
-  process.env["AGENT_RELAY_STATE_DIR"] ?? join(homedir(), ".agent-relay");
+  environment("AGENT_RELAY_STATE_DIR") ?? join(homedir(), ".agent-relay");
 
 function flag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
@@ -56,6 +66,35 @@ function numericFlag(args: string[], name: string, fallback: number): number {
   return value;
 }
 
+function integerFlag(args: string[], name: string, fallback: number): number {
+  const value = numericFlag(args, name, fallback);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${name} must be a safe integer`);
+  }
+  return value;
+}
+
+function optionalInteger(
+  value: string | undefined,
+  name: string,
+  allowNegative: boolean,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed === 0 ||
+    (!allowNegative && parsed < 0)
+  ) {
+    throw new Error(
+      `${name} must be a ${allowNegative ? "non-zero" : "positive"} safe integer`,
+    );
+  }
+  return parsed;
+}
+
 function harnessExecutable(harness: "codex" | "claude" | "cursor"): string {
   switch (harness) {
     case "codex":
@@ -67,16 +106,74 @@ function harnessExecutable(harness: "codex" | "claude" | "cursor"): string {
   }
 }
 
+function installEntryPath(args: string[]): string {
+  const explicit = flag(args, "--entry");
+  if (explicit !== undefined) {
+    return resolve(explicit);
+  }
+  const currentEntry = resolve(process.argv[1] ?? "apps/relay/dist/cli.js");
+  if (currentEntry.endsWith("/src/cli.ts")) {
+    return resolve(dirname(currentEntry), "..", "dist", "cli.js");
+  }
+  return currentEntry;
+}
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   if (command === "daemon") {
     const databasePath = flag(args, "--db") ?? join(stateDir, "relay.sqlite");
-    const daemonToken = process.env["AGENT_RELAY_DAEMON_TOKEN"];
-    const telegramToken = process.env["AGENT_RELAY_TELEGRAM_TOKEN"];
-    const telegramChatId = process.env["AGENT_RELAY_TELEGRAM_CHAT_ID"];
-    const telegramOperatorId = process.env["AGENT_RELAY_TELEGRAM_OPERATOR_ID"];
-    const telegramWebhookSecret =
-      process.env["AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET"];
+    const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+    const telegramToken = environment("AGENT_RELAY_TELEGRAM_TOKEN");
+    const telegramChatId = environment("AGENT_RELAY_TELEGRAM_CHAT_ID");
+    const telegramOperatorId = environment("AGENT_RELAY_TELEGRAM_OPERATOR_ID");
+    const telegramWebhookSecret = environment(
+      "AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
+    );
+    const configuredTelegramUpdateMode =
+      environment("AGENT_RELAY_TELEGRAM_UPDATE_MODE") ?? "poll";
+    if (
+      configuredTelegramUpdateMode !== "poll" &&
+      configuredTelegramUpdateMode !== "webhook"
+    ) {
+      throw new Error(
+        "AGENT_RELAY_TELEGRAM_UPDATE_MODE must be poll or webhook",
+      );
+    }
+    const telegramOperatorUserId = optionalInteger(
+      telegramOperatorId,
+      "AGENT_RELAY_TELEGRAM_OPERATOR_ID",
+      false,
+    );
+    const telegramReplyChatId = optionalInteger(
+      telegramChatId,
+      "AGENT_RELAY_TELEGRAM_CHAT_ID",
+      true,
+    );
+    const stderrLogger = new JsonLineLogger();
+    const daemonLogger = new CompositeLogger([
+      stderrLogger,
+      new RotatingFileLogger(
+        flag(args, "--log") ??
+          environment("AGENT_RELAY_LOG_PATH") ??
+          join(stateDir, "relay.ndjson"),
+        {
+          maxBytes: integerFlag(
+            args,
+            "--log-max-bytes",
+            Number(
+              environment("AGENT_RELAY_LOG_MAX_BYTES") ??
+                String(4 * 1024 * 1024),
+            ),
+          ),
+          maxFiles: integerFlag(
+            args,
+            "--log-files",
+            Number(environment("AGENT_RELAY_LOG_FILES") ?? "5"),
+          ),
+          fallbackLogger: stderrLogger,
+        },
+      ),
+    ]);
     const daemon = await startDaemon({
       databasePath,
       host: flag(args, "--host") ?? "127.0.0.1",
@@ -84,14 +181,31 @@ async function main(): Promise<void> {
       ...(daemonToken === undefined ? {} : { token: daemonToken }),
       ...(telegramToken === undefined ? {} : { telegramToken }),
       ...(telegramChatId === undefined ? {} : { telegramChatId }),
-      ...(telegramOperatorId === undefined
+      ...(telegramOperatorUserId === undefined
         ? {}
-        : { telegramOperatorUserId: Number(telegramOperatorId) }),
-      ...(telegramChatId === undefined
-        ? {}
-        : { telegramReplyChatId: Number(telegramChatId) }),
+        : { telegramOperatorUserId }),
+      ...(telegramReplyChatId === undefined ? {} : { telegramReplyChatId }),
       ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
+      telegramUpdateMode: configuredTelegramUpdateMode,
       fallbackPath: join(stateDir, "fallback-spool.ndjson"),
+      retention: {
+        deliveredDays: integerFlag(
+          args,
+          "--retention-days",
+          Number(environment("AGENT_RELAY_RETENTION_DAYS") ?? "30"),
+        ),
+        deadLetterDays: integerFlag(
+          args,
+          "--dead-letter-retention-days",
+          Number(environment("AGENT_RELAY_DEAD_LETTER_RETENTION_DAYS") ?? "90"),
+        ),
+        diagnosticDays: integerFlag(
+          args,
+          "--diagnostic-retention-days",
+          Number(environment("AGENT_RELAY_DIAGNOSTIC_RETENTION_DAYS") ?? "90"),
+        ),
+      },
+      logger: daemonLogger,
     });
     const stop = async () => {
       await daemon.close();
@@ -104,25 +218,33 @@ async function main(): Promise<void> {
 
   if (command === "hook") {
     const harness = HarnessSchema.parse(args[0]);
-    const surface = SurfaceSchema.parse(flag(args, "--surface") ?? "cli");
+    const configuredSurface = SurfaceSchema.parse(
+      flag(args, "--surface") ?? "cli",
+    );
+    const surface =
+      harness === "cursor" && process.env["AGENT_RELAY_SUPERVISED"] === "1"
+        ? "cli"
+        : configuredSurface;
     const raw = await readStdin();
-    const daemonToken = process.env["AGENT_RELAY_DAEMON_TOKEN"];
+    const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
     const machineId =
-      process.env["AGENT_RELAY_MACHINE_ID"] ??
+      environment("AGENT_RELAY_MACHINE_ID") ??
       (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const configuredBridgeSessionId = environment(
+      "AGENT_RELAY_BRIDGE_SESSION_ID",
+    );
     const result = await runHook({
       harness,
       surface,
       harnessVersion:
         flag(args, "--harness-version") ??
-        process.env["AGENT_RELAY_HARNESS_VERSION"] ??
+        environment("AGENT_RELAY_HARNESS_VERSION") ??
         "unknown",
       raw,
       machineId,
-      bridgeSessionId:
-        process.env["AGENT_RELAY_BRIDGE_SESSION_ID"] ?? "bridge_local_hooks",
+      bridgeSessionId: configuredBridgeSessionId ?? "bridge_local_hooks",
       daemonUrl:
-        process.env["AGENT_RELAY_DAEMON_URL"] ?? "http://127.0.0.1:4317",
+        environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
       ...(daemonToken === undefined ? {} : { daemonToken }),
       fallbackPath: join(stateDir, "fallback-spool.ndjson"),
       waitMs: numericFlag(args, "--wait-ms", 0),
@@ -131,7 +253,7 @@ async function main(): Promise<void> {
         args,
         "--late-resume-ttl-ms",
         Number(
-          process.env["AGENT_RELAY_LATE_RESUME_TTL_MS"] ??
+          environment("AGENT_RELAY_LATE_RESUME_TTL_MS") ??
             String(24 * 60 * 60_000),
         ),
       ),
@@ -157,31 +279,32 @@ async function main(): Promise<void> {
     const supervisorArgs =
       separator === -1 ? args.slice(1) : args.slice(1, separator);
     const childArgs = separator === -1 ? [] : args.slice(separator + 1);
-    const daemonToken = process.env["AGENT_RELAY_DAEMON_TOKEN"];
+    const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
     const machineId =
-      process.env["AGENT_RELAY_MACHINE_ID"] ??
+      environment("AGENT_RELAY_MACHINE_ID") ??
       (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const configuredBridgeSessionId = environment(
+      "AGENT_RELAY_BRIDGE_SESSION_ID",
+    );
     const executable =
       flag(supervisorArgs, "--executable") ?? harnessExecutable(harness);
     const result = await runSupervisor({
       harness,
       harnessVersion:
         flag(supervisorArgs, "--harness-version") ??
-        process.env["AGENT_RELAY_HARNESS_VERSION"] ??
+        environment("AGENT_RELAY_HARNESS_VERSION") ??
         "unknown",
       machineId,
-      ...(process.env["AGENT_RELAY_BRIDGE_SESSION_ID"] === undefined
+      ...(configuredBridgeSessionId === undefined
         ? {}
-        : {
-            bridgeSessionId: process.env["AGENT_RELAY_BRIDGE_SESSION_ID"],
-          }),
+        : { bridgeSessionId: configuredBridgeSessionId }),
       cwd: resolve(flag(supervisorArgs, "--cwd") ?? process.cwd()),
       initialInvocation: {
         executable,
         args: childArgs,
       },
       daemonUrl:
-        process.env["AGENT_RELAY_DAEMON_URL"] ?? "http://127.0.0.1:4317",
+        environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
       ...(daemonToken === undefined ? {} : { daemonToken }),
       fallbackPath: join(stateDir, "fallback-spool.ndjson"),
       resumeWaitMs: numericFlag(
@@ -207,16 +330,55 @@ async function main(): Promise<void> {
   }
 
   if (command === "doctor") {
-    const databasePath = flag(args, "--db") ?? ":memory:";
-    const report = runDoctor(databasePath);
+    const report = await runDoctor({
+      databasePath: flag(args, "--db") ?? ":memory:",
+      rootDir: resolve(flag(args, "--root") ?? homedir()),
+    });
     output(report);
     process.exitCode = report.healthy ? 0 : 1;
     return;
   }
 
-  const daemonToken = process.env["AGENT_RELAY_DAEMON_TOKEN"];
+  if (command === "install") {
+    const cursorSurface = flag(args, "--cursor-surface") ?? "ide";
+    if (cursorSurface !== "cli" && cursorSurface !== "ide") {
+      throw new Error("--cursor-surface must be cli or ide");
+    }
+    const observed = observeHarnessVersions();
+    const versions = Object.fromEntries(
+      observed.map((item) => [
+        item.harness,
+        item.version ?? `unavailable (tested ${item.testedVersion})`,
+      ]),
+    );
+    output(
+      await installAgentRelay({
+        rootDir: resolve(flag(args, "--root") ?? homedir()),
+        entryPath: installEntryPath(args),
+        ...(flag(args, "--node") === undefined
+          ? {}
+          : { nodePath: resolve(flag(args, "--node") ?? "") }),
+        cursorSurface,
+        harnessVersions: versions,
+        dryRun: args.includes("--dry-run"),
+      }),
+    );
+    return;
+  }
+
+  if (command === "uninstall") {
+    output(
+      await uninstallAgentRelay({
+        rootDir: resolve(flag(args, "--root") ?? homedir()),
+        dryRun: args.includes("--dry-run"),
+      }),
+    );
+    return;
+  }
+
+  const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
   const client = new RelayClient({
-    baseUrl: process.env["AGENT_RELAY_DAEMON_URL"] ?? "http://127.0.0.1:4317",
+    baseUrl: environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
     ...(daemonToken === undefined ? {} : { token: daemonToken }),
   });
   if (command === "status") {
@@ -232,6 +394,16 @@ async function main(): Promise<void> {
     process.exitCode = result.filesPending === 0 ? 0 : 1;
     return;
   }
+  if (command === "maintain") {
+    output(
+      await client.maintainRetention({
+        deliveredDays: integerFlag(args, "--retention-days", 30),
+        deadLetterDays: integerFlag(args, "--dead-letter-retention-days", 90),
+        diagnosticDays: integerFlag(args, "--diagnostic-retention-days", 90),
+      }),
+    );
+    return;
+  }
   if (command === "drain") {
     output(await client.drain(Number(flag(args, "--limit") ?? "50")));
     return;
@@ -243,7 +415,7 @@ async function main(): Promise<void> {
   if (command === "canary") {
     await mkdir(stateDir, { recursive: true, mode: 0o700 });
     const machineId =
-      process.env["AGENT_RELAY_MACHINE_ID"] ??
+      environment("AGENT_RELAY_MACHINE_ID") ??
       (await loadOrCreateMachineId(join(stateDir, "machine-id")));
     const sequence = Date.now();
     const eventId = makeStableEventId({
@@ -284,7 +456,7 @@ async function main(): Promise<void> {
     mode: 0o700,
   });
   process.stderr.write(
-    "Usage: agent-relay daemon|hook|run|status|drain|replay-fallback|doctor|capabilities|canary\n",
+    "Usage: agent-relay daemon|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary\n",
   );
   process.exitCode = 2;
 }

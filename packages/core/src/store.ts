@@ -68,6 +68,27 @@ export interface DiagnosticIngestResult {
   inserted: boolean;
 }
 
+export interface RetentionCutoffs {
+  deliveredBefore: string;
+  deadLetterBefore: string;
+  requestBefore: string;
+  diagnosticBefore: string;
+  telegramUpdateBefore: string;
+  sessionBefore: string;
+  limit?: number;
+}
+
+export interface RetentionResult {
+  requestsExpired: number;
+  pendingRequests: number;
+  resumeCommands: number;
+  events: number;
+  deliveryAttempts: number;
+  diagnostics: number;
+  telegramUpdates: number;
+  sessions: number;
+}
+
 export type PendingRequestState =
   "open" | "answered" | "expired" | "cancelled" | "failed";
 
@@ -276,6 +297,16 @@ function stateForEvent(
 function retryDelay(policy: RetryPolicy, attemptNumber: number): number {
   const exponential = policy.baseDelayMs * 2 ** Math.max(0, attemptNumber - 1);
   return Math.min(policy.maxDelayMs, exponential);
+}
+
+function assertIsoCutoff(value: string, name: string): void {
+  const timestamp = Date.parse(value);
+  if (
+    !Number.isFinite(timestamp) ||
+    new Date(timestamp).toISOString() !== value
+  ) {
+    throw new Error(`${name} must be an ISO timestamp`);
+  }
 }
 
 function collisionComparable(payloadJson: string): string {
@@ -1450,6 +1481,165 @@ export class RelayStore {
       code: row.code,
       message: row.message,
     }));
+  }
+
+  public pruneRetention(cutoffs: RetentionCutoffs): RetentionResult {
+    for (const [name, value] of Object.entries(cutoffs)) {
+      if (name !== "limit") {
+        assertIsoCutoff(String(value), name);
+      }
+    }
+    const limit = cutoffs.limit ?? 5_000;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50_000) {
+      throw new Error("retention limit must be between 1 and 50000");
+    }
+
+    return this.database.transaction((): RetentionResult => {
+      const result: RetentionResult = {
+        requestsExpired: 0,
+        pendingRequests: 0,
+        resumeCommands: 0,
+        events: 0,
+        deliveryAttempts: 0,
+        diagnostics: 0,
+        telegramUpdates: 0,
+        sessions: 0,
+      };
+      const requestRows = this.database
+        .prepare(
+          `
+          SELECT pending.correlation_id
+          FROM pending_requests AS pending
+          WHERE COALESCE(pending.resolved_at, pending.expires_at) < ?
+            AND (
+              pending.state IN ('expired', 'cancelled', 'failed')
+              OR (
+                pending.state = 'answered'
+                AND NOT EXISTS (
+                  SELECT 1 FROM resume_commands AS command
+                  WHERE command.correlation_id = pending.correlation_id
+                    AND command.state IN ('claimed', 'running')
+                )
+              )
+            )
+          ORDER BY COALESCE(pending.resolved_at, pending.expires_at),
+            pending.correlation_id
+          LIMIT ?
+        `,
+        )
+        .all(cutoffs.requestBefore, limit) as Array<{
+        correlation_id: string;
+      }>;
+      const deleteResume = this.database.prepare(
+        "DELETE FROM resume_commands WHERE correlation_id = ?",
+      );
+      const deleteOptions = this.database.prepare(
+        "DELETE FROM pending_options WHERE correlation_id = ?",
+      );
+      const deleteRequest = this.database.prepare(
+        "DELETE FROM pending_requests WHERE correlation_id = ?",
+      );
+      for (const row of requestRows) {
+        result.resumeCommands += deleteResume.run(row.correlation_id).changes;
+        deleteOptions.run(row.correlation_id);
+        result.pendingRequests += deleteRequest.run(row.correlation_id).changes;
+      }
+
+      const eventRows = this.database
+        .prepare(
+          `
+          SELECT events.event_id
+          FROM events
+          WHERE (
+              (
+                events.status = 'delivered'
+                AND events.delivered_at IS NOT NULL
+                AND events.delivered_at < @deliveredBefore
+              )
+              OR (
+                events.status = 'dead_letter'
+                AND events.created_at < @deadLetterBefore
+              )
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM pending_requests AS pending
+              WHERE pending.event_id = events.event_id
+            )
+          ORDER BY events.created_at, events.event_id
+          LIMIT @limit
+        `,
+        )
+        .all({
+          deliveredBefore: cutoffs.deliveredBefore,
+          deadLetterBefore: cutoffs.deadLetterBefore,
+          limit,
+        }) as Array<{ event_id: string }>;
+      const deleteAttempts = this.database.prepare(
+        "DELETE FROM delivery_attempts WHERE event_id = ?",
+      );
+      const deleteEvent = this.database.prepare(
+        `
+        DELETE FROM events
+        WHERE event_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM pending_requests
+            WHERE pending_requests.event_id = events.event_id
+          )
+      `,
+      );
+      for (const row of eventRows) {
+        result.deliveryAttempts += deleteAttempts.run(row.event_id).changes;
+        result.events += deleteEvent.run(row.event_id).changes;
+      }
+
+      result.diagnostics = this.database
+        .prepare(
+          `
+          DELETE FROM diagnostics
+          WHERE diagnostic_id IN (
+            SELECT diagnostic_id FROM diagnostics
+            WHERE recorded_at < ?
+            ORDER BY recorded_at, diagnostic_id
+            LIMIT ?
+          )
+        `,
+        )
+        .run(cutoffs.diagnosticBefore, limit).changes;
+      result.telegramUpdates = this.database
+        .prepare(
+          `
+          DELETE FROM telegram_updates
+          WHERE update_id IN (
+            SELECT update_id FROM telegram_updates
+            WHERE received_at < ?
+            ORDER BY received_at, update_id
+            LIMIT ?
+          )
+        `,
+        )
+        .run(cutoffs.telegramUpdateBefore, limit).changes;
+      result.sessions = this.database
+        .prepare(
+          `
+          DELETE FROM sessions
+          WHERE rowid IN (
+            SELECT sessions.rowid FROM sessions
+            WHERE sessions.last_seen_at < ?
+              AND sessions.state IN ('stopped', 'suspected_stalled', 'exited')
+              AND NOT EXISTS (
+                SELECT 1 FROM events
+                WHERE events.machine_id = sessions.machine_id
+                  AND events.harness = sessions.harness
+                  AND events.session_id = sessions.session_id
+              )
+            ORDER BY sessions.last_seen_at, sessions.rowid
+            LIMIT ?
+          )
+        `,
+        )
+        .run(cutoffs.sessionBefore, limit).changes;
+      return result;
+    })();
   }
 
   public listSessions(): SessionRecord[] {

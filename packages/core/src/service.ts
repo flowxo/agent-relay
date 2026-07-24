@@ -14,6 +14,7 @@ import type {
   IngestResult,
   PendingRequestRecord,
   RelayStore,
+  RetentionResult,
   ResumeClaimResult,
   ResumeCommandRecord,
   ResolutionResult,
@@ -35,6 +36,28 @@ export interface RelayServiceOptions {
   retryPolicy?: RetryPolicy;
   logger?: RelayLogger;
   now?: () => Date;
+}
+
+export interface RetentionOptions {
+  deliveredDays?: number;
+  deadLetterDays?: number;
+  requestDays?: number;
+  diagnosticDays?: number;
+  telegramUpdateDays?: number;
+  sessionDays?: number;
+  limit?: number;
+}
+
+function retentionDays(
+  value: number | undefined,
+  fallback: number,
+  name: string,
+): number {
+  const days = value ?? fallback;
+  if (!Number.isSafeInteger(days) || days < 1 || days > 3_650) {
+    throw new Error(`${name} must be between 1 and 3650 days`);
+  }
+  return days;
 }
 
 export class RelayService {
@@ -138,6 +161,43 @@ export class RelayService {
         source: safeDiagnostic.source,
         diagnosticCode: safeDiagnostic.code,
       },
+    });
+    return result;
+  }
+
+  public maintainRetention(options: RetentionOptions = {}): RetentionResult {
+    const now = this.now();
+    const before = (days: number) =>
+      new Date(now.getTime() - days * 24 * 60 * 60_000).toISOString();
+    const requestsExpired = this.store.expireRequests(now.toISOString());
+    const result = this.store.pruneRetention({
+      deliveredBefore: before(
+        retentionDays(options.deliveredDays, 30, "deliveredDays"),
+      ),
+      deadLetterBefore: before(
+        retentionDays(options.deadLetterDays, 90, "deadLetterDays"),
+      ),
+      requestBefore: before(
+        retentionDays(options.requestDays, 30, "requestDays"),
+      ),
+      diagnosticBefore: before(
+        retentionDays(options.diagnosticDays, 90, "diagnosticDays"),
+      ),
+      telegramUpdateBefore: before(
+        retentionDays(options.telegramUpdateDays, 30, "telegramUpdateDays"),
+      ),
+      sessionBefore: before(
+        retentionDays(options.sessionDays, 90, "sessionDays"),
+      ),
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
+    });
+    result.requestsExpired = requestsExpired;
+    this.logger.log({
+      level: "info",
+      code: "retention.completed",
+      message: "durable retention maintenance completed",
+      at: now.toISOString(),
+      details: { ...result },
     });
     return result;
   }

@@ -6,11 +6,30 @@ import {
   RelayService,
   RelayStore,
 } from "@agent-relay/core";
+import type { Harness } from "@agent-relay/protocol";
+
+import { inspectAgentRelayInstallation } from "./installer.js";
+import type { InstallationCheck } from "./installer.js";
+
+export const TESTED_HARNESS_VERSIONS: Record<Harness, string> = {
+  codex: "codex-cli 0.145.0",
+  claude: "2.1.219 (Claude Code)",
+  cursor: "3.12.30",
+};
+
+export const DEFAULT_HARNESS_EXECUTABLES: Record<Harness, string> = {
+  codex: "codex",
+  claude: "claude",
+  cursor: "cursor-agent",
+};
 
 export interface DoctorCheck {
   name: string;
   ok: boolean;
+  level: "pass" | "warn" | "fail";
   detail: string;
+  observedVersion?: string;
+  testedVersion?: string;
 }
 
 export interface DoctorReport {
@@ -18,61 +37,145 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
-function versionCheck(name: string, executable: string): DoctorCheck {
-  const result = spawnSync(executable, ["--version"], {
-    encoding: "utf8",
-    timeout: 5_000,
-    shell: false,
-  });
-  if (result.error !== undefined || result.status !== 0) {
+export interface DoctorOptions {
+  databasePath?: string;
+  rootDir?: string;
+  executables?: Partial<Record<Harness, string>>;
+}
+
+export interface HarnessVersionObservation {
+  harness: Harness;
+  executable: string;
+  available: boolean;
+  version?: string;
+  testedVersion: string;
+  drifted: boolean;
+  detail: string;
+}
+
+export function observeHarnessVersions(
+  executableOverrides: Partial<Record<Harness, string>> = {},
+): HarnessVersionObservation[] {
+  return (["codex", "claude", "cursor"] as const).map((harness) => {
+    const executable =
+      executableOverrides[harness] ?? DEFAULT_HARNESS_EXECUTABLES[harness];
+    const result = spawnSync(executable, ["--version"], {
+      encoding: "utf8",
+      timeout: 5_000,
+      shell: false,
+    });
+    const testedVersion = TESTED_HARNESS_VERSIONS[harness];
+    if (result.error !== undefined || result.status !== 0) {
+      return {
+        harness,
+        executable,
+        available: false,
+        testedVersion,
+        drifted: false,
+        detail:
+          result.error?.message ??
+          result.stderr.trim() ??
+          `exited with status ${String(result.status)}`,
+      };
+    }
+    const output = result.stdout.trim() || result.stderr.trim();
+    const version = output.split("\n")[0] ?? "";
+    const drifted = version !== testedVersion;
     return {
-      name,
-      ok: false,
-      detail:
-        result.error?.message ??
-        result.stderr.trim() ??
-        `exited with status ${String(result.status)}`,
+      harness,
+      executable,
+      available: true,
+      version,
+      testedVersion,
+      drifted,
+      detail: drifted
+        ? `observed ${version}; contracts were last tested with ${testedVersion}`
+        : `observed tested version ${version}`,
     };
-  }
+  });
+}
+
+function installationDoctorCheck(check: InstallationCheck): DoctorCheck {
   return {
-    name,
-    ok: true,
-    detail: result.stdout.trim().split("\n")[0] ?? "version detected",
+    name: check.name,
+    ok: check.ok,
+    level: check.level,
+    detail: check.detail,
   };
 }
 
-export function runDoctor(databasePath = ":memory:"): DoctorReport {
+export async function runDoctor(
+  options: DoctorOptions = {},
+): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
+  let store: RelayStore | undefined;
   try {
-    const store = new RelayStore(databasePath);
+    store = new RelayStore(options.databasePath ?? ":memory:");
     const service = new RelayService(store, new FakeTelegramTransport());
     service.recover();
     const status = store.status();
     checks.push({
       name: "sqlite-spool",
       ok: status.pendingDeliveryCount === 0,
-      detail: "SQLite schema opened and durable delivery state is readable",
+      level: status.pendingDeliveryCount === 0 ? "pass" : "warn",
+      detail:
+        status.pendingDeliveryCount === 0
+          ? "SQLite schema opened and durable delivery state is readable"
+          : `${status.pendingDeliveryCount} deliveries remain pending`,
     });
-    store.close();
   } catch (error) {
     checks.push({
       name: "sqlite-spool",
       ok: false,
+      level: "fail",
       detail:
         error instanceof Error ? error.message : "SQLite spool check failed",
     });
+  } finally {
+    store?.close();
   }
 
-  checks.push(versionCheck("codex", "codex"));
-  checks.push(versionCheck("claude", "claude"));
-  checks.push(versionCheck("cursor", "cursor-agent"));
+  for (const observation of observeHarnessVersions(options.executables)) {
+    checks.push({
+      name: observation.harness,
+      ok: observation.available,
+      level: !observation.available
+        ? "fail"
+        : observation.drifted
+          ? "warn"
+          : "pass",
+      detail: observation.detail,
+      ...(observation.version === undefined
+        ? {}
+        : { observedVersion: observation.version }),
+      testedVersion: observation.testedVersion,
+    });
+  }
   checks.push({
     name: "capability-matrix",
     ok: new Set(HARNESS_CAPABILITIES.map((entry) => entry.harness)).size === 3,
+    level: "pass",
     detail: `${HARNESS_CAPABILITIES.length} harness/surface capability records loaded`,
   });
+
+  if (options.rootDir !== undefined) {
+    try {
+      const installation = await inspectAgentRelayInstallation(options.rootDir);
+      checks.push(...installation.checks.map(installationDoctorCheck));
+    } catch (error) {
+      checks.push({
+        name: "installation-inspection",
+        ok: false,
+        level: "fail",
+        detail:
+          error instanceof Error
+            ? error.message
+            : "installation inspection failed",
+      });
+    }
+  }
   return {
-    healthy: checks.every((check) => check.ok),
+    healthy: checks.every((check) => check.level !== "fail"),
     checks,
   };
 }
