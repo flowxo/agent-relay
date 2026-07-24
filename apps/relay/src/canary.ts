@@ -50,6 +50,33 @@ export interface TelegramCanaryOptions {
 
 export const TELEGRAM_CANARY_REPLY = "relay-canary-ok";
 
+async function waitForDeliveryReceipt(
+  client: TelegramCanaryClient,
+  correlationId: string,
+  timeoutMs: number,
+  pollIntervalMs: number,
+): Promise<PendingRequestRecord | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const request = await client.getRequest(correlationId);
+    if (
+      request === undefined ||
+      request.transportMessageId !== undefined ||
+      request.state !== "open"
+    ) {
+      return request;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return request;
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, Math.min(pollIntervalMs, remaining));
+    });
+  } while (Date.now() <= deadline);
+  return await client.getRequest(correlationId);
+}
+
 export async function runTelegramCanary(
   options: TelegramCanaryOptions,
 ): Promise<TelegramCanaryResult> {
@@ -115,7 +142,16 @@ export async function runTelegramCanary(
 
   const ingest = await options.client.ingest(event);
   const drain = await options.client.drain();
-  const deliveredRequest = await options.client.getRequest(correlationId);
+  const deliveryWaitMs = Math.min(waitMs, 10_000);
+  const deliveredRequest =
+    drain.retrying > 0 || drain.deadLettered > 0
+      ? await options.client.getRequest(correlationId)
+      : await waitForDeliveryReceipt(
+          options.client,
+          correlationId,
+          deliveryWaitMs,
+          pollIntervalMs,
+        );
   if (deliveredRequest === undefined) {
     return {
       eventId,

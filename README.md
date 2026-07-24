@@ -247,9 +247,11 @@ delivery failure, timeout, terminal answer, or mismatched reply.
 
 Supervisor tests use real local child exit codes/signals. A daemon-level
 activation test covers a complete fake Telegram delivery and HTTP reply,
-including authorized routing and durable resolution. Bot API delivery and
-polling use deterministic HTTP fixtures; a real token canary has not been run. A
-model-backed late-resume canary has not been run because it would consume
-harness quota. Native hooks still do not prove crashes, Cursor IDE late resume
-remains explicitly unsupported, and an interactive child must exit before its
-session can be resumed through a new CLI process.
+including authorized routing and durable resolution. A credentialed private-chat
+canary on 2026-07-24 additionally proved real Bot API delivery, long-poll reply
+intake, replied-to-message correlation, exact answer validation, stale-answer
+rejection, and durable Telegram resolution. No credential or private message was
+retained in git. A model-backed late-resume canary has not been run because it
+would consume harness quota. Native hooks still do not prove crashes, Cursor IDE
+late resume remains explicitly unsupported, and an interactive child must exit
+before its session can be resumed through a new CLI process.

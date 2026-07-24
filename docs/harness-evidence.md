@@ -60,8 +60,16 @@ The activation command is separately covered by a daemon-level fake transport
 test. It sends a unique correlated question through HTTP and SQLite, injects an
 authorized Telegram update that replies to the delivered message ID, and proves
 durable Telegram resolution with no question or answer in command output. This
-proves the local control loop, not Bot API reachability; the latter still
-requires a credentialed canary.
+proves the local control loop.
+
+A credentialed private-chat activation was run on 2026-07-24. The Bot API
+accepted the synthetic canary notification, loopback long polling received the
+operator's replied-to-message update, and SQLite recorded the exact challenge as
+an authorized Telegram answer. A reply to an earlier expired request was also
+correlated and rejected as stale. The token, numeric account identifiers,
+private message content, and machine paths are deliberately omitted. The
+sanitized update shape is already represented by the deterministic reply-router
+and daemon canary fixtures.
 
 ## Official contract sources
 
@@ -89,6 +97,6 @@ requires a credentialed canary.
 The checked-in hook payloads are sanitized official examples adapted into
 synthetic fixtures, not private local transcripts. Adapter and continuation
 tests prove our parser and emitted JSON match the documented contracts. A live
-harness round trip would consume model quota and a real Telegram round trip
-requires account credentials, so neither is claimed. `docs/progress.md` keeps
-both as explicit activation tasks.
+harness round trip would consume model quota and is not yet claimed. The real
+Telegram activation evidence above is limited to the private-chat configuration
+tested on 2026-07-24.

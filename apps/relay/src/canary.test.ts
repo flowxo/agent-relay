@@ -119,6 +119,43 @@ describe("Telegram activation canary", () => {
     expect(fake.waitForAnswer).not.toHaveBeenCalled();
   });
 
+  it("waits for a delivery receipt claimed by the daemon background worker", async () => {
+    const fake = client({
+      state: "answered",
+      resolvedBy: "telegram",
+      answer: "relay-canary-ok",
+    });
+    const delivered = await fake.getRequest(
+      "correlation_telegram_canary_12345678",
+    );
+    expect(delivered).toBeDefined();
+    const {
+      transportMessageId: _receipt,
+      resolvedBy: _resolvedBy,
+      answer: _answer,
+      ...record
+    } = delivered!;
+    const pending = { ...record, state: "open" as const };
+    vi.mocked(fake.getRequest)
+      .mockReset()
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(delivered);
+
+    const result = await runTelegramCanary({
+      client: fake,
+      machineId: "machine_telegram_canary_12345678",
+      projectPath: "/workspace/example",
+      waitMs: 1_000,
+      pollIntervalMs: 50,
+    });
+
+    expect(result).toMatchObject({
+      outcome: "answered",
+      resolvedBy: "telegram",
+    });
+    expect(fake.getRequest).toHaveBeenCalledTimes(2);
+  });
+
   it("reports a timeout without copying the reply or question into output", async () => {
     const fake = client({ state: "open" });
 

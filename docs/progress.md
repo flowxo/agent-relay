@@ -58,7 +58,17 @@
   exercises synthetic delivery, authorized Telegram HTTP reply intake,
   replied-to-message correlation, durable resolution, exact challenge matching,
   and transcript-free result output against the fake transport.
-- `pnpm check` passes all 102 tests across 17 test files, including the
+- A credentialed private-chat activation on 2026-07-24 proved real Bot API
+  delivery and long polling. An intentionally late reply was correlated and
+  rejected as expired; a fresh direct reply was accepted from the configured
+  operator, matched the canary challenge, and persisted as `answered` with
+  `resolvedBy: telegram`. No token or private message content was printed or
+  committed.
+- The live activation exposed a race in which the daemon background worker could
+  deliver an event before the canary's explicit drain claimed it. The canary now
+  waits for the durable delivery receipt instead of reporting a false delivery
+  failure, with a regression test for that interleaving.
+- `pnpm check` passes all 103 tests across 17 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -79,9 +89,10 @@
 - Telegram's Bot API has no caller-supplied idempotency key. SQLite prevents
   normal duplicates, but a process crash after Telegram accepts a message and
   before the receipt commits remains an at-least-once duplicate window.
-- A real Telegram token and operator account have not been used. Bot API
-  delivery, polling, retry, and shutdown behavior are proven against
-  deterministic HTTP fixtures; real delivery remains an integration canary.
+- The real Telegram activation proves one private-chat send/reply path. Rate
+  limiting, network retries, webhook intake, and shutdown remain proven through
+  deterministic HTTP fixtures rather than induced failures against the live
+  account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
 - A model-backed late-resume canary has not been run because it would consume
@@ -105,10 +116,6 @@
 
 ## Next action
 
-The implementation and fake round trip can continue without credentials and are
-complete. Credentialed evidence now requires an account action: supply a
-dedicated Telegram bot token, chat ID, and operator ID without committing them,
-then run the bounded real `telegram-canary`. With explicit approval to consume
-model quota, run one short live stop/resume canary per harness. Before enabling
-Cursor permission automation, replace its evolving permission fixture with a
-sanitized live capture.
+With explicit approval to consume model quota, run one short live stop/resume
+canary per harness. Before enabling Cursor permission automation, replace its
+evolving permission fixture with a sanitized live capture.
