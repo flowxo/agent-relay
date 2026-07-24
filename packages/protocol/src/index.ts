@@ -249,6 +249,7 @@ export interface StableEventIdentity {
   toolUseId?: string;
   type: EventType;
   sequence: number;
+  sourceFingerprint?: string;
 }
 
 export function makeStableEventId(identity: StableEventIdentity): string {
@@ -259,7 +260,7 @@ export function makeStableEventId(identity: StableEventIdentity): string {
     identity.turnId ?? "",
     identity.toolUseId ?? "",
     identity.type,
-    String(identity.sequence),
+    identity.sourceFingerprint ?? String(identity.sequence),
   ].join("\u001f");
   return `evt_${sha256(material).slice(0, 40)}`;
 }

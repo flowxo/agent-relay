@@ -1,9 +1,11 @@
 # Agent Attention and Telegram Control Plane
 
 **Status:** Design recommendation
+
 **Date:** 2026-07-24
-**Scope:** Codex, Claude Code, Cursor IDE/CLI, Flow XO agent platform,
-Telegram
+
+**Scope:** Codex, Claude Code, Cursor IDE/CLI, Flow XO agent platform, Telegram
+
 **Recommendation:** Build an internal, hook-first control loop with a small
 local bridge and a dedicated Telegram operator bot. Do not begin with
 cross-agent permission policy or transcript mirroring.

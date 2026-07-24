@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "relay": "pnpm --filter @agent-relay/relay dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck"

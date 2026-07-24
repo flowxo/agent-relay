@@ -176,6 +176,9 @@ function eventFromAdapter(
     ...(toolUseId === undefined ? {} : { toolUseId }),
     type: eventFields["type"],
     sequence: context.sequence,
+    ...(context.sourceFingerprint === undefined
+      ? {}
+      : { sourceFingerprint: context.sourceFingerprint }),
   };
   const candidate: AgentAttentionEventV1 = {
     schema: "agent-attention.v1",

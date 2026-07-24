@@ -12,6 +12,7 @@ export interface AdapterContext {
   surface: Surface;
   sequence: number;
   occurredAt: string;
+  sourceFingerprint?: string;
 }
 
 export type AdapterEvent = Omit<
