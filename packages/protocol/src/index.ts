@@ -322,6 +322,28 @@ export const SessionHeartbeatV1Schema = z
   })
   .strict();
 
+export const RelayDiagnosticV1Schema = z
+  .object({
+    schema: z.literal("agent-relay-diagnostic.v1"),
+    diagnosticId: boundedId,
+    recordedAt: isoTimestamp,
+    source: z.enum([
+      "hook",
+      "supervisor",
+      "fallback-spool",
+      "installer",
+      "daemon",
+    ]),
+    level: z.enum(["info", "warn", "error"]),
+    code: z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z0-9][a-z0-9._-]*$/i),
+    message: z.string().min(1).max(2_000),
+  })
+  .strict();
+
 export type Harness = z.infer<typeof HarnessSchema>;
 export type Surface = z.infer<typeof SurfaceSchema>;
 export type EventType = z.infer<typeof EventTypeSchema>;
@@ -333,6 +355,7 @@ export type AgentAttentionEventV1 = z.infer<typeof AgentAttentionEventV1Schema>;
 export type AgentCommandV1 = z.infer<typeof AgentCommandV1Schema>;
 export type SessionRegistrationV1 = z.infer<typeof SessionRegistrationV1Schema>;
 export type SessionHeartbeatV1 = z.infer<typeof SessionHeartbeatV1Schema>;
+export type RelayDiagnosticV1 = z.infer<typeof RelayDiagnosticV1Schema>;
 
 export function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");

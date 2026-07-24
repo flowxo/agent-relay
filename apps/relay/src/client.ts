@@ -1,10 +1,12 @@
 import type {
   AgentAttentionEventV1,
+  RelayDiagnosticV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
 } from "@agent-relay/protocol";
 
 import type {
+  DiagnosticIngestResult,
   DrainResult,
   IngestResult,
   PendingRequestRecord,
@@ -120,6 +122,22 @@ export class RelayClient {
       method: "POST",
       body: JSON.stringify(event),
     });
+  }
+
+  public async reportDiagnostic(
+    diagnostic: RelayDiagnosticV1,
+  ): Promise<DiagnosticIngestResult> {
+    return await this.request<DiagnosticIngestResult>("/v1/diagnostics", {
+      method: "POST",
+      body: JSON.stringify(diagnostic),
+    });
+  }
+
+  public async listDiagnostics(limit = 100): Promise<RelayDiagnosticV1[]> {
+    const result = await this.request<{ diagnostics: RelayDiagnosticV1[] }>(
+      `/v1/diagnostics?limit=${encodeURIComponent(String(limit))}`,
+    );
+    return result.diagnostics;
   }
 
   public async registerSession(session: SessionRegistrationV1): Promise<void> {

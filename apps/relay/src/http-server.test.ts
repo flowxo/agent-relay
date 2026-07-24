@@ -106,6 +106,36 @@ describe("relay HTTP daemon", () => {
     await runtime.close();
   });
 
+  it("persists and deduplicates bounded diagnostics", async () => {
+    const runtime = await setup();
+    const diagnostic = {
+      schema: "agent-relay-diagnostic.v1" as const,
+      diagnosticId: "diag_http_server_12345678",
+      recordedAt: "2026-07-24T12:00:00.000Z",
+      source: "fallback-spool" as const,
+      level: "warn" as const,
+      code: "fallback.invalid-record",
+      message: "Synthetic invalid fallback record",
+    };
+
+    await expect(runtime.client.reportDiagnostic(diagnostic)).resolves.toEqual({
+      diagnosticId: diagnostic.diagnosticId,
+      inserted: true,
+    });
+    await expect(runtime.client.reportDiagnostic(diagnostic)).resolves.toEqual({
+      diagnosticId: diagnostic.diagnosticId,
+      inserted: false,
+    });
+    await expect(runtime.client.listDiagnostics()).resolves.toEqual([
+      diagnostic,
+    ]);
+    expect((await runtime.client.status()).diagnostics).toMatchObject({
+      warn: 1,
+      total: 1,
+    });
+    await runtime.close();
+  });
+
   it("rejects malformed payloads with actionable issues and logs the failure", async () => {
     const runtime = await setup();
     const response = await fetch(`${runtime.baseUrl}/v1/events`, {

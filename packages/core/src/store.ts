@@ -4,12 +4,14 @@ import Database from "better-sqlite3";
 
 import {
   AgentAttentionEventV1Schema,
+  RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
 } from "@agent-relay/protocol";
 import type {
   AgentAttentionEventV1,
   Harness,
+  RelayDiagnosticV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
   Surface,
@@ -57,7 +59,13 @@ export interface StoreStatus {
   events: Record<DeliveryStatus, number>;
   sessions: Record<SessionRecord["state"], number>;
   resumeCommands: Record<ResumeCommandState, number>;
+  diagnostics: Record<RelayDiagnosticV1["level"], number> & { total: number };
   pendingDeliveryCount: number;
+}
+
+export interface DiagnosticIngestResult {
+  diagnosticId: string;
+  inserted: boolean;
 }
 
 export type PendingRequestState =
@@ -441,6 +449,19 @@ export class RelayStore {
 
       CREATE INDEX IF NOT EXISTS resume_commands_owner_idx
         ON resume_commands(owner_id, state, claimed_at);
+
+      CREATE TABLE IF NOT EXISTS diagnostics (
+        diagnostic_id TEXT PRIMARY KEY,
+        recorded_at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        level TEXT NOT NULL,
+        code TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS diagnostics_recorded_idx
+        ON diagnostics(recorded_at, diagnostic_id);
     `);
   }
 
@@ -1347,6 +1368,90 @@ export class RelayStore {
       .run(outcome.slice(0, 120), updateId);
   }
 
+  public recordDiagnostic(
+    diagnosticInput: RelayDiagnosticV1,
+  ): DiagnosticIngestResult {
+    const diagnostic = RelayDiagnosticV1Schema.parse(diagnosticInput);
+    const result = this.database
+      .prepare(
+        `
+        INSERT OR IGNORE INTO diagnostics (
+          diagnostic_id, recorded_at, source, level, code, message, created_at
+        ) VALUES (
+          @diagnosticId, @recordedAt, @source, @level, @code, @message,
+          @recordedAt
+        )
+      `,
+      )
+      .run(diagnostic);
+    if (result.changes === 0) {
+      const existing = this.database
+        .prepare(
+          `
+          SELECT recorded_at, source, level, code, message
+          FROM diagnostics WHERE diagnostic_id = ?
+        `,
+        )
+        .get(diagnostic.diagnosticId) as
+        | {
+            recorded_at: string;
+            source: string;
+            level: string;
+            code: string;
+            message: string;
+          }
+        | undefined;
+      if (
+        existing === undefined ||
+        existing.recorded_at !== diagnostic.recordedAt ||
+        existing.source !== diagnostic.source ||
+        existing.level !== diagnostic.level ||
+        existing.code !== diagnostic.code ||
+        existing.message !== diagnostic.message
+      ) {
+        throw new Error(
+          `diagnostic id collision: ${diagnostic.diagnosticId} has a different payload`,
+        );
+      }
+    }
+    return {
+      diagnosticId: diagnostic.diagnosticId,
+      inserted: result.changes === 1,
+    };
+  }
+
+  public listDiagnostics(limit = 100): RelayDiagnosticV1[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("diagnostic limit must be between 1 and 500");
+    }
+    const rows = this.database
+      .prepare(
+        `
+        SELECT diagnostic_id, recorded_at, source, level, code, message
+        FROM diagnostics
+        ORDER BY recorded_at DESC, diagnostic_id DESC
+        LIMIT ?
+      `,
+      )
+      .all(limit) as Array<{
+      diagnostic_id: string;
+      recorded_at: string;
+      source: RelayDiagnosticV1["source"];
+      level: RelayDiagnosticV1["level"];
+      code: string;
+      message: string;
+    }>;
+    return rows.map((row) => ({
+      schema: "agent-relay-diagnostic.v1",
+      diagnosticId: row.diagnostic_id,
+      recordedAt: row.recorded_at,
+      source: row.source,
+      level: row.level,
+      code: row.code,
+      message: row.message,
+    }));
+  }
+
   public listSessions(): SessionRecord[] {
     const rows = this.database
       .prepare(
@@ -1410,6 +1515,14 @@ export class RelayStore {
       `,
       )
       .all() as CountRow[];
+    const diagnosticCounts = this.database
+      .prepare(
+        `
+        SELECT level AS key, COUNT(*) AS count
+        FROM diagnostics GROUP BY level
+      `,
+      )
+      .all() as CountRow[];
     const events: StoreStatus["events"] = {
       queued: 0,
       retry: 0,
@@ -1431,6 +1544,12 @@ export class RelayStore {
       failed: 0,
       unsupported: 0,
     };
+    const diagnostics: StoreStatus["diagnostics"] = {
+      info: 0,
+      warn: 0,
+      error: 0,
+      total: 0,
+    };
     for (const row of eventCounts) {
       if (row.key in events) {
         events[row.key as DeliveryStatus] = row.count;
@@ -1446,10 +1565,17 @@ export class RelayStore {
         resumeCommands[row.key as ResumeCommandState] = row.count;
       }
     }
+    for (const row of diagnosticCounts) {
+      if (row.key === "info" || row.key === "warn" || row.key === "error") {
+        diagnostics[row.key] = row.count;
+        diagnostics.total += row.count;
+      }
+    }
     return {
       events,
       sessions,
       resumeCommands,
+      diagnostics,
       pendingDeliveryCount: events.queued + events.retry + events.delivering,
     };
   }

@@ -71,6 +71,20 @@ pnpm relay hook claude --harness-version 2.1.219 --wait-ms 30000 \
 Codex and Claude answers emit `decision: "block"` plus `reason`; Cursor emits
 `followup_message`. Stop recursion fields prevent a second waiting loop.
 
+Fallback records are redacted, capped, and rotated into lossless segments. The
+daemon atomically claims and replays those segments at startup and every five
+seconds; event and diagnostic IDs make crash retries harmless. Failed lines stay
+in a pending segment while successful lines are removed. Replay can also be run
+and inspected explicitly:
+
+```sh
+pnpm relay replay-fallback
+```
+
+The command exits non-zero while any segment remains pending. Invalid or
+oversized lines become durable bounded diagnostics rather than being silently
+discarded; raw invalid input is never sent to Telegram.
+
 ## Supervised CLI processes
 
 Milestone 3 adds an opt-in launcher for CLI processes whose exit status must be

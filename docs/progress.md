@@ -29,11 +29,17 @@
   `process.exited` event. SQLite resume commands provide atomic ownership and an
   audited claimed/running/succeeded/failed lifecycle. A fake Telegram end-to-end
   test resumes the exact stopped Codex session once.
-- `pnpm check` passes all 62 tests across nine test files, including the
+- Milestone 4 recovery work is underway. The fallback spool now applies deep
+  secret redaction and per-record/segment byte caps, atomically isolates
+  concurrent replay workers, durably ingests parser diagnostics, retains only
+  failed lines, and recovers pending or crash-interrupted segments. The daemon
+  replays automatically at startup and on reconnect intervals.
+- `pnpm check` passes all 70 tests across ten test files, including the
   SQLite-backed daemon, retry/dead-letter recovery, malformed ingress, hook
   fallback privacy, inline and late continuation, real owned-child exit
-  observation, stale answer rejection, and concurrent-session isolation.
-  `pnpm audit --prod` reports no known vulnerabilities.
+  observation, stale answer rejection, fallback replay recovery, and
+  concurrent-session isolation. `pnpm audit --prod` reports no known
+  vulnerabilities.
 
 ## Assumptions and open risks
 
@@ -67,7 +73,6 @@
 
 ## Next action
 
-Begin Milestone 4 with idempotent install/doctor flows for hook registration,
-fallback-spool replay, retention controls, and log rotation. Before enabling
-permission automation, replace the Cursor permission fixture with a sanitized
-live capture.
+Continue Milestone 4 with idempotent install/doctor flows for hook registration,
+retention controls, and log rotation. Before enabling permission automation,
+replace the Cursor permission fixture with a sanitized live capture.

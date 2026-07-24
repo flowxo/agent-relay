@@ -268,4 +268,37 @@ describe("RelayService durable delivery loop", () => {
     expect(JSON.stringify(logger.records)).not.toContain(secret);
     store.close();
   });
+
+  it("durably deduplicates diagnostics and redacts their messages", () => {
+    const store = new RelayStore();
+    const logger = new MemoryLogger();
+    const service = new RelayService(store, new FakeTelegramTransport(), {
+      logger,
+    });
+    const diagnostic = {
+      schema: "agent-relay-diagnostic.v1" as const,
+      diagnosticId: "diag_service_12345678",
+      recordedAt: "2026-07-24T12:00:00.000Z",
+      source: "fallback-spool" as const,
+      level: "error" as const,
+      code: "hook.invalid-payload",
+      message: "failed with sk-syntheticSecretToken123456789",
+    };
+
+    expect(service.reportDiagnostic(diagnostic).inserted).toBe(true);
+    expect(service.reportDiagnostic(diagnostic).inserted).toBe(false);
+    expect(store.status().diagnostics).toEqual({
+      info: 0,
+      warn: 0,
+      error: 1,
+      total: 1,
+    });
+    expect(store.listDiagnostics()[0]?.message).toContain(
+      "[REDACTED_OPENAI_KEY]",
+    );
+    expect(JSON.stringify(logger.records)).not.toContain(
+      "sk-syntheticSecretToken123456789",
+    );
+    store.close();
+  });
 });

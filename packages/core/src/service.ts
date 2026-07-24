@@ -1,5 +1,6 @@
 import type {
   AgentAttentionEventV1,
+  RelayDiagnosticV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
 } from "@agent-relay/protocol";
@@ -7,7 +8,9 @@ import type {
 import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
 import { renderDeliveryMessage } from "./message.js";
+import { redactText } from "./redaction.js";
 import type {
+  DiagnosticIngestResult,
   IngestResult,
   PendingRequestRecord,
   RelayStore,
@@ -112,6 +115,28 @@ export class RelayService {
         harness: event.harness,
         sessionId: event.sessionId,
         type: event.type,
+      },
+    });
+    return result;
+  }
+
+  public reportDiagnostic(
+    diagnostic: RelayDiagnosticV1,
+  ): DiagnosticIngestResult {
+    const safeDiagnostic = {
+      ...diagnostic,
+      message: redactText(diagnostic.message, 2_000),
+    };
+    const result = this.store.recordDiagnostic(safeDiagnostic);
+    this.logger.log({
+      level: safeDiagnostic.level,
+      code: result.inserted ? "diagnostic.recorded" : "diagnostic.duplicate",
+      message: safeDiagnostic.message,
+      at: this.now().toISOString(),
+      details: {
+        diagnosticId: safeDiagnostic.diagnosticId,
+        source: safeDiagnostic.source,
+        diagnosticCode: safeDiagnostic.code,
       },
     });
     return result;

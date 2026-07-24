@@ -17,6 +17,7 @@ import {
 import { RelayClient } from "./client.js";
 import { startDaemon } from "./daemon.js";
 import { runDoctor } from "./doctor.js";
+import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
 import { runSupervisor } from "./supervisor.js";
@@ -90,6 +91,7 @@ async function main(): Promise<void> {
         ? {}
         : { telegramReplyChatId: Number(telegramChatId) }),
       ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
+      fallbackPath: join(stateDir, "fallback-spool.ndjson"),
     });
     const stop = async () => {
       await daemon.close();
@@ -221,6 +223,15 @@ async function main(): Promise<void> {
     output(await client.status());
     return;
   }
+  if (command === "replay-fallback") {
+    const result = await replayFallbackSpool(
+      flag(args, "--path") ?? join(stateDir, "fallback-spool.ndjson"),
+      client,
+    );
+    output(result);
+    process.exitCode = result.filesPending === 0 ? 0 : 1;
+    return;
+  }
   if (command === "drain") {
     output(await client.drain(Number(flag(args, "--limit") ?? "50")));
     return;
@@ -273,7 +284,7 @@ async function main(): Promise<void> {
     mode: 0o700,
   });
   process.stderr.write(
-    "Usage: agent-relay daemon|hook|run|status|drain|doctor|capabilities|canary\n",
+    "Usage: agent-relay daemon|hook|run|status|drain|replay-fallback|doctor|capabilities|canary\n",
   );
   process.exitCode = 2;
 }

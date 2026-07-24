@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentAttentionEventV1Schema,
   AgentCommandV1Schema,
+  RelayDiagnosticV1Schema,
   makeProjectRef,
   makeStableEventId,
 } from "./index.js";
@@ -111,6 +112,27 @@ describe("AgentCommandV1Schema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe("RelayDiagnosticV1Schema", () => {
+  it("accepts bounded durable diagnostics and rejects arbitrary detail blobs", () => {
+    const diagnostic = {
+      schema: "agent-relay-diagnostic.v1",
+      diagnosticId: "diag_fallback_12345678",
+      recordedAt: occurredAt,
+      source: "fallback-spool",
+      level: "error",
+      code: "hook.invalid-payload",
+      message: "Synthetic payload failed validation",
+    };
+    expect(RelayDiagnosticV1Schema.parse(diagnostic)).toEqual(diagnostic);
+    expect(
+      RelayDiagnosticV1Schema.safeParse({
+        ...diagnostic,
+        details: { transcript: "must not be accepted" },
+      }).success,
+    ).toBe(false);
   });
 });
 

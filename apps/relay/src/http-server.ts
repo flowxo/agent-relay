@@ -3,6 +3,7 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import {
   AgentAttentionEventV1Schema,
+  RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
 } from "@agent-relay/protocol";
@@ -16,6 +17,8 @@ const drainSchema = z
     limit: z.number().int().min(1).max(500).default(50),
   })
   .strict();
+
+const diagnosticLimitSchema = z.coerce.number().int().min(1).max(500);
 
 const terminalResolutionSchema = z
   .object({
@@ -174,6 +177,15 @@ export function createRelayHttpServer(
         });
         return;
       }
+      if (request.method === "GET" && url.pathname === "/v1/diagnostics") {
+        const limit = diagnosticLimitSchema.parse(
+          url.searchParams.get("limit") ?? "100",
+        );
+        sendJson(response, 200, {
+          diagnostics: service.store.listDiagnostics(limit),
+        });
+        return;
+      }
       const requestMatch = url.pathname.match(/^\/v1\/requests\/([^/]+)$/);
       if (request.method === "GET" && requestMatch !== null) {
         const correlationId = decodeURIComponent(requestMatch[1] ?? "");
@@ -297,6 +309,14 @@ export function createRelayHttpServer(
         );
         const result = service.ingest(event);
         sendJson(response, result.inserted ? 202 : 200, result);
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/v1/diagnostics") {
+        const diagnostic = RelayDiagnosticV1Schema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.reportDiagnostic(diagnostic);
+        sendJson(response, result.inserted ? 201 : 200, result);
         return;
       }
       if (
