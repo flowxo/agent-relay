@@ -230,6 +230,47 @@ describe("hook entrypoint", () => {
     store.close();
   });
 
+  it("opens a durable continuation without blocking a supervised CLI hook", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
+    const store = new RelayStore();
+    const service = new RelayService(store, new FakeTelegramTransport(), {
+      now: () => new Date("2026-07-24T12:00:00.000Z"),
+    });
+    let ingested: Parameters<typeof service.ingest>[0] | undefined;
+    const client = new RelayClient({
+      fetch: async (_input, init) => {
+        ingested = JSON.parse(String(init?.body)) as Parameters<
+          typeof service.ingest
+        >[0];
+        const result = service.ingest(ingested);
+        return new Response(JSON.stringify(result), {
+          status: 202,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    const result = await runHook({
+      ...options(join(directory, "fallback.ndjson")),
+      client,
+      lateResume: true,
+      lateResumeTtlMs: 60_000,
+    });
+
+    expect(result).toMatchObject({
+      stdout: "{}\n",
+      daemonAccepted: true,
+    });
+    expect(ingested?.request).toMatchObject({
+      kind: "continuation",
+      expiresAt: "2026-07-24T12:01:00.000Z",
+    });
+    expect(
+      store.getPendingRequest(ingested?.request?.correlationId ?? "")?.state,
+    ).toBe("open");
+    store.close();
+  });
+
   it("keeps event identity stable across whitespace and timestamp-only retries", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();

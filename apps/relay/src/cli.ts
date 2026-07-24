@@ -3,8 +3,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
+import { JsonLineLogger } from "@agent-relay/core";
 import { HARNESS_CAPABILITIES } from "@agent-relay/harnesses";
 import {
   HarnessSchema,
@@ -18,6 +19,7 @@ import { startDaemon } from "./daemon.js";
 import { runDoctor } from "./doctor.js";
 import { runHook } from "./hook-runner.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
+import { runSupervisor } from "./supervisor.js";
 
 const stateDir =
   process.env["AGENT_RELAY_STATE_DIR"] ?? join(homedir(), ".agent-relay");
@@ -43,6 +45,25 @@ async function readStdin(limit = 256 * 1024): Promise<string> {
 
 function output(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function numericFlag(args: string[], name: string, fallback: number): number {
+  const value = Number(flag(args, name) ?? String(fallback));
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative number`);
+  }
+  return value;
+}
+
+function harnessExecutable(harness: "codex" | "claude" | "cursor"): string {
+  switch (harness) {
+    case "codex":
+      return "codex";
+    case "claude":
+      return "claude";
+    case "cursor":
+      return "cursor-agent";
+  }
 }
 
 async function main(): Promise<void> {
@@ -102,9 +123,73 @@ async function main(): Promise<void> {
         process.env["AGENT_RELAY_DAEMON_URL"] ?? "http://127.0.0.1:4317",
       ...(daemonToken === undefined ? {} : { daemonToken }),
       fallbackPath: join(stateDir, "fallback-spool.ndjson"),
-      waitMs: Number(flag(args, "--wait-ms") ?? "0"),
+      waitMs: numericFlag(args, "--wait-ms", 0),
+      lateResume: process.env["AGENT_RELAY_SUPERVISED"] === "1",
+      lateResumeTtlMs: numericFlag(
+        args,
+        "--late-resume-ttl-ms",
+        Number(
+          process.env["AGENT_RELAY_LATE_RESUME_TTL_MS"] ??
+            String(24 * 60 * 60_000),
+        ),
+      ),
     });
     process.stdout.write(result.stdout);
+    if (result.diagnostic !== undefined) {
+      process.stderr.write(
+        `${JSON.stringify({
+          level: "error",
+          code: result.diagnostic.code,
+          message: result.diagnostic.message,
+          fallbackRecorded: result.diagnostic.fallbackRecorded,
+        })}\n`,
+      );
+    }
+    process.exitCode = result.exitCode;
+    return;
+  }
+
+  if (command === "run") {
+    const harness = HarnessSchema.parse(args[0]);
+    const separator = args.indexOf("--");
+    const supervisorArgs =
+      separator === -1 ? args.slice(1) : args.slice(1, separator);
+    const childArgs = separator === -1 ? [] : args.slice(separator + 1);
+    const daemonToken = process.env["AGENT_RELAY_DAEMON_TOKEN"];
+    const machineId =
+      process.env["AGENT_RELAY_MACHINE_ID"] ??
+      (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const executable =
+      flag(supervisorArgs, "--executable") ?? harnessExecutable(harness);
+    const result = await runSupervisor({
+      harness,
+      harnessVersion:
+        flag(supervisorArgs, "--harness-version") ??
+        process.env["AGENT_RELAY_HARNESS_VERSION"] ??
+        "unknown",
+      machineId,
+      ...(process.env["AGENT_RELAY_BRIDGE_SESSION_ID"] === undefined
+        ? {}
+        : {
+            bridgeSessionId: process.env["AGENT_RELAY_BRIDGE_SESSION_ID"],
+          }),
+      cwd: resolve(flag(supervisorArgs, "--cwd") ?? process.cwd()),
+      initialInvocation: {
+        executable,
+        args: childArgs,
+      },
+      daemonUrl:
+        process.env["AGENT_RELAY_DAEMON_URL"] ?? "http://127.0.0.1:4317",
+      ...(daemonToken === undefined ? {} : { daemonToken }),
+      fallbackPath: join(stateDir, "fallback-spool.ndjson"),
+      resumeWaitMs: numericFlag(
+        supervisorArgs,
+        "--resume-wait-ms",
+        24 * 60 * 60_000,
+      ),
+      pollIntervalMs: numericFlag(supervisorArgs, "--poll-interval-ms", 250),
+      logger: new JsonLineLogger(),
+    });
     if (result.diagnostic !== undefined) {
       process.stderr.write(
         `${JSON.stringify({
@@ -188,7 +273,7 @@ async function main(): Promise<void> {
     mode: 0o700,
   });
   process.stderr.write(
-    "Usage: agent-relay daemon|hook|status|drain|doctor|capabilities|canary\n",
+    "Usage: agent-relay daemon|hook|run|status|drain|doctor|capabilities|canary\n",
   );
   process.exitCode = 2;
 }

@@ -9,7 +9,10 @@ import type {
   IngestResult,
   PendingRequestRecord,
   ReplyRouteResult,
+  ResumeClaimResult,
+  ResumeCommandRecord,
   ResolutionResult,
+  SessionRecord,
   StoreStatus,
 } from "@agent-relay/core";
 import type { Harness } from "@agent-relay/protocol";
@@ -135,6 +138,21 @@ export class RelayClient {
     });
   }
 
+  public async listSessionsByBridge(input: {
+    machineId: string;
+    bridgeSessionId: string;
+    harness: Harness;
+  }): Promise<SessionRecord[]> {
+    const result = await this.request<{ sessions: SessionRecord[] }>(
+      "/v1/sessions/by-bridge",
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    );
+    return result.sessions;
+  }
+
   public async drain(limit = 50): Promise<DrainResult> {
     return await this.request<DrainResult>("/v1/deliveries/drain", {
       method: "POST",
@@ -216,5 +234,49 @@ export class RelayClient {
             },
       body: JSON.stringify(update),
     });
+  }
+
+  public async claimNextResume(input: {
+    machineId: string;
+    bridgeSessionId: string;
+    harness: Harness;
+    ownerId: string;
+  }): Promise<ResumeClaimResult> {
+    return await this.request<ResumeClaimResult>("/v1/resumes/claim", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async markResumeStarted(
+    correlationId: string,
+    ownerId: string,
+  ): Promise<ResumeCommandRecord> {
+    return await this.request<ResumeCommandRecord>(
+      `/v1/resumes/${encodeURIComponent(correlationId)}/started`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ownerId }),
+      },
+    );
+  }
+
+  public async markResumeFinished(input: {
+    correlationId: string;
+    ownerId: string;
+    succeeded: boolean;
+    exitCode?: number;
+    signal?: string;
+    errorCode?: string;
+    errorMessage?: string;
+  }): Promise<ResumeCommandRecord> {
+    const { correlationId, ...body } = input;
+    return await this.request<ResumeCommandRecord>(
+      `/v1/resumes/${encodeURIComponent(correlationId)}/finished`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
   }
 }

@@ -60,6 +60,40 @@ describe("AgentAttentionEventV1Schema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("requires owned-child evidence before accepting a process crash", () => {
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "process.exited",
+        failure: {
+          class: "signal",
+          message: "child received SIGKILL",
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "process.exited",
+        failure: {
+          class: "signal",
+          message: "child received SIGKILL",
+        },
+        processExit: {
+          source: "owned-child",
+          supervisorId: "supervisor_12345678",
+          startedAt: occurredAt,
+          exitedAt: "2026-07-24T12:00:01.000Z",
+          pid: 4321,
+          signal: "SIGKILL",
+          classification: "signal",
+          expected: false,
+        },
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe("AgentCommandV1Schema", () => {

@@ -45,6 +45,9 @@ function event(
       permissionDecision: true,
     },
     ...(overrides.failure === undefined ? {} : { failure: overrides.failure }),
+    ...(overrides.processExit === undefined
+      ? {}
+      : { processExit: overrides.processExit }),
     ...(overrides.request === undefined ? {} : { request: overrides.request }),
   };
 }
@@ -224,6 +227,16 @@ describe("RelayService durable delivery loop", () => {
       failure: {
         class: "signal",
         message: "Child received SIGKILL",
+      },
+      processExit: {
+        source: "owned-child",
+        supervisorId: "supervisor_service_12345678",
+        startedAt: "2026-07-24T11:59:00.000Z",
+        exitedAt: "2026-07-24T12:00:00.000Z",
+        pid: 4242,
+        signal: "SIGKILL",
+        classification: "signal",
+        expected: false,
       },
     });
     service.ingest(exit);

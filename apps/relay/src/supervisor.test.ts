@@ -1,0 +1,462 @@
+import { once } from "node:events";
+import { mkdtemp, readFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  FakeTelegramTransport,
+  RelayService,
+  RelayStore,
+  TelegramReplyRouter,
+} from "@agent-relay/core";
+
+import { RelayClient } from "./client.js";
+import { createRelayHttpServer } from "./http-server.js";
+import { runHook } from "./hook-runner.js";
+import {
+  classifyOwnedExit,
+  runSupervisor,
+  spawnOwnedChild,
+} from "./supervisor.js";
+import type { ChildRunRequest, OwnedChildResult } from "./supervisor.js";
+
+const machineId = "machine_supervisor_12345678";
+const bridgeSessionId = "bridge_supervisor_12345678";
+const supervisorId = "supervisor_test_12345678";
+const silentLogger = { log: () => undefined };
+
+const codexStop = JSON.stringify({
+  session_id: "session_supervisor_12345678",
+  transcript_path: null,
+  cwd: "/workspace/example",
+  hook_event_name: "Stop",
+  turn_id: "turn_supervisor_12345678",
+  stop_hook_active: false,
+  last_assistant_message: "Synthetic supervised stop.",
+});
+
+interface ChildResultOverrides {
+  startedAt?: string;
+  exitedAt?: string;
+  pid?: number | null;
+  exitCode?: number | null;
+  signal?: NodeJS.Signals;
+  requestedSignal?: boolean;
+  spawnErrorCode?: string;
+}
+
+function childResult(overrides: ChildResultOverrides = {}): OwnedChildResult {
+  const pid = overrides.pid === null ? undefined : (overrides.pid ?? 4242);
+  const exitCode =
+    overrides.exitCode === null ? undefined : (overrides.exitCode ?? 0);
+  return {
+    startedAt: overrides.startedAt ?? "2026-07-24T12:00:00.000Z",
+    exitedAt: overrides.exitedAt ?? "2026-07-24T12:00:01.000Z",
+    ...(pid === undefined ? {} : { pid }),
+    ...(exitCode === undefined ? {} : { exitCode }),
+    ...(overrides.signal === undefined ? {} : { signal: overrides.signal }),
+    ...(overrides.requestedSignal === undefined
+      ? {}
+      : { requestedSignal: overrides.requestedSignal }),
+    ...(overrides.spawnErrorCode === undefined
+      ? {}
+      : { spawnErrorCode: overrides.spawnErrorCode }),
+  };
+}
+
+async function setup() {
+  const store = new RelayStore();
+  const transport = new FakeTelegramTransport();
+  const service = new RelayService(store, transport, {
+    now: () => new Date("2026-07-24T12:00:00.000Z"),
+  });
+  const router = new TelegramReplyRouter(store, transport, {
+    operatorUserId: 7001,
+    chatId: 9001,
+    now: () => new Date("2026-07-24T12:00:00.000Z"),
+  });
+  const server = createRelayHttpServer(service, { replyRouter: router });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address() as AddressInfo;
+  const close = async () => {
+    server.close();
+    await once(server, "close");
+    store.close();
+  };
+  return {
+    store,
+    service,
+    transport,
+    router,
+    client: new RelayClient({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+    }),
+    close,
+  };
+}
+
+describe("owned child exit classification", () => {
+  it("distinguishes clean, non-zero, signal, forwarded signal, and spawn errors", () => {
+    expect(classifyOwnedExit(childResult(), supervisorId)).toMatchObject({
+      unexpected: false,
+      terminalExitCode: 0,
+      evidence: { classification: "clean-exit", expected: true },
+    });
+    expect(
+      classifyOwnedExit(childResult({ exitCode: 9 }), supervisorId),
+    ).toMatchObject({
+      unexpected: true,
+      terminalExitCode: 9,
+      evidence: { classification: "nonzero-exit", exitCode: 9 },
+    });
+    expect(
+      classifyOwnedExit(
+        childResult({ exitCode: null, signal: "SIGKILL" }),
+        supervisorId,
+      ),
+    ).toMatchObject({
+      unexpected: true,
+      terminalExitCode: 137,
+      evidence: { classification: "signal", signal: "SIGKILL" },
+    });
+    expect(
+      classifyOwnedExit(
+        childResult({
+          exitCode: null,
+          signal: "SIGTERM",
+          requestedSignal: true,
+        }),
+        supervisorId,
+      ),
+    ).toMatchObject({
+      unexpected: false,
+      terminalExitCode: 143,
+      evidence: { classification: "signal", expected: true },
+    });
+    expect(
+      classifyOwnedExit(
+        childResult({
+          pid: null,
+          exitCode: null,
+          spawnErrorCode: "ENOENT",
+        }),
+        supervisorId,
+      ),
+    ).toMatchObject({
+      unexpected: true,
+      terminalExitCode: 127,
+      evidence: { classification: "spawn-error" },
+    });
+  });
+
+  it("observes real child exit codes, signals, and startup failures", async () => {
+    const nonzero = await spawnOwnedChild({
+      executable: process.execPath,
+      args: ["-e", "process.exit(23)"],
+      cwd: process.cwd(),
+      env: {},
+    });
+    expect(nonzero).toMatchObject({ exitCode: 23 });
+
+    const signaled = await spawnOwnedChild({
+      executable: process.execPath,
+      args: ["-e", 'process.kill(process.pid, "SIGTERM")'],
+      cwd: process.cwd(),
+      env: {},
+    });
+    expect(signaled).toMatchObject({ signal: "SIGTERM" });
+
+    const missing = await spawnOwnedChild({
+      executable: join(
+        tmpdir(),
+        "agent-relay-intentionally-missing-executable",
+      ),
+      args: [],
+      cwd: process.cwd(),
+      env: {},
+    });
+    expect(missing).toMatchObject({ spawnErrorCode: "ENOENT" });
+  });
+});
+
+describe("opt-in harness supervisor", () => {
+  it("emits a durable owned-child event for a non-zero exit", async () => {
+    const runtime = await setup();
+    const result = await runSupervisor({
+      harness: "claude",
+      harnessVersion: "2.1.219",
+      machineId,
+      bridgeSessionId,
+      supervisorId,
+      cwd: "/workspace/example",
+      initialInvocation: { executable: "synthetic-claude", args: [] },
+      client: runtime.client,
+      logger: silentLogger,
+      childRunner: async () =>
+        childResult({
+          startedAt: "2026-07-24T11:59:59.000Z",
+          exitedAt: "2026-07-24T12:00:00.000Z",
+          exitCode: 17,
+        }),
+      resumeWaitMs: 0,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 17,
+      classification: "nonzero-exit",
+      resumed: 0,
+    });
+    const stored = runtime.store.getEvent(
+      result.unexpectedExitEventId ?? "",
+    )?.event;
+    expect(stored).toMatchObject({
+      type: "process.exited",
+      failure: { class: "exit-code" },
+      processExit: {
+        source: "owned-child",
+        supervisorId,
+        exitCode: 17,
+        expected: false,
+      },
+    });
+    expect(await runtime.service.drain()).toMatchObject({ delivered: 1 });
+    expect(runtime.transport.deliveries[0]?.message.text).toContain(
+      "exited with status 17",
+    );
+    await runtime.close();
+  });
+
+  it("records normalized crash evidence when the daemon is unavailable", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-supervisor-"));
+    const fallbackPath = join(directory, "fallback.ndjson");
+    const result = await runSupervisor({
+      harness: "cursor",
+      harnessVersion: "3.12.30",
+      machineId,
+      bridgeSessionId,
+      supervisorId,
+      cwd: "/workspace/example",
+      initialInvocation: {
+        executable: "/private/machine/path/cursor-agent",
+        args: ["--secret-looking-argument"],
+      },
+      client: new RelayClient({
+        fetch: async () => {
+          throw new TypeError("synthetic connection refused");
+        },
+      }),
+      fallbackPath,
+      logger: silentLogger,
+      childRunner: async () =>
+        childResult({ exitCode: null, signal: "SIGKILL" }),
+      resumeWaitMs: 0,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 137,
+      classification: "signal",
+      diagnostic: {
+        code: "process-exit-ingest-failed",
+        fallbackRecorded: true,
+      },
+    });
+    const record = JSON.parse(
+      (await readFile(fallbackPath, "utf8")).trim(),
+    ) as Record<string, unknown>;
+    expect(record).toMatchObject({
+      schema: "agent-relay-fallback.v1",
+      kind: "event",
+      payload: {
+        type: "process.exited",
+        processExit: {
+          source: "owned-child",
+          signal: "SIGKILL",
+        },
+      },
+    });
+    expect(JSON.stringify(record)).not.toContain("/private/machine/path");
+    expect(JSON.stringify(record)).not.toContain("secret-looking");
+  });
+
+  it("resumes the exact stopped Codex session once from a fake Telegram reply", async () => {
+    const runtime = await setup();
+    const invocations: ChildRunRequest[] = [];
+    let telegramOutcome: unknown;
+    const runner = async (
+      request: ChildRunRequest,
+    ): Promise<OwnedChildResult> => {
+      invocations.push(request);
+      if (invocations.length === 1) {
+        await runHook({
+          harness: "codex",
+          surface: "cli",
+          harnessVersion: "0.145.0",
+          raw: codexStop,
+          machineId,
+          bridgeSessionId,
+          occurredAt: "2026-07-24T12:00:00.000Z",
+          client: runtime.client,
+          lateResume: true,
+          lateResumeTtlMs: 60_000,
+        });
+        await runtime.service.drain();
+        const messageId = Number(
+          runtime.transport.deliveries[0]?.receipt.messageId,
+        );
+        telegramOutcome = await runtime.router.handle({
+          update_id: 700,
+          message: {
+            message_id: 701,
+            from: { id: 7001 },
+            chat: { id: 9001 },
+            text: "Continue only this Codex turn",
+            reply_to_message: { message_id: messageId },
+          },
+        });
+        expect(
+          await runtime.router.handle({
+            update_id: 700,
+            message: {
+              message_id: 701,
+              from: { id: 7001 },
+              chat: { id: 9001 },
+              text: "duplicate",
+              reply_to_message: { message_id: messageId },
+            },
+          }),
+        ).toMatchObject({ outcome: "duplicate-update" });
+        return childResult();
+      }
+      return childResult({
+        startedAt: "2026-07-24T12:00:01.000Z",
+        exitedAt: "2026-07-24T12:00:02.000Z",
+        pid: 4243,
+      });
+    };
+
+    const result = await runSupervisor({
+      harness: "codex",
+      harnessVersion: "0.145.0",
+      machineId,
+      bridgeSessionId,
+      supervisorId,
+      cwd: "/workspace/example",
+      initialInvocation: { executable: "synthetic-codex", args: ["exec"] },
+      client: runtime.client,
+      logger: silentLogger,
+      childRunner: runner,
+      resumeWaitMs: 100,
+      pollIntervalMs: 25,
+      env: {
+        AGENT_RELAY_TELEGRAM_TOKEN: "must-not-reach-child",
+        AGENT_RELAY_DAEMON_TOKEN: "synthetic-daemon-token",
+      },
+    });
+
+    expect(telegramOutcome).toMatchObject({ outcome: "answered" });
+    expect(result).toMatchObject({
+      exitCode: 0,
+      classification: "clean-exit",
+      resumed: 1,
+    });
+    expect(invocations).toHaveLength(2);
+    expect(invocations[1]).toMatchObject({
+      executable: "codex",
+      args: [
+        "exec",
+        "resume",
+        "session_supervisor_12345678",
+        "Continue only this Codex turn",
+      ],
+    });
+    expect(invocations[0]?.env["AGENT_RELAY_SUPERVISED"]).toBe("1");
+    expect(invocations[0]?.env["AGENT_RELAY_TELEGRAM_TOKEN"]).toBeUndefined();
+    expect(invocations[0]?.env["AGENT_RELAY_DAEMON_TOKEN"]).toBe(
+      "synthetic-daemon-token",
+    );
+    expect(runtime.store.listResumeCommands()).toEqual([
+      expect.objectContaining({
+        state: "succeeded",
+        sessionId: "session_supervisor_12345678",
+        answer: "Continue only this Codex turn",
+        exitCode: 0,
+      }),
+    ]);
+    await runtime.close();
+  });
+
+  it("diagnoses an operator-interrupted resumed process", async () => {
+    const runtime = await setup();
+    let invocationCount = 0;
+    const runner = async (): Promise<OwnedChildResult> => {
+      invocationCount += 1;
+      if (invocationCount === 1) {
+        await runHook({
+          harness: "codex",
+          surface: "cli",
+          harnessVersion: "0.145.0",
+          raw: codexStop,
+          machineId,
+          bridgeSessionId,
+          occurredAt: "2026-07-24T12:00:00.000Z",
+          client: runtime.client,
+          lateResume: true,
+          lateResumeTtlMs: 60_000,
+        });
+        await runtime.service.drain();
+        const messageId = Number(
+          runtime.transport.deliveries[0]?.receipt.messageId,
+        );
+        await runtime.router.handle({
+          update_id: 800,
+          message: {
+            message_id: 801,
+            from: { id: 7001 },
+            chat: { id: 9001 },
+            text: "Continue",
+            reply_to_message: { message_id: messageId },
+          },
+        });
+        return childResult();
+      }
+      return childResult({
+        exitCode: null,
+        signal: "SIGTERM",
+        requestedSignal: true,
+      });
+    };
+
+    const result = await runSupervisor({
+      harness: "codex",
+      harnessVersion: "0.145.0",
+      machineId,
+      bridgeSessionId,
+      supervisorId,
+      cwd: "/workspace/example",
+      initialInvocation: { executable: "synthetic-codex", args: ["exec"] },
+      client: runtime.client,
+      logger: silentLogger,
+      childRunner: runner,
+      resumeWaitMs: 100,
+      pollIntervalMs: 25,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 143,
+      classification: "signal",
+      resumed: 1,
+    });
+    expect(runtime.store.listResumeCommands()).toEqual([
+      expect.objectContaining({
+        state: "failed",
+        errorCode: "resume-interrupted",
+        signal: "SIGTERM",
+      }),
+    ]);
+    await runtime.close();
+  });
+});

@@ -48,7 +48,7 @@ export interface SessionRecord {
   surface: Surface;
   harnessVersion: string;
   sessionId: string;
-  state: "active" | "waiting" | "stopped" | "exited";
+  state: "active" | "waiting" | "stopped" | "suspected_stalled" | "exited";
   lastSeenAt: string;
   lastSequence: number;
 }
@@ -56,6 +56,7 @@ export interface SessionRecord {
 export interface StoreStatus {
   events: Record<DeliveryStatus, number>;
   sessions: Record<SessionRecord["state"], number>;
+  resumeCommands: Record<ResumeCommandState, number>;
   pendingDeliveryCount: number;
 }
 
@@ -113,6 +114,54 @@ export interface ResolveRequestInput {
   };
 }
 
+export type ResumeCommandState =
+  "claimed" | "running" | "succeeded" | "failed" | "unsupported";
+
+export interface ResumeCommandRecord {
+  correlationId: string;
+  ownerId: string;
+  machineId: string;
+  bridgeSessionId: string;
+  harness: Harness;
+  surface: Surface;
+  sessionId: string;
+  turnId?: string;
+  answer: string;
+  state: ResumeCommandState;
+  claimedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode?: number;
+  signal?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export type ResumeClaimResult =
+  | { outcome: "none" }
+  | {
+      outcome: "waiting";
+      correlationId: string;
+      sessionId: string;
+      expiresAt: string;
+    }
+  | { outcome: "claimed"; command: ResumeCommandRecord }
+  | {
+      outcome: "unsupported";
+      correlationId: string;
+      harness: Harness;
+      surface: Surface;
+      sessionId: string;
+    };
+
+export interface ClaimResumeInput {
+  machineId: string;
+  bridgeSessionId: string;
+  harness: Harness;
+  ownerId: string;
+  now: string;
+}
+
 interface EventRow {
   event_id: string;
   payload_json: string;
@@ -160,6 +209,40 @@ interface PendingOptionRow {
   label: string;
 }
 
+interface ResumeCommandRow {
+  correlation_id: string;
+  owner_id: string;
+  machine_id: string;
+  bridge_session_id: string;
+  harness: Harness;
+  surface: Surface;
+  session_id: string;
+  turn_id: string | null;
+  answer: string;
+  state: ResumeCommandState;
+  claimed_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  exit_code: number | null;
+  signal: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+interface ResumeCandidateRow {
+  correlation_id: string;
+  machine_id: string;
+  bridge_session_id: string;
+  harness: Harness;
+  surface: Surface;
+  session_id: string;
+  turn_id: string | null;
+  answer: string | null;
+  state: PendingRequestState;
+  expires_at: string;
+  capabilities_json: string;
+}
+
 function stateForEvent(
   type: AgentAttentionEventV1["type"],
 ): SessionRecord["state"] {
@@ -173,8 +256,9 @@ function stateForEvent(
     case "permission.required":
       return "waiting";
     case "turn.failed":
-    case "process.stale":
       return "stopped";
+    case "process.stale":
+      return "suspected_stalled";
     case "process.exited":
     case "session.ended":
       return "exited";
@@ -332,6 +416,31 @@ export class RelayStore {
         received_at TEXT NOT NULL,
         outcome TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS resume_commands (
+        correlation_id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        machine_id TEXT NOT NULL,
+        bridge_session_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        surface TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        turn_id TEXT,
+        answer TEXT NOT NULL,
+        state TEXT NOT NULL,
+        claimed_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        exit_code INTEGER,
+        signal TEXT,
+        error_code TEXT,
+        error_message TEXT,
+        FOREIGN KEY (correlation_id)
+          REFERENCES pending_requests(correlation_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS resume_commands_owner_idx
+        ON resume_commands(owner_id, state, claimed_at);
     `);
   }
 
@@ -973,6 +1082,246 @@ export class RelayStore {
       .run(now, now).changes;
   }
 
+  private resumeCommandFromRow(row: ResumeCommandRow): ResumeCommandRecord {
+    return {
+      correlationId: row.correlation_id,
+      ownerId: row.owner_id,
+      machineId: row.machine_id,
+      bridgeSessionId: row.bridge_session_id,
+      harness: row.harness,
+      surface: row.surface,
+      sessionId: row.session_id,
+      ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+      answer: row.answer,
+      state: row.state,
+      claimedAt: row.claimed_at,
+      ...(row.started_at === null ? {} : { startedAt: row.started_at }),
+      ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
+      ...(row.exit_code === null ? {} : { exitCode: row.exit_code }),
+      ...(row.signal === null ? {} : { signal: row.signal }),
+      ...(row.error_code === null ? {} : { errorCode: row.error_code }),
+      ...(row.error_message === null
+        ? {}
+        : { errorMessage: row.error_message }),
+    };
+  }
+
+  public getResumeCommand(
+    correlationId: string,
+  ): ResumeCommandRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT * FROM resume_commands
+        WHERE correlation_id = ?
+      `,
+      )
+      .get(correlationId) as ResumeCommandRow | undefined;
+    return row === undefined ? undefined : this.resumeCommandFromRow(row);
+  }
+
+  public listResumeCommands(): ResumeCommandRecord[] {
+    const rows = this.database
+      .prepare(
+        `
+        SELECT * FROM resume_commands
+        ORDER BY claimed_at, correlation_id
+      `,
+      )
+      .all() as ResumeCommandRow[];
+    return rows.map((row) => this.resumeCommandFromRow(row));
+  }
+
+  public claimNextResume(input: ClaimResumeInput): ResumeClaimResult {
+    return this.database.transaction((): ResumeClaimResult => {
+      this.expireRequests(input.now);
+      const candidates = this.database
+        .prepare(
+          `
+          SELECT
+            pending.correlation_id,
+            pending.machine_id,
+            sessions.bridge_session_id,
+            pending.harness,
+            sessions.surface,
+            pending.session_id,
+            pending.turn_id,
+            pending.answer,
+            pending.state,
+            pending.expires_at,
+            sessions.capabilities_json
+          FROM pending_requests AS pending
+          JOIN sessions
+            ON sessions.machine_id = pending.machine_id
+            AND sessions.harness = pending.harness
+            AND sessions.session_id = pending.session_id
+          LEFT JOIN resume_commands AS commands
+            ON commands.correlation_id = pending.correlation_id
+          WHERE pending.machine_id = ?
+            AND sessions.bridge_session_id = ?
+            AND pending.harness = ?
+            AND pending.request_kind = 'continuation'
+            AND pending.state IN ('open', 'answered')
+            AND pending.expires_at > ?
+            AND commands.correlation_id IS NULL
+          ORDER BY pending.created_at, pending.correlation_id
+        `,
+        )
+        .all(
+          input.machineId,
+          input.bridgeSessionId,
+          input.harness,
+          input.now,
+        ) as ResumeCandidateRow[];
+
+      for (const candidate of candidates) {
+        if (candidate.state === "open") {
+          return {
+            outcome: "waiting",
+            correlationId: candidate.correlation_id,
+            sessionId: candidate.session_id,
+            expiresAt: candidate.expires_at,
+          };
+        }
+        if (candidate.answer === null) {
+          continue;
+        }
+        const capabilities = JSON.parse(candidate.capabilities_json) as {
+          lateResume?: unknown;
+        };
+        const supported =
+          candidate.surface === "cli" && capabilities.lateResume === true;
+        const state: ResumeCommandState = supported ? "claimed" : "unsupported";
+        const inserted = this.database
+          .prepare(
+            `
+            INSERT OR IGNORE INTO resume_commands (
+              correlation_id, owner_id, machine_id, bridge_session_id,
+              harness, surface, session_id, turn_id, answer, state, claimed_at,
+              finished_at, error_code, error_message
+            ) VALUES (
+              @correlationId, @ownerId, @machineId, @bridgeSessionId,
+              @harness, @surface, @sessionId, @turnId, @answer, @state,
+              @claimedAt, @finishedAt, @errorCode, @errorMessage
+            )
+          `,
+          )
+          .run({
+            correlationId: candidate.correlation_id,
+            ownerId: input.ownerId,
+            machineId: candidate.machine_id,
+            bridgeSessionId: candidate.bridge_session_id,
+            harness: candidate.harness,
+            surface: candidate.surface,
+            sessionId: candidate.session_id,
+            turnId: candidate.turn_id,
+            answer: candidate.answer,
+            state,
+            claimedAt: input.now,
+            finishedAt: supported ? null : input.now,
+            errorCode: supported ? null : "late-resume-unsupported",
+            errorMessage: supported
+              ? null
+              : `late resume is unsupported for ${candidate.harness}/${candidate.surface}`,
+          }).changes;
+        if (inserted !== 1) {
+          continue;
+        }
+        if (!supported) {
+          return {
+            outcome: "unsupported",
+            correlationId: candidate.correlation_id,
+            harness: candidate.harness,
+            surface: candidate.surface,
+            sessionId: candidate.session_id,
+          };
+        }
+        const command = this.getResumeCommand(candidate.correlation_id);
+        if (command === undefined) {
+          throw new Error(
+            `claimed resume command ${candidate.correlation_id} disappeared`,
+          );
+        }
+        return { outcome: "claimed", command };
+      }
+      return { outcome: "none" };
+    })();
+  }
+
+  public markResumeStarted(
+    correlationId: string,
+    ownerId: string,
+    now: string,
+  ): ResumeCommandRecord {
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE resume_commands SET
+          state = 'running',
+          started_at = ?
+        WHERE correlation_id = ?
+          AND owner_id = ?
+          AND state = 'claimed'
+      `,
+      )
+      .run(now, correlationId, ownerId).changes;
+    if (changes !== 1) {
+      throw new Error(
+        `resume command ${correlationId} is not claimable by ${ownerId}`,
+      );
+    }
+    const command = this.getResumeCommand(correlationId);
+    if (command === undefined) {
+      throw new Error(`resume command ${correlationId} disappeared`);
+    }
+    return command;
+  }
+
+  public markResumeFinished(input: {
+    correlationId: string;
+    ownerId: string;
+    succeeded: boolean;
+    now: string;
+    exitCode?: number;
+    signal?: string;
+    errorCode?: string;
+    errorMessage?: string;
+  }): ResumeCommandRecord {
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE resume_commands SET
+          state = @state,
+          finished_at = @now,
+          exit_code = @exitCode,
+          signal = @signal,
+          error_code = @errorCode,
+          error_message = @errorMessage
+        WHERE correlation_id = @correlationId
+          AND owner_id = @ownerId
+          AND state = 'running'
+      `,
+      )
+      .run({
+        ...input,
+        state: input.succeeded ? "succeeded" : "failed",
+        exitCode: input.exitCode ?? null,
+        signal: input.signal ?? null,
+        errorCode: input.errorCode ?? null,
+        errorMessage: input.errorMessage?.slice(0, 2_000) ?? null,
+      }).changes;
+    if (changes !== 1) {
+      throw new Error(
+        `resume command ${input.correlationId} is not running for ${input.ownerId}`,
+      );
+    }
+    const command = this.getResumeCommand(input.correlationId);
+    if (command === undefined) {
+      throw new Error(`resume command ${input.correlationId} disappeared`);
+    }
+    return command;
+  }
+
   public claimTelegramUpdate(updateId: number, receivedAt: string): boolean {
     return (
       this.database
@@ -1023,6 +1372,19 @@ export class RelayStore {
     }));
   }
 
+  public listSessionsByBridge(input: {
+    machineId: string;
+    bridgeSessionId: string;
+    harness: Harness;
+  }): SessionRecord[] {
+    return this.listSessions().filter(
+      (session) =>
+        session.machineId === input.machineId &&
+        session.bridgeSessionId === input.bridgeSessionId &&
+        session.harness === input.harness,
+    );
+  }
+
   public status(): StoreStatus {
     const eventCounts = this.database
       .prepare(
@@ -1040,6 +1402,14 @@ export class RelayStore {
       `,
       )
       .all() as CountRow[];
+    const resumeCommandCounts = this.database
+      .prepare(
+        `
+        SELECT state AS key, COUNT(*) AS count
+        FROM resume_commands GROUP BY state
+      `,
+      )
+      .all() as CountRow[];
     const events: StoreStatus["events"] = {
       queued: 0,
       retry: 0,
@@ -1051,7 +1421,15 @@ export class RelayStore {
       active: 0,
       waiting: 0,
       stopped: 0,
+      suspected_stalled: 0,
       exited: 0,
+    };
+    const resumeCommands: StoreStatus["resumeCommands"] = {
+      claimed: 0,
+      running: 0,
+      succeeded: 0,
+      failed: 0,
+      unsupported: 0,
     };
     for (const row of eventCounts) {
       if (row.key in events) {
@@ -1063,9 +1441,15 @@ export class RelayStore {
         sessions[row.key as SessionRecord["state"]] = row.count;
       }
     }
+    for (const row of resumeCommandCounts) {
+      if (row.key in resumeCommands) {
+        resumeCommands[row.key as ResumeCommandState] = row.count;
+      }
+    }
     return {
       events,
       sessions,
+      resumeCommands,
       pendingDeliveryCount: events.queued + events.retry + events.delivering,
     };
   }

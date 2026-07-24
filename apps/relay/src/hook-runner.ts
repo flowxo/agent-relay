@@ -29,6 +29,8 @@ export interface HookRunOptions {
   client?: RelayClient;
   waitMs?: number;
   pollIntervalMs?: number;
+  lateResume?: boolean;
+  lateResumeTtlMs?: number;
 }
 
 export interface HookRunDiagnostic {
@@ -143,7 +145,27 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
     (options.waitMs ?? 0) > 0 &&
     parsed.event.type === "turn.stopped" &&
     !parsed.stopHookActive;
-  const event = shouldWait
+  const shouldOfferLateResume =
+    options.lateResume === true &&
+    parsed.event.type === "turn.stopped" &&
+    !parsed.stopHookActive &&
+    parsed.event.surface === "cli" &&
+    parsed.event.capabilities.lateResume;
+  const shouldRequestContinuation = shouldWait || shouldOfferLateResume;
+  const continuationTtlMs = shouldWait
+    ? (options.waitMs ?? 0)
+    : (options.lateResumeTtlMs ?? 24 * 60 * 60_000);
+  if (
+    shouldRequestContinuation &&
+    (!Number.isFinite(continuationTtlMs) ||
+      continuationTtlMs <= 0 ||
+      continuationTtlMs > 7 * 24 * 60 * 60_000)
+  ) {
+    throw new Error(
+      "continuation lifetime must be greater than zero and at most 7 days",
+    );
+  }
+  const event = shouldRequestContinuation
     ? AgentAttentionEventV1Schema.parse({
         ...parsed.event,
         request: {
@@ -151,7 +173,7 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
           kind: "continuation",
           question: "Reply to continue this stopped turn.",
           expiresAt: new Date(
-            Date.parse(occurredAt) + (options.waitMs ?? 0),
+            Date.parse(occurredAt) + continuationTtlMs,
           ).toISOString(),
         },
       })

@@ -46,6 +46,67 @@ export const ProjectRefSchema = z
   })
   .strict();
 
+export const ProcessExitEvidenceSchema = z
+  .object({
+    source: z.literal("owned-child"),
+    supervisorId: boundedId,
+    startedAt: isoTimestamp,
+    exitedAt: isoTimestamp,
+    pid: z.number().int().positive().optional(),
+    exitCode: z.number().int().min(0).max(255).optional(),
+    signal: z
+      .string()
+      .min(4)
+      .max(32)
+      .regex(/^SIG[A-Z0-9]+$/)
+      .optional(),
+    classification: z.enum([
+      "clean-exit",
+      "nonzero-exit",
+      "signal",
+      "spawn-error",
+      "unknown",
+    ]),
+    expected: z.boolean(),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    if (Date.parse(evidence.exitedAt) < Date.parse(evidence.startedAt)) {
+      context.addIssue({
+        code: "custom",
+        message: "process exit cannot precede process start",
+        path: ["exitedAt"],
+      });
+    }
+    if (
+      evidence.classification === "clean-exit" &&
+      (evidence.exitCode !== 0 || !evidence.expected)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "clean exits require exit code 0 and expected=true",
+        path: ["classification"],
+      });
+    }
+    if (
+      evidence.classification === "nonzero-exit" &&
+      (evidence.exitCode === undefined || evidence.exitCode === 0)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "nonzero exits require a non-zero exit code",
+        path: ["exitCode"],
+      });
+    }
+    if (evidence.classification === "signal" && evidence.signal === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "signal exits require a signal",
+        path: ["signal"],
+      });
+    }
+  });
+
 export const AttentionRequestSchema = z
   .object({
     correlationId: boundedId,
@@ -110,6 +171,7 @@ export const AgentAttentionEventV1Schema = z
       })
       .strict()
       .optional(),
+    processExit: ProcessExitEvidenceSchema.optional(),
     request: AttentionRequestSchema.optional(),
     capabilities: CapabilitySetSchema,
   })
@@ -132,6 +194,42 @@ export const AgentAttentionEventV1Schema = z
         code: "custom",
         message: "turn.failed events require failure details",
         path: ["failure"],
+      });
+    }
+
+    if (
+      event.type === "process.exited" &&
+      (event.failure === undefined || event.processExit === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "process.exited events require failure details and owned-child evidence",
+        path: ["processExit"],
+      });
+    }
+
+    if (
+      event.type === "process.exited" &&
+      event.processExit?.expected === true
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "process.exited cannot describe an expected exit",
+        path: ["processExit", "expected"],
+      });
+    }
+
+    if (
+      event.type !== "process.exited" &&
+      event.type !== "session.ended" &&
+      event.processExit !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "owned-child exit evidence is only valid for process.exited or session.ended",
+        path: ["processExit"],
       });
     }
 
@@ -213,7 +311,13 @@ export const SessionHeartbeatV1Schema = z
     harness: HarnessSchema,
     sessionId: boundedId,
     observedAt: isoTimestamp,
-    state: z.enum(["active", "waiting", "stopped", "exited"]),
+    state: z.enum([
+      "active",
+      "waiting",
+      "stopped",
+      "suspected_stalled",
+      "exited",
+    ]),
     sequence: z.number().int().nonnegative(),
   })
   .strict();
@@ -223,6 +327,7 @@ export type Surface = z.infer<typeof SurfaceSchema>;
 export type EventType = z.infer<typeof EventTypeSchema>;
 export type CapabilitySet = z.infer<typeof CapabilitySetSchema>;
 export type ProjectRef = z.infer<typeof ProjectRefSchema>;
+export type ProcessExitEvidence = z.infer<typeof ProcessExitEvidenceSchema>;
 export type AttentionRequest = z.infer<typeof AttentionRequestSchema>;
 export type AgentAttentionEventV1 = z.infer<typeof AgentAttentionEventV1Schema>;
 export type AgentCommandV1 = z.infer<typeof AgentCommandV1Schema>;

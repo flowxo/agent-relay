@@ -11,6 +11,8 @@ import type {
   IngestResult,
   PendingRequestRecord,
   RelayStore,
+  ResumeClaimResult,
+  ResumeCommandRecord,
   ResolutionResult,
   RetryPolicy,
   ResolveRequestInput,
@@ -139,6 +141,86 @@ export class RelayService {
       },
     });
     return result;
+  }
+
+  public claimNextResume(input: {
+    machineId: string;
+    bridgeSessionId: string;
+    harness: AgentAttentionEventV1["harness"];
+    ownerId: string;
+  }): ResumeClaimResult {
+    const result = this.store.claimNextResume({
+      ...input,
+      now: this.now().toISOString(),
+    });
+    this.logger.log({
+      level: result.outcome === "unsupported" ? "warn" : "info",
+      code: `resume.${result.outcome}`,
+      message: `late resume claim: ${result.outcome}`,
+      at: this.now().toISOString(),
+      details: {
+        machineId: input.machineId,
+        bridgeSessionId: input.bridgeSessionId,
+        harness: input.harness,
+        ownerId: input.ownerId,
+        ...(result.outcome === "claimed"
+          ? { correlationId: result.command.correlationId }
+          : {}),
+      },
+    });
+    return result;
+  }
+
+  public markResumeStarted(
+    correlationId: string,
+    ownerId: string,
+  ): ResumeCommandRecord {
+    const command = this.store.markResumeStarted(
+      correlationId,
+      ownerId,
+      this.now().toISOString(),
+    );
+    this.logger.log({
+      level: "info",
+      code: "resume.started",
+      message: "late resume process started",
+      at: this.now().toISOString(),
+      details: { correlationId, ownerId },
+    });
+    return command;
+  }
+
+  public markResumeFinished(input: {
+    correlationId: string;
+    ownerId: string;
+    succeeded: boolean;
+    exitCode?: number;
+    signal?: string;
+    errorCode?: string;
+    errorMessage?: string;
+  }): ResumeCommandRecord {
+    const command = this.store.markResumeFinished({
+      ...input,
+      now: this.now().toISOString(),
+    });
+    this.logger.log({
+      level: input.succeeded ? "info" : "error",
+      code: input.succeeded ? "resume.succeeded" : "resume.failed",
+      message: input.succeeded
+        ? "late resume process completed"
+        : "late resume process failed",
+      at: this.now().toISOString(),
+      details: {
+        correlationId: input.correlationId,
+        ownerId: input.ownerId,
+        ...(input.exitCode === undefined ? {} : { exitCode: input.exitCode }),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        ...(input.errorCode === undefined
+          ? {}
+          : { errorCode: input.errorCode }),
+      },
+    });
+    return command;
   }
 
   public async drain(limit = 50): Promise<DrainResult> {

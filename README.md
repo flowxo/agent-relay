@@ -71,6 +71,43 @@ pnpm relay hook claude --harness-version 2.1.219 --wait-ms 30000 \
 Codex and Claude answers emit `decision: "block"` plus `reason`; Cursor emits
 `followup_message`. Stop recursion fields prevent a second waiting loop.
 
+## Supervised CLI processes
+
+Milestone 3 adds an opt-in launcher for CLI processes whose exit status must be
+proven:
+
+```sh
+# Arguments after -- are passed directly as argv; no shell is involved.
+pnpm relay run codex --harness-version 0.145.0 -- exec "work on the task"
+pnpm relay run claude --harness-version 2.1.219 -- --print "work on the task"
+pnpm relay run cursor --harness-version 3.12.30 -- --print "work on the task"
+```
+
+The launcher inherits the terminal, owns the child PID, forwards `SIGINT` and
+`SIGTERM`, preserves the conventional terminal exit status, and records a
+`process.exited` event only for a non-zero exit, unrequested signal, startup
+failure, or unknown exit. Every crash event must carry validated `owned-child`
+evidence; native hooks cannot manufacture it. Command output and arguments are
+not copied into the event or logs.
+
+The launcher injects a unique bridge identity into its child. A supervised CLI
+stop hook opens a durable continuation request without keeping the hook process
+alive. Once the owned child has exited cleanly, a correlated Telegram answer is
+atomically claimed and resumed with the official Codex, Claude Code, or Cursor
+CLI argv. Resume claims and their running/succeeded/failed transitions are
+stored in SQLite, so concurrent supervisors cannot resume the same answer twice.
+
+By default the supervisor remains available for an open continuation until its
+24-hour expiry. Use `--resume-wait-ms` to shorten that bound, or
+`AGENT_RELAY_LATE_RESUME_TTL_MS` to shorten the hook-created request expiry. If
+the daemon is unavailable when a crash occurs, the normalized crash event is
+written to the privacy-safe fallback spool.
+
+The supervisor does not infer a hang from inactivity. `suspected_stalled` is a
+distinct state reserved for an explicit failed harness health probe; no
+automatic restart exists. Active CLI steering is also not claimed: late resume
+starts only after the owned process exits.
+
 ## Real Telegram adapter
 
 Copy the names from [`.env.example`](.env.example) into your secret manager or
@@ -88,7 +125,8 @@ share a single SQLite first-writer-wins transition.
 
 ## Current boundary
 
-Native hooks do not prove a process crash. `process.exited` is a supported
-protocol and delivery event only when a supervisor supplies the evidence.
-Launching and owning harness child processes remains Milestone 3. Cursor IDE
-late resume remains explicitly unsupported.
+Supervisor tests use real local child exit codes/signals and an end-to-end fake
+Telegram reply. A model-backed late-resume canary has not been run because it
+would consume harness quota. Native hooks still do not prove crashes, Cursor IDE
+late resume remains explicitly unsupported, and an interactive child must exit
+before its session can be resumed through a new CLI process.

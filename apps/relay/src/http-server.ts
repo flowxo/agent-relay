@@ -31,6 +31,42 @@ const terminalResolutionSchema = z
   })
   .strict();
 
+const opaqueId = z
+  .string()
+  .min(8)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+
+const resumeClaimSchema = z
+  .object({
+    machineId: opaqueId,
+    bridgeSessionId: opaqueId,
+    harness: z.enum(["codex", "claude", "cursor"]),
+    ownerId: opaqueId,
+  })
+  .strict();
+
+const bridgeSessionsSchema = resumeClaimSchema.omit({ ownerId: true }).strict();
+
+const resumeOwnerSchema = z
+  .object({
+    ownerId: opaqueId,
+  })
+  .strict();
+
+const resumeFinishedSchema = resumeOwnerSchema
+  .extend({
+    succeeded: z.boolean(),
+    exitCode: z.number().int().min(0).max(255).optional(),
+    signal: z
+      .string()
+      .regex(/^SIG[A-Z0-9]+$/)
+      .optional(),
+    errorCode: z.string().min(1).max(120).optional(),
+    errorMessage: z.string().min(1).max(2_000).optional(),
+  })
+  .strict();
+
 export interface RelayHttpServerOptions {
   token?: string;
   maxBodyBytes?: number;
@@ -173,6 +209,57 @@ export function createRelayHttpServer(
         );
         return;
       }
+      if (request.method === "POST" && url.pathname === "/v1/resumes/claim") {
+        const claim = resumeClaimSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        sendJson(response, 200, service.claimNextResume(claim));
+        return;
+      }
+      const resumeStartedMatch = url.pathname.match(
+        /^\/v1\/resumes\/([^/]+)\/started$/,
+      );
+      if (request.method === "POST" && resumeStartedMatch !== null) {
+        const correlationId = decodeURIComponent(resumeStartedMatch[1] ?? "");
+        const command = resumeOwnerSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        sendJson(
+          response,
+          200,
+          service.markResumeStarted(correlationId, command.ownerId),
+        );
+        return;
+      }
+      const resumeFinishedMatch = url.pathname.match(
+        /^\/v1\/resumes\/([^/]+)\/finished$/,
+      );
+      if (request.method === "POST" && resumeFinishedMatch !== null) {
+        const correlationId = decodeURIComponent(resumeFinishedMatch[1] ?? "");
+        const command = resumeFinishedSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        sendJson(
+          response,
+          200,
+          service.markResumeFinished({
+            correlationId,
+            ownerId: command.ownerId,
+            succeeded: command.succeeded,
+            ...(command.exitCode === undefined
+              ? {}
+              : { exitCode: command.exitCode }),
+            ...(command.signal === undefined ? {} : { signal: command.signal }),
+            ...(command.errorCode === undefined
+              ? {}
+              : { errorCode: command.errorCode }),
+            ...(command.errorMessage === undefined
+              ? {}
+              : { errorMessage: command.errorMessage }),
+          }),
+        );
+        return;
+      }
       if (
         request.method === "POST" &&
         url.pathname === "/v1/telegram/updates"
@@ -221,6 +308,18 @@ export function createRelayHttpServer(
         );
         service.registerSession(session);
         sendJson(response, 201, { registered: true });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/sessions/by-bridge"
+      ) {
+        const query = bridgeSessionsSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        sendJson(response, 200, {
+          sessions: service.store.listSessionsByBridge(query),
+        });
         return;
       }
       if (

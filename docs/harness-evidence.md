@@ -16,6 +16,14 @@ The local help output proves that all three CLIs expose a session-resume entry
 point. It also proves that Codex App Server is installed and exposes a
 structured transport. These checks do not invoke a model or incur API cost.
 
+## Supervisor observations
+
+The Milestone 3 test process launches owned Node.js children and observes a
+non-zero exit, self-delivered `SIGTERM`, and `ENOENT` startup failure through
+Node's child-process contract. The supervisor preserves those statuses and
+records only bounded exit metadata; it inherits stdio and does not capture
+command output. These fixtures do not invoke a model.
+
 ## Official contract sources
 
 - [Codex hooks](https://learn.chatgpt.com/docs/hooks) documents `Stop` input,
