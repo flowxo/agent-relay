@@ -116,6 +116,15 @@
   emit transcript-free diagnostics. Details now page a maximum-size event,
   expose the latest ten grouped events with the true count, and stop after eight
   Telegram-safe pages while retaining complete evidence in SQLite.
+- FXO-1058 is green locally. Real-Telegram daemon startup now verifies
+  `getMe.has_topics_enabled`, private-chat scope, and update-mode/webhook
+  agreement before opening the service. Disabled topics and non-private chats
+  fail closed instead of pretending General provides session isolation. Invalid
+  tokens/chats, blocked bots, topic permission/mode failures, deleted/closed
+  topics, webhook mismatch, concurrent polling, and transient failures have
+  stable actionable codes. The living guide covers BotFather enablement, ID
+  discovery, private environment activation, preflight, verification, recovery,
+  and the explicit fake-only credential-free fallback.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -168,7 +177,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 154 tests across 22 test files, including the
+- `pnpm check` passes all 159 tests across 22 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -210,5 +219,5 @@
 
 ## Next action
 
-Implement FXO-1058 onboarding and diagnostics, then run the Phase 1 credentialed
-multi-topic/card/direct-text proof in FXO-1059.
+Run the FXO-1059 credentialed multi-topic/card/direct-text proof and close the
+Phase 1 acceptance checklist.

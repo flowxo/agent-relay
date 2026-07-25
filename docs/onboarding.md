@@ -87,6 +87,17 @@ curl --silent --show-error --fail \
 ```
 
 `has_topics_enabled` must be `true` before session-topic routing is activated.
+The daemon repeats this check at every real-Telegram startup. It also verifies
+that the configured chat is private and that `getWebhookInfo` agrees with
+`AGENT_RELAY_TELEGRAM_UPDATE_MODE`. Startup records
+`telegram.preflight-succeeded` without logging bot, chat, or operator IDs.
+
+There is no unthreaded real-Telegram compatibility mode. If topics are disabled
+or the chat is not private, startup fails clearly rather than delivering
+different sessions into General. Omitting both Telegram token and chat ID still
+selects the credential-free fake transport for local development and tests; the
+daemon reports that transport as `fake-telegram`.
+
 The first attention event for a logical harness session lazily creates one
 topic. Later events for that machine, harness, and session reuse the durable
 mapping after daemon restarts. Topic names contain only the harness, sanitized
@@ -399,6 +410,40 @@ bot topics. Agent Relay therefore does not pretend it can close a private topic:
 End is a durable local relay-lane state, and unavailable-topic responses trigger
 reconciliation. Interrupted topic creations are recovered in bounded retry
 batches at daemon startup.
+
+### Telegram startup or delivery reports a provider code
+
+Agent Relay classifies provider responses before retry policy is applied:
+
+| Error code                       | Meaning and recovery                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `telegram-invalid-token`         | Replace `AGENT_RELAY_TELEGRAM_TOKEN` with the current BotFather token.                                             |
+| `telegram-topics-disabled`       | Enable Threaded Mode in BotFather, verify `getMe`, and restart.                                                    |
+| `telegram-private-chat-required` | Use the intended one-to-one chat ID; unthreaded/group fallback is disabled.                                        |
+| `telegram-invalid-chat`          | Verify the chat ID, open the bot chat, send `/start`, and restart.                                                 |
+| `telegram-bot-blocked`           | Unblock the bot, send `/start`, and retry.                                                                         |
+| `telegram-topic-permission`      | Restore topic-management permission or correct the target chat.                                                    |
+| `telegram-topic-unavailable`     | The stored topic was deleted/closed; Agent Relay invalidates it and creates a replacement.                         |
+| `telegram-webhook-conflict`      | Poll mode found an active webhook; inspect `getWebhookInfo`, then remove the stale webhook or select webhook mode. |
+| `telegram-webhook-missing`       | Webhook mode has no configured HTTPS URL; set the webhook before restarting.                                       |
+| `telegram-polling-conflict`      | Another process is calling `getUpdates`; stop the other consumer and restart this daemon.                          |
+
+Startup failures are emitted as structured `cli.failed` output with the stable
+provider code in `errorCode`. Runtime topic failures remain on the durable topic
+record and in diagnostics. Network failures, timeouts, rate limits, and provider
+5xx responses retain normal bounded retry behavior.
+
+For poll mode, this read-only check must show an empty URL:
+
+```sh
+curl --silent --show-error --fail \
+  "https://api.telegram.org/bot${AGENT_RELAY_TELEGRAM_TOKEN}/getWebhookInfo" |
+  jq '{url: .result.url, pending_update_count: .result.pending_update_count}'
+```
+
+Do not delete a webhook until you have confirmed it is stale. Webhook mode
+requires both a configured Telegram HTTPS URL and
+`AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET`.
 
 ### Telegram replies are ignored
 

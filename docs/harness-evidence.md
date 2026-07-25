@@ -113,6 +113,15 @@ creation with an explicit batch limit. Ended lanes suppress all later events and
 cancel delayed requests; both a native `session.ended` event and the End button
 are covered.
 
+Real-Telegram daemon startup calls `getMe`, `getChat`, and `getWebhookInfo`
+before opening the local service. Sanitized fixtures require
+`has_topics_enabled=true`, a private chat, and update-mode/webhook agreement.
+Threaded mode disabled, non-private scope, invalid token/chat, blocked bot,
+topic-permission denial, missing or conflicting webhook state, concurrent
+`getUpdates`, deleted/closed topics, and transient network/provider failures
+have distinct stable codes. Fake transport bypasses credential checks and is
+reported explicitly; real Telegram never falls back to General.
+
 Compact card fixtures enforce Telegram's 4,096-character message boundary and
 64-byte callback-data boundary before the request. Card action payloads use a
 fixed `relay-card:v1` namespace, a one-character action code, and an opaque

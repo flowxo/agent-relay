@@ -287,6 +287,293 @@ describe("TelegramBotTransport", () => {
     });
   });
 
+  it("verifies private topic capability and matching polling mode", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: {
+              id: 10002,
+              is_bot: true,
+              has_topics_enabled: true,
+            },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { id: 10001, type: "private" },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { url: "", pending_update_count: 0 },
+          }),
+        ),
+      );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await expect(transport.verifySetup("poll")).resolves.toEqual({
+      topicsEnabled: true,
+      chatType: "private",
+      updateMode: "poll",
+      webhookConfigured: false,
+    });
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      expect.stringContaining("/getMe"),
+      expect.stringContaining("/getChat"),
+      expect.stringContaining("/getWebhookInfo"),
+    ]);
+  });
+
+  it("rejects non-private and webhook-conflicted topic configurations", async () => {
+    const botResult = new Response(
+      JSON.stringify({
+        ok: true,
+        result: {
+          id: 10002,
+          is_bot: true,
+          has_topics_enabled: true,
+        },
+      }),
+    );
+    const nonPrivate = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "-10001",
+      fetch: vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(botResult)
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: { id: -10001, type: "supergroup" },
+            }),
+          ),
+        ),
+    });
+    await expect(nonPrivate.verifySetup("poll")).rejects.toMatchObject({
+      code: "telegram-private-chat-required",
+      message: expect.stringContaining("private chat"),
+    });
+
+    const webhookConflict = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: {
+                id: 10002,
+                is_bot: true,
+                has_topics_enabled: true,
+              },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: { id: 10001, type: "private" },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: {
+                url: "https://old.invalid/webhook",
+                pending_update_count: 0,
+              },
+            }),
+          ),
+        ),
+    });
+    await expect(webhookConflict.verifySetup("poll")).rejects.toMatchObject({
+      code: "telegram-webhook-conflict",
+      message: expect.stringContaining("getWebhookInfo"),
+    });
+
+    const missingWebhook = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: {
+                id: 10002,
+                is_bot: true,
+                has_topics_enabled: true,
+              },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: { id: 10001, type: "private" },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: { url: "", pending_update_count: 0 },
+            }),
+          ),
+        ),
+    });
+    await expect(missingWebhook.verifySetup("webhook")).rejects.toMatchObject({
+      code: "telegram-webhook-missing",
+      message: expect.stringContaining("no URL"),
+    });
+  });
+
+  it("distinguishes invalid chats and blocked bots", async () => {
+    const invalidToken = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 401,
+            description: "Unauthorized",
+          }),
+          { status: 401 },
+        ),
+      ),
+    });
+    await expect(invalidToken.verifySetup("poll")).rejects.toMatchObject({
+      code: "telegram-invalid-token",
+      message: expect.stringContaining("replace the bot token"),
+    });
+
+    const invalidChat = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "99999",
+      fetch: vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              result: {
+                id: 10002,
+                is_bot: true,
+                has_topics_enabled: true,
+              },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ok: false,
+              error_code: 400,
+              description: "Bad Request: chat not found",
+            }),
+            { status: 400 },
+          ),
+        ),
+    });
+    await expect(invalidChat.verifySetup("poll")).rejects.toMatchObject({
+      code: "telegram-invalid-chat",
+      message: expect.stringContaining("send /start"),
+    });
+
+    const blocked = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 403,
+            description: "Forbidden: bot was blocked by the user",
+          }),
+          { status: 403 },
+        ),
+      ),
+    });
+    await expect(
+      blocked.deliver(message, { idempotencyKey: message.eventId }),
+    ).rejects.toMatchObject({
+      code: "telegram-bot-blocked",
+      status: 403,
+    });
+  });
+
+  it("distinguishes topic permissions and concurrent polling", async () => {
+    const deniedTopic = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 403,
+            description: "Forbidden: not enough rights to manage topics",
+          }),
+          { status: 403 },
+        ),
+      ),
+    });
+    await expect(
+      deniedTopic.createTopic(
+        { name: "Codex · denied" },
+        { idempotencyKey: "topic_denied_12345678" },
+      ),
+    ).rejects.toMatchObject({
+      code: "telegram-topic-permission",
+      status: 403,
+    });
+
+    const pollingConflict = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 409,
+            description:
+              "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running",
+          }),
+          { status: 409 },
+        ),
+      ),
+    });
+    await expect(
+      pollingConflict.getUpdates({ timeoutSeconds: 1 }),
+    ).rejects.toMatchObject({
+      code: "telegram-polling-conflict",
+      status: 409,
+      retryable: false,
+    });
+  });
+
   it("renders opaque buttons and supports callback acknowledgement and message edits", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

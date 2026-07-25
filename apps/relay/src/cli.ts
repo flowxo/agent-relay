@@ -493,11 +493,19 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
+  const errorCode =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : undefined;
   process.stderr.write(
     `${JSON.stringify({
       level: "error",
       code: "cli.failed",
       message: error instanceof Error ? error.message : "unknown CLI failure",
+      ...(errorCode === undefined ? {} : { errorCode }),
     })}\n`,
   );
   process.exitCode = 1;

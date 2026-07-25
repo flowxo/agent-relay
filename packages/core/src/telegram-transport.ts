@@ -61,6 +61,45 @@ const getUpdatesSuccessSchema = z
   })
   .passthrough();
 
+const getMeSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    result: z
+      .object({
+        id: z.number().int(),
+        is_bot: z.literal(true),
+        has_topics_enabled: z.boolean().optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+const getChatSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    result: z
+      .object({
+        id: z.number().int(),
+        type: z.enum(["private", "group", "supergroup", "channel"]),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+const getWebhookInfoSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    result: z
+      .object({
+        url: z.string(),
+        pending_update_count: z.number().int().nonnegative(),
+        last_error_date: z.number().int().optional(),
+        last_error_message: z.string().optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 function identifiesUnavailableTopic(
   method: string,
   payload: Record<string, unknown>,
@@ -85,6 +124,99 @@ function identifiesUnavailableTopic(
     "topic is closed",
     "topic was closed",
   ].some((fragment) => normalized.includes(fragment));
+}
+
+function telegramFailureCode(
+  method: string,
+  status: number,
+  description: string,
+): string {
+  const normalized = description.toLowerCase();
+  if (status === 401 || normalized.includes("unauthorized")) {
+    return "telegram-invalid-token";
+  }
+  if (
+    normalized.includes("bot was blocked") ||
+    normalized.includes("bot is blocked") ||
+    normalized.includes("user is deactivated")
+  ) {
+    return "telegram-bot-blocked";
+  }
+  if (
+    normalized.includes("chat not found") ||
+    normalized.includes("chat_id is invalid") ||
+    normalized.includes("peer_id_invalid")
+  ) {
+    return "telegram-invalid-chat";
+  }
+  if (
+    method === "getUpdates" &&
+    (normalized.includes("webhook is active") ||
+      normalized.includes("can't use getupdates method while webhook"))
+  ) {
+    return "telegram-webhook-conflict";
+  }
+  if (
+    method === "getUpdates" &&
+    status === 409 &&
+    (normalized.includes("terminated by other getupdates request") ||
+      normalized.includes("another getupdates request") ||
+      normalized.includes("conflict"))
+  ) {
+    return "telegram-polling-conflict";
+  }
+  if (
+    method === "createForumTopic" &&
+    (normalized.includes("not enough rights") ||
+      normalized.includes("manage topics") ||
+      normalized.includes("forum_create_forbidden") ||
+      normalized.includes("not allowed to create"))
+  ) {
+    return "telegram-topic-permission";
+  }
+  if (
+    method === "createForumTopic" &&
+    (normalized.includes("forum is not enabled") ||
+      normalized.includes("chat is not a forum") ||
+      normalized.includes("channel_forum_missing") ||
+      normalized.includes("topics are not enabled"))
+  ) {
+    return "telegram-topics-disabled";
+  }
+  return `telegram-http-${status}`;
+}
+
+function actionableSetupError(error: unknown): TransportError {
+  const transportError =
+    error instanceof TransportError
+      ? error
+      : new TransportError(
+          "Telegram setup verification failed",
+          "telegram-setup-failed",
+          true,
+        );
+  const message = (() => {
+    switch (transportError.code) {
+      case "telegram-invalid-token":
+        return "Telegram rejected AGENT_RELAY_TELEGRAM_TOKEN; replace the bot token and restart";
+      case "telegram-bot-blocked":
+        return "The Telegram operator has blocked this bot; unblock it, send /start, and restart";
+      case "telegram-invalid-chat":
+        return "Telegram cannot access AGENT_RELAY_TELEGRAM_CHAT_ID; verify the private chat ID, send /start, and restart";
+      case "telegram-webhook-conflict":
+        return "Telegram polling cannot start while a webhook is active; inspect getWebhookInfo, remove the stale webhook or select webhook mode, and restart";
+      case "telegram-polling-conflict":
+        return "Another process is polling this Telegram bot; stop the other getUpdates consumer and restart";
+      default:
+        return transportError.message;
+    }
+  })();
+  return new TransportError(
+    message,
+    transportError.code,
+    transportError.retryable,
+    transportError.status,
+  );
 }
 
 function rowsOf<T>(items: T[], size: number): T[][] {
@@ -123,6 +255,13 @@ export interface TelegramTransportOptions {
   chatId: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
+}
+
+export interface TelegramSetupReport {
+  topicsEnabled: true;
+  chatType: "private";
+  updateMode: "poll" | "webhook";
+  webhookConfigured: boolean;
 }
 
 export class TelegramBotTransport
@@ -226,6 +365,80 @@ export class TelegramBotTransport
       callback_query_id: callbackId,
       text: redactText(text, 160),
     });
+  }
+
+  public async verifySetup(
+    updateMode: "poll" | "webhook",
+  ): Promise<TelegramSetupReport> {
+    try {
+      const me = getMeSuccessSchema.safeParse(await this.callApi("getMe", {}));
+      if (!me.success) {
+        throw new TransportError(
+          "Telegram getMe response did not include bot topic capability",
+          "telegram-malformed-response",
+          false,
+        );
+      }
+      if (me.data.result.has_topics_enabled !== true) {
+        throw new TransportError(
+          "Telegram private topics are disabled; enable Threaded Mode for this bot in BotFather and restart",
+          "telegram-topics-disabled",
+          false,
+        );
+      }
+
+      const chat = getChatSuccessSchema.safeParse(
+        await this.callApi("getChat", { chat_id: this.chatId }),
+      );
+      if (!chat.success) {
+        throw new TransportError(
+          "Telegram getChat response did not identify the configured chat",
+          "telegram-malformed-response",
+          false,
+        );
+      }
+      if (chat.data.result.type !== "private") {
+        throw new TransportError(
+          "AGENT_RELAY_TELEGRAM_CHAT_ID must identify a private chat; non-topic compatibility mode is not enabled",
+          "telegram-private-chat-required",
+          false,
+        );
+      }
+
+      const webhook = getWebhookInfoSuccessSchema.safeParse(
+        await this.callApi("getWebhookInfo", {}),
+      );
+      if (!webhook.success) {
+        throw new TransportError(
+          "Telegram getWebhookInfo response was malformed",
+          "telegram-malformed-response",
+          false,
+        );
+      }
+      const webhookConfigured = webhook.data.result.url.length > 0;
+      if (updateMode === "poll" && webhookConfigured) {
+        throw new TransportError(
+          "Telegram polling cannot start while a webhook is active; inspect getWebhookInfo, remove the stale webhook or select webhook mode, and restart",
+          "telegram-webhook-conflict",
+          false,
+        );
+      }
+      if (updateMode === "webhook" && !webhookConfigured) {
+        throw new TransportError(
+          "Telegram webhook mode is selected but getWebhookInfo has no URL; configure the HTTPS webhook endpoint and restart",
+          "telegram-webhook-missing",
+          false,
+        );
+      }
+      return {
+        topicsEnabled: true,
+        chatType: "private",
+        updateMode,
+        webhookConfigured,
+      };
+    } catch (error) {
+      throw actionableSetupError(error);
+    }
   }
 
   public async editDeliveryMessage(
@@ -400,7 +613,7 @@ export class TelegramBotTransport
     }
     throw new TransportError(
       redactText(description, 500),
-      `telegram-http-${status}`,
+      telegramFailureCode(method, status, description),
       status === 429 || status >= 500,
       status,
     );

@@ -89,6 +89,16 @@ export async function startDaemon(
       "Telegram webhook mode requires AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
     );
   }
+  if (transport instanceof TelegramBotTransport) {
+    const report = await transport.verifySetup(telegramUpdateMode);
+    logger.log({
+      level: "info",
+      code: "telegram.preflight-succeeded",
+      message: "Telegram private-topic setup verified",
+      at: new Date().toISOString(),
+      details: { ...report },
+    });
+  }
   const store = new RelayStore(options.databasePath);
   const service = new RelayService(store, transport, {
     logger,
