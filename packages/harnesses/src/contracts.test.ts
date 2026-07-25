@@ -183,10 +183,26 @@ describe("late resume capability", () => {
     expect(deriveLateResumePolicy("cursor", ["--print"])).toEqual({
       harness: "cursor",
       force: false,
+      trustWorkspace: false,
     });
     expect(deriveLateResumePolicy("cursor", ["--print", "--force"])).toEqual({
       harness: "cursor",
       force: true,
+      trustWorkspace: false,
+    });
+    expect(
+      buildLateResumeInvocation(
+        "cursor",
+        "cli",
+        "session_12345678",
+        "continue",
+        deriveLateResumePolicy("cursor", ["--print", "--trust"]),
+      ).args,
+    ).toEqual(["--resume=session_12345678", "--print", "--trust", "continue"]);
+    expect(deriveLateResumePolicy("cursor", ["--print", "--yolo"])).toEqual({
+      harness: "cursor",
+      force: true,
+      trustWorkspace: false,
     });
   });
 

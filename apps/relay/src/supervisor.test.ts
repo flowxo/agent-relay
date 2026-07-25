@@ -44,7 +44,7 @@ interface ChildResultOverrides {
   pid?: number | null;
   exitCode?: number | null;
   signal?: NodeJS.Signals;
-  requestedSignal?: boolean;
+  requestedSignal?: NodeJS.Signals;
   spawnErrorCode?: string;
 }
 
@@ -128,7 +128,7 @@ describe("owned child exit classification", () => {
         childResult({
           exitCode: null,
           signal: "SIGTERM",
-          requestedSignal: true,
+          requestedSignal: "SIGTERM",
         }),
         supervisorId,
       ),
@@ -136,6 +136,41 @@ describe("owned child exit classification", () => {
       unexpected: false,
       terminalExitCode: 143,
       evidence: { classification: "signal", expected: true },
+    });
+    expect(
+      classifyOwnedExit(
+        childResult({
+          exitCode: 130,
+          requestedSignal: "SIGINT",
+        }),
+        supervisorId,
+      ),
+    ).toMatchObject({
+      unexpected: false,
+      terminalExitCode: 130,
+      evidence: {
+        classification: "nonzero-exit",
+        exitCode: 130,
+        expected: true,
+      },
+      summary: "Supervised child stopped after forwarded SIGINT",
+    });
+    expect(
+      classifyOwnedExit(
+        childResult({
+          exitCode: 1,
+          requestedSignal: "SIGINT",
+        }),
+        supervisorId,
+      ),
+    ).toMatchObject({
+      unexpected: true,
+      terminalExitCode: 1,
+      evidence: {
+        classification: "nonzero-exit",
+        exitCode: 1,
+        expected: false,
+      },
     });
     expect(
       classifyOwnedExit(
@@ -430,7 +465,7 @@ describe("opt-in harness supervisor", () => {
       return childResult({
         exitCode: null,
         signal: "SIGTERM",
-        requestedSignal: true,
+        requestedSignal: "SIGTERM",
       });
     };
 

@@ -37,7 +37,7 @@ export interface OwnedChildResult {
   pid?: number;
   exitCode?: number;
   signal?: NodeJS.Signals;
-  requestedSignal?: boolean;
+  requestedSignal?: NodeJS.Signals;
   spawnErrorCode?: string;
 }
 
@@ -100,6 +100,14 @@ function terminalStatus(result: OwnedChildResult): number {
   return result.spawnErrorCode === undefined ? 1 : 127;
 }
 
+function requestedSignalExit(result: OwnedChildResult): boolean {
+  if (result.requestedSignal === undefined || result.exitCode === undefined) {
+    return false;
+  }
+  const signalNumber = constants.signals[result.requestedSignal];
+  return signalNumber !== undefined && result.exitCode === 128 + signalNumber;
+}
+
 export function classifyOwnedExit(
   result: OwnedChildResult,
   supervisorId: string,
@@ -118,7 +126,7 @@ export function classifyOwnedExit(
     };
   } else if (result.signal !== undefined) {
     classification = "signal";
-    expected = result.requestedSignal === true;
+    expected = result.requestedSignal === result.signal;
     summary = expected
       ? `Supervised child stopped after forwarded ${result.signal}`
       : `Supervised child received ${result.signal}`;
@@ -134,11 +142,16 @@ export function classifyOwnedExit(
     summary = "Supervised child exited cleanly";
   } else if (result.exitCode !== undefined) {
     classification = "nonzero-exit";
-    summary = `Supervised child exited with status ${result.exitCode}`;
-    failure = {
-      class: "exit-code",
-      message: summary,
-    };
+    expected = requestedSignalExit(result);
+    summary = expected
+      ? `Supervised child stopped after forwarded ${result.requestedSignal}`
+      : `Supervised child exited with status ${result.exitCode}`;
+    if (!expected) {
+      failure = {
+        class: "exit-code",
+        message: summary,
+      };
+    }
   } else {
     classification = "unknown";
     summary = "Supervised child exited without a status";
@@ -221,9 +234,7 @@ export const spawnOwnedChild: OwnedChildRunner = async (request) => {
         ...(child.pid === undefined ? {} : { pid: child.pid }),
         ...(exitCode === null ? {} : { exitCode }),
         ...(signal === null ? {} : { signal }),
-        ...(signal !== null && requestedSignal === signal
-          ? { requestedSignal: true }
-          : {}),
+        ...(requestedSignal === undefined ? {} : { requestedSignal }),
       });
     });
   });

@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-07-24T12:00:00.000Z",
+  "recordedAt": "2026-07-25T04:57:30.000Z",
   "privacy": "All payload fixtures are sanitized and contain synthetic identifiers, paths, and text.",
   "payloadEvidence": "official-example-sanitized",
   "localObservations": {
@@ -16,7 +16,9 @@
       "commands": ["claude --version", "claude --help"]
     },
     "cursor": {
-      "version": "3.12.30",
+      "version": "2026.07.23-e383d2b",
+      "previouslyObservedVersion": "3.12.30",
+      "liveStopAndResumeShapeVerified": true,
       "commands": [
         "cursor-agent --version",
         "cursor-agent --help",

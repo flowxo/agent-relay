@@ -14,7 +14,7 @@ import type { InstallationCheck } from "./installer.js";
 export const TESTED_HARNESS_VERSIONS: Record<Harness, string> = {
   codex: "codex-cli 0.145.0",
   claude: "2.1.219 (Claude Code)",
-  cursor: "3.12.30",
+  cursor: "2026.07.23-e383d2b",
 };
 
 export const DEFAULT_HARNESS_EXECUTABLES: Record<Harness, string> = {

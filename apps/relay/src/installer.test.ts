@@ -25,7 +25,7 @@ const installedAt = new Date("2026-07-24T12:00:00.000Z");
 const versions = {
   codex: "codex-cli 0.145.0",
   claude: "2.1.219 (Claude Code)",
-  cursor: "3.12.30",
+  cursor: "2026.07.23-e383d2b",
 };
 
 async function setup(prefix = "agent-relay-install-") {

@@ -24,6 +24,7 @@ export type LateResumePolicy =
   | {
       harness: "cursor";
       force: boolean;
+      trustWorkspace: boolean;
     };
 
 function optionValue(args: string[], names: string[]): string | undefined {
@@ -107,7 +108,11 @@ export function deriveLateResumePolicy(
   }
   return {
     harness,
-    force: initialArgs.includes("--force") || initialArgs.includes("-f"),
+    force:
+      initialArgs.includes("--force") ||
+      initialArgs.includes("-f") ||
+      initialArgs.includes("--yolo"),
+    trustWorkspace: initialArgs.includes("--trust"),
   };
 }
 
@@ -188,6 +193,9 @@ export function buildLateResumeInvocation(
           `--resume=${sessionId}`,
           "--print",
           ...(cursorPolicy.force ? ["--force"] : []),
+          ...(!cursorPolicy.force && cursorPolicy.trustWorkspace
+            ? ["--trust"]
+            : []),
           prompt,
         ],
       };

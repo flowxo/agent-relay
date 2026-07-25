@@ -97,7 +97,7 @@ continuation JSON to stdout:
 pnpm relay hook codex --harness-version 0.145.0 \
   < packages/harnesses/fixtures/codex/stop.json
 
-pnpm relay hook cursor --surface ide --harness-version 3.12.30 \
+pnpm relay hook cursor --surface ide --harness-version 2026.07.23-e383d2b \
   < packages/harnesses/fixtures/cursor/stop.json
 ```
 
@@ -158,7 +158,8 @@ proven:
 # Arguments after -- are passed directly as argv; no shell is involved.
 pnpm relay run codex --harness-version 0.145.0 -- exec "work on the task"
 pnpm relay run claude --harness-version 2.1.219 -- --print "work on the task"
-pnpm relay run cursor --harness-version 3.12.30 -- --print "work on the task"
+pnpm relay run cursor --harness-version 2026.07.23-e383d2b \
+  -- --trust "work on the task"
 ```
 
 The launcher inherits the terminal, owns the child PID, forwards `SIGINT` and
@@ -177,7 +178,7 @@ stored in SQLite, so concurrent supervisors cannot resume the same answer twice.
 Resume execution authority is derived once from the initial argv. Codex fails
 closed to `read-only` unless the initial invocation explicitly selected another
 sandbox or dangerous bypass; Claude fails closed to `plan`; Cursor carries
-`--force` only when it was originally present.
+workspace trust and `--force` only when they were originally present.
 
 By default the supervisor remains available for an open continuation until its
 24-hour expiry. Use `--resume-wait-ms` to shorten that bound, or
@@ -189,6 +190,12 @@ Supervisors accept at most 100 late resumes by default. Use `--max-resumes 1`
 for a bounded activation canary or another explicit limit for automation. The
 last permitted resumed child runs with late-resume hook creation disabled, so
 its final Stop event cannot open an orphan continuation request.
+
+On the tested Cursor build, the interactive CLI emits the configured Stop hook
+but `--print` exits without one. Start the supervised initial Cursor turn
+interactively as above, then exit the idle CLI after its Stop notification. The
+late-resume leg uses Cursor's official non-interactive `--resume=<session>`
+contract. `--trust` is preserved without being widened to `--force`.
 
 The supervisor does not infer a hang from inactivity. `suspected_stalled` is a
 distinct state reserved for an explicit failed harness health probe; no
@@ -264,10 +271,11 @@ canary on 2026-07-24 additionally proved real Bot API delivery, long-poll reply
 intake, replied-to-message correlation, exact answer validation, stale-answer
 rejection, and durable Telegram resolution. No credential or private message was
 retained in git. Model-backed private-chat canaries have proved installed Stop
-hooks and exact late resume for Codex `0.145.0` and Claude Code `2.1.219`. One
-failed Claude invocation also proved owned-child crash delivery. The installed
-Cursor `3.12.30` CLI is not authenticated on the activation machine, so Cursor's
-live canary remains blocked at sign-in and its current proof is fixture-backed.
-Native hooks still do not prove crashes, Cursor IDE late resume remains
-explicitly unsupported, and an interactive child must exit before its session
-can be resumed through a new CLI process.
+hooks and exact late resume for Codex `0.145.0`, Claude Code `2.1.219`, and
+Cursor CLI `2026.07.23-e383d2b`. An invalid Claude invocation also proved
+owned-child crash delivery. Cursor's live run additionally proved workspace
+trust preservation and expected operator-signal classification. Native hooks
+still do not prove crashes, Cursor IDE late resume remains explicitly
+unsupported, Cursor `--print` did not emit Stop on the tested build, and an
+interactive child must exit before its session can be resumed through a new CLI
+process.

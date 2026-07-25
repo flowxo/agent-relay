@@ -4,7 +4,7 @@
 
 - Repository ownership branch is `codex/initial-mvp`.
 - Local harness versions and CLI resume help were observed on 2026-07-24 and
-  recorded in `docs/harness-evidence.md`.
+  2026-07-25, then recorded in `docs/harness-evidence.md`.
 - Official stop, permission, failure, and resume contracts are represented as
   runtime-validated protocol types and sanitized synthetic fixtures.
 - Capability differences are generated from code, including the explicit lack of
@@ -86,11 +86,22 @@
   `claude --resume` under the initial `plan` permission mode. An invalid initial
   invocation exited non-zero first; the owning supervisor produced and delivered
   a durable `process.exited` notification from observed child evidence.
+- A model-backed Cursor CLI canary proved the current `2026.07.23-e383d2b`
+  interactive Stop hook, real Telegram delivery, exact-session reply
+  correlation, and successful `cursor-agent --resume=<session>`. The login flow
+  auto-updated the initially observed CLI. The live run proved that workspace
+  trust is retained without widening to `--force`, while the current `--print`
+  initial path exits without emitting Stop and is not claimed.
 - Supervisors now have an explicit `--max-resumes` bound. The last allowed
   resumed child cannot create another late-resume request, which keeps bounded
   canaries from leaving orphan continuations. Expected empty resume polls are no
   longer logged every 250 ms; claims and exceptional outcomes remain visible.
-- `pnpm check` passes all 104 tests across 17 test files, including the
+- A Cursor cleanup exposed that terminal stop signals can be normalized to exit
+  status 130 or 143. The supervisor now treats that status as expected only when
+  it matches a signal the owning parent actually observed and forwarded;
+  unrelated non-zero exits remain durable crash events. Supervised hook version
+  metadata also now overrides stale install-time metadata.
+- `pnpm check` passes all 107 tests across 18 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -103,11 +114,8 @@
 
 - Cursor's permission payload evolves quickly; its fixture must be replaced by a
   sanitized live capture before permission automation is enabled by default.
-- A Cursor CLI model canary reached the installed `3.12.30` binary, but that
-  binary has no authenticated account on this machine and opened its sign-in
-  flow. The bounded attempt was terminated without claiming hook or resume
-  success. Cursor CLI parsing, continuation, policy, and resume remain proven by
-  sanitized fixtures and integration tests until an account is connected.
+- Cursor `--print` did not emit Stop on the tested build. The supported
+  supervised initial path is interactive; the late-resume leg remains headless.
 - Native hooks still cannot prove crashes. Crash reporting is supported only for
   processes launched through `agent-relay run`; the protocol rejects a
   `process.exited` event without owned-child evidence.
@@ -134,6 +142,7 @@
 
 ## Next action
 
-Authenticate the local Cursor CLI, then run its remaining stop/resume canary and
-replace its evolving permission fixture with a sanitized live capture. Until
-then, keep Cursor permission automation disabled by default.
+The requested MVP milestones and all three authenticated CLI stop/resume
+canaries are complete. Before enabling Cursor permission automation, capture and
+sanitize its current live permission payload; until then, keep that hook
+disabled by default.

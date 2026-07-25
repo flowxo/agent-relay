@@ -66,7 +66,7 @@ export const HARNESS_CAPABILITIES: readonly HarnessCapability[] = [
     stopFailureSignal: true,
     processExitObservation: false,
     evidence: "official-docs+local-help",
-    note: "Late resume uses --resume; no documented active-turn steering API.",
+    note: "Interactive CLI Stop and --resume are proven; --print did not emit Stop.",
   },
   {
     harness: "cursor",

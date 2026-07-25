@@ -20,6 +20,7 @@ import {
 
 import { RelayClient } from "./client.js";
 import { runTelegramCanary } from "./canary.js";
+import { resolveHookHarnessVersion } from "./cli-options.js";
 import { startDaemon } from "./daemon.js";
 import { observeHarnessVersions, runDoctor } from "./doctor.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
@@ -219,13 +220,12 @@ async function main(): Promise<void> {
 
   if (command === "hook") {
     const harness = HarnessSchema.parse(args[0]);
+    const supervised = process.env["AGENT_RELAY_SUPERVISED"] === "1";
     const configuredSurface = SurfaceSchema.parse(
       flag(args, "--surface") ?? "cli",
     );
     const surface =
-      harness === "cursor" && process.env["AGENT_RELAY_SUPERVISED"] === "1"
-        ? "cli"
-        : configuredSurface;
+      harness === "cursor" && supervised ? "cli" : configuredSurface;
     const raw = await readStdin();
     const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
     const machineId =
@@ -237,10 +237,11 @@ async function main(): Promise<void> {
     const result = await runHook({
       harness,
       surface,
-      harnessVersion:
-        flag(args, "--harness-version") ??
-        environment("AGENT_RELAY_HARNESS_VERSION") ??
-        "unknown",
+      harnessVersion: resolveHookHarnessVersion({
+        flagVersion: flag(args, "--harness-version"),
+        environmentVersion: environment("AGENT_RELAY_HARNESS_VERSION"),
+        supervised,
+      }),
       raw,
       machineId,
       bridgeSessionId: configuredBridgeSessionId ?? "bridge_local_hooks",
@@ -249,7 +250,7 @@ async function main(): Promise<void> {
       ...(daemonToken === undefined ? {} : { daemonToken }),
       fallbackPath: join(stateDir, "fallback-spool.ndjson"),
       waitMs: numericFlag(args, "--wait-ms", 0),
-      lateResume: process.env["AGENT_RELAY_SUPERVISED"] === "1",
+      lateResume: supervised,
       lateResumeTtlMs: numericFlag(
         args,
         "--late-resume-ttl-ms",

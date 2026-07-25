@@ -10,11 +10,13 @@ messages.
 | ----------- | ----------------------- | ---------------------------------------------------------------------------------------- |
 | Codex       | `codex-cli 0.145.0`     | `codex --version`, `codex --help`, `codex exec resume --help`, `codex app-server --help` |
 | Claude Code | `2.1.219 (Claude Code)` | `claude --version`, `claude --help`                                                      |
-| Cursor      | `3.12.30`               | `cursor-agent --version`, `cursor-agent --help`, `cursor-agent resume --help`            |
+| Cursor      | `2026.07.23-e383d2b`    | `cursor-agent --version`, `cursor-agent --help`, `cursor-agent resume --help`            |
 
 The local help output proves that all three CLIs expose a session-resume entry
 point. It also proves that Codex App Server is installed and exposes a
-structured transport. These checks do not invoke a model or incur API cost.
+structured transport. Cursor was initially observed as `3.12.30`; its login flow
+auto-updated the launcher to the version recorded above before the live
+stop/resume canary. These checks do not invoke a model or incur API cost.
 
 ## Installer observations
 
@@ -44,10 +46,10 @@ command output. These fixtures do not invoke a model.
 Late-resume argv is derived from the initial invocation once. Codex defaults to
 `read-only` and retains an explicit sandbox or dangerous bypass; Claude defaults
 to `plan` and retains an explicit permission mode or dangerous bypass; Cursor
-retains `--force` only when the initial invocation had it. Codex's documented
-one-invocation hook-trust override is also retained so an approved headless
-resume continues to emit hooks. The answer is always a discrete argv value and
-is never shell-interpreted.
+retains workspace trust and `--force` only when the initial invocation had them.
+Codex's documented one-invocation hook-trust override is also retained so an
+approved headless resume continues to emit hooks. The answer is always a
+discrete argv value and is never shell-interpreted.
 
 ## Telegram adapter observations
 
@@ -98,17 +100,24 @@ as fixtures.
   produced a real owned-child crash notification. The corrected `--print`
   invocation emitted Stop, delivered it to Telegram, correlated the reply to the
   exact session, and resumed successfully under `--permission-mode plan`.
-- Cursor `3.12.30`: the local binary reached its interactive sign-in screen
-  because no Cursor CLI account is connected on this machine. The bounded
-  attempt was terminated. No live hook or resume success is claimed; the
-  sanitized parser and invocation fixtures remain the current evidence.
+- Cursor `2026.07.23-e383d2b`: after authentication, an interactive initial turn
+  emitted the installed user-level Stop hook and delivered it to Telegram. The
+  operator reply was correlated to the exact conversation, and
+  `cursor-agent --resume=<session>` returned the requested sentinel and exited
+  zero. The initial workspace-trust flag was retained without adding `--force`.
+  On this build, `--print` required workspace trust and exited cleanly without
+  emitting Stop, so the proven initial Stop path is interactive.
 
-The live loops also exposed two operational issues now covered by tests:
-background delivery can race an activation command's explicit drain, and
-expected empty resume polls can amplify logs. Activation now waits for the
-durable delivery receipt, while expected `waiting` polls are silent. A
-`--max-resumes` bound prevents the last permitted resumed child from opening an
-orphan continuation request.
+The live loops also exposed operational issues now covered by tests. Background
+delivery can race an activation command's explicit drain, and expected empty
+resume polls can amplify logs. Activation now waits for the durable delivery
+receipt, while expected `waiting` polls are silent. A `--max-resumes` bound
+prevents the last permitted resumed child from opening an orphan continuation
+request. Supervised version metadata overrides the install-time hook version.
+Cursor workspace trust is distinct from `--force`. A terminal interrupt that a
+child normalizes to status 130 or 143 is expected only when it matches the
+signal observed and forwarded by the owning supervisor; unrelated non-zero exits
+remain crash evidence.
 
 ## Official contract sources
 
@@ -135,9 +144,9 @@ orphan continuation request.
 
 The checked-in hook payloads are sanitized official examples adapted into
 synthetic fixtures, not private local transcripts. Adapter and continuation
-tests prove our parser and emitted JSON match the documented contracts. The
-Codex and Claude live evidence above is limited to the exact installed versions,
-CLI surface, installed user hooks, and private-chat transport tested. Cursor
-remains fixture-backed until its CLI is authenticated. Native hooks still do not
-prove process crashes; the Claude crash notification was produced only because
-Agent Relay owned and observed the child process.
+tests prove our parser and emitted JSON match the documented contracts. The live
+evidence above is limited to the exact installed versions, CLI surfaces,
+installed user hooks, and private-chat transport tested. Cursor permission
+automation remains fixture-backed and disabled by default. Native hooks still do
+not prove process crashes; the delivered crash notifications were produced only
+because Agent Relay owned and observed the child processes.
