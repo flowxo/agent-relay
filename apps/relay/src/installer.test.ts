@@ -1,0 +1,299 @@
+import { spawnSync } from "node:child_process";
+import {
+  access,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { constants } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  inspectAgentRelayInstallation,
+  installAgentRelay,
+  installerPaths,
+  uninstallAgentRelay,
+} from "./installer.js";
+
+const installedAt = new Date("2026-07-24T12:00:00.000Z");
+const versions = {
+  codex: "codex-cli 0.145.0",
+  claude: "2.1.219 (Claude Code)",
+  cursor: "2026.07.23-e383d2b",
+};
+
+async function setup(prefix = "agent-relay-install-") {
+  const rootDir = await mkdtemp(join(tmpdir(), prefix));
+  const entryPath = join(rootDir, "agent-relay-entry.js");
+  await writeFile(entryPath, "process.exitCode = 0;\n", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  return { rootDir, entryPath, paths: installerPaths(rootDir) };
+}
+
+async function writeJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+}
+
+async function readJson(path: string): Promise<Record<string, unknown>> {
+  return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+}
+
+function markerCount(value: unknown): number {
+  return JSON.stringify(value).split("AGENT_RELAY_HOOK_OWNER").length - 1;
+}
+
+describe("agent relay harness installer", () => {
+  it("minimally patches all harness configs and creates private backups", async () => {
+    const runtime = await setup();
+    await writeJson(runtime.paths.configs.codex, {
+      description: "user-owned metadata",
+      hooks: {
+        Stop: [
+          {
+            hooks: [{ type: "command", command: "user-stop-hook" }],
+          },
+        ],
+      },
+    });
+    await writeJson(runtime.paths.configs.claude, {
+      permissions: { allow: ["Read"] },
+    });
+    await writeJson(runtime.paths.configs.cursor, {
+      version: 1,
+      hooks: {
+        stop: [{ command: "user-cursor-hook" }],
+      },
+    });
+
+    const result = await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now: () => installedAt,
+    });
+
+    expect(result.changed).toBe(true);
+    expect(
+      result.actions.filter((action) => action.backupPath !== undefined),
+    ).toHaveLength(3);
+    for (const action of result.actions) {
+      if (action.backupPath !== undefined) {
+        expect((await stat(action.backupPath)).mode & 0o777).toBe(0o600);
+      }
+    }
+    const codex = await readJson(runtime.paths.configs.codex);
+    const claude = await readJson(runtime.paths.configs.claude);
+    const cursor = await readJson(runtime.paths.configs.cursor);
+    expect(codex).toMatchObject({ description: "user-owned metadata" });
+    expect(claude).toMatchObject({ permissions: { allow: ["Read"] } });
+    expect(JSON.stringify(codex)).toContain("user-stop-hook");
+    expect(JSON.stringify(cursor)).toContain("user-cursor-hook");
+    expect(markerCount(codex)).toBe(2);
+    expect(markerCount(claude)).toBe(3);
+    expect(markerCount(cursor)).toBe(1);
+    expect((await stat(runtime.paths.launcherPath)).mode & 0o777).toBe(0o700);
+    expect(await inspectAgentRelayInstallation(runtime.rootDir)).toMatchObject({
+      healthy: true,
+      installed: true,
+    });
+  });
+
+  it("is unchanged on repeat install and replaces owned hooks on upgrade", async () => {
+    const runtime = await setup();
+    const first = await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now: () => installedAt,
+    });
+    expect(first.changed).toBe(true);
+    const second = await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now: () => new Date("2026-07-24T13:00:00.000Z"),
+    });
+    expect(second.changed).toBe(false);
+    expect(second.actions.every((action) => action.kind === "unchanged")).toBe(
+      true,
+    );
+
+    const upgraded = await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: { ...versions, codex: "codex-cli 0.146.0" },
+      now: () => new Date("2026-07-24T14:00:00.000Z"),
+    });
+    expect(upgraded.changed).toBe(true);
+    expect(
+      upgraded.actions.some((action) => action.backupPath !== undefined),
+    ).toBe(true);
+    const codex = await readJson(runtime.paths.configs.codex);
+    expect(markerCount(codex)).toBe(2);
+    expect(JSON.stringify(codex)).toContain("codex-cli 0.146.0");
+    expect(JSON.stringify(codex)).not.toContain("codex-cli 0.145.0");
+  });
+
+  it("uninstalls only owned entries and preserves user configuration", async () => {
+    const runtime = await setup();
+    await writeJson(runtime.paths.configs.codex, {
+      userSetting: true,
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              { type: "command", command: "user-stop-hook" },
+              {
+                type: "command",
+                command:
+                  "echo AGENT_RELAY_HOOK_OWNER=agent-relay-v1 is user text",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now: () => installedAt,
+    });
+
+    const result = await uninstallAgentRelay({
+      rootDir: runtime.rootDir,
+      now: () => new Date("2026-07-24T13:00:00.000Z"),
+    });
+    expect(result.changed).toBe(true);
+    const codex = await readJson(runtime.paths.configs.codex);
+    expect(codex).toMatchObject({ userSetting: true });
+    expect(JSON.stringify(codex)).toContain("user-stop-hook");
+    expect(JSON.stringify(codex)).toContain(
+      "echo AGENT_RELAY_HOOK_OWNER=agent-relay-v1 is user text",
+    );
+    expect(markerCount(codex)).toBe(1);
+    await expect(access(runtime.paths.launcherPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(runtime.paths.manifestPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("removes installer-created config scaffolds without deleting state", async () => {
+    const runtime = await setup();
+    await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now: () => installedAt,
+    });
+    await writeFile(join(runtime.paths.stateDir, "relay.sqlite"), "state", {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+
+    await uninstallAgentRelay({ rootDir: runtime.rootDir });
+    for (const configPath of Object.values(runtime.paths.configs)) {
+      await expect(access(configPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    }
+    await expect(
+      access(join(runtime.paths.stateDir, "relay.sqlite"), constants.R_OK),
+    ).resolves.toBeUndefined();
+  });
+
+  it("preflights malformed JSON without making partial changes", async () => {
+    const runtime = await setup();
+    await mkdir(dirname(runtime.paths.configs.claude), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await writeFile(runtime.paths.configs.claude, "{invalid-json", "utf8");
+
+    await expect(
+      installAgentRelay({
+        rootDir: runtime.rootDir,
+        entryPath: runtime.entryPath,
+        harnessVersions: versions,
+      }),
+    ).rejects.toThrow("settings.json is not valid JSON");
+    await expect(access(runtime.paths.configs.codex)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(runtime.paths.launcherPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("rolls back earlier writes when a later config write fails", async () => {
+    const runtime = await setup();
+    const claudeDirectory = dirname(runtime.paths.configs.claude);
+    await mkdir(claudeDirectory, { recursive: true, mode: 0o500 });
+    await chmod(claudeDirectory, 0o500);
+    try {
+      await expect(
+        installAgentRelay({
+          rootDir: runtime.rootDir,
+          entryPath: runtime.entryPath,
+          harnessVersions: versions,
+        }),
+      ).rejects.toThrow("rolled back");
+    } finally {
+      await chmod(claudeDirectory, 0o700);
+    }
+    await expect(access(runtime.paths.configs.codex)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(runtime.paths.launcherPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("supports dry-run and safely quotes exact paths", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "agent-relay-install-parent-"));
+    const rootDir = join(parent, "root with ' quote");
+    await mkdir(rootDir, { recursive: true, mode: 0o700 });
+    const entryPath = join(rootDir, "entry with ' quote.js");
+    await writeFile(entryPath, "process.exitCode = 0;\n", "utf8");
+    const paths = installerPaths(rootDir);
+
+    const dryRun = await installAgentRelay({
+      rootDir,
+      entryPath,
+      harnessVersions: versions,
+      dryRun: true,
+    });
+    expect(dryRun.changed).toBe(true);
+    await expect(access(paths.configs.codex)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await installAgentRelay({
+      rootDir,
+      entryPath,
+      harnessVersions: versions,
+    });
+    const cursor = await readJson(paths.configs.cursor);
+    const command = JSON.stringify(cursor);
+    expect(command).toContain("'\\\"'\\\"'");
+    expect(
+      spawnSync("/bin/sh", ["-n", paths.launcherPath], {
+        encoding: "utf8",
+      }).status,
+    ).toBe(0);
+  });
+});

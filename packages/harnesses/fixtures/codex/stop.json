@@ -1,0 +1,11 @@
+{
+  "session_id": "codex-session-0001",
+  "transcript_path": null,
+  "cwd": "/workspace/example",
+  "hook_event_name": "Stop",
+  "model": "gpt-5.6-sol",
+  "permission_mode": "default",
+  "turn_id": "codex-turn-0001",
+  "stop_hook_active": false,
+  "last_assistant_message": "Implemented the requested change and all checks pass."
+}

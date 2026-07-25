@@ -1,0 +1,499 @@
+#!/usr/bin/env node
+
+import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
+import {
+  CompositeLogger,
+  JsonLineLogger,
+  RotatingFileLogger,
+} from "@agent-relay/core";
+import { HARNESS_CAPABILITIES } from "@agent-relay/harnesses";
+import {
+  HarnessSchema,
+  SurfaceSchema,
+  makeProjectRef,
+  makeStableEventId,
+} from "@agent-relay/protocol";
+
+import { RelayClient } from "./client.js";
+import { runTelegramCanary } from "./canary.js";
+import { resolveHookHarnessVersion } from "./cli-options.js";
+import { startDaemon } from "./daemon.js";
+import { observeHarnessVersions, runDoctor } from "./doctor.js";
+import { replayFallbackSpool } from "./fallback-spool.js";
+import { runHook } from "./hook-runner.js";
+import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
+import { loadOrCreateMachineId } from "./machine-id.js";
+import { runSupervisor } from "./supervisor.js";
+
+function environment(name: string): string | undefined {
+  const value = process.env[name];
+  return value === undefined || value.length === 0 ? undefined : value;
+}
+
+const stateDir =
+  environment("AGENT_RELAY_STATE_DIR") ?? join(homedir(), ".agent-relay");
+
+function flag(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  return index === -1 ? undefined : args[index + 1];
+}
+
+async function readStdin(limit = 256 * 1024): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > limit) {
+      throw new Error(`hook stdin exceeds ${limit} bytes`);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function output(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function numericFlag(args: string[], name: string, fallback: number): number {
+  const value = Number(flag(args, name) ?? String(fallback));
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative number`);
+  }
+  return value;
+}
+
+function integerFlag(args: string[], name: string, fallback: number): number {
+  const value = numericFlag(args, name, fallback);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${name} must be a safe integer`);
+  }
+  return value;
+}
+
+function optionalInteger(
+  value: string | undefined,
+  name: string,
+  allowNegative: boolean,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed === 0 ||
+    (!allowNegative && parsed < 0)
+  ) {
+    throw new Error(
+      `${name} must be a ${allowNegative ? "non-zero" : "positive"} safe integer`,
+    );
+  }
+  return parsed;
+}
+
+function harnessExecutable(harness: "codex" | "claude" | "cursor"): string {
+  switch (harness) {
+    case "codex":
+      return "codex";
+    case "claude":
+      return "claude";
+    case "cursor":
+      return "cursor-agent";
+  }
+}
+
+function installEntryPath(args: string[]): string {
+  const explicit = flag(args, "--entry");
+  if (explicit !== undefined) {
+    return resolve(explicit);
+  }
+  const currentEntry = resolve(process.argv[1] ?? "apps/relay/dist/cli.js");
+  if (currentEntry.endsWith("/src/cli.ts")) {
+    return resolve(dirname(currentEntry), "..", "dist", "cli.js");
+  }
+  return currentEntry;
+}
+
+async function main(): Promise<void> {
+  const [command, ...args] = process.argv.slice(2);
+  if (command === "daemon") {
+    const databasePath = flag(args, "--db") ?? join(stateDir, "relay.sqlite");
+    const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+    const telegramToken = environment("AGENT_RELAY_TELEGRAM_TOKEN");
+    const telegramChatId = environment("AGENT_RELAY_TELEGRAM_CHAT_ID");
+    const telegramOperatorId = environment("AGENT_RELAY_TELEGRAM_OPERATOR_ID");
+    const telegramWebhookSecret = environment(
+      "AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
+    );
+    const configuredTelegramUpdateMode =
+      environment("AGENT_RELAY_TELEGRAM_UPDATE_MODE") ?? "poll";
+    if (
+      configuredTelegramUpdateMode !== "poll" &&
+      configuredTelegramUpdateMode !== "webhook"
+    ) {
+      throw new Error(
+        "AGENT_RELAY_TELEGRAM_UPDATE_MODE must be poll or webhook",
+      );
+    }
+    const telegramOperatorUserId = optionalInteger(
+      telegramOperatorId,
+      "AGENT_RELAY_TELEGRAM_OPERATOR_ID",
+      false,
+    );
+    const telegramReplyChatId = optionalInteger(
+      telegramChatId,
+      "AGENT_RELAY_TELEGRAM_CHAT_ID",
+      true,
+    );
+    const stderrLogger = new JsonLineLogger();
+    const daemonLogger = new CompositeLogger([
+      stderrLogger,
+      new RotatingFileLogger(
+        flag(args, "--log") ??
+          environment("AGENT_RELAY_LOG_PATH") ??
+          join(stateDir, "relay.ndjson"),
+        {
+          maxBytes: integerFlag(
+            args,
+            "--log-max-bytes",
+            Number(
+              environment("AGENT_RELAY_LOG_MAX_BYTES") ??
+                String(4 * 1024 * 1024),
+            ),
+          ),
+          maxFiles: integerFlag(
+            args,
+            "--log-files",
+            Number(environment("AGENT_RELAY_LOG_FILES") ?? "5"),
+          ),
+          fallbackLogger: stderrLogger,
+        },
+      ),
+    ]);
+    const daemon = await startDaemon({
+      databasePath,
+      host: flag(args, "--host") ?? "127.0.0.1",
+      port: Number(flag(args, "--port") ?? "4317"),
+      ...(daemonToken === undefined ? {} : { token: daemonToken }),
+      ...(telegramToken === undefined ? {} : { telegramToken }),
+      ...(telegramChatId === undefined ? {} : { telegramChatId }),
+      ...(telegramOperatorUserId === undefined
+        ? {}
+        : { telegramOperatorUserId }),
+      ...(telegramReplyChatId === undefined ? {} : { telegramReplyChatId }),
+      ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
+      telegramUpdateMode: configuredTelegramUpdateMode,
+      fallbackPath: join(stateDir, "fallback-spool.ndjson"),
+      retention: {
+        deliveredDays: integerFlag(
+          args,
+          "--retention-days",
+          Number(environment("AGENT_RELAY_RETENTION_DAYS") ?? "30"),
+        ),
+        deadLetterDays: integerFlag(
+          args,
+          "--dead-letter-retention-days",
+          Number(environment("AGENT_RELAY_DEAD_LETTER_RETENTION_DAYS") ?? "90"),
+        ),
+        diagnosticDays: integerFlag(
+          args,
+          "--diagnostic-retention-days",
+          Number(environment("AGENT_RELAY_DIAGNOSTIC_RETENTION_DAYS") ?? "90"),
+        ),
+      },
+      logger: daemonLogger,
+    });
+    const stop = async () => {
+      await daemon.close();
+      process.exitCode = 0;
+    };
+    process.once("SIGINT", () => void stop());
+    process.once("SIGTERM", () => void stop());
+    return;
+  }
+
+  if (command === "hook") {
+    const harness = HarnessSchema.parse(args[0]);
+    const supervised = process.env["AGENT_RELAY_SUPERVISED"] === "1";
+    const configuredSurface = SurfaceSchema.parse(
+      flag(args, "--surface") ?? "cli",
+    );
+    const surface =
+      harness === "cursor" && supervised ? "cli" : configuredSurface;
+    const raw = await readStdin();
+    const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+    const machineId =
+      environment("AGENT_RELAY_MACHINE_ID") ??
+      (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const configuredBridgeSessionId = environment(
+      "AGENT_RELAY_BRIDGE_SESSION_ID",
+    );
+    const result = await runHook({
+      harness,
+      surface,
+      harnessVersion: resolveHookHarnessVersion({
+        flagVersion: flag(args, "--harness-version"),
+        environmentVersion: environment("AGENT_RELAY_HARNESS_VERSION"),
+        supervised,
+      }),
+      raw,
+      machineId,
+      bridgeSessionId: configuredBridgeSessionId ?? "bridge_local_hooks",
+      daemonUrl:
+        environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
+      ...(daemonToken === undefined ? {} : { daemonToken }),
+      fallbackPath: join(stateDir, "fallback-spool.ndjson"),
+      waitMs: numericFlag(args, "--wait-ms", 0),
+      lateResume: supervised,
+      lateResumeTtlMs: numericFlag(
+        args,
+        "--late-resume-ttl-ms",
+        Number(
+          environment("AGENT_RELAY_LATE_RESUME_TTL_MS") ??
+            String(24 * 60 * 60_000),
+        ),
+      ),
+    });
+    process.stdout.write(result.stdout);
+    if (result.diagnostic !== undefined) {
+      process.stderr.write(
+        `${JSON.stringify({
+          level: "error",
+          code: result.diagnostic.code,
+          message: result.diagnostic.message,
+          fallbackRecorded: result.diagnostic.fallbackRecorded,
+        })}\n`,
+      );
+    }
+    process.exitCode = result.exitCode;
+    return;
+  }
+
+  if (command === "run") {
+    const harness = HarnessSchema.parse(args[0]);
+    const separator = args.indexOf("--");
+    const supervisorArgs =
+      separator === -1 ? args.slice(1) : args.slice(1, separator);
+    const childArgs = separator === -1 ? [] : args.slice(separator + 1);
+    const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+    const machineId =
+      environment("AGENT_RELAY_MACHINE_ID") ??
+      (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const configuredBridgeSessionId = environment(
+      "AGENT_RELAY_BRIDGE_SESSION_ID",
+    );
+    const executable =
+      flag(supervisorArgs, "--executable") ?? harnessExecutable(harness);
+    const result = await runSupervisor({
+      harness,
+      harnessVersion:
+        flag(supervisorArgs, "--harness-version") ??
+        environment("AGENT_RELAY_HARNESS_VERSION") ??
+        "unknown",
+      machineId,
+      ...(configuredBridgeSessionId === undefined
+        ? {}
+        : { bridgeSessionId: configuredBridgeSessionId }),
+      cwd: resolve(flag(supervisorArgs, "--cwd") ?? process.cwd()),
+      initialInvocation: {
+        executable,
+        args: childArgs,
+      },
+      daemonUrl:
+        environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
+      ...(daemonToken === undefined ? {} : { daemonToken }),
+      fallbackPath: join(stateDir, "fallback-spool.ndjson"),
+      resumeWaitMs: numericFlag(
+        supervisorArgs,
+        "--resume-wait-ms",
+        24 * 60 * 60_000,
+      ),
+      pollIntervalMs: numericFlag(supervisorArgs, "--poll-interval-ms", 250),
+      maxResumes: integerFlag(supervisorArgs, "--max-resumes", 100),
+      logger: new JsonLineLogger(),
+    });
+    if (result.diagnostic !== undefined) {
+      process.stderr.write(
+        `${JSON.stringify({
+          level: "error",
+          code: result.diagnostic.code,
+          message: result.diagnostic.message,
+          fallbackRecorded: result.diagnostic.fallbackRecorded,
+        })}\n`,
+      );
+    }
+    process.exitCode = result.exitCode;
+    return;
+  }
+
+  if (command === "doctor") {
+    const report = await runDoctor({
+      databasePath: flag(args, "--db") ?? ":memory:",
+      rootDir: resolve(flag(args, "--root") ?? homedir()),
+    });
+    output(report);
+    process.exitCode = report.healthy ? 0 : 1;
+    return;
+  }
+
+  if (command === "install") {
+    const cursorSurface = flag(args, "--cursor-surface") ?? "ide";
+    if (cursorSurface !== "cli" && cursorSurface !== "ide") {
+      throw new Error("--cursor-surface must be cli or ide");
+    }
+    const observed = observeHarnessVersions();
+    const versions = Object.fromEntries(
+      observed.map((item) => [
+        item.harness,
+        item.version ?? `unavailable (tested ${item.testedVersion})`,
+      ]),
+    );
+    output(
+      await installAgentRelay({
+        rootDir: resolve(flag(args, "--root") ?? homedir()),
+        entryPath: installEntryPath(args),
+        ...(flag(args, "--node") === undefined
+          ? {}
+          : { nodePath: resolve(flag(args, "--node") ?? "") }),
+        cursorSurface,
+        harnessVersions: versions,
+        dryRun: args.includes("--dry-run"),
+      }),
+    );
+    return;
+  }
+
+  if (command === "uninstall") {
+    output(
+      await uninstallAgentRelay({
+        rootDir: resolve(flag(args, "--root") ?? homedir()),
+        dryRun: args.includes("--dry-run"),
+      }),
+    );
+    return;
+  }
+
+  const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+  const client = new RelayClient({
+    baseUrl: environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
+    ...(daemonToken === undefined ? {} : { token: daemonToken }),
+  });
+  if (command === "status") {
+    output(await client.status());
+    return;
+  }
+  if (command === "replay-fallback") {
+    const result = await replayFallbackSpool(
+      flag(args, "--path") ?? join(stateDir, "fallback-spool.ndjson"),
+      client,
+    );
+    output(result);
+    process.exitCode = result.filesPending === 0 ? 0 : 1;
+    return;
+  }
+  if (command === "maintain") {
+    output(
+      await client.maintainRetention({
+        deliveredDays: integerFlag(args, "--retention-days", 30),
+        deadLetterDays: integerFlag(args, "--dead-letter-retention-days", 90),
+        diagnosticDays: integerFlag(args, "--diagnostic-retention-days", 90),
+      }),
+    );
+    return;
+  }
+  if (command === "drain") {
+    output(await client.drain(Number(flag(args, "--limit") ?? "50")));
+    return;
+  }
+  if (command === "capabilities") {
+    output(HARNESS_CAPABILITIES);
+    return;
+  }
+  if (command === "canary") {
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const machineId =
+      environment("AGENT_RELAY_MACHINE_ID") ??
+      (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const sequence = Date.now();
+    const eventId = makeStableEventId({
+      machineId,
+      harness: "codex",
+      sessionId: "session_canary",
+      type: "turn.stopped",
+      sequence,
+      sourceFingerprint: randomUUID(),
+    });
+    const result = await client.ingest({
+      schema: "agent-attention.v1",
+      eventId,
+      occurredAt: new Date().toISOString(),
+      sequence,
+      machineId,
+      bridgeSessionId: "bridge_canary",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "canary",
+      sessionId: "session_canary",
+      project: makeProjectRef(process.cwd()),
+      type: "turn.stopped",
+      summary: "Agent Relay local canary",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    output({ ingest: result, drain: await client.drain() });
+    return;
+  }
+  if (command === "telegram-canary") {
+    const daemonStatus = await client.status();
+    if (daemonStatus.transport !== "telegram") {
+      throw new Error(
+        "telegram-canary requires a daemon using the real Telegram transport",
+      );
+    }
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const machineId =
+      environment("AGENT_RELAY_MACHINE_ID") ??
+      (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const result = await runTelegramCanary({
+      client,
+      machineId,
+      projectPath: process.cwd(),
+      waitMs: integerFlag(args, "--wait-ms", 2 * 60_000),
+      pollIntervalMs: integerFlag(args, "--poll-interval-ms", 500),
+    });
+    output(result);
+    process.exitCode =
+      result.outcome === "answered" && result.resolvedBy === "telegram" ? 0 : 1;
+    return;
+  }
+
+  await mkdir(dirname(join(stateDir, "placeholder")), {
+    recursive: true,
+    mode: 0o700,
+  });
+  process.stderr.write(
+    "Usage: agent-relay daemon|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary|telegram-canary\n",
+  );
+  process.exitCode = 2;
+}
+
+void main().catch((error: unknown) => {
+  process.stderr.write(
+    `${JSON.stringify({
+      level: "error",
+      code: "cli.failed",
+      message: error instanceof Error ? error.message : "unknown CLI failure",
+    })}\n`,
+  );
+  process.exitCode = 1;
+});

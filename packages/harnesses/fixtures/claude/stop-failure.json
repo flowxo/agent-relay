@@ -1,0 +1,9 @@
+{
+  "session_id": "claude-session-0001",
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl",
+  "cwd": "/workspace/example",
+  "hook_event_name": "StopFailure",
+  "error": "rate_limit",
+  "error_details": "Synthetic 429 fixture with no account data",
+  "last_assistant_message": "API Error: synthetic rate limit"
+}

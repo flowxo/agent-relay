@@ -1,0 +1,9 @@
+{
+  "session_id": "claude-session-0001",
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl",
+  "cwd": "/workspace/example",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Implemented the requested change and all checks pass."
+}

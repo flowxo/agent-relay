@@ -1,0 +1,159 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  AgentAttentionEventV1Schema,
+  AgentCommandV1Schema,
+  RelayDiagnosticV1Schema,
+  makeProjectRef,
+  makeStableEventId,
+} from "./index.js";
+
+const occurredAt = "2026-07-24T12:00:00.000Z";
+
+function validEvent() {
+  return {
+    schema: "agent-attention.v1",
+    eventId: "evt_12345678",
+    occurredAt,
+    sequence: 3,
+    machineId: "machine_12345678",
+    bridgeSessionId: "bridge_12345678",
+    harness: "codex",
+    surface: "cli",
+    harnessVersion: "0.145.0",
+    sessionId: "session_12345678",
+    turnId: "turn_12345678",
+    project: makeProjectRef("/workspace/example"),
+    type: "turn.stopped",
+    capabilities: {
+      inlineContinue: true,
+      lateResume: true,
+      activeSteer: false,
+      permissionDecision: true,
+    },
+  } as const;
+}
+
+describe("AgentAttentionEventV1Schema", () => {
+  it("accepts a bounded normalized stop event", () => {
+    expect(AgentAttentionEventV1Schema.parse(validEvent())).toEqual(
+      validEvent(),
+    );
+  });
+
+  it("requires a request for input.required", () => {
+    const result = AgentAttentionEventV1Schema.safeParse({
+      ...validEvent(),
+      type: "input.required",
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain("require a request");
+    }
+  });
+
+  it("rejects unbounded transcript-like content", () => {
+    const result = AgentAttentionEventV1Schema.safeParse({
+      ...validEvent(),
+      lastAssistantMessage: "x".repeat(4_001),
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("requires owned-child evidence before accepting a process crash", () => {
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "process.exited",
+        failure: {
+          class: "signal",
+          message: "child received SIGKILL",
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "process.exited",
+        failure: {
+          class: "signal",
+          message: "child received SIGKILL",
+        },
+        processExit: {
+          source: "owned-child",
+          supervisorId: "supervisor_12345678",
+          startedAt: occurredAt,
+          exitedAt: "2026-07-24T12:00:01.000Z",
+          pid: 4321,
+          signal: "SIGKILL",
+          classification: "signal",
+          expected: false,
+        },
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe("AgentCommandV1Schema", () => {
+  it("rejects answer commands without an answer", () => {
+    const result = AgentCommandV1Schema.safeParse({
+      schema: "agent-command.v1",
+      commandId: "command_12345678",
+      issuedAt: occurredAt,
+      expiresAt: "2026-07-24T12:05:00.000Z",
+      machineId: "machine_12345678",
+      harness: "claude",
+      sessionId: "session_12345678",
+      correlationId: "correlation_12345678",
+      kind: "answer",
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("RelayDiagnosticV1Schema", () => {
+  it("accepts bounded durable diagnostics and rejects arbitrary detail blobs", () => {
+    const diagnostic = {
+      schema: "agent-relay-diagnostic.v1",
+      diagnosticId: "diag_fallback_12345678",
+      recordedAt: occurredAt,
+      source: "fallback-spool",
+      level: "error",
+      code: "hook.invalid-payload",
+      message: "Synthetic payload failed validation",
+    };
+    expect(RelayDiagnosticV1Schema.parse(diagnostic)).toEqual(diagnostic);
+    expect(
+      RelayDiagnosticV1Schema.safeParse({
+        ...diagnostic,
+        details: { transcript: "must not be accepted" },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("stable local identity helpers", () => {
+  it("does not expose the raw cwd", () => {
+    const project = makeProjectRef("/Users/private/source/acme");
+    expect(project.displayName).toBe("acme");
+    expect(project.cwdHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(JSON.stringify(project)).not.toContain("/Users/private");
+  });
+
+  it("returns the same event id when a hook is retried", () => {
+    const identity = {
+      machineId: "machine_12345678",
+      harness: "cursor" as const,
+      sessionId: "session_12345678",
+      turnId: "turn_12345678",
+      type: "turn.stopped" as const,
+      sequence: 7,
+    };
+
+    expect(makeStableEventId(identity)).toBe(makeStableEventId(identity));
+  });
+});
