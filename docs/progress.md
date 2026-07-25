@@ -171,6 +171,15 @@
   numbers, and first-writer-wins behavior. The Telegram Bot API 10.2 request
   shape is retained as a sanitized fixture; current official documentation
   confirms the 64-byte callback-data boundary.
+- FXO-1061 is green locally. Single-question multi-select requests now create a
+  durable SQLite draft before delivery and render set/unset option buttons plus
+  Submit and Cancel. Desired-state callbacks are idempotent, independent
+  concurrent selections compose, selection bounds are enforced, and Submit
+  atomically commits the ordered option-ID array through the existing
+  first-writer authority before acknowledgement. Cancel leaves the answer null.
+  Restart, retry, stale keyboard, timeout, terminal-first and Telegram-first
+  races, final selected-label rendering, and bounded observable retention are
+  covered against the fake Telegram transport.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -223,7 +232,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 178 tests across 25 test files, including the
+- `pnpm check` passes all 185 tests across 27 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -316,5 +325,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1061 durable multi-select drafts with toggle, Submit, and Cancel
-semantics.
+Implement FXO-1063 ordered multi-question interaction sets as a durable,
+resumable wizard.

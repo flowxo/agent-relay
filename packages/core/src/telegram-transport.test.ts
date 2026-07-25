@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -724,6 +725,96 @@ describe("TelegramBotTransport", () => {
     expect(body.text).toContain("Reply with one option number:");
     expect(body.text).toContain("11. Synthetic choice 11");
     expect(body.text).not.toContain("decision_");
+  });
+
+  it("renders durable multi-select set actions with Submit and Cancel", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, result: { message_id: 46, date: 0 } }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await transport.deliver(
+      {
+        ...message,
+        multiSelect: {
+          options: [
+            {
+              token: "decision_00000000-0000-4000-8000-000000000001",
+              label: "Unit one",
+              selected: false,
+            },
+            {
+              token: "decision_00000000-0000-4000-8000-000000000002",
+              label: "Unit two",
+              selected: true,
+            },
+          ],
+          minSelections: 1,
+          maxSelections: 2,
+          submitToken: "draft_submit_00000000-0000-4000-8000-000000000003",
+          cancelToken: "draft_cancel_00000000-0000-4000-8000-000000000004",
+        },
+      },
+      { idempotencyKey: "evt_multi_select_12345678" },
+    );
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      text: string;
+      reply_markup: {
+        inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+      };
+    };
+    expect(body.text).toContain("Selection draft: 1 selected · choose 1–2.");
+    expect(body.reply_markup.inline_keyboard).toEqual([
+      [
+        {
+          text: "○ Unit one",
+          callback_data:
+            "relay-m:s:decision_00000000-0000-4000-8000-000000000001",
+        },
+        {
+          text: "✓ Unit two",
+          callback_data:
+            "relay-m:u:decision_00000000-0000-4000-8000-000000000002",
+        },
+      ],
+      [
+        {
+          text: "Submit",
+          callback_data:
+            "relay-m:x:draft_submit_00000000-0000-4000-8000-000000000003",
+        },
+        {
+          text: "Cancel",
+          callback_data:
+            "relay-m:c:draft_cancel_00000000-0000-4000-8000-000000000004",
+        },
+      ],
+    ]);
+    expect(
+      body.reply_markup.inline_keyboard
+        .flat()
+        .every((button) => Buffer.byteLength(button.callback_data) <= 64),
+    ).toBe(true);
+    expect(JSON.stringify(body.reply_markup)).not.toContain("multi_option");
+    expect(body).toEqual(
+      JSON.parse(
+        readFileSync(
+          join(fixtures, "multi-select-send-message.v10.2.json"),
+          "utf8",
+        ),
+      ),
+    );
   });
 
   it("long-polls only supported reply updates and returns validated update ids", async () => {

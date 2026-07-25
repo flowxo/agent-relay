@@ -128,6 +128,49 @@ describe("AgentAttentionEventV1Schema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("validates multi-select bounds and unique option IDs", () => {
+    const request = {
+      correlationId: "correlation_multi_12345678",
+      kind: "multi-select" as const,
+      question: "Choose several",
+      options: [
+        { id: "option_multi_0001", label: "One" },
+        { id: "option_multi_0002", label: "Two" },
+        { id: "option_multi_0003", label: "Three" },
+      ],
+      minSelections: 1,
+      maxSelections: 2,
+      expiresAt: "2026-07-24T12:05:00.000Z",
+    };
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request,
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: { ...request, minSelections: 3 },
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: {
+          ...request,
+          options: [
+            request.options[0]!,
+            { ...request.options[1]!, id: request.options[0]!.id },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("AgentCommandV1Schema", () => {

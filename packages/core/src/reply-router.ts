@@ -12,10 +12,14 @@ import {
   renderDetailsMessages,
   renderDeliveryMessage,
   renderDeliveryText,
+  renderMultiSelectDeliveryMessage,
+  renderMultiSelectResolutionMessage,
   type AttentionCardResolutionState,
 } from "./message.js";
 import type {
+  MultiSelectDraftRecord,
   NumberedChoiceResolutionResult,
+  PendingRequestRecord,
   RelayStore,
   ResolutionResult,
 } from "./store.js";
@@ -23,6 +27,10 @@ import {
   parseChoiceCallbackData,
   TELEGRAM_INLINE_CHOICE_LIMIT,
 } from "./telegram-choice.js";
+import {
+  parseMultiSelectCallbackData,
+  type ParsedMultiSelectCallback,
+} from "./telegram-multi-select.js";
 import type { NotificationTransport } from "./transport.js";
 import {
   asTransportError,
@@ -94,7 +102,10 @@ export type ReplyRouteOutcome =
   | "action-completed"
   | "action-duplicate"
   | "action-rejected"
-  | "action-failed";
+  | "action-failed"
+  | "draft-updated"
+  | "draft-unchanged"
+  | "draft-rejected";
 
 export interface ReplyRouteResult {
   outcome: ReplyRouteOutcome;
@@ -143,7 +154,7 @@ function cardResolutionState(
     case "expired":
       return "expired";
     case "cancelled":
-      return "superseded";
+      return "cancelled";
     case "failed":
     case "not_found":
     case "identity_mismatch":
@@ -526,6 +537,343 @@ export class TelegramReplyRouter {
     };
   }
 
+  private async editMultiSelectDraft(
+    messageId: string,
+    request: PendingRequestRecord,
+    draft: MultiSelectDraftRecord,
+  ): Promise<void> {
+    if (!isInteractiveTransport(this.transport)) {
+      return;
+    }
+    const event = this.store.getEvent(request.eventId)?.event;
+    if (event === undefined) {
+      return;
+    }
+    try {
+      await this.transport.editDeliveryMessage(
+        messageId,
+        renderMultiSelectDeliveryMessage(event, request, draft, {
+          now: this.now(),
+        }),
+      );
+    } catch (error) {
+      this.logger.log({
+        level: "warn",
+        code: "telegram.multi-select-edit-failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Telegram multi-select draft edit failed",
+        at: this.now().toISOString(),
+        details: { messageId },
+      });
+    }
+  }
+
+  private async editMultiSelectFinal(
+    messageId: string,
+    request: PendingRequestRecord,
+    draft: MultiSelectDraftRecord,
+    state: AttentionCardResolutionState,
+  ): Promise<void> {
+    if (!isInteractiveTransport(this.transport)) {
+      return;
+    }
+    const event = this.store.getEvent(request.eventId)?.event;
+    if (event === undefined) {
+      return;
+    }
+    try {
+      await this.transport.editResolvedMessage(
+        messageId,
+        renderDeliveryText(
+          renderMultiSelectResolutionMessage(
+            event,
+            request,
+            draft,
+            state,
+            this.now(),
+          ),
+        ),
+      );
+    } catch (error) {
+      this.logger.log({
+        level: "warn",
+        code: "telegram.multi-select-final-edit-failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Telegram multi-select final edit failed",
+        at: this.now().toISOString(),
+        details: { messageId },
+      });
+    }
+  }
+
+  private multiSelectFinalState(
+    request: PendingRequestRecord,
+    draft: MultiSelectDraftRecord,
+  ): AttentionCardResolutionState {
+    if (request.state === "answered" || draft.state === "submitted") {
+      return "answered";
+    }
+    if (request.state === "cancelled" || draft.state === "cancelled") {
+      return "cancelled";
+    }
+    if (request.state === "expired" || draft.state === "expired") {
+      return "expired";
+    }
+    if (draft.state === "superseded") {
+      return "superseded";
+    }
+    return "failed";
+  }
+
+  private async multiSelectCallbackContext(
+    callback: TelegramCallback,
+    request: PendingRequestRecord,
+    updateId: number,
+  ): Promise<{ messageId: string } | { rejection: ReplyRouteResult }> {
+    const messageId =
+      callback.message === undefined
+        ? undefined
+        : String(callback.message.message_id);
+    const receipt = this.store.getEventTransportReceipt(request.eventId);
+    if (
+      messageId === undefined ||
+      receipt === undefined ||
+      request.transportMessageId !== messageId ||
+      receipt.transportName !== this.transport.name ||
+      receipt.messageId !== messageId
+    ) {
+      return {
+        rejection: await this.rejectChoiceCallback(
+          callback,
+          updateId,
+          "telegram.multi-select-session-mismatch",
+          "This interaction belongs to a different or stale session card",
+        ),
+      };
+    }
+    if (isTopicTransport(this.transport)) {
+      const topic = this.store.getSessionTopic({
+        machineId: request.machineId,
+        harness: request.harness,
+        sessionId: request.sessionId,
+        transportName: this.transport.name,
+        transportScope: this.transport.topicScope,
+      });
+      if (
+        topic?.provisioningStatus !== "ready" ||
+        topic.topicId === undefined ||
+        callback.message?.message_thread_id === undefined ||
+        String(callback.message.message_thread_id) !== topic.topicId
+      ) {
+        return {
+          rejection: await this.rejectChoiceCallback(
+            callback,
+            updateId,
+            "telegram.multi-select-topic-mismatch",
+            "This interaction belongs to a different or stale topic",
+          ),
+        };
+      }
+    }
+    return { messageId };
+  }
+
+  private async handleMultiSelectCallback(
+    callback: TelegramCallback,
+    parsed: ParsedMultiSelectCallback,
+    updateId: number,
+    receivedAt: string,
+  ): Promise<ReplyRouteResult> {
+    const optionRequest =
+      parsed.action === "select" || parsed.action === "unselect"
+        ? this.store.getPendingForOptionToken(parsed.token)
+        : undefined;
+    const actionEntry =
+      parsed.action === "submit" || parsed.action === "cancel"
+        ? this.store.getMultiSelectDraftByActionToken(parsed.token)
+        : undefined;
+    const request = optionRequest ?? actionEntry?.request;
+    const draft =
+      request === undefined
+        ? undefined
+        : this.store.getMultiSelectDraft(request.correlationId);
+    if (
+      request?.requestKind !== "multi-select" ||
+      draft === undefined ||
+      ((parsed.action === "submit" || parsed.action === "cancel") &&
+        actionEntry?.action !== parsed.action)
+    ) {
+      return await this.rejectChoiceCallback(
+        callback,
+        updateId,
+        "telegram.multi-select-unknown",
+        "Stale or invalid interaction",
+      );
+    }
+    const context = await this.multiSelectCallbackContext(
+      callback,
+      request,
+      updateId,
+    );
+    if ("rejection" in context) {
+      return context.rejection;
+    }
+    const expected = {
+      machineId: request.machineId,
+      harness: request.harness,
+      sessionId: request.sessionId,
+      ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+      transportMessageId: context.messageId,
+    };
+
+    if (parsed.action === "select" || parsed.action === "unselect") {
+      const selected = parsed.action === "select";
+      const result = this.store.setMultiSelectOption({
+        optionToken: parsed.token,
+        selected,
+        now: receivedAt,
+        expected,
+      });
+      if (
+        result.outcome === "not_found" ||
+        result.outcome === "identity_mismatch"
+      ) {
+        return await this.rejectChoiceCallback(
+          callback,
+          updateId,
+          "telegram.multi-select-session-mismatch",
+          "This interaction belongs to a different or stale session card",
+        );
+      }
+      if (result.outcome === "selection_limit") {
+        await this.acknowledge(
+          callback.id,
+          `Choose no more than ${String(result.draft.maxSelections)}`,
+        );
+        await this.editMultiSelectDraft(
+          context.messageId,
+          result.request,
+          result.draft,
+        );
+        return { outcome: "draft-rejected", updateId };
+      }
+      if (
+        result.outcome === "expired" ||
+        result.outcome === "stale" ||
+        result.outcome === "failed"
+      ) {
+        await this.acknowledge(
+          callback.id,
+          result.outcome === "expired"
+            ? "Request expired"
+            : "This interaction is no longer active",
+        );
+        await this.editMultiSelectFinal(
+          context.messageId,
+          result.request,
+          result.draft,
+          this.multiSelectFinalState(result.request, result.draft),
+        );
+        return {
+          outcome: result.outcome === "expired" ? "expired" : "draft-rejected",
+          updateId,
+        };
+      }
+      await this.acknowledge(
+        callback.id,
+        result.outcome === "unchanged"
+          ? "Already updated"
+          : selected
+            ? "Selected"
+            : "Removed",
+      );
+      await this.editMultiSelectDraft(
+        context.messageId,
+        result.request,
+        result.draft,
+      );
+      return {
+        outcome:
+          result.outcome === "unchanged" ? "draft-unchanged" : "draft-updated",
+        updateId,
+      };
+    }
+
+    const result = this.store.finishMultiSelectDraft({
+      actionToken: parsed.token,
+      action: parsed.action,
+      now: receivedAt,
+      expected,
+    });
+    if (
+      result.outcome === "not_found" ||
+      result.outcome === "identity_mismatch"
+    ) {
+      return await this.rejectChoiceCallback(
+        callback,
+        updateId,
+        "telegram.multi-select-session-mismatch",
+        "This interaction belongs to a different or stale session card",
+      );
+    }
+    if (result.outcome === "invalid_selection") {
+      await this.acknowledge(
+        callback.id,
+        `Choose ${String(result.draft.minSelections)}–${String(
+          result.draft.maxSelections,
+        )} options before Submit`,
+      );
+      await this.editMultiSelectDraft(
+        context.messageId,
+        result.request,
+        result.draft,
+      );
+      return { outcome: "draft-rejected", updateId };
+    }
+    if (
+      result.outcome === "answered" ||
+      result.outcome === "cancelled" ||
+      result.outcome === "duplicate" ||
+      result.outcome === "expired"
+    ) {
+      await this.acknowledge(
+        callback.id,
+        {
+          answered: "Submitted",
+          cancelled: "Canceled",
+          duplicate: "Already handled",
+          expired: "Request expired",
+        }[result.outcome],
+      );
+      await this.editMultiSelectFinal(
+        context.messageId,
+        result.request,
+        result.draft,
+        this.multiSelectFinalState(result.request, result.draft),
+      );
+      return {
+        outcome:
+          result.outcome === "duplicate" ? "duplicate-answer" : result.outcome,
+        updateId,
+      };
+    }
+    await this.acknowledge(callback.id, "This interaction is no longer active");
+    await this.editMultiSelectFinal(
+      context.messageId,
+      result.request,
+      result.draft,
+      this.multiSelectFinalState(result.request, result.draft),
+    );
+    return {
+      outcome: result.outcome === "failed" ? "failed" : "draft-rejected",
+      updateId,
+    };
+  }
+
   private async rejectCardCallback(
     callback: TelegramCallback,
     updateId: number,
@@ -782,13 +1130,16 @@ export class TelegramReplyRouter {
       if (chatId === undefined || !this.authorized(callback.from.id, chatId)) {
         if (
           callback.data?.startsWith("relay-card:") === true ||
-          callback.data?.startsWith("relay:") === true
+          callback.data?.startsWith("relay:") === true ||
+          callback.data?.startsWith("relay-m:") === true
         ) {
           this.diagnoseCardCallback(
             update.update_id,
             callback.data.startsWith("relay-card:")
               ? "telegram.card-action-unauthorized"
-              : "telegram.choice-unauthorized",
+              : callback.data.startsWith("relay-m:")
+                ? "telegram.multi-select-unauthorized"
+                : "telegram.choice-unauthorized",
             "Unauthorized Telegram callback",
           );
         }
@@ -808,6 +1159,22 @@ export class TelegramReplyRouter {
                 callback,
                 cardAction,
                 update.update_id,
+              );
+      } else if (callback.data?.startsWith("relay-m:") === true) {
+        const multiSelect = parseMultiSelectCallbackData(callback.data);
+        route =
+          multiSelect === undefined
+            ? await this.rejectChoiceCallback(
+                callback,
+                update.update_id,
+                "telegram.multi-select-malformed",
+                "Stale or invalid interaction",
+              )
+            : await this.handleMultiSelectCallback(
+                callback,
+                multiSelect,
+                update.update_id,
+                receivedAt,
               );
       } else if (callback.data === undefined) {
         await this.acknowledge(callback.id, "Stale or invalid choice");
@@ -1005,7 +1372,10 @@ export class TelegramReplyRouter {
     this.store.completeTelegramUpdate(update.update_id, route.outcome);
     this.logger.log({
       level:
-        route.outcome === "answered" || route.outcome === "action-completed"
+        route.outcome === "answered" ||
+        route.outcome === "action-completed" ||
+        route.outcome === "draft-updated" ||
+        route.outcome === "draft-unchanged"
           ? "info"
           : "warn",
       code: `telegram.reply-${route.outcome}`,

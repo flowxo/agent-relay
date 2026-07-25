@@ -2,6 +2,7 @@ import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 
 import { cardActionToken, type CardActionKind } from "./card-action.js";
 import { redactText } from "./redaction.js";
+import type { MultiSelectDraftRecord, PendingRequestRecord } from "./store.js";
 import { TELEGRAM_INLINE_CHOICE_LIMIT } from "./telegram-choice.js";
 import { sessionTopicMetadata } from "./topic.js";
 import type { DeliveryAction, DeliveryMessage } from "./transport.js";
@@ -11,7 +12,7 @@ const CARD_SUMMARY_LIMIT = 480;
 const TRUNCATION_MARKER = " …[truncated]";
 
 export type AttentionCardResolutionState =
-  "answered" | "expired" | "superseded" | "failed";
+  "answered" | "cancelled" | "expired" | "superseded" | "failed";
 
 export interface AttentionCardOptions {
   now?: Date;
@@ -38,6 +39,7 @@ const EVENT_STATE_LABELS: Record<AgentAttentionEventV1["type"], string> = {
 
 const RESOLUTION_STATE_LABELS: Record<AttentionCardResolutionState, string> = {
   answered: "Answered",
+  cancelled: "Canceled",
   expired: "Expired",
   superseded: "Superseded",
   failed: "Failed",
@@ -209,10 +211,65 @@ export function renderDeliveryText(message: DeliveryMessage): string {
           ),
         ].join("\n")
       : "";
+  const multiSelectSummary =
+    message.multiSelect === undefined
+      ? ""
+      : `\n\nSelection draft: ${String(
+          message.multiSelect.options.filter((option) => option.selected)
+            .length,
+        )} selected · choose ${String(
+          message.multiSelect.minSelections,
+        )}–${String(message.multiSelect.maxSelections)}.`;
   return redactText(
-    `${message.title}\n\n${message.text}${numberedChoices}`,
+    `${message.title}\n\n${message.text}${numberedChoices}${multiSelectSummary}`,
     TELEGRAM_MESSAGE_LIMIT,
   );
+}
+
+export function renderMultiSelectDeliveryMessage(
+  event: AgentAttentionEventV1,
+  request: PendingRequestRecord,
+  draft: MultiSelectDraftRecord,
+  options: AttentionCardOptions = {},
+): DeliveryMessage {
+  const selected = new Set(draft.selectedOptionIds);
+  return {
+    ...renderDeliveryMessage(event, options),
+    multiSelect: {
+      options: request.options.map((option) => ({
+        token: option.token,
+        label: option.label,
+        selected: selected.has(option.optionId),
+      })),
+      minSelections: draft.minSelections,
+      maxSelections: draft.maxSelections,
+      submitToken: draft.submitToken,
+      cancelToken: draft.cancelToken,
+    },
+  };
+}
+
+export function renderMultiSelectResolutionMessage(
+  event: AgentAttentionEventV1,
+  request: PendingRequestRecord,
+  draft: MultiSelectDraftRecord,
+  resolutionState: AttentionCardResolutionState,
+  now = new Date(),
+): DeliveryMessage {
+  const selected = new Set(draft.selectedOptionIds);
+  const labels = request.options
+    .filter((option) => selected.has(option.optionId))
+    .map((option) => oneLineUntrusted(option.label));
+  const rendered = renderDeliveryMessage(event, {
+    now,
+    resolutionState,
+  });
+  return {
+    ...rendered,
+    text: `${rendered.text}\n\nSelected: ${
+      labels.length === 0 ? "none" : labels.join(", ")
+    }`,
+  };
 }
 
 const DETAILS_PAGE_CONTENT_LIMIT = 3_500;

@@ -8,7 +8,10 @@ import { sha256 } from "@agent-relay/protocol";
 
 import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
-import { renderDeliveryMessage } from "./message.js";
+import {
+  renderDeliveryMessage,
+  renderMultiSelectDeliveryMessage,
+} from "./message.js";
 import { redactText } from "./redaction.js";
 import type {
   DiagnosticIngestResult,
@@ -672,16 +675,35 @@ export class RelayService {
           );
         }
         const pending = this.store.getPendingForEvent(item.event.eventId);
+        const multiSelectDraft =
+          pending?.requestKind === "multi-select"
+            ? this.store.getMultiSelectDraft(pending.correlationId)
+            : undefined;
+        if (
+          pending?.requestKind === "multi-select" &&
+          multiSelectDraft === undefined
+        ) {
+          throw new Error(
+            `multi-select draft ${pending.correlationId} disappeared`,
+          );
+        }
         const message =
           pending === undefined || pending.options.length === 0
             ? rendered
-            : {
-                ...rendered,
-                choices: pending.options.map((option) => ({
-                  token: option.token,
-                  label: option.label,
-                })),
-              };
+            : multiSelectDraft !== undefined
+              ? renderMultiSelectDeliveryMessage(
+                  item.event,
+                  pending,
+                  multiSelectDraft,
+                  { now: this.now() },
+                )
+              : {
+                  ...rendered,
+                  choices: pending.options.map((option) => ({
+                    token: option.token,
+                    label: option.label,
+                  })),
+                };
         const deliveryContext = await this.deliveryContext(item.event);
         deliveryTopicId = deliveryContext.topicId;
         const receipt = await this.transport.deliver(message, deliveryContext);

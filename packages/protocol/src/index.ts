@@ -112,7 +112,14 @@ export const ProcessExitEvidenceSchema = z
 export const AttentionRequestSchema = z
   .object({
     correlationId: boundedId,
-    kind: z.enum(["confirm", "select", "input", "permission", "continuation"]),
+    kind: z.enum([
+      "confirm",
+      "select",
+      "multi-select",
+      "input",
+      "permission",
+      "continuation",
+    ]),
     question: z.string().min(1).max(1_000),
     options: z
       .array(
@@ -126,22 +133,77 @@ export const AttentionRequestSchema = z
       .min(2)
       .max(20)
       .optional(),
+    minSelections: z.number().int().min(0).max(20).optional(),
+    maxSelections: z.number().int().min(1).max(20).optional(),
     expiresAt: isoTimestamp,
   })
   .strict()
   .superRefine((request, context) => {
-    if (request.kind === "select" && request.options === undefined) {
+    if (
+      (request.kind === "select" || request.kind === "multi-select") &&
+      request.options === undefined
+    ) {
       context.addIssue({
         code: "custom",
         message: "select requests require options",
         path: ["options"],
       });
     }
-    if (request.kind !== "select" && request.options !== undefined) {
+    if (
+      request.kind !== "select" &&
+      request.kind !== "multi-select" &&
+      request.options !== undefined
+    ) {
       context.addIssue({
         code: "custom",
         message: "options are only valid for select requests",
         path: ["options"],
+      });
+    }
+    if (request.options !== undefined) {
+      const optionIds = request.options.map((option) => option.id);
+      if (new Set(optionIds).size !== optionIds.length) {
+        context.addIssue({
+          code: "custom",
+          message: "option IDs must be unique",
+          path: ["options"],
+        });
+      }
+    }
+    if (request.kind === "multi-select") {
+      if (
+        request.minSelections === undefined ||
+        request.maxSelections === undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "multi-select requests require selection bounds",
+          path: ["minSelections"],
+        });
+      } else if (request.minSelections > request.maxSelections) {
+        context.addIssue({
+          code: "custom",
+          message: "minimum selections cannot exceed maximum selections",
+          path: ["minSelections"],
+        });
+      } else if (
+        request.options !== undefined &&
+        request.maxSelections > request.options.length
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "maximum selections cannot exceed the option count",
+          path: ["maxSelections"],
+        });
+      }
+    } else if (
+      request.minSelections !== undefined ||
+      request.maxSelections !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "selection bounds are only valid for multi-select requests",
+        path: ["minSelections"],
       });
     }
   });

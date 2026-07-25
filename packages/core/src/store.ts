@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
@@ -190,6 +191,7 @@ export interface RetentionCutoffs {
 export interface RetentionResult {
   requestsExpired: number;
   pendingRequests: number;
+  interactionDrafts: number;
   resumeCommands: number;
   events: number;
   deliveryAttempts: number;
@@ -215,7 +217,13 @@ export interface PendingRequestRecord {
   sessionId: string;
   turnId?: string;
   state: PendingRequestState;
-  requestKind: "confirm" | "select" | "input" | "permission" | "continuation";
+  requestKind:
+    | "confirm"
+    | "select"
+    | "multi-select"
+    | "input"
+    | "permission"
+    | "continuation";
   question: string;
   expiresAt: string;
   resolvedBy?: "terminal" | "telegram";
@@ -224,6 +232,78 @@ export interface PendingRequestRecord {
   transportMessageId?: string;
   options: PendingOption[];
 }
+
+export type MultiSelectDraftState =
+  | "pending"
+  | "drafting"
+  | "submitted"
+  | "cancelled"
+  | "expired"
+  | "superseded"
+  | "failed";
+
+export interface MultiSelectDraftRecord {
+  correlationId: string;
+  state: MultiSelectDraftState;
+  minSelections: number;
+  maxSelections: number;
+  submitToken: string;
+  cancelToken: string;
+  revision: number;
+  selectedOptionIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MultiSelectDraftMutationResult =
+  | {
+      outcome: "updated" | "unchanged";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "selection_limit" | "stale" | "failed";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "expired";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: MultiSelectDraftRecord;
+    };
+
+export type MultiSelectSubmitResult =
+  | {
+      outcome: "answered" | "cancelled";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome:
+        "invalid_selection" | "duplicate" | "expired" | "stale" | "failed";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: MultiSelectDraftRecord;
+    };
 
 export type ResolutionOutcome =
   | "answered"
@@ -419,6 +499,18 @@ interface PendingOptionRow {
   label: string;
 }
 
+interface MultiSelectDraftRow {
+  correlation_id: string;
+  state: MultiSelectDraftState;
+  min_selections: number;
+  max_selections: number;
+  submit_token: string;
+  cancel_token: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
 interface ResumeCommandRow {
   correlation_id: string;
   owner_id: string;
@@ -514,7 +606,7 @@ function defaultOptions(
   if (request === undefined) {
     return [];
   }
-  if (request.kind === "select") {
+  if (request.kind === "select" || request.kind === "multi-select") {
     return request.options ?? [];
   }
   if (request.kind === "confirm") {
@@ -731,6 +823,29 @@ export class RelayStore {
         UNIQUE(correlation_id, option_id),
         FOREIGN KEY (correlation_id)
           REFERENCES pending_requests(correlation_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS interaction_drafts (
+        correlation_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        min_selections INTEGER NOT NULL,
+        max_selections INTEGER NOT NULL,
+        submit_token TEXT NOT NULL UNIQUE,
+        cancel_token TEXT NOT NULL UNIQUE,
+        revision INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (correlation_id)
+          REFERENCES pending_requests(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS interaction_draft_options (
+        correlation_id TEXT NOT NULL,
+        option_id TEXT NOT NULL,
+        selected_at TEXT NOT NULL,
+        PRIMARY KEY (correlation_id, option_id),
+        FOREIGN KEY (correlation_id)
+          REFERENCES interaction_drafts(correlation_id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS telegram_updates (
@@ -1483,6 +1598,32 @@ export class RelayStore {
             option.id,
             option.label,
           );
+        }
+        if (event.request.kind === "multi-select") {
+          if (
+            event.request.minSelections === undefined ||
+            event.request.maxSelections === undefined
+          ) {
+            throw new Error("validated multi-select request lost its bounds");
+          }
+          this.database
+            .prepare(
+              `
+              INSERT INTO interaction_drafts (
+                correlation_id, state, min_selections, max_selections,
+                submit_token, cancel_token, revision, created_at, updated_at
+              ) VALUES (?, 'pending', ?, ?, ?, ?, 0, ?, ?)
+            `,
+            )
+            .run(
+              event.request.correlationId,
+              event.request.minSelections,
+              event.request.maxSelections,
+              `draft_submit_${randomUUID()}`,
+              `draft_cancel_${randomUUID()}`,
+              event.occurredAt,
+              event.occurredAt,
+            );
         }
       }
       return {
@@ -2381,6 +2522,20 @@ export class RelayStore {
           `,
           )
           .run(now, eventId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'cancelled', updated_at = ?
+            WHERE state IN ('pending', 'drafting')
+              AND correlation_id IN (
+                SELECT correlation_id
+                FROM pending_requests
+                WHERE event_id = ?
+              )
+          `,
+          )
+          .run(now, eventId);
       }
       const delivered = this.markDeliveredWithinTransaction(
         eventId,
@@ -2527,6 +2682,417 @@ export class RelayStore {
     return row === undefined ? undefined : this.pendingFromRow(row);
   }
 
+  private multiSelectDraftFromRow(
+    row: MultiSelectDraftRow,
+  ): MultiSelectDraftRecord {
+    const selected = this.database
+      .prepare(
+        `
+        SELECT selected.option_id
+        FROM interaction_draft_options AS selected
+        JOIN pending_options AS option
+          ON option.correlation_id = selected.correlation_id
+          AND option.option_id = selected.option_id
+        WHERE selected.correlation_id = ?
+        ORDER BY option.rowid
+      `,
+      )
+      .all(row.correlation_id) as Array<{ option_id: string }>;
+    return {
+      correlationId: row.correlation_id,
+      state: row.state,
+      minSelections: row.min_selections,
+      maxSelections: row.max_selections,
+      submitToken: row.submit_token,
+      cancelToken: row.cancel_token,
+      revision: row.revision,
+      selectedOptionIds: selected.map((option) => option.option_id),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getMultiSelectDraft(
+    correlationId: string,
+  ): MultiSelectDraftRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM interaction_drafts
+        WHERE correlation_id = ?
+      `,
+      )
+      .get(correlationId) as MultiSelectDraftRow | undefined;
+    return row === undefined ? undefined : this.multiSelectDraftFromRow(row);
+  }
+
+  public getMultiSelectDraftByActionToken(token: string):
+    | {
+        request: PendingRequestRecord;
+        draft: MultiSelectDraftRecord;
+        action: "submit" | "cancel";
+      }
+    | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT *,
+          CASE WHEN submit_token = @token THEN 'submit' ELSE 'cancel' END
+            AS draft_action
+        FROM interaction_drafts
+        WHERE submit_token = @token OR cancel_token = @token
+      `,
+      )
+      .get({ token }) as
+      (MultiSelectDraftRow & { draft_action: "submit" | "cancel" }) | undefined;
+    if (row === undefined) {
+      return undefined;
+    }
+    const request = this.getPendingRequest(row.correlation_id);
+    return request === undefined
+      ? undefined
+      : {
+          request,
+          draft: this.multiSelectDraftFromRow(row),
+          action: row.draft_action,
+        };
+  }
+
+  private multiSelectExpectedMatches(
+    request: PendingRequestRecord,
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    },
+  ): boolean {
+    return (
+      request.machineId === expected.machineId &&
+      request.harness === expected.harness &&
+      request.sessionId === expected.sessionId &&
+      request.turnId === expected.turnId &&
+      request.transportMessageId === expected.transportMessageId
+    );
+  }
+
+  private synchronizeTerminalDraft(
+    request: PendingRequestRecord,
+    now: string,
+  ): MultiSelectDraftRecord | undefined {
+    const stateByRequest: Record<
+      PendingRequestState,
+      MultiSelectDraftState | undefined
+    > = {
+      open: undefined,
+      answered: "superseded",
+      expired: "expired",
+      cancelled: "cancelled",
+      failed: "failed",
+    };
+    const state = stateByRequest[request.state];
+    if (state !== undefined) {
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts SET state = ?, updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(state, now, request.correlationId);
+    }
+    return this.getMultiSelectDraft(request.correlationId);
+  }
+
+  public setMultiSelectOption(input: {
+    optionToken: string;
+    selected: boolean;
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): MultiSelectDraftMutationResult {
+    return this.database.transaction((): MultiSelectDraftMutationResult => {
+      const request = this.getPendingForOptionToken(input.optionToken);
+      if (request?.requestKind !== "multi-select") {
+        return { outcome: "not_found" };
+      }
+      const currentDraft = this.getMultiSelectDraft(request.correlationId);
+      if (currentDraft === undefined) {
+        return { outcome: "not_found", request };
+      }
+      if (!this.multiSelectExpectedMatches(request, input.expected)) {
+        return {
+          outcome: "identity_mismatch",
+          request,
+          draft: currentDraft,
+        };
+      }
+      if (request.state !== "open") {
+        const draft =
+          this.synchronizeTerminalDraft(request, input.now) ?? currentDraft;
+        return {
+          outcome:
+            request.state === "expired"
+              ? "expired"
+              : request.state === "failed"
+                ? "failed"
+                : "stale",
+          request,
+          draft,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+
+      const option = request.options.find(
+        (candidate) => candidate.token === input.optionToken,
+      );
+      if (option === undefined) {
+        return { outcome: "not_found", request, draft: currentDraft };
+      }
+      const alreadySelected =
+        this.database
+          .prepare(
+            `
+            SELECT 1
+            FROM interaction_draft_options
+            WHERE correlation_id = ? AND option_id = ?
+          `,
+          )
+          .get(request.correlationId, option.optionId) !== undefined;
+      if (alreadySelected === input.selected) {
+        return {
+          outcome: "unchanged",
+          request,
+          draft: currentDraft,
+        };
+      }
+      if (
+        input.selected &&
+        currentDraft.selectedOptionIds.length >= currentDraft.maxSelections
+      ) {
+        return {
+          outcome: "selection_limit",
+          request,
+          draft: currentDraft,
+        };
+      }
+      if (input.selected) {
+        this.database
+          .prepare(
+            `
+            INSERT INTO interaction_draft_options (
+              correlation_id, option_id, selected_at
+            ) VALUES (?, ?, ?)
+          `,
+          )
+          .run(request.correlationId, option.optionId, input.now);
+      } else {
+        this.database
+          .prepare(
+            `
+            DELETE FROM interaction_draft_options
+            WHERE correlation_id = ? AND option_id = ?
+          `,
+          )
+          .run(request.correlationId, option.optionId);
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts SET
+            state = 'drafting',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "updated",
+        request,
+        draft: this.getMultiSelectDraft(request.correlationId)!,
+      };
+    })();
+  }
+
+  public finishMultiSelectDraft(input: {
+    actionToken: string;
+    action: "submit" | "cancel";
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): MultiSelectSubmitResult {
+    return this.database.transaction((): MultiSelectSubmitResult => {
+      const entry = this.getMultiSelectDraftByActionToken(input.actionToken);
+      if (
+        entry === undefined ||
+        entry.action !== input.action ||
+        entry.request.requestKind !== "multi-select"
+      ) {
+        return { outcome: "not_found" };
+      }
+      const { request, draft } = entry;
+      if (!this.multiSelectExpectedMatches(request, input.expected)) {
+        return { outcome: "identity_mismatch", request, draft };
+      }
+      if (request.state !== "open") {
+        const synchronized =
+          this.synchronizeTerminalDraft(request, input.now) ?? draft;
+        return {
+          outcome:
+            request.state === "answered" ||
+            (request.state === "cancelled" && input.action === "cancel")
+              ? "duplicate"
+              : request.state === "expired"
+                ? "expired"
+                : request.state === "failed"
+                  ? "failed"
+                  : "stale",
+          request,
+          draft: synchronized,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "cancel") {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests SET
+              state = 'cancelled',
+              resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts SET
+              state = 'cancelled',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "cancelled",
+          request: this.requirePending(request.correlationId),
+          draft: this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+
+      if (
+        draft.selectedOptionIds.length < draft.minSelections ||
+        draft.selectedOptionIds.length > draft.maxSelections
+      ) {
+        return { outcome: "invalid_selection", request, draft };
+      }
+      const answer = JSON.stringify(draft.selectedOptionIds);
+      if (Buffer.byteLength(answer, "utf8") > 4_000) {
+        throw new Error("validated multi-select answer exceeds 4000 bytes");
+      }
+      const update = this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'answered',
+            resolved_by = 'telegram',
+            answer = ?,
+            resolved_at = ?
+          WHERE correlation_id = ? AND state = 'open'
+        `,
+        )
+        .run(answer, input.now, request.correlationId);
+      if (update.changes !== 1) {
+        const raced = this.requirePending(request.correlationId);
+        return {
+          outcome: "duplicate",
+          request: raced,
+          draft:
+            this.synchronizeTerminalDraft(raced, input.now) ??
+            this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts SET
+            state = 'submitted',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "answered",
+        request: this.requirePending(request.correlationId),
+        draft: this.getMultiSelectDraft(request.correlationId)!,
+      };
+    })();
+  }
+
   private requirePending(correlationId: string): PendingRequestRecord {
     const request = this.getPendingRequest(correlationId);
     if (request === undefined) {
@@ -2571,6 +3137,15 @@ export class RelayStore {
           `,
           )
           .run(input.now, input.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, input.correlationId);
         return {
           outcome: "expired",
           request: this.requirePending(input.correlationId),
@@ -2594,6 +3169,15 @@ export class RelayStore {
           request: this.requirePending(input.correlationId),
         };
       }
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'superseded', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, input.correlationId);
       return {
         outcome: "answered",
         request: this.requirePending(input.correlationId),
@@ -2896,43 +3480,71 @@ export class RelayStore {
   }
 
   public cancelRequest(correlationId: string, now: string): ResolutionResult {
-    const current = this.getPendingRequest(correlationId);
-    if (current === undefined) {
-      return { outcome: "not_found" };
-    }
-    if (current.state !== "open") {
+    return this.database.transaction((): ResolutionResult => {
+      const current = this.getPendingRequest(correlationId);
+      if (current === undefined) {
+        return { outcome: "not_found" };
+      }
+      if (current.state !== "open") {
+        return {
+          outcome: current.state === "answered" ? "duplicate" : current.state,
+          request: current,
+        };
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'cancelled',
+            resolved_at = ?
+          WHERE correlation_id = ? AND state = 'open'
+        `,
+        )
+        .run(now, correlationId);
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'cancelled', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(now, correlationId);
       return {
-        outcome: current.state === "answered" ? "duplicate" : current.state,
-        request: current,
+        outcome: "cancelled",
+        request: this.requirePending(correlationId),
       };
-    }
-    this.database
-      .prepare(
-        `
-        UPDATE pending_requests SET
-          state = 'cancelled',
-          resolved_at = ?
-        WHERE correlation_id = ? AND state = 'open'
-      `,
-      )
-      .run(now, correlationId);
-    return {
-      outcome: "cancelled",
-      request: this.requirePending(correlationId),
-    };
+    })();
   }
 
   public expireRequests(now: string): number {
-    return this.database
-      .prepare(
-        `
-        UPDATE pending_requests SET
-          state = 'expired',
-          resolved_at = ?
-        WHERE state = 'open' AND expires_at <= ?
-      `,
-      )
-      .run(now, now).changes;
+    return this.database.transaction(() => {
+      const changes = this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'expired',
+            resolved_at = ?
+          WHERE state = 'open' AND expires_at <= ?
+        `,
+        )
+        .run(now, now).changes;
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'expired', updated_at = ?
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE state = 'expired'
+            )
+        `,
+        )
+        .run(now);
+      return changes;
+    })();
   }
 
   private resumeCommandFromRow(row: ResumeCommandRow): ResumeCommandRecord {
@@ -3299,6 +3911,7 @@ export class RelayStore {
       const result: RetentionResult = {
         requestsExpired: 0,
         pendingRequests: 0,
+        interactionDrafts: 0,
         resumeCommands: 0,
         events: 0,
         deliveryAttempts: 0,
@@ -3337,11 +3950,15 @@ export class RelayStore {
       const deleteOptions = this.database.prepare(
         "DELETE FROM pending_options WHERE correlation_id = ?",
       );
+      const deleteDraft = this.database.prepare(
+        "DELETE FROM interaction_drafts WHERE correlation_id = ?",
+      );
       const deleteRequest = this.database.prepare(
         "DELETE FROM pending_requests WHERE correlation_id = ?",
       );
       for (const row of requestRows) {
         result.resumeCommands += deleteResume.run(row.correlation_id).changes;
+        result.interactionDrafts += deleteDraft.run(row.correlation_id).changes;
         deleteOptions.run(row.correlation_id);
         result.pendingRequests += deleteRequest.run(row.correlation_id).changes;
       }

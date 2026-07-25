@@ -9,6 +9,7 @@ import {
   choiceCallbackData,
   TELEGRAM_INLINE_CHOICE_LIMIT,
 } from "./telegram-choice.js";
+import { multiSelectCallbackData } from "./telegram-multi-select.js";
 import type {
   DeliveryContext,
   DeliveryMessage,
@@ -246,7 +247,42 @@ function inlineKeyboard(
     text: action.label,
     callback_data: cardActionCallbackData(action.kind, action.token),
   }));
-  return [...rowsOf(choiceButtons, 2), ...rowsOf(actionButtons, 2)];
+  const multiSelectButtons = (message.multiSelect?.options ?? []).map(
+    (option) => ({
+      text: `${option.selected ? "✓" : "○"} ${option.label}`,
+      callback_data: multiSelectCallbackData(
+        option.selected ? "unselect" : "select",
+        option.token,
+      ),
+    }),
+  );
+  const multiSelectActions =
+    message.multiSelect === undefined
+      ? []
+      : [
+          [
+            {
+              text: "Submit",
+              callback_data: multiSelectCallbackData(
+                "submit",
+                message.multiSelect.submitToken,
+              ),
+            },
+            {
+              text: "Cancel",
+              callback_data: multiSelectCallbackData(
+                "cancel",
+                message.multiSelect.cancelToken,
+              ),
+            },
+          ],
+        ];
+  return [
+    ...rowsOf(choiceButtons, 2),
+    ...rowsOf(multiSelectButtons, 2),
+    ...multiSelectActions,
+    ...rowsOf(actionButtons, 2),
+  ];
 }
 
 export type TelegramPolledUpdate = z.infer<typeof polledUpdateSchema>;

@@ -141,6 +141,37 @@ and show both terminal state and the selected label. Duplicate, expired,
 unknown, malformed, wrong-topic, and cross-session callbacks never replace the
 durable first answer.
 
+## Telegram multi-select drafts
+
+A one-question `multi-select` request projects to checkable option buttons plus
+**Submit** and **Cancel**. SQLite creates the draft at event ingestion, before
+delivery, with random submit/cancel tokens, explicit minimum and maximum
+selection counts, a revision, and an ordered set of selected option IDs.
+
+Option callbacks encode a desired state—select or unselect—not a blind toggle.
+Repeating the same Telegram update is ignored by the durable update claim;
+repeating a set/unset action under a different callback is an idempotent no-op.
+Independent concurrent selections can both commit, while a selection beyond the
+maximum is rejected without changing the draft. Each successful change edits the
+card to show checkmarks and the current selection count.
+
+Submit runs one SQLite transaction that rechecks request identity, delivered
+message, expiry, lifecycle, and selection bounds. A valid ordered option-ID
+array is encoded as bounded JSON and wins the existing pending-request
+first-writer transition. The draft becomes `submitted` in that same transaction
+before Telegram is acknowledged. If a terminal or another provider answered
+first, the draft becomes `superseded` and cannot replace the answer.
+
+Cancel is a distinct terminal transition: the pending request and draft become
+`cancelled`, the answer remains null, and no empty selection is sent to the
+harness. Submitted, canceled, expired, superseded, and failed cards remove their
+controls and retain the selected labels for auditability.
+
+Drafts and selections survive daemon restart in SQLite. Expiry synchronizes the
+parent request and draft. Retention deletes terminal drafts with their parent
+requests under the existing bounded maintenance limit and reports an
+`interactionDrafts` count so cleanup is observable.
+
 ## Fixtures and compatibility
 
 Sanitized fixtures live in `packages/protocol/fixtures/interactions`. They

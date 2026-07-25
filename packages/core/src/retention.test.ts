@@ -189,6 +189,7 @@ describe("durable retention controls", () => {
     ).toEqual({
       requestsExpired: 0,
       pendingRequests: 0,
+      interactionDrafts: 0,
       resumeCommands: 0,
       events: 0,
       deliveryAttempts: 0,

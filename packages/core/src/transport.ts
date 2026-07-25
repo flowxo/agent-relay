@@ -5,6 +5,14 @@ export interface DeliveryChoice {
   label: string;
 }
 
+export interface DeliveryMultiSelect {
+  options: Array<DeliveryChoice & { selected: boolean }>;
+  minSelections: number;
+  maxSelections: number;
+  submitToken: string;
+  cancelToken: string;
+}
+
 export interface DeliveryAction {
   kind: CardActionKind;
   token: string;
@@ -17,6 +25,7 @@ export interface DeliveryMessage {
   text: string;
   correlationId?: string;
   choices?: DeliveryChoice[];
+  multiSelect?: DeliveryMultiSelect;
   actions?: DeliveryAction[];
 }
 

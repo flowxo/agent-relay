@@ -7,5 +7,6 @@ export * from "./reply-router.js";
 export * from "./service.js";
 export * from "./store.js";
 export * from "./telegram-transport.js";
+export * from "./telegram-multi-select.js";
 export * from "./topic.js";
 export * from "./transport.js";
