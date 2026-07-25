@@ -1,0 +1,11 @@
+{
+  "recordedAt": "2026-07-25T12:00:00.000Z",
+  "contractVersion": "agent-interaction.v1",
+  "evidence": "synthetic-compatibility-fixture",
+  "privacy": "All identifiers, prompts, options, and answers are synthetic. No transcript, credential, provider callback, account identifier, or machine path is present.",
+  "fixtures": [
+    "request-question-set.v1.json",
+    "answer-question-set.v1.json",
+    "provider-capabilities.v1.json"
+  ]
+}

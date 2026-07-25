@@ -3,6 +3,8 @@ import { basename } from "node:path";
 
 import { z } from "zod";
 
+export * from "./interaction.js";
+
 const boundedId = z
   .string()
   .min(8)

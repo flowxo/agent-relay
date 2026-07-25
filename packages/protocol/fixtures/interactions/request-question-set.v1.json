@@ -1,0 +1,72 @@
+{
+  "schema": "agent-interaction-request.v1",
+  "requestId": "request_fixture_0001",
+  "createdAt": "2026-07-25T12:00:00.000Z",
+  "expiresAt": "2026-07-25T12:30:00.000Z",
+  "title": "Synthetic release decision",
+  "lifecycle": "pending",
+  "questions": [
+    {
+      "questionId": "question_confirm_0001",
+      "kind": "confirm",
+      "prompt": "Continue with the synthetic release?",
+      "confirm": {
+        "optionId": "option_confirm_0001",
+        "label": "Continue"
+      },
+      "decline": {
+        "optionId": "option_decline_0001",
+        "label": "Stop"
+      }
+    },
+    {
+      "questionId": "question_single_0001",
+      "kind": "single-select",
+      "prompt": "Choose one synthetic environment.",
+      "options": [
+        {
+          "optionId": "option_staging_0001",
+          "label": "Staging"
+        },
+        {
+          "optionId": "option_preview_0001",
+          "label": "Preview"
+        }
+      ]
+    },
+    {
+      "questionId": "question_multi_0001",
+      "kind": "multi-select",
+      "prompt": "Choose the synthetic checks to run.",
+      "options": [
+        {
+          "optionId": "option_unit_0001",
+          "label": "Unit"
+        },
+        {
+          "optionId": "option_contract_0001",
+          "label": "Contract"
+        },
+        {
+          "optionId": "option_e2e_0001",
+          "label": "End to end"
+        }
+      ],
+      "minSelections": 1,
+      "maxSelections": 2
+    },
+    {
+      "questionId": "question_text_0001",
+      "kind": "free-text",
+      "prompt": "Provide a synthetic release note.",
+      "minLength": 3,
+      "maxLength": 240,
+      "multiline": true
+    }
+  ],
+  "fallback": {
+    "preferredMode": "buttons",
+    "alternativeModes": ["numbered-text", "web-handoff"],
+    "whenUnavailable": "use-alternative"
+  }
+}

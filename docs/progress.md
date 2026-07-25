@@ -148,6 +148,18 @@
   abandon its claim loop; claim failures now emit one durable diagnostic, retry
   with bounded backoff through the configured wait window, and log recovery.
   Both defects have regression tests.
+- FXO-1060 is green locally. The provider-neutral
+  `agent-interaction-request.v1`, answer, lifecycle, and capability schemas
+  cover confirm, single-select, multi-select, free-text, and ordered question
+  sets with stable IDs and bounded payloads. Runtime compatibility validation
+  diagnoses duplicate/unknown IDs, empty options, invalid bounds, incompatible
+  kinds, missing/reordered answers, unknown selections, text limits, and expiry.
+  Canonical answers stay within the existing 4,000-byte durable continuation
+  boundary, and a SQLite close/reopen test proves the first valid terminal
+  answer remains authoritative. Sanitized fixtures and
+  `docs/structured-interactions.md` document the lifecycle, privacy boundary,
+  provider fallback vocabulary, and non-duplicating projection to the blocked
+  FXO-1048 Notifications contract consumer.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -200,7 +212,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 161 tests across 22 test files, including the
+- `pnpm check` passes all 170 tests across 24 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -293,4 +305,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Begin Phase 2 structured question contracts with FXO-1060.
+Implement FXO-1062 single-choice Telegram interactions against the new
+provider-neutral contract.

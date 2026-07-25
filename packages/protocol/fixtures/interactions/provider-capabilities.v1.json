@@ -1,0 +1,27 @@
+{
+  "schema": "agent-interaction-capabilities.v1",
+  "providerId": "transport_fixture_0001",
+  "providerKind": "transport",
+  "observedAt": "2026-07-25T12:00:00.000Z",
+  "features": [
+    "confirm",
+    "single-select",
+    "multi-select",
+    "free-text",
+    "ordered-question-set",
+    "durable-drafts",
+    "message-updates"
+  ],
+  "presentationModes": [
+    "buttons",
+    "direct-text",
+    "numbered-text",
+    "web-handoff"
+  ],
+  "limits": {
+    "maxQuestions": 10,
+    "maxOptionsPerQuestion": 20,
+    "maxTextLength": 3000,
+    "maxPayloadBytes": 32768
+  }
+}
