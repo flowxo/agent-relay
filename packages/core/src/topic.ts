@@ -1,4 +1,5 @@
 import type { AgentAttentionEventV1, Harness } from "@agent-relay/protocol";
+import { sha256 } from "@agent-relay/protocol";
 
 import { redactText } from "./redaction.js";
 
@@ -81,12 +82,28 @@ function sanitizeComponent(
   return bounded.length === 0 ? fallback : bounded;
 }
 
-function boundTopicName(value: string): string {
-  const characters = [...value];
-  if (characters.length <= 128) {
-    return value;
+function boundTopicName(prefix: string, identity: string): string {
+  const separator = " · ";
+  const suffix = `${separator}${identity}`;
+  const availablePrefixCharacters = 128 - [...suffix].length;
+  const prefixCharacters = [...prefix];
+  if (prefixCharacters.length <= availablePrefixCharacters) {
+    return `${prefix}${suffix}`;
   }
-  return `${characters.slice(0, 127).join("")}…`;
+  return `${prefixCharacters
+    .slice(0, Math.max(1, availablePrefixCharacters - 1))
+    .join("")
+    .trimEnd()}…${suffix}`;
+}
+
+function shortSessionIdentity(event: AgentAttentionEventV1): string {
+  const readableSuffix = event.sessionId
+    .slice(-8)
+    .replace(/[^A-Za-z0-9]/g, "_");
+  const collisionSuffix = sha256(
+    [event.machineId, event.harness, event.sessionId].join("\u001f"),
+  ).slice(0, 6);
+  return `${readableSuffix}-${collisionSuffix}`;
 }
 
 export function sessionTopicMetadata(
@@ -101,14 +118,14 @@ export function sessionTopicMetadata(
     event.project.branch === undefined
       ? undefined
       : sanitizeComponent(event.project.branch, "branch", 48);
-  const shortSessionId = event.sessionId.slice(-8);
+  const shortSessionId = shortSessionIdentity(event);
   const topicName = boundTopicName(
     [
       HARNESS_NAMES[event.harness],
       repository,
       ...(branch === undefined ? [] : [branch]),
-      shortSessionId,
     ].join(" · "),
+    shortSessionId,
   );
   return {
     provider: event.harness,

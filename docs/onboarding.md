@@ -90,9 +90,11 @@ curl --silent --show-error --fail \
 The first attention event for a logical harness session lazily creates one
 topic. Later events for that machine, harness, and session reuse the durable
 mapping after daemon restarts. Topic names contain only the harness, sanitized
-repository and optional branch, and the final eight characters of the session
-identifier. They never contain transcript text, tokens, or an absolute working
-path.
+repository and optional branch, plus the final eight readable session characters
+and a six-character digest of the full machine/harness/session identity. The
+digest prevents two sessions with the same readable suffix from becoming
+indistinguishable. Name bounding preserves that identity suffix. Names never
+contain transcript text, tokens, or an absolute working path.
 
 ### Discover the private chat and operator IDs
 
@@ -206,6 +208,12 @@ The first event for a session records a `topic.created` log before
 and as durable `topic.create-failed` diagnostics. Retryable failures keep the
 owning event in the normal delivery spool.
 
+Each topic record also reports a durable `laneState`: `running`, `waiting`,
+`muted`, `crashed`, `ended`, or `stale`. The stable topic name is not rewritten
+on every event. Compact event cards and session-control edits show state in
+Telegram, while `status` exposes the reconciled current value. Crash and stale
+evidence remain visible even when routine notifications were muted.
+
 Notifications are rendered as compact plain-text cards with stable session
 identity, event age, a bounded one-line summary, and fixed callback data that
 cannot be supplied by model text. Full long content remains in the local durable
@@ -218,7 +226,9 @@ actions are active:
 - Mute suppresses routine cards for that session while questions, stale
   warnings, and proven failures remain visible.
 - End closes the relay lane after pending questions are resolved. It does not
-  claim to terminate an already-running harness process.
+  claim to terminate an already-running harness process. Once ended, delayed
+  events are durably suppressed and delayed requests are canceled instead of
+  silently reopening the lane.
 
 Every action is committed before Telegram is acknowledged. Repeated taps return
 the stored result without repeating the action. Session controls are inspectable
@@ -359,6 +369,15 @@ If an existing topic was deleted, Agent Relay records
 `topic.reconciliation-required`, invalidates only that session's stale mapping,
 and retries the event before creating a replacement topic. It never silently
 falls back to the General conversation.
+
+The same deterministic replacement path handles a provider response proving that
+a stored topic is closed or otherwise unavailable. Telegram Bot API 10.2
+documents private-chat topic creation, editing, and deletion, but its
+`closeForumTopic` method is documented for forum supergroups rather than private
+bot topics. Agent Relay therefore does not pretend it can close a private topic:
+End is a durable local relay-lane state, and unavailable-topic responses trigger
+reconciliation. Interrupted topic creations are recovered in bounded retry
+batches at daemon startup.
 
 ### Telegram replies are ignored
 

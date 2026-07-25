@@ -10,6 +10,7 @@ import {
 } from "@agent-relay/protocol";
 import type {
   AgentAttentionEventV1,
+  EventType,
   Harness,
   RelayDiagnosticV1,
   SessionHeartbeatV1,
@@ -57,9 +58,13 @@ export interface SessionRecord {
   harnessVersion: string;
   sessionId: string;
   state: "active" | "waiting" | "stopped" | "suspected_stalled" | "exited";
+  lastEventType?: EventType;
   lastSeenAt: string;
   lastSequence: number;
 }
+
+export type SessionLaneState =
+  "running" | "waiting" | "muted" | "crashed" | "ended" | "stale";
 
 export type TopicProvisioningStatus =
   "pending" | "creating" | "ready" | "retry" | "failed";
@@ -75,6 +80,7 @@ export interface SessionTopicRecord {
   branch?: string;
   shortSessionId: string;
   lifecycleState: SessionRecord["state"];
+  laneState: SessionLaneState;
   topicName: string;
   topicId?: string;
   provisioningStatus: TopicProvisioningStatus;
@@ -314,6 +320,7 @@ interface SessionRow {
   harness_version: string;
   session_id: string;
   state: SessionRecord["state"];
+  last_event_type: EventType | null;
   last_seen_at: string;
   last_sequence: number;
 }
@@ -530,6 +537,7 @@ export class RelayStore {
         project_json TEXT NOT NULL,
         capabilities_json TEXT NOT NULL,
         state TEXT NOT NULL,
+        last_event_type TEXT,
         last_seen_at TEXT NOT NULL,
         last_sequence INTEGER NOT NULL,
         updated_at TEXT NOT NULL,
@@ -715,6 +723,30 @@ export class RelayStore {
       CREATE INDEX IF NOT EXISTS diagnostics_recorded_idx
         ON diagnostics(recorded_at, diagnostic_id);
     `);
+    const sessionColumns = this.database
+      .prepare("PRAGMA table_info(sessions)")
+      .all() as Array<{ name: string }>;
+    if (!sessionColumns.some((column) => column.name === "last_event_type")) {
+      this.database.exec(
+        "ALTER TABLE sessions ADD COLUMN last_event_type TEXT",
+      );
+      this.database.exec(`
+        UPDATE sessions
+        SET last_event_type = (
+          SELECT events.type
+          FROM events
+          WHERE events.machine_id = sessions.machine_id
+            AND events.harness = sessions.harness
+            AND events.session_id = sessions.session_id
+          ORDER BY
+            CAST(json_extract(events.payload_json, '$.sequence') AS INTEGER)
+              DESC,
+            events.created_at DESC,
+            events.event_id DESC
+          LIMIT 1
+        )
+      `);
+    }
   }
 
   public close(): void {
@@ -756,6 +788,62 @@ export class RelayStore {
       });
   }
 
+  private sessionLaneState(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): SessionLaneState {
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          sessions.state,
+          sessions.last_event_type,
+          controls.muted_at,
+          controls.ended_at
+        FROM sessions
+        LEFT JOIN session_controls AS controls
+          ON controls.machine_id = sessions.machine_id
+          AND controls.harness = sessions.harness
+          AND controls.session_id = sessions.session_id
+        WHERE sessions.machine_id = @machineId
+          AND sessions.harness = @harness
+          AND sessions.session_id = @sessionId
+      `,
+      )
+      .get(input) as
+      | {
+          state: SessionRecord["state"];
+          last_event_type: EventType | null;
+          muted_at: string | null;
+          ended_at: string | null;
+        }
+      | undefined;
+    if (row === undefined) {
+      throw new Error("session topic references an unknown session");
+    }
+    if (row.ended_at !== null || row.last_event_type === "session.ended") {
+      return "ended";
+    }
+    if (
+      row.state === "stopped" ||
+      row.last_event_type === "turn.failed" ||
+      row.last_event_type === "process.exited"
+    ) {
+      return "crashed";
+    }
+    if (
+      row.state === "suspected_stalled" ||
+      row.last_event_type === "process.stale"
+    ) {
+      return "stale";
+    }
+    if (row.muted_at !== null) {
+      return "muted";
+    }
+    return row.state === "waiting" ? "waiting" : "running";
+  }
+
   private topicFromRow(row: SessionTopicRow): SessionTopicRecord {
     return {
       machineId: row.machine_id,
@@ -768,6 +856,11 @@ export class RelayStore {
       ...(row.branch === null ? {} : { branch: row.branch }),
       shortSessionId: row.short_session_id,
       lifecycleState: row.lifecycle_state,
+      laneState: this.sessionLaneState({
+        machineId: row.machine_id,
+        harness: row.harness,
+        sessionId: row.session_id,
+      }),
       topicName: row.topic_name,
       ...(row.topic_id === null ? {} : { topicId: row.topic_id }),
       provisioningStatus: row.provisioning_status,
@@ -830,6 +923,21 @@ export class RelayStore {
       throw new Error("topic metadata is outside supported bounds");
     }
     return this.database.transaction((): SessionTopicClaimResult => {
+      const session = this.database
+        .prepare(
+          `
+          SELECT state
+          FROM sessions
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+        `,
+        )
+        .get(input) as { state: SessionRecord["state"] } | undefined;
+      if (session === undefined) {
+        throw new Error("cannot claim a topic for an unknown session");
+      }
+      const metadata = { ...input, lifecycleState: session.state };
       this.database
         .prepare(
           `
@@ -846,7 +954,7 @@ export class RelayStore {
         `,
         )
         .run({
-          ...input,
+          ...metadata,
           branch: input.branch ?? null,
         });
       this.database
@@ -871,7 +979,7 @@ export class RelayStore {
         `,
         )
         .run({
-          ...input,
+          ...metadata,
           branch: input.branch ?? null,
         });
       const currentRow = this.getSessionTopicRow(input);
@@ -1101,8 +1209,11 @@ export class RelayStore {
     })();
   }
 
-  public recoverInterruptedTopics(now: string): number {
+  public recoverInterruptedTopics(now: string, limit = 500): number {
     assertIsoCutoff(now, "topic recovery time");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 5_000) {
+      throw new Error("topic recovery limit must be between 1 and 5000");
+    }
     return this.database
       .prepare(
         `
@@ -1113,10 +1224,16 @@ export class RelayStore {
           last_error_code = 'topic-creation-interrupted',
           last_error_message = 'daemon stopped during topic creation',
           updated_at = ?
-        WHERE provisioning_status = 'creating'
+        WHERE rowid IN (
+          SELECT rowid
+          FROM session_topics
+          WHERE provisioning_status = 'creating'
+          ORDER BY updated_at, rowid
+          LIMIT ?
+        )
       `,
       )
-      .run(now, now).changes;
+      .run(now, now, limit).changes;
   }
 
   public getSessionTopic(input: {
@@ -1220,6 +1337,10 @@ export class RelayStore {
               WHEN @sequence >= last_sequence THEN @state
               ELSE state
             END,
+            last_event_type = CASE
+              WHEN @sequence >= last_sequence THEN @type
+              ELSE last_event_type
+            END,
             last_sequence = MAX(last_sequence, @sequence),
             last_seen_at = MAX(last_seen_at, @occurredAt),
             updated_at = @occurredAt
@@ -1229,6 +1350,9 @@ export class RelayStore {
         `,
         )
         .run({ ...event, state });
+      if (event.type === "session.ended") {
+        this.upsertSessionControl(event, "ended_at", event.occurredAt);
+      }
 
       const payloadJson = JSON.stringify(event);
       const result = this.database
@@ -1859,6 +1983,17 @@ export class RelayStore {
   public suppressionReason(
     event: AgentAttentionEventV1,
   ): "muted" | "ended" | undefined {
+    const control = this.getSessionControl(event);
+    if (
+      event.type !== "session.ended" &&
+      (control?.endedAt !== undefined ||
+        this.sessionLaneState(event) === "ended")
+    ) {
+      return "ended";
+    }
+    if (event.type === "session.ended") {
+      return undefined;
+    }
     if (
       event.request !== undefined ||
       event.type === "turn.failed" ||
@@ -1867,11 +2002,36 @@ export class RelayStore {
     ) {
       return undefined;
     }
-    const control = this.getSessionControl(event);
-    if (control?.endedAt !== undefined) {
-      return "ended";
-    }
     return control?.mutedAt === undefined ? undefined : "muted";
+  }
+
+  public markDeliverySuppressed(
+    eventId: string,
+    attemptNumber: number,
+    reason: "muted" | "ended",
+    now: string,
+  ): void {
+    this.database.transaction(() => {
+      if (reason === "ended") {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests SET
+              state = 'cancelled',
+              resolved_at = ?
+            WHERE event_id = ? AND state = 'open'
+          `,
+          )
+          .run(now, eventId);
+      }
+      this.markDelivered(
+        eventId,
+        attemptNumber,
+        "session-control",
+        `suppressed:${reason}`,
+        now,
+      );
+    })();
   }
 
   public getEventTransportReceipt(
@@ -2781,7 +2941,7 @@ export class RelayStore {
         `
         SELECT
           machine_id, bridge_session_id, harness, surface, harness_version,
-          session_id, state, last_seen_at, last_sequence
+          session_id, state, last_event_type, last_seen_at, last_sequence
         FROM sessions
         ORDER BY last_seen_at DESC, machine_id, harness, session_id
       `,
@@ -2795,6 +2955,9 @@ export class RelayStore {
       harnessVersion: row.harness_version,
       sessionId: row.session_id,
       state: row.state,
+      ...(row.last_event_type === null
+        ? {}
+        : { lastEventType: row.last_event_type }),
       lastSeenAt: row.last_seen_at,
       lastSequence: row.last_sequence,
     }));

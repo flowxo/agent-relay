@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
@@ -11,6 +12,7 @@ import { FakeTelegramTransport } from "./fake-transport.js";
 import { MemoryLogger } from "./logger.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
+import { sessionTopicMetadata } from "./topic.js";
 
 function event(
   eventId: string,
@@ -35,6 +37,7 @@ function event(
     type: overrides.type ?? "turn.stopped",
     summary: overrides.summary ?? "Synthetic topic event",
     ...(overrides.failure === undefined ? {} : { failure: overrides.failure }),
+    ...(overrides.request === undefined ? {} : { request: overrides.request }),
     capabilities: overrides.capabilities ?? {
       inlineContinue: true,
       lateResume: true,
@@ -76,8 +79,9 @@ describe("durable session topic registry", () => {
         provider: "codex",
         repository: "example",
         branch: "codex/topic-registry",
-        shortSessionId: "12345678",
+        shortSessionId: expect.stringMatching(/^12345678-[a-f0-9]{6}$/),
         lifecycleState: "waiting",
+        laneState: "waiting",
         provisioningStatus: "ready",
         topicId: "1000",
       }),
@@ -339,6 +343,47 @@ describe("durable session topic registry", () => {
     store.close();
   });
 
+  it("diagnoses and replaces a closed topic deterministically", async () => {
+    const testClock = clock();
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport, {
+      now: testClock.now,
+      retryPolicy: {
+        maxAttempts: 3,
+        baseDelayMs: 1_000,
+        maxDelayMs: 5_000,
+      },
+    });
+    service.ingest(event("evt_topic_before_close_12345678", { sequence: 1 }));
+    await service.drain();
+    expect(transport.closeTopic("1000")).toBe(true);
+
+    service.ingest(event("evt_topic_after_close_12345678", { sequence: 2 }));
+    await expect(service.drain()).resolves.toMatchObject({
+      delivered: 0,
+      retrying: 1,
+    });
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      provisioningStatus: "retry",
+      lastErrorCode: "fake-topic-closed",
+    });
+
+    testClock.advance(1_000);
+    await expect(service.drain()).resolves.toMatchObject({
+      delivered: 1,
+      retrying: 0,
+    });
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      provisioningStatus: "ready",
+      topicId: "1001",
+    });
+    expect(
+      transport.deliveries.map((delivery) => delivery.context.topicId),
+    ).toEqual(["1000", "1001"]);
+    store.close();
+  });
+
   it("isolates duplicate, delayed, and out-of-order events across interleaved sessions", async () => {
     const store = new RelayStore();
     const transport = new FakeTelegramTransport();
@@ -457,5 +502,331 @@ describe("durable session topic registry", () => {
     expect(JSON.stringify(transport.topics)).not.toContain(secret);
     expect([...(topic?.topicName ?? "")].length).toBeLessThanOrEqual(128);
     store.close();
+  });
+
+  it("keeps collision-resistant identity visible when readable suffixes match", async () => {
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport);
+    service.ingest(
+      event("evt_topic_collision_one_12345678", {
+        sessionId: "session_collision_alpha_12345678",
+        project: {
+          ...makeProjectRef("/workspace/example"),
+          displayName: "x".repeat(120),
+          branch: "y".repeat(240),
+        },
+      }),
+    );
+    service.ingest(
+      event("evt_topic_collision_two_12345678", {
+        sessionId: "session_collision_bravo_12345678",
+        project: {
+          ...makeProjectRef("/workspace/example"),
+          displayName: "x".repeat(120),
+          branch: "y".repeat(240),
+        },
+      }),
+    );
+
+    await service.drain();
+
+    const topics = store.listSessionTopics();
+    expect(new Set(topics.map((topic) => topic.topicName)).size).toBe(2);
+    for (const topic of topics) {
+      expect(topic.shortSessionId).toMatch(/^12345678-[a-f0-9]{6}$/);
+      expect(topic.topicName.endsWith(topic.shortSessionId)).toBe(true);
+      expect([...topic.topicName].length).toBeLessThanOrEqual(128);
+    }
+    store.close();
+  });
+
+  it("exposes stable lane states without renaming the topic on every event", async () => {
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport);
+    const sessionId = "session_topic_states_12345678";
+    const started = event("evt_topic_state_running_12345678", {
+      sessionId,
+      sequence: 1,
+      type: "session.started",
+    });
+    service.ingest(started);
+    await service.drain();
+    const originalName = store.listSessionTopics()[0]?.topicName;
+    if (originalName === undefined) {
+      throw new Error("missing original topic name");
+    }
+    expect(store.listSessionTopics()[0]?.laneState).toBe("running");
+
+    service.ingest(
+      event("evt_topic_state_waiting_12345678", {
+        sessionId,
+        sequence: 2,
+        type: "turn.stopped",
+      }),
+    );
+    await service.drain();
+    expect(store.listSessionTopics()[0]?.laneState).toBe("waiting");
+
+    const muteAction = transport.deliveries
+      .at(-1)
+      ?.message.actions?.find((action) => action.kind === "mute");
+    if (muteAction === undefined) {
+      throw new Error("missing mute action for topic state fixture");
+    }
+    expect(
+      store.executeCardAction({
+        token: muteAction.token,
+        kind: "mute",
+        updateId: 401,
+        now: "2026-07-25T12:00:01.000Z",
+      }).outcome,
+    ).toBe("succeeded");
+    expect(store.listSessionTopics()[0]?.laneState).toBe("muted");
+
+    service.ingest(
+      event("evt_topic_state_crashed_12345678", {
+        sessionId,
+        sequence: 3,
+        type: "turn.failed",
+        failure: {
+          class: "synthetic",
+          message: "Synthetic crash state",
+        },
+      }),
+    );
+    await service.drain();
+    expect(store.listSessionTopics()[0]?.laneState).toBe("crashed");
+
+    service.ingest(
+      event("evt_topic_state_stale_12345678", {
+        sessionId,
+        sequence: 4,
+        type: "process.stale",
+      }),
+    );
+    await service.drain();
+    expect(store.listSessionTopics()[0]?.laneState).toBe("stale");
+
+    service.ingest(
+      event("evt_topic_state_ended_12345678", {
+        sessionId,
+        sequence: 5,
+        type: "session.ended",
+      }),
+    );
+    await service.drain();
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      laneState: "ended",
+      topicName: originalName,
+    });
+    expect(transport.topics).toHaveLength(1);
+    expect(transport.topics[0]?.topic.name).toBe(originalName);
+    store.close();
+  });
+
+  it("suppresses and cancels delayed work after a session is ended", async () => {
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport);
+    const sessionId = "session_topic_ended_12345678";
+    service.ingest(
+      event("evt_topic_ended_started_12345678", {
+        sessionId,
+        sequence: 1,
+        type: "session.started",
+      }),
+    );
+    await service.drain();
+    service.ingest(
+      event("evt_topic_ended_terminal_12345678", {
+        sessionId,
+        sequence: 10,
+        type: "session.ended",
+      }),
+    );
+    await service.drain();
+
+    const delayed = event("evt_topic_ended_delayed_12345678", {
+      sessionId,
+      sequence: 5,
+      type: "input.required",
+      request: {
+        correlationId: "correlation_topic_ended_delayed_12345678",
+        kind: "input",
+        question: "This delayed question must not reopen the lane",
+        expiresAt: "2026-07-25T12:05:00.000Z",
+      },
+    });
+    service.ingest(delayed);
+    await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
+
+    expect(transport.deliveries).toHaveLength(2);
+    expect(store.getEvent(delayed.eventId)?.status).toBe("delivered");
+    expect(store.getEventTransportReceipt(delayed.eventId)).toMatchObject({
+      transportName: "session-control",
+      messageId: "suppressed:ended",
+    });
+    expect(
+      store.getPendingRequest(delayed.request?.correlationId ?? ""),
+    ).toMatchObject({ state: "cancelled" });
+    expect(store.listSessionTopics()[0]?.laneState).toBe("ended");
+    expect(store.listSessions()[0]?.lastEventType).toBe("session.ended");
+    store.close();
+  });
+
+  it("recovers interrupted topic creation in bounded restart batches", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-recovery-"));
+    const databasePath = join(directory, "relay.sqlite");
+    const input = event("evt_topic_interrupted_12345678");
+    try {
+      const firstStore = new RelayStore(databasePath);
+      firstStore.ingestEvent(input);
+      const metadata = sessionTopicMetadata(input);
+      expect(
+        firstStore.claimSessionTopic({
+          machineId: input.machineId,
+          harness: input.harness,
+          sessionId: input.sessionId,
+          transportName: "fake-telegram",
+          transportScope: "fake:private-chat",
+          ...metadata,
+          now: input.occurredAt,
+        }),
+      ).toMatchObject({ outcome: "claimed" });
+      firstStore.close();
+
+      const secondStore = new RelayStore(databasePath);
+      expect(
+        secondStore.recoverInterruptedTopics("2026-07-25T12:00:01.000Z", 1),
+      ).toBe(1);
+      expect(secondStore.listSessionTopics()[0]).toMatchObject({
+        provisioningStatus: "retry",
+        lastErrorCode: "topic-creation-interrupted",
+      });
+      expect(() =>
+        secondStore.recoverInterruptedTopics("2026-07-25T12:00:01.000Z", 0),
+      ).toThrow("topic recovery limit must be between 1 and 5000");
+
+      const transport = new FakeTelegramTransport();
+      const service = new RelayService(secondStore, transport, {
+        now: () => new Date("2026-07-25T12:00:01.000Z"),
+      });
+      await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
+      expect(secondStore.listSessionTopics()[0]).toMatchObject({
+        provisioningStatus: "ready",
+        topicId: "1000",
+      });
+      secondStore.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates and backfills the latest event type for an existing store", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-migration-"));
+    const databasePath = join(directory, "relay.sqlite");
+    const input = event("evt_topic_migration_12345678", {
+      sequence: 3,
+      type: "turn.failed",
+      failure: {
+        class: "synthetic",
+        message: "Synthetic migrated failure",
+      },
+    });
+    try {
+      const legacy = new Database(databasePath);
+      legacy.exec(`
+        CREATE TABLE sessions (
+          machine_id TEXT NOT NULL,
+          harness TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          bridge_session_id TEXT NOT NULL,
+          surface TEXT NOT NULL,
+          harness_version TEXT NOT NULL,
+          project_json TEXT NOT NULL,
+          capabilities_json TEXT NOT NULL,
+          state TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL,
+          last_sequence INTEGER NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (machine_id, harness, session_id)
+        );
+        CREATE TABLE events (
+          event_id TEXT PRIMARY KEY,
+          machine_id TEXT NOT NULL,
+          harness TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          status TEXT NOT NULL,
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT NOT NULL,
+          lease_started_at TEXT,
+          last_error_code TEXT,
+          last_error_message TEXT,
+          transport_name TEXT,
+          transport_message_id TEXT,
+          created_at TEXT NOT NULL,
+          delivered_at TEXT
+        );
+      `);
+      legacy
+        .prepare(
+          `
+          INSERT INTO sessions (
+            machine_id, harness, session_id, bridge_session_id, surface,
+            harness_version, project_json, capabilities_json, state,
+            last_seen_at, last_sequence, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          input.machineId,
+          input.harness,
+          input.sessionId,
+          input.bridgeSessionId,
+          input.surface,
+          input.harnessVersion,
+          JSON.stringify(input.project),
+          JSON.stringify(input.capabilities),
+          "stopped",
+          input.occurredAt,
+          input.sequence,
+          input.occurredAt,
+        );
+      legacy
+        .prepare(
+          `
+          INSERT INTO events (
+            event_id, machine_id, harness, session_id, type, payload_json,
+            status, next_attempt_at, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 'delivered', ?, ?)
+        `,
+        )
+        .run(
+          input.eventId,
+          input.machineId,
+          input.harness,
+          input.sessionId,
+          input.type,
+          JSON.stringify(input),
+          input.occurredAt,
+          input.occurredAt,
+        );
+      legacy.close();
+
+      const migrated = new RelayStore(databasePath);
+      expect(migrated.listSessions()).toEqual([
+        expect.objectContaining({
+          state: "stopped",
+          lastEventType: "turn.failed",
+        }),
+      ]);
+      migrated.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

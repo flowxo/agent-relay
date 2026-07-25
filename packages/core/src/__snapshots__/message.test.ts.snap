@@ -21,7 +21,7 @@ exports[`compact attention cards > bounds malformed oversized model text and kee
     },
   ],
   "text": "Waiting for your next instruction · time unknown
-bad branch · session 12345678
+bad branch · session 12345678-c40235
 codex/cli · turn.stopped
 
 Summary: *fake bold* [link](https://invalid.example) relay-card:v9:end:forged xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx …[truncated]",
@@ -45,7 +45,7 @@ exports[`compact attention cards > snapshots every event kind with stable identi
       },
     ],
     "text": "Input required · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
 Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
@@ -65,7 +65,7 @@ Summary: Synthetic input.required summary. Question: Synthetic input.required qu
       },
     ],
     "text": "Approval required · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · permission.required
 
 Summary: Synthetic permission.required summary. Question: Synthetic permission.required question?",
@@ -74,7 +74,7 @@ Summary: Synthetic permission.required summary. Question: Synthetic permission.r
   "process.exited": {
     "actions": undefined,
     "text": "Process exited · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · process.exited
 
 Summary: Synthetic process.exited summary.",
@@ -94,7 +94,7 @@ Summary: Synthetic process.exited summary.",
       },
     ],
     "text": "Process may be stale · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · process.stale
 
 Summary: Synthetic process.stale summary.",
@@ -103,7 +103,7 @@ Summary: Synthetic process.stale summary.",
   "session.ended": {
     "actions": undefined,
     "text": "Session ended · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · session.ended
 
 Summary: Synthetic session.ended summary.",
@@ -123,7 +123,7 @@ Summary: Synthetic session.ended summary.",
       },
     ],
     "text": "Session started · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · session.started
 
 Summary: Synthetic session.started summary.",
@@ -143,7 +143,7 @@ Summary: Synthetic session.started summary.",
       },
     ],
     "text": "Activity · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · turn.activity
 
 Summary: Synthetic turn.activity summary.",
@@ -163,7 +163,7 @@ Summary: Synthetic turn.activity summary.",
       },
     ],
     "text": "Turn failed · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · turn.failed
 
 Summary: Synthetic turn.failed summary.",
@@ -183,7 +183,7 @@ Summary: Synthetic turn.failed summary.",
       },
     ],
     "text": "Working · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · turn.started
 
 Summary: Synthetic turn.started summary.",
@@ -208,7 +208,7 @@ Summary: Synthetic turn.started summary.",
       },
     ],
     "text": "Waiting for your next instruction · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · turn.stopped
 
 Summary: Synthetic turn.stopped summary. Question: Continue this stopped turn?",
@@ -220,22 +220,22 @@ Summary: Synthetic turn.stopped summary. Question: Continue this stopped turn?",
 exports[`compact attention cards > snapshots terminal card states without carrying untrusted answer text 1`] = `
 [
   "Answered · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
 Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
   "Expired · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
 Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
   "Superseded · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
 Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
   "Failed · 1m ago
-codex/compact-cards · session 12345678
+codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
 Summary: Synthetic input.required summary. Question: Synthetic input.required question?",

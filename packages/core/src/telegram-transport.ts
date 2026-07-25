@@ -80,6 +80,10 @@ function identifiesUnavailableTopic(
     "message thread is not found",
     "message thread id is invalid",
     "message_thread_id is invalid",
+    "message thread is closed",
+    "message thread was closed",
+    "topic is closed",
+    "topic was closed",
   ].some((fragment) => normalized.includes(fragment));
 }
 

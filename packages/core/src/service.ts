@@ -485,11 +485,10 @@ export class RelayService {
       try {
         const suppressionReason = this.store.suppressionReason(item.event);
         if (suppressionReason !== undefined) {
-          this.store.markDelivered(
+          this.store.markDeliverySuppressed(
             item.event.eventId,
             item.attemptNumber,
-            "session-control",
-            `suppressed:${suppressionReason}`,
+            suppressionReason,
             this.now().toISOString(),
           );
           result.delivered += 1;

@@ -46,6 +46,7 @@ export class FakeTelegramTransport
   private readonly topicsByKey = new Map<string, FakeTopic>();
   private readonly failures: PlannedFailure[] = [];
   private readonly topicFailures: PlannedFailure[] = [];
+  private readonly closedTopicIds = new Set<string>();
   private nextMessageId = 1;
   private nextTopicId = 1_000;
   private online = true;
@@ -98,6 +99,18 @@ export class FakeTelegramTransport
       ([, topic]) => topic.receipt.topicId === topicId,
     );
     return entry === undefined ? false : this.topicsByKey.delete(entry[0]);
+  }
+
+  public closeTopic(topicId: string): boolean {
+    const entry = [...this.topicsByKey.entries()].find(
+      ([, topic]) => topic.receipt.topicId === topicId,
+    );
+    if (entry === undefined) {
+      return false;
+    }
+    this.closedTopicIds.add(topicId);
+    this.topicsByKey.delete(entry[0]);
+    return true;
   }
 
   public async createTopic(
@@ -176,8 +189,12 @@ export class FakeTelegramTransport
         topicId: context.topicId,
       });
       throw new TopicUnavailableError(
-        "fake message thread not found",
-        "fake-topic-unavailable",
+        this.closedTopicIds.has(context.topicId)
+          ? "fake message thread is closed"
+          : "fake message thread not found",
+        this.closedTopicIds.has(context.topicId)
+          ? "fake-topic-closed"
+          : "fake-topic-unavailable",
       );
     }
     if (!this.online) {

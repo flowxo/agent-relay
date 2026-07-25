@@ -86,6 +86,14 @@ and reuses that mapping after reopen. Tests cover repeated events, competing
 first deliveries, separate concurrent sessions, retryable and non-retryable
 topic failures, path/secret sanitization, and restart reuse.
 
+The readable session suffix now carries a six-character digest of the full
+machine/harness/session identity, and the 128-character name bound preserves
+that suffix. Fixtures prove that two sessions ending in the same eight
+characters still receive distinguishable names. `topicRecords` expose `running`,
+`waiting`, `muted`, `crashed`, `ended`, and `stale` lane states from durable
+session, latest-event, and control records without renaming the topic on every
+event. Existing SQLite files add and backfill the latest-event field on open.
+
 The Telegram HTTP fixtures classify a
 `400 Bad Request: message thread not found` response only when `sendMessage`
 included a persisted `message_thread_id`. The daemon then clears that stale
@@ -94,6 +102,16 @@ owning event through the durable spool, and lazily creates a replacement topic.
 The fake transport proves this path without ever falling back to the unthreaded
 conversation. A live topic deletion has not been induced, so the exact error
 description remains fixture-proven rather than credentialed-account-proven.
+
+A second fixture classifies a scoped `400` response proving that a message
+thread is closed and runs the same replacement path. Bot API 10.2 documents
+`closeForumTopic` and `reopenForumTopic` for forum supergroups, while its
+private-chat topic support explicitly covers creation, editing, deletion, and
+unpinning. Agent Relay does not call the supergroup-only close method for the
+current private-chat transport. Fake restart fixtures recover interrupted topic
+creation with an explicit batch limit. Ended lanes suppress all later events and
+cancel delayed requests; both a native `session.ended` event and the End button
+are covered.
 
 Compact card fixtures enforce Telegram's 4,096-character message boundary and
 64-byte callback-data boundary before the request. Card action payloads use a

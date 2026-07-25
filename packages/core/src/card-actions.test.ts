@@ -315,6 +315,18 @@ describe("Telegram card actions", () => {
     expect(runtime.transport.messageEdits.at(-1)?.text).toContain(
       "harness process is unchanged",
     );
+    const delayed = questionEvent(
+      "evt_card_end_delayed_12345678",
+      sessionId,
+      2,
+    );
+    runtime.service.ingest(delayed);
+    await runtime.service.drain();
+    expect(runtime.transport.deliveries).toHaveLength(1);
+    expect(
+      runtime.store.getPendingRequest(delayed.request?.correlationId ?? ""),
+    ).toMatchObject({ state: "cancelled" });
+    expect(runtime.store.listSessionTopics()[0]?.laneState).toBe("ended");
     runtime.store.close();
   });
 

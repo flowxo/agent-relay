@@ -95,6 +95,18 @@
   Correlation diagnostics store the decision but never the rejected message
   text. The behavior is fake-transport proven; a credentialed direct-topic-text
   canary remains part of the Phase 1 live proof.
+- FXO-1056 is green locally. Topic names preserve sanitized
+  harness/repository/branch identity plus a readable session suffix and a
+  collision-resistant digest, even at Telegram's 128-character bound. Durable
+  topic status exposes running, waiting, muted, crashed, ended, and stale
+  without renaming on every event. Missing and closed-topic fixtures invalidate
+  only the stale mapping and create a replacement through the event retry spool.
+  Interrupted creation is recovered in bounded restart batches, including an
+  on-open migration/backfill for existing SQLite stores. Native session end and
+  the End button are terminal relay-lane tombstones: delayed events are
+  suppressed and delayed requests are canceled instead of resurrecting the lane.
+  The private Telegram adapter does not claim the supergroup-only
+  `closeForumTopic` contract.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -147,7 +159,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 134 tests across 21 test files, including the
+- `pnpm check` passes all 146 tests across 21 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -189,5 +201,5 @@
 
 ## Next action
 
-Implement FXO-1056 topic lifecycle reconciliation, then run the credentialed
-Phase 1 topic/card/direct-text proof in FXO-1059 against the completed slice.
+Implement FXO-1057 notification coalescing and bounded Details pagination, then
+complete onboarding diagnostics before the Phase 1 credentialed proof.
