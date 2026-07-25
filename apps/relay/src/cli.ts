@@ -189,6 +189,11 @@ async function main(): Promise<void> {
       ...(telegramReplyChatId === undefined ? {} : { telegramReplyChatId }),
       ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
       telegramUpdateMode: configuredTelegramUpdateMode,
+      coalescingWindowMs: integerFlag(
+        args,
+        "--coalesce-window-ms",
+        Number(environment("AGENT_RELAY_COALESCE_WINDOW_MS") ?? "60000"),
+      ),
       fallbackPath: join(stateDir, "fallback-spool.ndjson"),
       retention: {
         deliveredDays: integerFlag(

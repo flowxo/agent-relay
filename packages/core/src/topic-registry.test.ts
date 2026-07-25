@@ -171,7 +171,12 @@ describe("durable session topic registry", () => {
       const secondStore = new RelayStore(databasePath);
       const secondService = new RelayService(secondStore, firstTransport);
       secondService.recover();
-      secondService.ingest(event("evt_topic_after_restart", { sequence: 2 }));
+      secondService.ingest(
+        event("evt_topic_after_restart", {
+          sequence: 2,
+          summary: "Distinct event after restart",
+        }),
+      );
       await secondService.drain();
 
       expect(firstTransport.topics).toHaveLength(1);
@@ -298,7 +303,12 @@ describe("durable session topic registry", () => {
     await service.drain();
     expect(transport.deleteTopic("1000")).toBe(true);
 
-    service.ingest(event("evt_topic_after_delete_12345678", { sequence: 2 }));
+    service.ingest(
+      event("evt_topic_after_delete_12345678", {
+        sequence: 2,
+        summary: "Distinct event after topic deletion",
+      }),
+    );
     await expect(service.drain()).resolves.toMatchObject({
       delivered: 0,
       retrying: 1,
@@ -359,7 +369,12 @@ describe("durable session topic registry", () => {
     await service.drain();
     expect(transport.closeTopic("1000")).toBe(true);
 
-    service.ingest(event("evt_topic_after_close_12345678", { sequence: 2 }));
+    service.ingest(
+      event("evt_topic_after_close_12345678", {
+        sequence: 2,
+        summary: "Distinct event after topic closure",
+      }),
+    );
     await expect(service.drain()).resolves.toMatchObject({
       delivered: 0,
       retrying: 1,

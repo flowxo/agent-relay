@@ -128,6 +128,23 @@ acknowledgement. Tests cover every action, repeated updates and taps, malformed
 and unknown tokens, unauthorized senders, cross-message/topic attempts, blocked
 End with a pending question, and an ambiguous Details delivery failure.
 
+Durable coalescing fixtures prove that exact-equivalent `turn.started`,
+`turn.activity`, and request-free `turn.stopped` events inside the configurable
+window edit one anchor card with a count and latest timestamp. The fingerprint
+is a digest; no transcript is added to coalescing metadata or diagnostics.
+Question, crash, stale, process, and session events bypass the path. A failed
+edit is diagnosed and retried as a separate visible card, and mute/end
+suppression emits one durable diagnostic per event. Consumed Details actions
+close their group to later coalescing so a stale button is not revived. A
+file-backed close/reopen fixture reuses the same anchor after daemon restart.
+Concurrent claims use an expected group count; one loser is diagnosed and
+retried as a separate visible card rather than overwriting the displayed count.
+
+Details fixtures exercise two-page delivery of the maximum bounded single event,
+the latest ten events of a coalesced group, and an eight-page upper bound. Every
+rendered page stays below Telegram's 4,096-character limit; omitted history
+remains in SQLite with the true group count.
+
 Plain topic-text fixtures bind `message_thread_id` to the durable session-topic
 registry before inspecting requests. Direct text resolves only when that topic
 contains exactly one open, unexpired `input` or `continuation` request. Zero and

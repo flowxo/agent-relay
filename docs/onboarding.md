@@ -138,6 +138,8 @@ AGENT_RELAY_TELEGRAM_TOKEN=<bot token>
 AGENT_RELAY_TELEGRAM_CHAT_ID=<private chat id>
 AGENT_RELAY_TELEGRAM_OPERATOR_ID=<authorized user id>
 AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll
+# Optional; defaults to 60000. Use 0 to disable.
+AGENT_RELAY_COALESCE_WINDOW_MS=60000
 ```
 
 Long polling is the simplest loopback-daemon setup and requires no public
@@ -220,9 +222,28 @@ cannot be supplied by model text. Full long content remains in the local durable
 event record and receives a Details action. Question-choice buttons and card
 actions are active:
 
+Exact-equivalent `turn.started`, `turn.activity`, and request-free
+`turn.stopped` events reuse one visible card during a rolling 60-second window.
+The edited card shows the durable event count and latest event timestamp. Set
+`AGENT_RELAY_COALESCE_WINDOW_MS` or `--coalesce-window-ms` to a value from `1`
+to `3600000`; set it to `0` to disable coalescing. The fingerprint covers event
+type and bounded content but is stored only as a digest.
+
+Questions, permission requests, crashes, stale warnings, process exits, session
+events, and any notification whose card edit failed always remain separate.
+After a coalescing edit failure, the event retries as its own visible card.
+Every coalescing, edit-failure, mute, and ended-lane suppression decision is
+recorded as a privacy-safe durable diagnostic.
+
+Details are delivered in Telegram-safe 3,500-character pages, with at most eight
+pages per action. Coalesced Details show the latest ten durable events and the
+true total count; older evidence remains available in the local SQLite store.
+After Details is consumed, a later equivalent event starts a new card so the
+operator is never shown an already-used Details button.
+
 - Continue appears only for an open continuation that the harness reports as
   supported, and resolves it once through the existing resume queue.
-- Details posts the bounded full local event once.
+- Details posts bounded Telegram-safe pages once.
 - Mute suppresses routine cards for that session while questions, stale
   warnings, and proven failures remain visible.
 - End closes the relay lane after pending questions are resolved. It does not

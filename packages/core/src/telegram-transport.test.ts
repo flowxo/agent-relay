@@ -307,6 +307,12 @@ describe("TelegramBotTransport", () => {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, result: { message_id: 44 } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
       );
     const transport = new TelegramBotTransport({
       token: "123456:synthetic-token-value",
@@ -328,6 +334,17 @@ describe("TelegramBotTransport", () => {
       { idempotencyKey: message.eventId },
     );
     await transport.acknowledgeCallback("callback_44", "Recorded");
+    await transport.editDeliveryMessage("44", {
+      ...message,
+      text: "Repeated twice",
+      actions: [
+        {
+          kind: "details",
+          token: "card_0123456789abcdef0123456789abcdef",
+          label: "Details",
+        },
+      ],
+    });
     await transport.editResolvedMessage("44", "Handled via Telegram");
 
     const firstBody = JSON.parse(
@@ -350,6 +367,23 @@ describe("TelegramBotTransport", () => {
       "answerCallbackQuery",
     );
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain("editMessageText");
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body)),
+    ).toMatchObject({
+      text: expect.stringContaining("Repeated twice"),
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "Details",
+              callback_data:
+                "relay-card:v1:d:card_0123456789abcdef0123456789abcdef",
+            },
+          ],
+        ],
+      },
+    });
+    expect(String(fetchMock.mock.calls[3]?.[0])).toContain("editMessageText");
   });
 
   it("long-polls only supported reply updates and returns validated update ids", async () => {

@@ -185,7 +185,7 @@ describe("Telegram card actions", () => {
     runtime.store.close();
   });
 
-  it("posts bounded Details once and preserves the full durable event", async () => {
+  it("posts paginated Details once and preserves the full durable event", async () => {
     const runtime = await setup();
     const finalSentence = "FINAL DETAILS SENTENCE";
     const input = event(
@@ -193,7 +193,13 @@ describe("Telegram card actions", () => {
       "session_card_details_12345678",
       1,
       {
-        lastAssistantMessage: `${"Long detail. ".repeat(200)}${finalSentence}`,
+        lastAssistantMessage: "x".repeat(4_000),
+        request: {
+          correlationId: "correlation_card_details_12345678",
+          kind: "continuation",
+          question: `${"q".repeat(950)}${finalSentence}`,
+          expiresAt: "2026-07-25T12:05:00.000Z",
+        },
       },
     );
     runtime.service.ingest(input);
@@ -209,8 +215,16 @@ describe("Telegram card actions", () => {
         outcome: "action-completed",
       },
     );
-    expect(runtime.transport.deliveries).toHaveLength(2);
-    expect(runtime.transport.deliveries[1]?.message.text).toContain(
+    expect(runtime.transport.deliveries).toHaveLength(3);
+    expect(
+      runtime.transport.deliveries
+        .slice(1)
+        .map((delivery) => delivery.message.title),
+    ).toEqual([
+      expect.stringContaining("Details 1/2"),
+      expect.stringContaining("Details 2/2"),
+    ]);
+    expect(runtime.transport.deliveries[2]?.message.text).toContain(
       finalSentence,
     );
     expect(runtime.store.getCardAction(callback.action.token)).toMatchObject({
@@ -224,7 +238,7 @@ describe("Telegram card actions", () => {
     ).resolves.toMatchObject({
       outcome: "action-duplicate",
     });
-    expect(runtime.transport.deliveries).toHaveLength(2);
+    expect(runtime.transport.deliveries).toHaveLength(3);
     runtime.store.close();
   });
 

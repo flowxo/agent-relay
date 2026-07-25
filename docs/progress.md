@@ -107,6 +107,15 @@
   suppressed and delayed requests are canceled instead of resurrecting the lane.
   The private Telegram adapter does not claim the supergroup-only
   `closeForumTopic` contract.
+- FXO-1057 is green locally. A configurable, rolling coalescing window updates
+  one durable card only for exact-equivalent request-free stop/activity/start
+  noise, with a visible count and latest timestamp. Questions, crashes, stale
+  warnings, process/session events, and previously failed delivery attempts
+  bypass coalescing. Edit failure is durably diagnosed and retries as a separate
+  visible card. Mute/end suppression and every successful coalescing decision
+  emit transcript-free diagnostics. Details now page a maximum-size event,
+  expose the latest ten grouped events with the true count, and stop after eight
+  Telegram-safe pages while retaining complete evidence in SQLite.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -159,7 +168,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 146 tests across 21 test files, including the
+- `pnpm check` passes all 154 tests across 22 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -201,5 +210,5 @@
 
 ## Next action
 
-Implement FXO-1057 notification coalescing and bounded Details pagination, then
-complete onboarding diagnostics before the Phase 1 credentialed proof.
+Implement FXO-1058 onboarding and diagnostics, then run the Phase 1 credentialed
+multi-topic/card/direct-text proof in FXO-1059.

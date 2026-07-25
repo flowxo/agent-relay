@@ -30,6 +30,7 @@ export interface DaemonOptions {
   telegramWebhookSecret?: string;
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
+  coalescingWindowMs?: number;
   drainIntervalMs?: number;
   fallbackPath?: string;
   fallbackReplayIntervalMs?: number;
@@ -89,7 +90,12 @@ export async function startDaemon(
     );
   }
   const store = new RelayStore(options.databasePath);
-  const service = new RelayService(store, transport, { logger });
+  const service = new RelayService(store, transport, {
+    logger,
+    ...(options.coalescingWindowMs === undefined
+      ? {}
+      : { coalescingWindowMs: options.coalescingWindowMs }),
+  });
   service.recover();
   const replyRouter =
     options.telegramOperatorUserId === undefined ||

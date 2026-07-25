@@ -55,6 +55,10 @@ export class FakeTelegramTransport
     text: string;
   }> = [];
   public readonly messageEdits: Array<{ messageId: string; text: string }> = [];
+  public readonly deliveryMessageEdits: Array<{
+    messageId: string;
+    message: DeliveryMessage;
+  }> = [];
 
   public setOnline(online: boolean): void {
     this.online = online;
@@ -244,6 +248,28 @@ export class FakeTelegramTransport
     text: string,
   ): Promise<void> {
     this.callbackAcknowledgements.push({ callbackId, text });
+  }
+
+  public async editDeliveryMessage(
+    messageId: string,
+    message: DeliveryMessage,
+  ): Promise<void> {
+    if (!this.online) {
+      throw new TransportError(
+        "fake Telegram is offline",
+        "fake-offline",
+        true,
+      );
+    }
+    const failure = this.failures.shift();
+    if (failure !== undefined) {
+      throw new TransportError(
+        failure.message,
+        failure.code,
+        failure.retryable,
+      );
+    }
+    this.deliveryMessageEdits.push({ messageId, message });
   }
 
   public async editResolvedMessage(

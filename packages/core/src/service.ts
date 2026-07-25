@@ -31,6 +31,7 @@ import type {
 } from "./transport.js";
 import {
   asTransportError,
+  isInteractiveTransport,
   isTopicTransport,
   TopicUnavailableError,
   TransportError,
@@ -47,6 +48,7 @@ export interface RelayServiceOptions {
   retryPolicy?: RetryPolicy;
   logger?: RelayLogger;
   now?: () => Date;
+  coalescingWindowMs?: number;
 }
 
 export interface RetentionOptions {
@@ -71,10 +73,29 @@ function retentionDays(
   return days;
 }
 
+function notificationFingerprint(
+  event: AgentAttentionEventV1,
+): string | undefined {
+  if (
+    event.request !== undefined ||
+    !["turn.started", "turn.activity", "turn.stopped"].includes(event.type)
+  ) {
+    return undefined;
+  }
+  return sha256(
+    JSON.stringify([
+      event.type,
+      event.summary ?? null,
+      event.lastAssistantMessage ?? null,
+    ]),
+  );
+}
+
 export class RelayService {
   private readonly retryPolicy: RetryPolicy;
   private readonly logger: RelayLogger;
   private readonly now: () => Date;
+  private readonly coalescingWindowMs: number;
 
   public constructor(
     public readonly store: RelayStore,
@@ -84,6 +105,16 @@ export class RelayService {
     this.retryPolicy = options.retryPolicy ?? DEFAULT_RETRY_POLICY;
     this.logger = options.logger ?? NOOP_LOGGER;
     this.now = options.now ?? (() => new Date());
+    this.coalescingWindowMs = options.coalescingWindowMs ?? 60_000;
+    if (
+      !Number.isSafeInteger(this.coalescingWindowMs) ||
+      this.coalescingWindowMs < 0 ||
+      this.coalescingWindowMs > 3_600_000
+    ) {
+      throw new Error(
+        "notification coalescing window must be between 0 and 3600000 ms",
+      );
+    }
   }
 
   public recover(): number {
@@ -504,6 +535,129 @@ export class RelayService {
           });
           continue;
         }
+        const interactiveTransport = isInteractiveTransport(this.transport)
+          ? this.transport
+          : undefined;
+        const fingerprint =
+          this.coalescingWindowMs === 0 || interactiveTransport === undefined
+            ? undefined
+            : notificationFingerprint(item.event);
+        if (
+          fingerprint !== undefined &&
+          interactiveTransport !== undefined &&
+          item.attemptNumber === 1
+        ) {
+          const coalescingTarget = this.store.findNotificationCoalescingTarget({
+            event: item.event,
+            fingerprint,
+            windowMs: this.coalescingWindowMs,
+            now: this.now().toISOString(),
+          });
+          if (coalescingTarget !== undefined) {
+            const anchor = this.store.getEvent(
+              coalescingTarget.anchorEventId,
+            )?.event;
+            if (anchor === undefined) {
+              throw new Error(
+                "notification coalescing anchor event is missing",
+              );
+            }
+            const latestAt =
+              item.event.occurredAt > coalescingTarget.latestOccurredAt
+                ? item.event.occurredAt
+                : coalescingTarget.latestOccurredAt;
+            const coalescedMessage = renderDeliveryMessage(anchor, {
+              now: this.now(),
+              forceDetails: true,
+              coalesced: {
+                count: coalescingTarget.eventCount + 1,
+                latestAt,
+              },
+            });
+            if (coalescedMessage.actions !== undefined) {
+              this.store.registerCardActions(
+                anchor.eventId,
+                coalescedMessage.actions.map((action) => ({
+                  token: action.token,
+                  kind: action.kind,
+                })),
+                this.now().toISOString(),
+              );
+            }
+            try {
+              await interactiveTransport.editDeliveryMessage(
+                coalescingTarget.transportMessageId,
+                coalescedMessage,
+              );
+            } catch (error) {
+              const editError = asTransportError(error);
+              const failedAt = this.now().toISOString();
+              const safeMessage = redactText(editError.message, 1_000);
+              this.reportDiagnostic({
+                schema: "agent-relay-diagnostic.v1",
+                diagnosticId: `diag_coalesce_edit_${sha256(
+                  `${item.event.eventId}\u001f${String(item.attemptNumber)}`,
+                ).slice(0, 36)}`,
+                recordedAt: failedAt,
+                source: "daemon",
+                level: "warn",
+                code: "notification.coalescing-edit-failed",
+                message:
+                  "coalesced card edit failed; the event will retry as a visible card",
+              });
+              throw new TransportError(
+                safeMessage,
+                "notification-coalescing-edit-failed",
+                true,
+                editError.status,
+              );
+            }
+            const group = (() => {
+              try {
+                return this.store.markNotificationCoalesced({
+                  event: item.event,
+                  attemptNumber: item.attemptNumber,
+                  anchorEventId: coalescingTarget.anchorEventId,
+                  expectedEventCount: coalescingTarget.eventCount,
+                  now: this.now().toISOString(),
+                });
+              } catch {
+                const racedAt = this.now().toISOString();
+                this.reportDiagnostic({
+                  schema: "agent-relay-diagnostic.v1",
+                  diagnosticId: `diag_coalesce_race_${sha256(
+                    `${item.event.eventId}\u001f${String(item.attemptNumber)}`,
+                  ).slice(0, 36)}`,
+                  recordedAt: racedAt,
+                  source: "daemon",
+                  level: "warn",
+                  code: "notification.coalescing-commit-raced",
+                  message:
+                    "coalescing anchor changed concurrently; the event will retry as a visible card",
+                });
+                throw new TransportError(
+                  "coalescing anchor changed concurrently",
+                  "notification-coalescing-commit-raced",
+                  true,
+                );
+              }
+            })();
+            result.delivered += 1;
+            this.logger.log({
+              level: "info",
+              code: "notification.coalesced",
+              message:
+                "equivalent routine notification coalesced into an existing card",
+              at: this.now().toISOString(),
+              details: {
+                eventId: item.event.eventId,
+                anchorEventId: group.anchorEventId,
+                eventCount: group.eventCount,
+              },
+            });
+            continue;
+          }
+        }
         const rendered = renderDeliveryMessage(item.event, {
           now: this.now(),
         });
@@ -531,13 +685,27 @@ export class RelayService {
         const deliveryContext = await this.deliveryContext(item.event);
         deliveryTopicId = deliveryContext.topicId;
         const receipt = await this.transport.deliver(message, deliveryContext);
-        this.store.markDelivered(
-          item.event.eventId,
-          item.attemptNumber,
-          receipt.transport,
-          receipt.messageId,
-          this.now().toISOString(),
-        );
+        if (fingerprint === undefined) {
+          this.store.markDelivered(
+            item.event.eventId,
+            item.attemptNumber,
+            receipt.transport,
+            receipt.messageId,
+            this.now().toISOString(),
+          );
+        } else {
+          this.store.markNotificationAnchorDelivered({
+            event: item.event,
+            attemptNumber: item.attemptNumber,
+            fingerprint,
+            transportName: receipt.transport,
+            messageId: receipt.messageId,
+            ...(deliveryContext.topicId === undefined
+              ? {}
+              : { topicId: deliveryContext.topicId }),
+            now: this.now().toISOString(),
+          });
+        }
         result.delivered += 1;
         this.logger.log({
           level: "info",

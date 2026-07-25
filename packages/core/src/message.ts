@@ -15,6 +15,11 @@ export type AttentionCardResolutionState =
 export interface AttentionCardOptions {
   now?: Date;
   resolutionState?: AttentionCardResolutionState;
+  forceDetails?: boolean;
+  coalesced?: {
+    count: number;
+    latestAt: string;
+  };
 }
 
 const EVENT_STATE_LABELS: Record<AgentAttentionEventV1["type"], string> = {
@@ -164,8 +169,12 @@ export function renderDeliveryMessage(
       ? EVENT_STATE_LABELS[event.type]
       : RESOLUTION_STATE_LABELS[options.resolutionState];
   const now = options.now ?? new Date();
+  const stateLine =
+    options.coalesced === undefined
+      ? `${state} · ${ageLabel(event.occurredAt, now)}`
+      : `${state} · ${String(options.coalesced.count)} equivalent events · latest ${options.coalesced.latestAt}`;
   const text = [
-    `${state} · ${ageLabel(event.occurredAt, now)}`,
+    stateLine,
     `${
       metadata.branch === undefined ? "branch unknown" : metadata.branch
     } · session ${metadata.shortSessionId}`,
@@ -173,7 +182,7 @@ export function renderDeliveryMessage(
     "",
     `Summary: ${summary}`,
   ].join("\n");
-  const actions = actionsFor(event, truncated);
+  const actions = actionsFor(event, truncated || options.forceDetails === true);
 
   return {
     eventId: event.eventId,
@@ -193,11 +202,11 @@ export function renderDeliveryText(message: DeliveryMessage): string {
   );
 }
 
-export function renderDetailsMessage(
-  event: AgentAttentionEventV1,
-): DeliveryMessage {
-  const metadata = sessionTopicMetadata(event);
-  const details = [...redactText(eventContent(event), 3_500)]
+const DETAILS_PAGE_CONTENT_LIMIT = 3_500;
+const DETAILS_MAX_PAGES = 8;
+
+function sanitizedDetails(event: AgentAttentionEventV1): string {
+  return [...redactText(eventContent(event), 8_000)]
     .map((character) => {
       const code = character.codePointAt(0) ?? 0;
       return code <= 8 || (code >= 11 && code <= 31) || code === 127
@@ -206,10 +215,59 @@ export function renderDetailsMessage(
     })
     .join("")
     .trim();
-  return {
-    eventId: event.eventId,
-    title: `Details · ${harnessName(event)} · ${metadata.repository}`,
-    text:
-      details.length === 0 ? "No additional details are available." : details,
-  };
+}
+
+export function renderDetailsMessages(
+  events: AgentAttentionEventV1[],
+  totalCount = events.length,
+): DeliveryMessage[] {
+  if (events.length === 0) {
+    throw new Error("details require at least one event");
+  }
+  const anchor = events[0] as AgentAttentionEventV1;
+  const metadata = sessionTopicMetadata(anchor);
+  const combined =
+    events.length === 1 && totalCount === 1
+      ? sanitizedDetails(anchor)
+      : events
+          .map((event, index) => {
+            const details = sanitizedDetails(event);
+            const ordinal = Math.max(1, totalCount - events.length + 1) + index;
+            return [
+              `Event ${String(ordinal)} of ${String(totalCount)} · ${event.occurredAt} · ${event.type}`,
+              details.length === 0
+                ? "No additional details are available."
+                : details,
+            ].join("\n");
+          })
+          .join("\n\n");
+  const characters = [
+    ...(combined.length === 0
+      ? "No additional details are available."
+      : combined),
+  ];
+  const maximumCharacters =
+    DETAILS_PAGE_CONTENT_LIMIT * DETAILS_MAX_PAGES -
+    [...TRUNCATION_MARKER].length;
+  const bounded =
+    characters.length <= maximumCharacters
+      ? characters
+      : [...characters.slice(0, maximumCharacters), ...TRUNCATION_MARKER];
+  const pages: string[] = [];
+  for (
+    let index = 0;
+    index < bounded.length;
+    index += DETAILS_PAGE_CONTENT_LIMIT
+  ) {
+    pages.push(
+      bounded.slice(index, index + DETAILS_PAGE_CONTENT_LIMIT).join(""),
+    );
+  }
+  return (pages.length === 0 ? ["No additional details are available."] : pages)
+    .slice(0, DETAILS_MAX_PAGES)
+    .map((text, index, allPages) => ({
+      eventId: anchor.eventId,
+      title: `Details ${String(index + 1)}/${String(allPages.length)} · ${harnessName(anchor)} · ${metadata.repository}`,
+      text,
+    }));
 }

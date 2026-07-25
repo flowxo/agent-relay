@@ -7,6 +7,7 @@ import {
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
+  sha256,
 } from "@agent-relay/protocol";
 import type {
   AgentAttentionEventV1,
@@ -103,6 +104,20 @@ export interface CardActionRecord {
   finishedAt?: string;
   outcome?: string;
   errorMessage?: string;
+}
+
+export interface NotificationGroupRecord {
+  anchorEventId: string;
+  eventCount: number;
+  latestOccurredAt: string;
+  transportName: string;
+  transportMessageId: string;
+  topicId?: string;
+}
+
+export interface NotificationDetails {
+  events: AgentAttentionEventV1[];
+  totalCount: number;
 }
 
 export interface SessionControlRecord {
@@ -648,6 +663,38 @@ export class RelayStore {
         error_message TEXT,
         UNIQUE(event_id, attempt_number),
         FOREIGN KEY (event_id) REFERENCES events(event_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS notification_groups (
+        anchor_event_id TEXT PRIMARY KEY,
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        event_count INTEGER NOT NULL,
+        latest_occurred_at TEXT NOT NULL,
+        transport_name TEXT NOT NULL,
+        transport_message_id TEXT NOT NULL,
+        topic_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (anchor_event_id) REFERENCES events(event_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS notification_groups_candidate_idx
+        ON notification_groups(
+          machine_id, harness, session_id, event_type, fingerprint, updated_at
+        );
+
+      CREATE TABLE IF NOT EXISTS notification_group_members (
+        event_id TEXT PRIMARY KEY,
+        anchor_event_id TEXT NOT NULL,
+        joined_at TEXT NOT NULL,
+        FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE,
+        FOREIGN KEY (anchor_event_id)
+          REFERENCES notification_groups(anchor_event_id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS pending_requests (
@@ -1495,17 +1542,16 @@ export class RelayStore {
     })();
   }
 
-  public markDelivered(
+  private markDeliveredWithinTransaction(
     eventId: string,
     attemptNumber: number,
     transportName: string,
     messageId: string,
     now: string,
-  ): void {
-    const result = this.database.transaction(() => {
-      const update = this.database
-        .prepare(
-          `
+  ): number {
+    const update = this.database
+      .prepare(
+        `
           UPDATE events SET
             status = 'delivered',
             transport_name = ?,
@@ -1516,31 +1562,336 @@ export class RelayStore {
             last_error_message = NULL
           WHERE event_id = ? AND status = 'delivering'
         `,
-        )
-        .run(transportName, messageId, now, eventId);
-      this.database
-        .prepare(
-          `
+      )
+      .run(transportName, messageId, now, eventId);
+    this.database
+      .prepare(
+        `
           UPDATE delivery_attempts SET
             status = 'delivered',
             finished_at = ?
           WHERE event_id = ? AND attempt_number = ?
         `,
-        )
-        .run(now, eventId, attemptNumber);
-      this.database
-        .prepare(
-          `
+      )
+      .run(now, eventId, attemptNumber);
+    this.database
+      .prepare(
+        `
           UPDATE pending_requests SET transport_message_id = ?
           WHERE event_id = ?
         `,
-        )
-        .run(messageId, eventId);
-      return update.changes;
-    })();
+      )
+      .run(messageId, eventId);
+    return update.changes;
+  }
+
+  public markDelivered(
+    eventId: string,
+    attemptNumber: number,
+    transportName: string,
+    messageId: string,
+    now: string,
+  ): void {
+    const result = this.database.transaction(() =>
+      this.markDeliveredWithinTransaction(
+        eventId,
+        attemptNumber,
+        transportName,
+        messageId,
+        now,
+      ),
+    )();
     if (result !== 1) {
       throw new Error(`cannot mark non-delivering event ${eventId} delivered`);
     }
+  }
+
+  public findNotificationCoalescingTarget(input: {
+    event: AgentAttentionEventV1;
+    fingerprint: string;
+    windowMs: number;
+    now: string;
+  }): NotificationGroupRecord | undefined {
+    assertIsoCutoff(input.now, "notification coalescing time");
+    if (
+      !Number.isSafeInteger(input.windowMs) ||
+      input.windowMs < 1 ||
+      input.windowMs > 3_600_000
+    ) {
+      throw new Error(
+        "notification coalescing window must be between 1 and 3600000 ms",
+      );
+    }
+    if (!/^[a-f0-9]{64}$/.test(input.fingerprint)) {
+      throw new Error("notification coalescing fingerprint is invalid");
+    }
+    const cutoff = new Date(
+      Date.parse(input.now) - input.windowMs,
+    ).toISOString();
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          anchor_event_id, event_count, latest_occurred_at, transport_name,
+          transport_message_id, topic_id
+        FROM notification_groups
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND event_type = @type
+          AND fingerprint = @fingerprint
+          AND updated_at >= @cutoff
+          AND NOT EXISTS (
+            SELECT 1
+            FROM card_actions
+            JOIN card_action_executions
+              ON card_action_executions.action_token =
+                card_actions.action_token
+            WHERE card_actions.event_id =
+              notification_groups.anchor_event_id
+              AND card_actions.action_kind = 'details'
+          )
+        ORDER BY updated_at DESC, anchor_event_id DESC
+        LIMIT 1
+      `,
+      )
+      .get({
+        ...input.event,
+        fingerprint: input.fingerprint,
+        cutoff,
+      }) as
+      | {
+          anchor_event_id: string;
+          event_count: number;
+          latest_occurred_at: string;
+          transport_name: string;
+          transport_message_id: string;
+          topic_id: string | null;
+        }
+      | undefined;
+    return row === undefined
+      ? undefined
+      : {
+          anchorEventId: row.anchor_event_id,
+          eventCount: row.event_count,
+          latestOccurredAt: row.latest_occurred_at,
+          transportName: row.transport_name,
+          transportMessageId: row.transport_message_id,
+          ...(row.topic_id === null ? {} : { topicId: row.topic_id }),
+        };
+  }
+
+  public markNotificationAnchorDelivered(input: {
+    event: AgentAttentionEventV1;
+    attemptNumber: number;
+    fingerprint: string;
+    transportName: string;
+    messageId: string;
+    topicId?: string;
+    now: string;
+  }): void {
+    assertIsoCutoff(input.now, "notification anchor delivery time");
+    const changed = this.database.transaction(() => {
+      const delivered = this.markDeliveredWithinTransaction(
+        input.event.eventId,
+        input.attemptNumber,
+        input.transportName,
+        input.messageId,
+        input.now,
+      );
+      if (delivered !== 1) {
+        return delivered;
+      }
+      this.database
+        .prepare(
+          `
+          INSERT INTO notification_groups (
+            anchor_event_id, machine_id, harness, session_id, event_type,
+            fingerprint, event_count, latest_occurred_at, transport_name,
+            transport_message_id, topic_id, created_at, updated_at
+          ) VALUES (
+            @eventId, @machineId, @harness, @sessionId, @type, @fingerprint,
+            1, @occurredAt, @transportName, @messageId, @topicId, @now, @now
+          )
+        `,
+        )
+        .run({
+          ...input.event,
+          fingerprint: input.fingerprint,
+          transportName: input.transportName,
+          messageId: input.messageId,
+          topicId: input.topicId ?? null,
+          now: input.now,
+        });
+      this.database
+        .prepare(
+          `
+          INSERT INTO notification_group_members (
+            event_id, anchor_event_id, joined_at
+          ) VALUES (?, ?, ?)
+        `,
+        )
+        .run(input.event.eventId, input.event.eventId, input.now);
+      return delivered;
+    })();
+    if (changed !== 1) {
+      throw new Error(
+        `cannot mark non-delivering event ${input.event.eventId} delivered`,
+      );
+    }
+  }
+
+  public markNotificationCoalesced(input: {
+    event: AgentAttentionEventV1;
+    attemptNumber: number;
+    anchorEventId: string;
+    expectedEventCount: number;
+    now: string;
+  }): NotificationGroupRecord {
+    assertIsoCutoff(input.now, "notification coalescing completion time");
+    return this.database.transaction(() => {
+      const group = this.database
+        .prepare(
+          `
+          SELECT
+            event_count, latest_occurred_at, transport_name,
+            transport_message_id, topic_id
+          FROM notification_groups
+          WHERE anchor_event_id = ?
+        `,
+        )
+        .get(input.anchorEventId) as
+        | {
+            event_count: number;
+            latest_occurred_at: string;
+            transport_name: string;
+            transport_message_id: string;
+            topic_id: string | null;
+          }
+        | undefined;
+      if (group === undefined) {
+        throw new Error("notification coalescing anchor disappeared");
+      }
+      if (group.event_count !== input.expectedEventCount) {
+        throw new Error("notification coalescing anchor changed concurrently");
+      }
+      const joined = this.database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO notification_group_members (
+            event_id, anchor_event_id, joined_at
+          ) VALUES (?, ?, ?)
+        `,
+        )
+        .run(input.event.eventId, input.anchorEventId, input.now).changes;
+      if (joined !== 1) {
+        throw new Error("notification event was already coalesced");
+      }
+      const latestOccurredAt =
+        input.event.occurredAt > group.latest_occurred_at
+          ? input.event.occurredAt
+          : group.latest_occurred_at;
+      const updated = this.database
+        .prepare(
+          `
+          UPDATE notification_groups SET
+            event_count = event_count + 1,
+            latest_occurred_at = ?,
+            updated_at = ?
+          WHERE anchor_event_id = ? AND event_count = ?
+        `,
+        )
+        .run(
+          latestOccurredAt,
+          input.now,
+          input.anchorEventId,
+          input.expectedEventCount,
+        ).changes;
+      if (updated !== 1) {
+        throw new Error("notification coalescing anchor changed concurrently");
+      }
+      const delivered = this.markDeliveredWithinTransaction(
+        input.event.eventId,
+        input.attemptNumber,
+        group.transport_name,
+        group.transport_message_id,
+        input.now,
+      );
+      if (delivered !== 1) {
+        throw new Error(
+          `cannot mark non-delivering event ${input.event.eventId} delivered`,
+        );
+      }
+      this.recordDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_coalesced_${sha256(input.event.eventId).slice(0, 40)}`,
+        recordedAt: input.now,
+        source: "daemon",
+        level: "info",
+        code: "notification.coalesced",
+        message:
+          "equivalent routine event coalesced into an existing session card",
+      });
+      return {
+        anchorEventId: input.anchorEventId,
+        eventCount: input.expectedEventCount + 1,
+        latestOccurredAt,
+        transportName: group.transport_name,
+        transportMessageId: group.transport_message_id,
+        ...(group.topic_id === null ? {} : { topicId: group.topic_id }),
+      };
+    })();
+  }
+
+  public notificationDetails(eventId: string, limit = 10): NotificationDetails {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+      throw new Error("notification detail limit must be between 1 and 50");
+    }
+    const group = this.database
+      .prepare(
+        `
+        SELECT groups.anchor_event_id, groups.event_count
+        FROM notification_groups AS groups
+        JOIN notification_group_members AS members
+          ON members.anchor_event_id = groups.anchor_event_id
+        WHERE members.event_id = ?
+      `,
+      )
+      .get(eventId) as
+      { anchor_event_id: string; event_count: number } | undefined;
+    if (group === undefined) {
+      const event = this.getEvent(eventId)?.event;
+      return {
+        events: event === undefined ? [] : [event],
+        totalCount: event === undefined ? 0 : 1,
+      };
+    }
+    const rows = this.database
+      .prepare(
+        `
+        SELECT events.payload_json
+        FROM notification_group_members AS members
+        JOIN events ON events.event_id = members.event_id
+        WHERE members.anchor_event_id = ?
+        ORDER BY
+          CAST(json_extract(events.payload_json, '$.sequence') AS INTEGER)
+            DESC,
+          events.created_at DESC,
+          events.event_id DESC
+        LIMIT ?
+      `,
+      )
+      .all(group.anchor_event_id, limit) as Array<{ payload_json: string }>;
+    return {
+      events: rows
+        .map((row) =>
+          AgentAttentionEventV1Schema.parse(
+            JSON.parse(row.payload_json) as unknown,
+          ),
+        )
+        .reverse(),
+      totalCount: group.event_count,
+    };
   }
 
   public markDeliveryFailed(
@@ -2024,13 +2375,27 @@ export class RelayStore {
           )
           .run(now, eventId);
       }
-      this.markDelivered(
+      const delivered = this.markDeliveredWithinTransaction(
         eventId,
         attemptNumber,
         "session-control",
         `suppressed:${reason}`,
         now,
       );
+      if (delivered !== 1) {
+        throw new Error(`cannot suppress non-delivering event ${eventId}`);
+      }
+      this.recordDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_suppressed_${sha256(
+          `${eventId}\u001f${reason}`,
+        ).slice(0, 40)}`,
+        recordedAt: now,
+        source: "daemon",
+        level: "info",
+        code: "notification.suppressed",
+        message: `notification suppressed because the relay lane is ${reason}`,
+      });
     })();
   }
 

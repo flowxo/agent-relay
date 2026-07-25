@@ -95,6 +95,20 @@ function rowsOf<T>(items: T[], size: number): T[][] {
   return rows;
 }
 
+function inlineKeyboard(
+  message: DeliveryMessage,
+): Array<Array<{ text: string; callback_data: string }>> {
+  const choiceButtons = (message.choices ?? []).map((choice) => ({
+    text: choice.label,
+    callback_data: `relay:${choice.token}`,
+  }));
+  const actionButtons = (message.actions ?? []).map((action) => ({
+    text: action.label,
+    callback_data: cardActionCallbackData(action.kind, action.token),
+  }));
+  return [...rowsOf(choiceButtons, 2), ...rowsOf(actionButtons, 2)];
+}
+
 export type TelegramPolledUpdate = z.infer<typeof polledUpdateSchema>;
 
 export interface TelegramGetUpdatesOptions {
@@ -144,18 +158,7 @@ export class TelegramBotTransport
     context: DeliveryContext,
   ): Promise<DeliveryReceipt> {
     const text = renderDeliveryText(message);
-    const choiceButtons = (message.choices ?? []).map((choice) => ({
-      text: choice.label,
-      callback_data: `relay:${choice.token}`,
-    }));
-    const actionButtons = (message.actions ?? []).map((action) => ({
-      text: action.label,
-      callback_data: cardActionCallbackData(action.kind, action.token),
-    }));
-    const inlineKeyboard = [
-      ...rowsOf(choiceButtons, 2),
-      ...rowsOf(actionButtons, 2),
-    ];
+    const keyboard = inlineKeyboard(message);
     const body = await this.callApi("sendMessage", {
       chat_id: this.chatId,
       text,
@@ -163,11 +166,11 @@ export class TelegramBotTransport
       ...(context.topicId === undefined
         ? {}
         : { message_thread_id: this.parseTopicId(context.topicId) }),
-      ...(inlineKeyboard.length === 0
+      ...(keyboard.length === 0
         ? {}
         : {
             reply_markup: {
-              inline_keyboard: inlineKeyboard,
+              inline_keyboard: keyboard,
             },
           }),
     });
@@ -222,6 +225,19 @@ export class TelegramBotTransport
     await this.callApi("answerCallbackQuery", {
       callback_query_id: callbackId,
       text: redactText(text, 160),
+    });
+  }
+
+  public async editDeliveryMessage(
+    messageId: string,
+    message: DeliveryMessage,
+  ): Promise<void> {
+    await this.callApi("editMessageText", {
+      chat_id: this.chatId,
+      message_id: Number(messageId),
+      text: renderDeliveryText(message),
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: inlineKeyboard(message) },
     });
   }
 

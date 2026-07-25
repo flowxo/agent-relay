@@ -9,7 +9,7 @@ import {
 import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
 import {
-  renderDetailsMessage,
+  renderDetailsMessages,
   renderDeliveryMessage,
   renderDeliveryText,
   type AttentionCardResolutionState,
@@ -457,10 +457,14 @@ export class TelegramReplyRouter {
         return { outcome: "action-duplicate", updateId };
       }
       try {
-        await this.transport.deliver(renderDetailsMessage(eventRecord.event), {
-          idempotencyKey: parsed.token,
-          ...(topicId === undefined ? {} : { topicId }),
-        });
+        const details = this.store.notificationDetails(action.eventId);
+        const pages = renderDetailsMessages(details.events, details.totalCount);
+        for (const [index, page] of pages.entries()) {
+          await this.transport.deliver(page, {
+            idempotencyKey: `${parsed.token}:${String(index + 1)}`,
+            ...(topicId === undefined ? {} : { topicId }),
+          });
+        }
         this.store.finishCardAction({
           token: parsed.token,
           succeeded: true,

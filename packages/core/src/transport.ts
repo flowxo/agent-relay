@@ -61,6 +61,10 @@ export interface TopicNotificationTransport extends NotificationTransport {
 
 export interface InteractiveNotificationTransport extends NotificationTransport {
   acknowledgeCallback(callbackId: string, text: string): Promise<void>;
+  editDeliveryMessage(
+    messageId: string,
+    message: DeliveryMessage,
+  ): Promise<void>;
   editResolvedMessage(messageId: string, text: string): Promise<void>;
 }
 
@@ -81,6 +85,8 @@ export function isInteractiveTransport(
   return (
     "acknowledgeCallback" in transport &&
     typeof transport.acknowledgeCallback === "function" &&
+    "editDeliveryMessage" in transport &&
+    typeof transport.editDeliveryMessage === "function" &&
     "editResolvedMessage" in transport &&
     typeof transport.editResolvedMessage === "function"
   );
