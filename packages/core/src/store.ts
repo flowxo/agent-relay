@@ -231,6 +231,26 @@ export interface ResolveRequestInput {
   };
 }
 
+export type TopicTextCorrelationResult =
+  | {
+      outcome: "topic_not_found";
+      eligibleCount: 0;
+    }
+  | {
+      outcome: "no_eligible_request";
+      eligibleCount: 0;
+    }
+  | {
+      outcome: "ambiguous_request";
+      eligibleCount: number;
+    }
+  | {
+      outcome: "resolved";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+      resolution: ResolutionResult;
+    };
+
 export type ResumeCommandState =
   "claimed" | "running" | "succeeded" | "failed" | "unsupported";
 
@@ -1110,6 +1130,31 @@ export class RelayStore {
     return row === undefined ? undefined : this.topicFromRow(row);
   }
 
+  public getSessionTopicByTopicId(input: {
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+  }): SessionTopicRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, harness, session_id, transport_name, transport_scope,
+          provider, repository, branch, short_session_id, lifecycle_state,
+          topic_name, topic_id, provisioning_status, attempt_count,
+          next_attempt_at, last_error_code, last_error_message, created_at,
+          updated_at
+        FROM session_topics
+        WHERE transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND topic_id = @topicId
+          AND provisioning_status = 'ready'
+      `,
+      )
+      .get(input) as SessionTopicRow | undefined;
+    return row === undefined ? undefined : this.topicFromRow(row);
+  }
+
   public listSessionTopics(): SessionTopicRecord[] {
     const rows = this.database
       .prepare(
@@ -1919,6 +1964,21 @@ export class RelayStore {
     return row === undefined ? undefined : this.pendingFromRow(row);
   }
 
+  public getPendingForTransportMessage(
+    messageId: string,
+  ): PendingRequestRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM pending_requests
+        WHERE transport_message_id = ?
+      `,
+      )
+      .get(messageId) as PendingRow | undefined;
+    return row === undefined ? undefined : this.pendingFromRow(row);
+  }
+
   private requirePending(correlationId: string): PendingRequestRecord {
     const request = this.getPendingRequest(correlationId);
     if (request === undefined) {
@@ -2022,17 +2082,38 @@ export class RelayStore {
     messageId: string,
     answer: string,
     now: string,
+    expected?: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+    },
   ): ResolutionResult {
     const row = this.database
       .prepare(
         `
-        SELECT correlation_id
+        SELECT correlation_id, machine_id, harness, session_id, request_kind
         FROM pending_requests
         WHERE transport_message_id = ?
       `,
       )
-      .get(messageId) as { correlation_id: string } | undefined;
-    if (row === undefined) {
+      .get(messageId) as
+      | {
+          correlation_id: string;
+          machine_id: string;
+          harness: Harness;
+          session_id: string;
+          request_kind: PendingRequestRecord["requestKind"];
+        }
+      | undefined;
+    if (
+      row === undefined ||
+      (row.request_kind !== "input" && row.request_kind !== "continuation") ||
+      (expected !== undefined &&
+        (row.machine_id !== expected.machineId ||
+          row.harness !== expected.harness ||
+          row.session_id !== expected.sessionId))
+    ) {
       return { outcome: "not_found" };
     }
     return this.resolveRequest({
@@ -2040,7 +2121,110 @@ export class RelayStore {
       answer,
       resolvedBy: "telegram",
       now,
+      ...(expected === undefined ? {} : { expected }),
     });
+  }
+
+  public resolveTopicText(input: {
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+    answer: string;
+    now: string;
+  }): TopicTextCorrelationResult {
+    return this.database.transaction((): TopicTextCorrelationResult => {
+      const topic = this.database
+        .prepare(
+          `
+          SELECT machine_id, harness, session_id
+          FROM session_topics
+          WHERE transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND topic_id = @topicId
+            AND provisioning_status = 'ready'
+        `,
+        )
+        .get(input) as
+        | {
+            machine_id: string;
+            harness: Harness;
+            session_id: string;
+          }
+        | undefined;
+      if (topic === undefined) {
+        return { outcome: "topic_not_found", eligibleCount: 0 };
+      }
+
+      this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'expired',
+            resolved_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND state = 'open'
+            AND expires_at <= @now
+        `,
+        )
+        .run({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+        });
+
+      const candidates = this.database
+        .prepare(
+          `
+          SELECT *
+          FROM pending_requests
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND state = 'open'
+            AND expires_at > @now
+            AND request_kind IN ('input', 'continuation')
+          ORDER BY created_at, correlation_id
+          LIMIT 2
+        `,
+        )
+        .all({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+        }) as PendingRow[];
+      if (candidates.length === 0) {
+        return { outcome: "no_eligible_request", eligibleCount: 0 };
+      }
+      if (candidates.length > 1) {
+        return {
+          outcome: "ambiguous_request",
+          eligibleCount: candidates.length,
+        };
+      }
+
+      const request = this.pendingFromRow(candidates[0]!);
+      return {
+        outcome: "resolved",
+        eligibleCount: 1,
+        request,
+        resolution: this.resolveRequest({
+          correlationId: request.correlationId,
+          answer: input.answer,
+          resolvedBy: "telegram",
+          now: input.now,
+          expected: {
+            machineId: request.machineId,
+            harness: request.harness,
+            sessionId: request.sessionId,
+            ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+          },
+        }),
+      };
+    })();
   }
 
   public cancelRequest(correlationId: string, now: string): ResolutionResult {

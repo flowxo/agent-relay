@@ -224,6 +224,15 @@ Every action is committed before Telegram is acknowledged. Repeated taps return
 the stored result without repeating the action. Session controls are inspectable
 as `sessionControlRecords` in `status`.
 
+Free-text and continuation requests can be answered without Telegram's Reply
+gesture when correlation is unambiguous. Type directly in the session topic when
+exactly one open, unexpired `input` or `continuation` request exists there.
+Agent Relay never searches another topic. If no eligible request exists, it
+posts guidance without consuming the text as an answer. If more than one is
+eligible, it asks you to reply to the specific request card rather than
+guessing. Button-only confirmations, selections, and permissions cannot be
+answered by ordinary topic chatter.
+
 ## 6. Prove the Telegram interaction loop
 
 In another terminal:
@@ -236,8 +245,7 @@ set +a
 ~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
 ```
 
-Use Telegram's Reply action on the fresh canary message and respond with
-exactly:
+Open the fresh canary session topic and send exactly:
 
 ```text
 relay-canary-ok
@@ -248,10 +256,14 @@ Success requires:
 - lazy creation or reuse of the exact session topic;
 - Bot API delivery;
 - authorized chat and operator routing;
-- correlation to the exact Telegram message;
+- direct topic-text correlation to exactly one eligible request;
 - exact challenge validation;
 - durable first-writer-wins resolution; and
 - a terminal result showing `resolvedBy: telegram`.
+
+Telegram's Reply action remains available when a topic contains multiple
+eligible text requests. The replied-to card must belong to the same persisted
+session topic and must represent a compatible free-text or continuation request.
 
 The canary output deliberately excludes the private question and answer.
 
@@ -355,8 +367,15 @@ Confirm:
 - the sender matches `AGENT_RELAY_TELEGRAM_OPERATOR_ID`;
 - the chat matches `AGENT_RELAY_TELEGRAM_CHAT_ID`;
 - polling and webhook modes are not both configured;
-- the message targets an open, unexpired request; and
+- the message is inside the persisted session topic;
+- exactly one open, unexpired free-text or continuation request exists there, or
+  Telegram's Reply action identifies one compatible request card; and
 - the daemon logs show a handled or diagnosed Telegram update.
+
+For zero eligible requests, Agent Relay posts `reply not used` guidance. For
+multiple eligible requests it posts `choose a request` guidance. Decisions and
+guidance-delivery failures are retained as bounded diagnostics without copying
+the rejected message text.
 
 ### A batch of old notifications appears after startup
 

@@ -222,6 +222,7 @@ describe("Telegram activation canary", () => {
       update_id: 909,
       message: {
         message_id: 808,
+        message_thread_id: Number(transport.deliveries[0]?.context.topicId),
         from: { id: 7001 },
         chat: { id: 9001 },
         text: "relay-canary-ok",

@@ -14,7 +14,7 @@ function questionEvent(
   correlationId: string,
   sessionId: string,
   sequence: number,
-  kind: "input" | "permission" = "input",
+  kind: "input" | "permission" | "continuation" = "input",
 ): AgentAttentionEventV1 {
   return {
     schema: "agent-attention.v1",
@@ -29,7 +29,12 @@ function questionEvent(
     sessionId,
     turnId: `turn_replies_${String(sequence).padStart(4, "0")}`,
     project: makeProjectRef(`/workspace/${sessionId}`),
-    type: kind === "permission" ? "permission.required" : "input.required",
+    type:
+      kind === "permission"
+        ? "permission.required"
+        : kind === "continuation"
+          ? "turn.stopped"
+          : "input.required",
     summary: `Question for ${sessionId}`,
     request: {
       correlationId,
@@ -87,6 +92,7 @@ describe("Telegram reply correlation", () => {
         message_id: 500,
         from: { id: 7001 },
         chat: { id: 9001 },
+        message_thread_id: Number(firstMessage?.context.topicId),
         text: "Answer only the first session",
         reply_to_message: {
           message_id: Number(firstMessage?.receipt.messageId),
@@ -101,6 +107,310 @@ describe("Telegram reply correlation", () => {
     expect(
       runtime.store.getPendingRequest(second.request?.correlationId ?? "")
         ?.state,
+    ).toBe("open");
+    runtime.store.close();
+  });
+
+  it("correlates plain text to the only eligible request in its session topic", async () => {
+    const runtime = await setup();
+    const input = questionEvent(
+      "correlation_plain_topic",
+      "session_plain_topic",
+      1,
+      "continuation",
+    );
+    runtime.service.ingest(input);
+    await runtime.service.drain();
+    const delivery = runtime.transport.deliveries[0];
+
+    const result = await runtime.router.handle({
+      update_id: 106,
+      message: {
+        message_id: 506,
+        message_thread_id: Number(delivery?.context.topicId),
+        from: { id: 7001 },
+        chat: { id: 9001 },
+        text: "Continue with the focused fix",
+      },
+    });
+
+    expect(result).toMatchObject({ outcome: "answered" });
+    expect(
+      runtime.store.getPendingRequest("correlation_plain_topic"),
+    ).toMatchObject({
+      state: "answered",
+      answer: "Continue with the focused fix",
+      resolvedBy: "telegram",
+    });
+    expect(runtime.transport.messageEdits).toHaveLength(1);
+    expect(
+      runtime.store
+        .listDiagnostics()
+        .find(
+          (diagnostic) => diagnostic.code === "telegram.topic-text-answered",
+        ),
+    ).toMatchObject({
+      level: "info",
+      message: "Plain topic text correlation outcome: answered",
+    });
+    expect(JSON.stringify(runtime.store.listDiagnostics())).not.toContain(
+      "Continue with the focused fix",
+    );
+    runtime.store.close();
+  });
+
+  it("guides without guessing when zero or multiple text requests are eligible", async () => {
+    const runtime = await setup();
+    const structured = questionEvent(
+      "correlation_button_only",
+      "session_guidance",
+      1,
+      "permission",
+    );
+    runtime.service.ingest(structured);
+    await runtime.service.drain();
+    const topicId = Number(runtime.transport.deliveries[0]?.context.topicId);
+
+    expect(
+      await runtime.router.handle({
+        update_id: 107,
+        message: {
+          message_id: 507,
+          message_thread_id: topicId,
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "ordinary topic chatter",
+        },
+      }),
+    ).toEqual({ outcome: "no-eligible-request", updateId: 107 });
+    expect(
+      runtime.store.getPendingRequest("correlation_button_only")?.state,
+    ).toBe("open");
+    expect(runtime.transport.deliveries.at(-1)?.message.text).toContain(
+      "No open free-text or continuation request",
+    );
+
+    const first = questionEvent(
+      "correlation_ambiguous_one",
+      "session_guidance",
+      3,
+    );
+    const second = questionEvent(
+      "correlation_ambiguous_two",
+      "session_guidance",
+      5,
+      "continuation",
+    );
+    runtime.service.ingest(first);
+    runtime.service.ingest(second);
+    await runtime.service.drain();
+
+    expect(
+      await runtime.router.handle({
+        update_id: 108,
+        message: {
+          message_id: 508,
+          message_thread_id: topicId,
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "do not guess",
+        },
+      }),
+    ).toEqual({ outcome: "ambiguous-request", updateId: 108 });
+    expect(
+      runtime.store.getPendingRequest("correlation_ambiguous_one")?.state,
+    ).toBe("open");
+    expect(
+      runtime.store.getPendingRequest("correlation_ambiguous_two")?.state,
+    ).toBe("open");
+    expect(runtime.transport.deliveries.at(-1)?.message.text).toContain(
+      "More than one text request",
+    );
+
+    const firstDelivery = runtime.transport.deliveries.find(
+      (delivery) => delivery.message.eventId === first.eventId,
+    );
+    expect(
+      await runtime.router.handle({
+        update_id: 109,
+        message: {
+          message_id: 509,
+          message_thread_id: topicId,
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "answer only the selected request",
+          reply_to_message: {
+            message_id: Number(firstDelivery?.receipt.messageId),
+          },
+        },
+      }),
+    ).toMatchObject({ outcome: "answered" });
+    expect(
+      runtime.store.getPendingRequest("correlation_ambiguous_one"),
+    ).toMatchObject({
+      state: "answered",
+      answer: "answer only the selected request",
+    });
+    expect(
+      runtime.store.getPendingRequest("correlation_ambiguous_two")?.state,
+    ).toBe("open");
+    runtime.store.close();
+  });
+
+  it("rejects explicit replies from another topic and text for button-only requests", async () => {
+    const runtime = await setup();
+    const textRequest = questionEvent(
+      "correlation_cross_topic",
+      "session_cross_topic_one",
+      1,
+    );
+    const otherSession = questionEvent(
+      "correlation_other_topic",
+      "session_cross_topic_two",
+      2,
+    );
+    runtime.service.ingest(textRequest);
+    runtime.service.ingest(otherSession);
+    await runtime.service.drain();
+    const textDelivery = runtime.transport.deliveries.find(
+      (delivery) => delivery.message.eventId === textRequest.eventId,
+    );
+    const otherDelivery = runtime.transport.deliveries.find(
+      (delivery) => delivery.message.eventId === otherSession.eventId,
+    );
+
+    expect(
+      await runtime.router.handle({
+        update_id: 109,
+        message: {
+          message_id: 509,
+          message_thread_id: Number(otherDelivery?.context.topicId),
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "wrong topic",
+          reply_to_message: {
+            message_id: Number(textDelivery?.receipt.messageId),
+          },
+        },
+      }),
+    ).toEqual({ outcome: "uncorrelated", updateId: 109 });
+    expect(
+      runtime.store.getPendingRequest("correlation_cross_topic")?.state,
+    ).toBe("open");
+
+    const buttonOnly = questionEvent(
+      "correlation_explicit_button_only",
+      "session_cross_topic_two",
+      4,
+      "permission",
+    );
+    runtime.service.ingest(buttonOnly);
+    await runtime.service.drain();
+    const buttonDelivery = runtime.transport.deliveries.find(
+      (delivery) => delivery.message.eventId === buttonOnly.eventId,
+    );
+    expect(
+      await runtime.router.handle({
+        update_id: 110,
+        message: {
+          message_id: 510,
+          message_thread_id: Number(buttonDelivery?.context.topicId),
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "allow",
+          reply_to_message: {
+            message_id: Number(buttonDelivery?.receipt.messageId),
+          },
+        },
+      }),
+    ).toEqual({ outcome: "uncorrelated", updateId: 110 });
+    expect(
+      runtime.store.getPendingRequest("correlation_explicit_button_only")
+        ?.state,
+    ).toBe("open");
+    expect(runtime.transport.deliveries.at(-1)?.message.text).toContain(
+      "requires a button choice",
+    );
+    runtime.store.close();
+  });
+
+  it("keeps first-writer-wins when concurrent plain messages target one request", async () => {
+    const runtime = await setup();
+    const input = questionEvent(
+      "correlation_plain_race",
+      "session_plain_race",
+      1,
+    );
+    runtime.service.ingest(input);
+    await runtime.service.drain();
+    const topicId = Number(runtime.transport.deliveries[0]?.context.topicId);
+    const makeUpdate = (updateId: number, text: string) => ({
+      update_id: updateId,
+      message: {
+        message_id: updateId + 1_000,
+        message_thread_id: topicId,
+        from: { id: 7001 },
+        chat: { id: 9001 },
+        text,
+      },
+    });
+
+    const outcomes = await Promise.all([
+      runtime.router.handle(makeUpdate(111, "first candidate")),
+      runtime.router.handle(makeUpdate(112, "second candidate")),
+    ]);
+
+    expect(outcomes.map((result) => result.outcome).sort()).toEqual([
+      "answered",
+      "no-eligible-request",
+    ]);
+    expect(
+      ["first candidate", "second candidate"].includes(
+        runtime.store.getPendingRequest("correlation_plain_race")?.answer ?? "",
+      ),
+    ).toBe(true);
+    runtime.store.close();
+  });
+
+  it("durably diagnoses a topic guidance delivery failure", async () => {
+    const runtime = await setup();
+    const buttonOnly = questionEvent(
+      "correlation_guidance_failure",
+      "session_guidance_failure",
+      1,
+      "permission",
+    );
+    runtime.service.ingest(buttonOnly);
+    await runtime.service.drain();
+    const topicId = Number(runtime.transport.deliveries[0]?.context.topicId);
+    runtime.transport.failNext(1);
+
+    expect(
+      await runtime.router.handle({
+        update_id: 113,
+        message: {
+          message_id: 1_113,
+          message_thread_id: topicId,
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "not a button",
+        },
+      }),
+    ).toEqual({ outcome: "no-eligible-request", updateId: 113 });
+    expect(runtime.store.listDiagnostics()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "error",
+          code: "telegram.topic-text-guidance-failed",
+          message: "Topic text guidance delivery failed: fake-timeout",
+        }),
+        expect.objectContaining({
+          code: "telegram.topic-text-no-eligible-request",
+        }),
+      ]),
+    );
+    expect(
+      runtime.store.getPendingRequest("correlation_guidance_failure")?.state,
     ).toBe("open");
     runtime.store.close();
   });
@@ -208,12 +518,14 @@ describe("Telegram reply correlation", () => {
     runtime.service.ingest(input);
     await runtime.service.drain();
     const messageId = runtime.transport.deliveries[0]?.receipt.messageId;
+    const topicId = runtime.transport.deliveries[0]?.context.topicId;
     await runtime.router.handle({
       update_id: 103,
       message: {
         message_id: 501,
         from: { id: 7001 },
         chat: { id: 9001 },
+        message_thread_id: Number(topicId),
         text: "telegram won",
         reply_to_message: { message_id: Number(messageId) },
       },
@@ -262,6 +574,7 @@ describe("Telegram reply correlation", () => {
           message_id: 502,
           from: { id: 7001 },
           chat: { id: 9001 },
+          message_thread_id: Number(transport.deliveries[0]?.context.topicId),
           text: "too late",
           reply_to_message: {
             message_id: Number(transport.deliveries[0]?.receipt.messageId),
@@ -310,6 +623,9 @@ describe("Telegram reply correlation", () => {
           message_id: 503,
           from: { id: 9999 },
           chat: { id: 9001 },
+          message_thread_id: Number(
+            runtime.transport.deliveries[0]?.context.topicId,
+          ),
           text: "malicious reply",
           reply_to_message: {
             message_id: Number(

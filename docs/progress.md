@@ -85,6 +85,16 @@
   the relay lane. Duplicate taps never repeat an action. Malformed, unknown,
   unauthorized, stale, cross-message/topic, blocked, and failed callbacks emit
   useful responses and durable diagnostics.
+- FXO-1055 is green locally. Authorized plain text inside a persisted session
+  topic resolves only when exactly one open, unexpired free-text or continuation
+  request is eligible there. Zero candidates produce `reply not used` guidance;
+  multiple candidates require replying to the specific card; and button-only
+  requests cannot be answered by ordinary chatter. Explicit replies bind the
+  delivery message and the session topic. Cross-topic, unauthorized, stale,
+  duplicate, concurrent, and guidance-delivery-failure paths are deterministic.
+  Correlation diagnostics store the decision but never the rejected message
+  text. The behavior is fake-transport proven; a credentialed direct-topic-text
+  canary remains part of the Phase 1 live proof.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -179,6 +189,5 @@
 
 ## Next action
 
-Run one credentialed private-topic activation against the rebuilt daemon, retain
-only the sanitized response shape, then implement FXO-1055's unambiguous plain
-topic-text correlation.
+Implement FXO-1056 topic lifecycle reconciliation, then run the credentialed
+Phase 1 topic/card/direct-text proof in FXO-1059 against the completed slice.

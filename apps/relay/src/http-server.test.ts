@@ -234,6 +234,9 @@ describe("relay HTTP daemon", () => {
         update_id: 600,
         message: {
           message_id: 700,
+          message_thread_id: Number(
+            runtime.transport.deliveries[0]?.context.topicId,
+          ),
           from: { id: 7001 },
           chat: { id: 9001 },
           text: "late Telegram answer",

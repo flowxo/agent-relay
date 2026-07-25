@@ -342,10 +342,14 @@ describe("opt-in harness supervisor", () => {
         const messageId = Number(
           runtime.transport.deliveries[0]?.receipt.messageId,
         );
+        const topicId = Number(
+          runtime.transport.deliveries[0]?.context.topicId,
+        );
         telegramOutcome = await runtime.router.handle({
           update_id: 700,
           message: {
             message_id: 701,
+            message_thread_id: topicId,
             from: { id: 7001 },
             chat: { id: 9001 },
             text: "Continue only this Codex turn",
@@ -357,6 +361,7 @@ describe("opt-in harness supervisor", () => {
             update_id: 700,
             message: {
               message_id: 701,
+              message_thread_id: topicId,
               from: { id: 7001 },
               chat: { id: 9001 },
               text: "duplicate",
@@ -450,10 +455,14 @@ describe("opt-in harness supervisor", () => {
         const messageId = Number(
           runtime.transport.deliveries[0]?.receipt.messageId,
         );
+        const topicId = Number(
+          runtime.transport.deliveries[0]?.context.topicId,
+        );
         await runtime.router.handle({
           update_id: 800,
           message: {
             message_id: 801,
+            message_thread_id: topicId,
             from: { id: 7001 },
             chat: { id: 9001 },
             text: "Continue",

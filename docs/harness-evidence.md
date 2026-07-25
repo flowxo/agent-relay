@@ -110,6 +110,17 @@ acknowledgement. Tests cover every action, repeated updates and taps, malformed
 and unknown tokens, unauthorized senders, cross-message/topic attempts, blocked
 End with a pending question, and an ambiguous Details delivery failure.
 
+Plain topic-text fixtures bind `message_thread_id` to the durable session-topic
+registry before inspecting requests. Direct text resolves only when that topic
+contains exactly one open, unexpired `input` or `continuation` request. Zero and
+multiple candidates leave every request unchanged and produce bounded guidance;
+button-only requests reject ordinary chatter. Explicit replies additionally bind
+the replied-to delivery to the same session topic. Concurrent messages,
+duplicates, stale replies, unauthorized senders, cross-topic attempts, and
+guidance-delivery failures are covered without retaining rejected text in
+diagnostics. This behavior is fake-transport proven; a live direct-topic-text
+activation is not yet claimed.
+
 A credentialed private-chat activation was run on 2026-07-24. The Bot API
 accepted the synthetic canary notification, loopback long polling received the
 operator's replied-to-message update, and SQLite recorded the exact challenge as
