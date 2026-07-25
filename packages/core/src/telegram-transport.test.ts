@@ -9,6 +9,70 @@ const message = {
 };
 
 describe("TelegramBotTransport", () => {
+  it("creates a private topic and delivers into its message thread", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: {
+              message_thread_id: 77,
+              name: "Codex · example · 12345678",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ok: true, result: { message_id: 42, date: 0 } }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await expect(
+      transport.createTopic(
+        { name: "Codex · example · 12345678" },
+        { idempotencyKey: "topic_key_12345678" },
+      ),
+    ).resolves.toEqual({ transport: "telegram", topicId: "77" });
+    await expect(
+      transport.deliver(message, {
+        idempotencyKey: message.eventId,
+        topicId: "77",
+      }),
+    ).resolves.toEqual({ transport: "telegram", messageId: "42" });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("createForumTopic");
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+    ).toMatchObject({
+      chat_id: "10001",
+      name: "Codex · example · 12345678",
+    });
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("sendMessage");
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)),
+    ).toMatchObject({
+      chat_id: "10001",
+      message_thread_id: 77,
+    });
+    expect(transport.topicScope).toMatch(/^chat:[a-f0-9]{24}$/);
+    expect(transport.topicScope).not.toContain("10001");
+  });
+
   it("maps a Bot API response to a delivery receipt", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
@@ -118,6 +182,44 @@ describe("TelegramBotTransport", () => {
     ).rejects.toMatchObject({
       code: "telegram-timeout",
       retryable: true,
+    });
+  });
+
+  it("rejects malformed topic creation responses and invalid topic ids", async () => {
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { message_thread_id: "wrong", name: "topic" },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    });
+
+    await expect(
+      transport.createTopic(
+        { name: "topic" },
+        { idempotencyKey: "topic_key_12345678" },
+      ),
+    ).rejects.toMatchObject({
+      code: "telegram-malformed-response",
+      retryable: false,
+    });
+    await expect(
+      transport.deliver(message, {
+        idempotencyKey: message.eventId,
+        topicId: "not-a-number",
+      }),
+    ).rejects.toMatchObject({
+      code: "telegram-invalid-topic",
+      retryable: false,
     });
   });
 

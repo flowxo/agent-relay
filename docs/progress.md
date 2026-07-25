@@ -49,6 +49,16 @@
   update arrays, routes updates in order, advances offsets only after handling,
   retries diagnosed failures, and shuts down active polls cleanly. Webhook mode
   uses Telegram's secret independently of daemon bearer authentication.
+- FXO-1051 is green against the fake transport and the Telegram Bot API 10.2
+  contract. SQLite now owns one topic record per logical
+  machine/harness/session/transport scope. Topic creation is lazy, atomically
+  claimed before the transport call, retried through the owning event spool,
+  durably diagnosed, and reused after database reopen. The fake transport proves
+  repeated-event reuse, competing first deliveries, concurrent-session
+  isolation, restart persistence, retryable and terminal failures, and
+  path/secret-safe topic metadata. The real adapter fixtures prove
+  `createForumTopic` parsing and `message_thread_id` delivery; live
+  private-topic creation is not yet claimed.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -101,7 +111,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 107 tests across 18 test files, including the
+- `pnpm check` passes all 119 tests across 19 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -120,8 +130,9 @@
   processes launched through `agent-relay run`; the protocol rejects a
   `process.exited` event without owned-child evidence.
 - Telegram's Bot API has no caller-supplied idempotency key. SQLite prevents
-  normal duplicates, but a process crash after Telegram accepts a message and
-  before the receipt commits remains an at-least-once duplicate window.
+  normal duplicate messages and concurrent topic creators, but a process crash
+  or ambiguous timeout after Telegram accepts a message or topic and before the
+  receipt commits remains an at-least-once duplicate window.
 - The real Telegram activation proves one private-chat send/reply path. Rate
   limiting, network retries, webhook intake, and shutdown remain proven through
   deterministic HTTP fixtures rather than induced failures against the live
@@ -142,7 +153,6 @@
 
 ## Next action
 
-The requested MVP milestones and all three authenticated CLI stop/resume
-canaries are complete. Before enabling Cursor permission automation, capture and
-sanitize its current live permission payload; until then, keep that hook
-disabled by default.
+Run one credentialed private-topic activation against the rebuilt daemon, retain
+only the sanitized response shape, then begin FXO-1052 by routing every event
+and reply through the persisted topic mapping.

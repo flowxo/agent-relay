@@ -101,6 +101,14 @@ describe("relay HTTP daemon", () => {
       healthy: true,
       pendingDeliveryCount: 0,
       events: { delivered: 1 },
+      topics: { ready: 1 },
+      topicRecords: [
+        expect.objectContaining({
+          sessionId: input.sessionId,
+          provisioningStatus: "ready",
+          topicId: "1000",
+        }),
+      ],
     });
     expect(runtime.transport.deliveries).toHaveLength(1);
     await runtime.close();

@@ -55,9 +55,61 @@ export interface SessionRecord {
   lastSequence: number;
 }
 
+export type TopicProvisioningStatus =
+  "pending" | "creating" | "ready" | "retry" | "failed";
+
+export interface SessionTopicRecord {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+  transportName: string;
+  transportScope: string;
+  provider: Harness;
+  repository: string;
+  branch?: string;
+  shortSessionId: string;
+  lifecycleState: SessionRecord["state"];
+  topicName: string;
+  topicId?: string;
+  provisioningStatus: TopicProvisioningStatus;
+  attemptCount: number;
+  nextAttemptAt: string;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClaimSessionTopicInput {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+  transportName: string;
+  transportScope: string;
+  provider: Harness;
+  repository: string;
+  branch?: string;
+  shortSessionId: string;
+  lifecycleState: SessionRecord["state"];
+  topicName: string;
+  now: string;
+}
+
+export type SessionTopicClaimResult =
+  | { outcome: "ready"; topic: SessionTopicRecord }
+  | {
+      outcome: "claimed";
+      topic: SessionTopicRecord;
+      attemptNumber: number;
+    }
+  | { outcome: "busy"; topic: SessionTopicRecord }
+  | { outcome: "deferred"; topic: SessionTopicRecord }
+  | { outcome: "failed"; topic: SessionTopicRecord };
+
 export interface StoreStatus {
   events: Record<DeliveryStatus, number>;
   sessions: Record<SessionRecord["state"], number>;
+  topics: Record<TopicProvisioningStatus, number>;
   resumeCommands: Record<ResumeCommandState, number>;
   diagnostics: Record<RelayDiagnosticV1["level"], number> & { total: number };
   pendingDeliveryCount: number;
@@ -208,6 +260,28 @@ interface SessionRow {
   state: SessionRecord["state"];
   last_seen_at: string;
   last_sequence: number;
+}
+
+interface SessionTopicRow {
+  machine_id: string;
+  harness: Harness;
+  session_id: string;
+  transport_name: string;
+  transport_scope: string;
+  provider: Harness;
+  repository: string;
+  branch: string | null;
+  short_session_id: string;
+  lifecycle_state: SessionRecord["state"];
+  topic_name: string;
+  topic_id: string | null;
+  provisioning_status: TopicProvisioningStatus;
+  attempt_count: number;
+  next_attempt_at: string;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CountRow {
@@ -384,6 +458,41 @@ export class RelayStore {
         PRIMARY KEY (machine_id, harness, session_id)
       );
 
+      CREATE TABLE IF NOT EXISTS session_topics (
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        transport_name TEXT NOT NULL,
+        transport_scope TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        branch TEXT,
+        short_session_id TEXT NOT NULL,
+        lifecycle_state TEXT NOT NULL,
+        topic_name TEXT NOT NULL,
+        topic_id TEXT,
+        provisioning_status TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        lease_started_at TEXT,
+        last_error_code TEXT,
+        last_error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (
+          machine_id, harness, session_id, transport_name, transport_scope
+        ),
+        UNIQUE (transport_name, transport_scope, topic_id),
+        FOREIGN KEY (machine_id, harness, session_id)
+          REFERENCES sessions(machine_id, harness, session_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS session_topics_status_idx
+        ON session_topics(
+          provisioning_status, next_attempt_at, updated_at
+        );
+
       CREATE TABLE IF NOT EXISTS events (
         event_id TEXT PRIMARY KEY,
         machine_id TEXT NOT NULL,
@@ -533,6 +642,335 @@ export class RelayStore {
         projectJson: JSON.stringify(session.project),
         capabilitiesJson: JSON.stringify(session.capabilities),
       });
+  }
+
+  private topicFromRow(row: SessionTopicRow): SessionTopicRecord {
+    return {
+      machineId: row.machine_id,
+      harness: row.harness,
+      sessionId: row.session_id,
+      transportName: row.transport_name,
+      transportScope: row.transport_scope,
+      provider: row.provider,
+      repository: row.repository,
+      ...(row.branch === null ? {} : { branch: row.branch }),
+      shortSessionId: row.short_session_id,
+      lifecycleState: row.lifecycle_state,
+      topicName: row.topic_name,
+      ...(row.topic_id === null ? {} : { topicId: row.topic_id }),
+      provisioningStatus: row.provisioning_status,
+      attemptCount: row.attempt_count,
+      nextAttemptAt: row.next_attempt_at,
+      ...(row.last_error_code === null
+        ? {}
+        : { lastErrorCode: row.last_error_code }),
+      ...(row.last_error_message === null
+        ? {}
+        : { lastErrorMessage: row.last_error_message }),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private getSessionTopicRow(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+  }): SessionTopicRow | undefined {
+    return this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, harness, session_id, transport_name, transport_scope,
+          provider, repository, branch, short_session_id, lifecycle_state,
+          topic_name, topic_id, provisioning_status, attempt_count,
+          next_attempt_at, last_error_code, last_error_message, created_at,
+          updated_at
+        FROM session_topics
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+      `,
+      )
+      .get(input) as SessionTopicRow | undefined;
+  }
+
+  public claimSessionTopic(
+    input: ClaimSessionTopicInput,
+  ): SessionTopicClaimResult {
+    assertIsoCutoff(input.now, "topic claim time");
+    if (
+      input.transportName.trim().length === 0 ||
+      input.transportScope.trim().length === 0
+    ) {
+      throw new Error("topic transport identity is required");
+    }
+    if (
+      input.repository.length < 1 ||
+      input.repository.length > 120 ||
+      input.topicName.length < 1 ||
+      [...input.topicName].length > 128
+    ) {
+      throw new Error("topic metadata is outside supported bounds");
+    }
+    return this.database.transaction((): SessionTopicClaimResult => {
+      this.database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO session_topics (
+            machine_id, harness, session_id, transport_name, transport_scope,
+            provider, repository, branch, short_session_id, lifecycle_state,
+            topic_name, provisioning_status, next_attempt_at, created_at,
+            updated_at
+          ) VALUES (
+            @machineId, @harness, @sessionId, @transportName, @transportScope,
+            @provider, @repository, @branch, @shortSessionId, @lifecycleState,
+            @topicName, 'pending', @now, @now, @now
+          )
+        `,
+        )
+        .run({
+          ...input,
+          branch: input.branch ?? null,
+        });
+      this.database
+        .prepare(
+          `
+          UPDATE session_topics SET
+            provider = @provider,
+            repository = @repository,
+            branch = @branch,
+            short_session_id = @shortSessionId,
+            lifecycle_state = @lifecycleState,
+            topic_name = CASE
+              WHEN provisioning_status = 'ready' THEN topic_name
+              ELSE @topicName
+            END,
+            updated_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+        `,
+        )
+        .run({
+          ...input,
+          branch: input.branch ?? null,
+        });
+      const currentRow = this.getSessionTopicRow(input);
+      if (currentRow === undefined) {
+        throw new Error("session topic disappeared during claim");
+      }
+      const current = this.topicFromRow(currentRow);
+      if (current.provisioningStatus === "ready") {
+        if (current.topicId === undefined) {
+          throw new Error("ready session topic is missing its topic id");
+        }
+        return { outcome: "ready", topic: current };
+      }
+      if (current.provisioningStatus === "creating") {
+        return { outcome: "busy", topic: current };
+      }
+      if (current.provisioningStatus === "failed") {
+        return { outcome: "failed", topic: current };
+      }
+      if (
+        current.provisioningStatus === "retry" &&
+        current.nextAttemptAt > input.now
+      ) {
+        return { outcome: "deferred", topic: current };
+      }
+      const update = this.database
+        .prepare(
+          `
+          UPDATE session_topics SET
+            provisioning_status = 'creating',
+            attempt_count = attempt_count + 1,
+            lease_started_at = @now,
+            last_error_code = NULL,
+            last_error_message = NULL,
+            updated_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND provisioning_status IN ('pending', 'retry')
+            AND next_attempt_at <= @now
+        `,
+        )
+        .run(input);
+      if (update.changes !== 1) {
+        const raced = this.getSessionTopicRow(input);
+        if (raced === undefined) {
+          throw new Error("session topic disappeared after claim race");
+        }
+        return { outcome: "busy", topic: this.topicFromRow(raced) };
+      }
+      const claimedRow = this.getSessionTopicRow(input);
+      if (claimedRow === undefined) {
+        throw new Error("claimed session topic disappeared");
+      }
+      const claimed = this.topicFromRow(claimedRow);
+      return {
+        outcome: "claimed",
+        topic: claimed,
+        attemptNumber: claimed.attemptCount,
+      };
+    })();
+  }
+
+  public markSessionTopicReady(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+    attemptNumber: number;
+    topicId: string;
+    now: string;
+  }): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic ready time");
+    if (input.topicId.trim().length === 0 || input.topicId.length > 128) {
+      throw new Error("topic id is outside supported bounds");
+    }
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          topic_id = @topicId,
+          provisioning_status = 'ready',
+          lease_started_at = NULL,
+          last_error_code = NULL,
+          last_error_message = NULL,
+          updated_at = @now
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND provisioning_status = 'creating'
+          AND attempt_count = @attemptNumber
+      `,
+      )
+      .run(input).changes;
+    if (changes !== 1) {
+      throw new Error("cannot complete an unclaimed session topic");
+    }
+    const row = this.getSessionTopicRow(input);
+    if (row === undefined) {
+      throw new Error("ready session topic disappeared");
+    }
+    return this.topicFromRow(row);
+  }
+
+  public markSessionTopicFailed(
+    input: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      transportName: string;
+      transportScope: string;
+      attemptNumber: number;
+      errorCode: string;
+      errorMessage: string;
+      retryable: boolean;
+      now: string;
+    },
+    policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  ): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic failure time");
+    const exhausted = input.attemptNumber >= policy.maxAttempts;
+    const provisioningStatus: TopicProvisioningStatus =
+      input.retryable && !exhausted ? "retry" : "failed";
+    const nextAttemptAt = new Date(
+      Date.parse(input.now) + retryDelay(policy, input.attemptNumber),
+    ).toISOString();
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          provisioning_status = @provisioningStatus,
+          next_attempt_at = @nextAttemptAt,
+          lease_started_at = NULL,
+          last_error_code = @errorCode,
+          last_error_message = @errorMessage,
+          updated_at = @now
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND provisioning_status = 'creating'
+          AND attempt_count = @attemptNumber
+      `,
+      )
+      .run({
+        ...input,
+        provisioningStatus,
+        nextAttemptAt,
+        errorMessage: input.errorMessage.slice(0, 2_000),
+      }).changes;
+    if (changes !== 1) {
+      throw new Error("cannot fail an unclaimed session topic");
+    }
+    const row = this.getSessionTopicRow(input);
+    if (row === undefined) {
+      throw new Error("failed session topic disappeared");
+    }
+    return this.topicFromRow(row);
+  }
+
+  public recoverInterruptedTopics(now: string): number {
+    assertIsoCutoff(now, "topic recovery time");
+    return this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          provisioning_status = 'retry',
+          next_attempt_at = ?,
+          lease_started_at = NULL,
+          last_error_code = 'topic-creation-interrupted',
+          last_error_message = 'daemon stopped during topic creation',
+          updated_at = ?
+        WHERE provisioning_status = 'creating'
+      `,
+      )
+      .run(now, now).changes;
+  }
+
+  public getSessionTopic(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+  }): SessionTopicRecord | undefined {
+    const row = this.getSessionTopicRow(input);
+    return row === undefined ? undefined : this.topicFromRow(row);
+  }
+
+  public listSessionTopics(): SessionTopicRecord[] {
+    const rows = this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, harness, session_id, transport_name, transport_scope,
+          provider, repository, branch, short_session_id, lifecycle_state,
+          topic_name, topic_id, provisioning_status, attempt_count,
+          next_attempt_at, last_error_code, last_error_message, created_at,
+          updated_at
+        FROM session_topics
+        ORDER BY updated_at DESC, machine_id, harness, session_id
+      `,
+      )
+      .all() as SessionTopicRow[];
+    return rows.map((row) => this.topicFromRow(row));
   }
 
   public heartbeat(heartbeatInput: SessionHeartbeatV1): boolean {
@@ -1697,6 +2135,14 @@ export class RelayStore {
       `,
       )
       .all() as CountRow[];
+    const topicCounts = this.database
+      .prepare(
+        `
+        SELECT provisioning_status AS key, COUNT(*) AS count
+        FROM session_topics GROUP BY provisioning_status
+      `,
+      )
+      .all() as CountRow[];
     const resumeCommandCounts = this.database
       .prepare(
         `
@@ -1727,6 +2173,13 @@ export class RelayStore {
       suspected_stalled: 0,
       exited: 0,
     };
+    const topics: StoreStatus["topics"] = {
+      pending: 0,
+      creating: 0,
+      ready: 0,
+      retry: 0,
+      failed: 0,
+    };
     const resumeCommands: StoreStatus["resumeCommands"] = {
       claimed: 0,
       running: 0,
@@ -1750,6 +2203,11 @@ export class RelayStore {
         sessions[row.key as SessionRecord["state"]] = row.count;
       }
     }
+    for (const row of topicCounts) {
+      if (row.key in topics) {
+        topics[row.key as TopicProvisioningStatus] = row.count;
+      }
+    }
     for (const row of resumeCommandCounts) {
       if (row.key in resumeCommands) {
         resumeCommands[row.key as ResumeCommandState] = row.count;
@@ -1764,6 +2222,7 @@ export class RelayStore {
     return {
       events,
       sessions,
+      topics,
       resumeCommands,
       diagnostics,
       pendingDeliveryCount: events.queued + events.retry + events.delivering,

@@ -53,11 +53,18 @@ discrete argv value and is never shell-interpreted.
 
 ## Telegram adapter observations
 
-Telegram's official Bot API documentation was rechecked on 2026-07-24. Local
-reply intake defaults to `getUpdates` long polling because the daemon binds to
-loopback. The implementation sends an offset one greater than the highest
-handled update, limits intake to messages and callback queries, and relies on
-the durable update claim when Telegram repeats an unconfirmed update.
+Telegram's official Bot API documentation was rechecked on 2026-07-25 against
+Bot API 10.2. The current contract documents `createForumTopic` for forum
+supergroups and private bot chats, a 1-128-character topic name, and
+`message_thread_id` on `sendMessage`. Agent Relay's deterministic HTTP fixtures
+cover the documented success and malformed-response shapes. A credentialed
+private-topic creation has not yet been captured, so that boundary remains
+contract-tested rather than live-proven.
+
+Local reply intake defaults to `getUpdates` long polling because the daemon
+binds to loopback. The implementation sends an offset one greater than the
+highest handled update, limits intake to messages and callback queries, and
+relies on the durable update claim when Telegram repeats an unconfirmed update.
 
 The official contract states that `getUpdates` and webhooks are mutually
 exclusive, `timeout` is expressed in seconds, `limit` is bounded from 1 through
@@ -71,6 +78,13 @@ test. It sends a unique correlated question through HTTP and SQLite, injects an
 authorized Telegram update that replies to the delivered message ID, and proves
 durable Telegram resolution with no question or answer in command output. This
 proves the local control loop.
+
+The fake transport also creates deterministic topics. SQLite claims a session
+topic before the transport call, persists provider/repository/branch, short
+session identity, lifecycle, provisioning attempts, and the returned topic ID,
+and reuses that mapping after reopen. Tests cover repeated events, competing
+first deliveries, separate concurrent sessions, retryable and non-retryable
+topic failures, path/secret sanitization, and restart reuse.
 
 A credentialed private-chat activation was run on 2026-07-24. The Bot API
 accepted the synthetic canary notification, loopback long polling received the
@@ -134,8 +148,9 @@ remain crash evidence.
   document the `stop` payload and `followup_message`.
 - [Cursor CLI usage](https://docs.cursor.com/en/cli/using) documents session
   resume.
-- [Telegram Bot API](https://core.telegram.org/bots/api) documents `getUpdates`,
-  offsets, long-poll timeouts, update limits, allowed update filters, webhook
+- [Telegram Bot API](https://core.telegram.org/bots/api) documents
+  `createForumTopic`, private-chat `message_thread_id`, `getUpdates`, offsets,
+  long-poll timeouts, update limits, allowed update filters, webhook
   exclusivity, and webhook secret headers.
 - [Telegram Bot FAQ](https://core.telegram.org/bots/faq) documents the 24-hour
   pending-update retention boundary.

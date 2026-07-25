@@ -1,11 +1,17 @@
 import { z } from "zod";
 
+import { sha256 } from "@agent-relay/protocol";
+
 import { redactText } from "./redaction.js";
 import type {
   DeliveryContext,
   DeliveryMessage,
   DeliveryReceipt,
   InteractiveNotificationTransport,
+  TopicCreation,
+  TopicCreationContext,
+  TopicNotificationTransport,
+  TopicReceipt,
 } from "./transport.js";
 import { TransportError } from "./transport.js";
 
@@ -27,6 +33,18 @@ const failureSchema = z
     ok: z.literal(false),
     error_code: z.number().int().optional(),
     description: z.string().optional(),
+  })
+  .passthrough();
+
+const forumTopicSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    result: z
+      .object({
+        message_thread_id: z.number().int().positive(),
+        name: z.string().min(1).max(128),
+      })
+      .passthrough(),
   })
   .passthrough();
 
@@ -59,8 +77,11 @@ export interface TelegramTransportOptions {
   timeoutMs?: number;
 }
 
-export class TelegramBotTransport implements InteractiveNotificationTransport {
+export class TelegramBotTransport
+  implements InteractiveNotificationTransport, TopicNotificationTransport
+{
   public readonly name = "telegram";
+  public readonly topicScope: string;
   private readonly token: string;
   private readonly chatId: string;
   private readonly fetchImplementation: typeof fetch;
@@ -75,13 +96,18 @@ export class TelegramBotTransport implements InteractiveNotificationTransport {
     }
     this.token = options.token;
     this.chatId = options.chatId;
+    const botId = options.token.split(":", 1)[0] ?? "";
+    this.topicScope = `chat:${sha256(`${botId}:${options.chatId}`).slice(
+      0,
+      24,
+    )}`;
     this.fetchImplementation = options.fetch ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 8_000;
   }
 
   public async deliver(
     message: DeliveryMessage,
-    _context: DeliveryContext,
+    context: DeliveryContext,
   ): Promise<DeliveryReceipt> {
     const text = redactText(
       `${message.title}\n\n${message.text}`,
@@ -91,6 +117,9 @@ export class TelegramBotTransport implements InteractiveNotificationTransport {
       chat_id: this.chatId,
       text,
       disable_web_page_preview: true,
+      ...(context.topicId === undefined
+        ? {}
+        : { message_thread_id: this.parseTopicId(context.topicId) }),
       ...(message.choices === undefined
         ? {}
         : {
@@ -115,6 +144,36 @@ export class TelegramBotTransport implements InteractiveNotificationTransport {
     return {
       transport: this.name,
       messageId: String(success.data.result.message_id),
+    };
+  }
+
+  public async createTopic(
+    topic: TopicCreation,
+    _context: TopicCreationContext,
+  ): Promise<TopicReceipt> {
+    const name = [...topic.name].slice(0, 128).join("").trim();
+    if (name.length === 0) {
+      throw new TransportError(
+        "Telegram topic name must not be empty",
+        "telegram-invalid-topic",
+        false,
+      );
+    }
+    const body = await this.callApi("createForumTopic", {
+      chat_id: this.chatId,
+      name,
+    });
+    const success = forumTopicSuccessSchema.safeParse(body);
+    if (!success.success) {
+      throw new TransportError(
+        "Telegram createForumTopic response did not include a topic id",
+        "telegram-malformed-response",
+        false,
+      );
+    }
+    return {
+      transport: this.name,
+      topicId: String(success.data.result.message_thread_id),
     };
   }
 
@@ -182,6 +241,18 @@ export class TelegramBotTransport implements InteractiveNotificationTransport {
       );
     }
     return parsed.data.result;
+  }
+
+  private parseTopicId(topicId: string): number {
+    const parsed = Number(topicId);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+      throw new TransportError(
+        "Telegram topic id must be a positive integer",
+        "telegram-invalid-topic",
+        false,
+      );
+    }
+    return parsed;
   }
 
   private async callApi(

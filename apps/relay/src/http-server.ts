@@ -190,6 +190,7 @@ export function createRelayHttpServer(
           transport: service.transport.name,
           ...service.store.status(),
           sessionRecords: service.store.listSessions(),
+          topicRecords: service.store.listSessionTopics(),
         });
         return;
       }

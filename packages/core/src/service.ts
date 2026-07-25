@@ -4,6 +4,7 @@ import type {
   SessionHeartbeatV1,
   SessionRegistrationV1,
 } from "@agent-relay/protocol";
+import { sha256 } from "@agent-relay/protocol";
 
 import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
@@ -22,8 +23,17 @@ import type {
   ResolveRequestInput,
 } from "./store.js";
 import { DEFAULT_RETRY_POLICY } from "./store.js";
-import type { NotificationTransport } from "./transport.js";
-import { asTransportError } from "./transport.js";
+import { sessionTopicMetadata } from "./topic.js";
+import type {
+  DeliveryContext,
+  NotificationTransport,
+  TopicNotificationTransport,
+} from "./transport.js";
+import {
+  asTransportError,
+  isTopicTransport,
+  TransportError,
+} from "./transport.js";
 
 export interface DrainResult {
   claimed: number;
@@ -76,9 +86,9 @@ export class RelayService {
   }
 
   public recover(): number {
-    const recovered = this.store.recoverInterruptedDeliveries(
-      this.now().toISOString(),
-    );
+    const now = this.now().toISOString();
+    const recovered = this.store.recoverInterruptedDeliveries(now);
+    const recoveredTopics = this.store.recoverInterruptedTopics(now);
     if (recovered > 0) {
       this.logger.log({
         level: "warn",
@@ -86,6 +96,15 @@ export class RelayService {
         message: `recovered ${recovered} interrupted delivery attempts`,
         at: this.now().toISOString(),
         details: { recovered },
+      });
+    }
+    if (recoveredTopics > 0) {
+      this.logger.log({
+        level: "warn",
+        code: "topic.recovered",
+        message: `recovered ${recoveredTopics} interrupted topic creation attempts`,
+        at: now,
+        details: { recovered: recoveredTopics },
       });
     }
     return recovered;
@@ -310,6 +329,146 @@ export class RelayService {
     return command;
   }
 
+  private sessionTopicIdentity(
+    event: AgentAttentionEventV1,
+    transport: TopicNotificationTransport,
+  ) {
+    const metadata = sessionTopicMetadata(event);
+    return {
+      machineId: event.machineId,
+      harness: event.harness,
+      sessionId: event.sessionId,
+      transportName: transport.name,
+      transportScope: transport.topicScope,
+      ...metadata,
+    };
+  }
+
+  private async deliveryContext(
+    event: AgentAttentionEventV1,
+  ): Promise<DeliveryContext> {
+    const context = { idempotencyKey: event.eventId };
+    const topicTransport = this.transport;
+    if (!isTopicTransport(topicTransport)) {
+      return context;
+    }
+
+    const identity = this.sessionTopicIdentity(event, topicTransport);
+    const claim = this.store.claimSessionTopic({
+      ...identity,
+      now: this.now().toISOString(),
+    });
+    if (claim.outcome === "ready") {
+      if (claim.topic.topicId === undefined) {
+        throw new Error("ready session topic is missing its topic id");
+      }
+      return {
+        ...context,
+        topicId: claim.topic.topicId,
+      };
+    }
+    if (claim.outcome === "busy" || claim.outcome === "deferred") {
+      throw new TransportError(
+        claim.outcome === "busy"
+          ? "session topic creation is already in progress"
+          : "session topic creation is waiting for its retry deadline",
+        `topic-provisioning-${claim.outcome}`,
+        true,
+      );
+    }
+    if (claim.outcome === "failed") {
+      throw new TransportError(
+        claim.topic.lastErrorMessage ?? "session topic creation failed",
+        claim.topic.lastErrorCode ?? "topic-provisioning-failed",
+        false,
+      );
+    }
+
+    const topicKey = `topic_${sha256(
+      [
+        identity.machineId,
+        identity.harness,
+        identity.sessionId,
+        identity.transportName,
+        identity.transportScope,
+      ].join("\u001f"),
+    ).slice(0, 40)}`;
+    const ready = await (async () => {
+      try {
+        const receipt = await topicTransport.createTopic(
+          { name: claim.topic.topicName },
+          { idempotencyKey: topicKey },
+        );
+        return this.store.markSessionTopicReady({
+          machineId: identity.machineId,
+          harness: identity.harness,
+          sessionId: identity.sessionId,
+          transportName: identity.transportName,
+          transportScope: identity.transportScope,
+          attemptNumber: claim.attemptNumber,
+          topicId: receipt.topicId,
+          now: this.now().toISOString(),
+        });
+      } catch (error) {
+        const transportError = asTransportError(error);
+        const failedAt = this.now().toISOString();
+        const safeMessage = redactText(transportError.message, 2_000);
+        const failed = this.store.markSessionTopicFailed(
+          {
+            machineId: identity.machineId,
+            harness: identity.harness,
+            sessionId: identity.sessionId,
+            transportName: identity.transportName,
+            transportScope: identity.transportScope,
+            attemptNumber: claim.attemptNumber,
+            errorCode: transportError.code,
+            errorMessage: safeMessage,
+            retryable: transportError.retryable,
+            now: failedAt,
+          },
+          this.retryPolicy,
+        );
+        this.reportDiagnostic({
+          schema: "agent-relay-diagnostic.v1",
+          diagnosticId: `diag_topic_${sha256(
+            `${topicKey}\u001f${String(claim.attemptNumber)}`,
+          ).slice(0, 40)}`,
+          recordedAt: failedAt,
+          source: "daemon",
+          level: failed.provisioningStatus === "retry" ? "warn" : "error",
+          code: "topic.create-failed",
+          message: `session topic creation failed: ${safeMessage}`,
+        });
+        throw new TransportError(
+          safeMessage,
+          transportError.code,
+          failed.provisioningStatus === "retry",
+          transportError.status,
+        );
+      }
+    })();
+    if (ready.topicId === undefined) {
+      throw new Error("created session topic is missing its topic id");
+    }
+    this.logger.log({
+      level: "info",
+      code: "topic.created",
+      message: "session topic created",
+      at: this.now().toISOString(),
+      details: {
+        harness: ready.harness,
+        repository: ready.repository,
+        shortSessionId: ready.shortSessionId,
+        transport: ready.transportName,
+        topicId: ready.topicId,
+      },
+    });
+    return {
+      ...context,
+      topicId: ready.topicId,
+    };
+  }
+
   public async drain(limit = 50): Promise<DrainResult> {
     const claimTime = this.now().toISOString();
     const claimed = this.store.claimDueEvents(claimTime, limit);
@@ -334,9 +493,10 @@ export class RelayService {
                   label: option.label,
                 })),
               };
-        const receipt = await this.transport.deliver(message, {
-          idempotencyKey: item.event.eventId,
-        });
+        const receipt = await this.transport.deliver(
+          message,
+          await this.deliveryContext(item.event),
+        );
         this.store.markDelivered(
           item.event.eventId,
           item.attemptNumber,

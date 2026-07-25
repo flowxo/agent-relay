@@ -13,11 +13,25 @@ export interface DeliveryMessage {
 
 export interface DeliveryContext {
   idempotencyKey: string;
+  topicId?: string;
 }
 
 export interface DeliveryReceipt {
   transport: string;
   messageId: string;
+}
+
+export interface TopicCreation {
+  name: string;
+}
+
+export interface TopicCreationContext {
+  idempotencyKey: string;
+}
+
+export interface TopicReceipt {
+  transport: string;
+  topicId: string;
 }
 
 export interface NotificationTransport {
@@ -28,9 +42,28 @@ export interface NotificationTransport {
   ): Promise<DeliveryReceipt>;
 }
 
+export interface TopicNotificationTransport extends NotificationTransport {
+  readonly topicScope: string;
+  createTopic(
+    topic: TopicCreation,
+    context: TopicCreationContext,
+  ): Promise<TopicReceipt>;
+}
+
 export interface InteractiveNotificationTransport extends NotificationTransport {
   acknowledgeCallback(callbackId: string, text: string): Promise<void>;
   editResolvedMessage(messageId: string, text: string): Promise<void>;
+}
+
+export function isTopicTransport(
+  transport: NotificationTransport,
+): transport is TopicNotificationTransport {
+  return (
+    "topicScope" in transport &&
+    typeof transport.topicScope === "string" &&
+    "createTopic" in transport &&
+    typeof transport.createTopic === "function"
+  );
 }
 
 export function isInteractiveTransport(

@@ -67,8 +67,8 @@ that threaded mode is subject to additional terms concerning Telegram Star
 purchases; review the BotFather notice before enabling it.
 
 Whether the operator may manually create topics is a separate BotFather setting.
-Agent Relay should eventually create and own session topics itself, so
-user-created topics are not required.
+Agent Relay creates and owns session topics itself, so user-created topics are
+not required.
 
 Verify threaded mode without printing the token or bot identity:
 
@@ -87,8 +87,12 @@ curl --silent --show-error --fail \
 ```
 
 `has_topics_enabled` must be `true` before session-topic routing is activated.
-The current prototype still delivers into the general private conversation;
-per-session topic creation and routing is the next interaction milestone.
+The first attention event for a logical harness session lazily creates one
+topic. Later events for that machine, harness, and session reuse the durable
+mapping after daemon restarts. Topic names contain only the harness, sanitized
+repository and optional branch, and the final eight characters of the session
+identifier. They never contain transcript text, tokens, or an absolute working
+path.
 
 ### Discover the private chat and operator IDs
 
@@ -196,6 +200,12 @@ Starting after an offline period may replay previously spooled events. Stable
 event IDs keep replay idempotent, but events that were never delivered before
 the restart may produce historical notifications.
 
+The first event for a session records a `topic.created` log before
+`delivery.succeeded`. Inspect `status` to see `topics` counts and
+`topicRecords`. Topic creation failures are represented both on the topic record
+and as durable `topic.create-failed` diagnostics. Retryable failures keep the
+owning event in the normal delivery spool.
+
 ## 6. Prove the Telegram interaction loop
 
 In another terminal:
@@ -217,6 +227,7 @@ relay-canary-ok
 
 Success requires:
 
+- lazy creation or reuse of the exact session topic;
 - Bot API delivery;
 - authorized chat and operator routing;
 - correlation to the exact Telegram message;
@@ -299,11 +310,20 @@ present in the daemon environment. Restart after correcting the activation file.
 Enable Threaded Mode through BotFather, then call `getMe` again. Topic creation
 through the bot token does not replace this initial account-level setting.
 
-### Notifications still appear in one general conversation
+### A session topic is not created
 
-This is expected until Agent Relay's session-topic routing milestone is
-implemented. Enabling threaded mode makes the capability available; it does not
-change the current transport adapter by itself.
+Confirm `has_topics_enabled` is still true, restart the daemon after rebuilding,
+then inspect:
+
+```sh
+~/.agent-relay/bin/agent-relay status
+tail -n 100 ~/.agent-relay/relay.ndjson
+```
+
+The status output distinguishes `pending`, `creating`, `ready`, `retry`, and
+`failed` topic records. A retryable Bot API or network failure remains attached
+to the queued event. A rejected topic request is dead-lettered rather than
+silently delivering into the General conversation.
 
 ### Telegram replies are ignored
 
