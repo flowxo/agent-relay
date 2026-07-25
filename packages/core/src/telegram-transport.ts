@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { sha256 } from "@agent-relay/protocol";
 
+import { cardActionCallbackData } from "./card-action.js";
+import { renderDeliveryText } from "./message.js";
 import { redactText } from "./redaction.js";
 import type {
   DeliveryContext,
@@ -14,8 +16,6 @@ import type {
   TopicReceipt,
 } from "./transport.js";
 import { TopicUnavailableError, TransportError } from "./transport.js";
-
-const TELEGRAM_TEXT_LIMIT = 4_096;
 
 const successSchema = z
   .object({
@@ -83,6 +83,14 @@ function identifiesUnavailableTopic(
   ].some((fragment) => normalized.includes(fragment));
 }
 
+function rowsOf<T>(items: T[], size: number): T[][] {
+  const rows: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    rows.push(items.slice(index, index + size));
+  }
+  return rows;
+}
+
 export type TelegramPolledUpdate = z.infer<typeof polledUpdateSchema>;
 
 export interface TelegramGetUpdatesOptions {
@@ -131,10 +139,19 @@ export class TelegramBotTransport
     message: DeliveryMessage,
     context: DeliveryContext,
   ): Promise<DeliveryReceipt> {
-    const text = redactText(
-      `${message.title}\n\n${message.text}`,
-      TELEGRAM_TEXT_LIMIT,
-    );
+    const text = renderDeliveryText(message);
+    const choiceButtons = (message.choices ?? []).map((choice) => ({
+      text: choice.label,
+      callback_data: `relay:${choice.token}`,
+    }));
+    const actionButtons = (message.actions ?? []).map((action) => ({
+      text: action.label,
+      callback_data: cardActionCallbackData(action.kind, action.token),
+    }));
+    const inlineKeyboard = [
+      ...rowsOf(choiceButtons, 2),
+      ...rowsOf(actionButtons, 2),
+    ];
     const body = await this.callApi("sendMessage", {
       chat_id: this.chatId,
       text,
@@ -142,16 +159,11 @@ export class TelegramBotTransport
       ...(context.topicId === undefined
         ? {}
         : { message_thread_id: this.parseTopicId(context.topicId) }),
-      ...(message.choices === undefined
+      ...(inlineKeyboard.length === 0
         ? {}
         : {
             reply_markup: {
-              inline_keyboard: [
-                message.choices.map((choice) => ({
-                  text: choice.label,
-                  callback_data: `relay:${choice.token}`,
-                })),
-              ],
+              inline_keyboard: inlineKeyboard,
             },
           }),
     });

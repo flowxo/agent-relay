@@ -1,4 +1,12 @@
+import type { CardActionKind } from "./card-action.js";
+
 export interface DeliveryChoice {
+  token: string;
+  label: string;
+}
+
+export interface DeliveryAction {
+  kind: CardActionKind;
   token: string;
   label: string;
 }
@@ -9,6 +17,7 @@ export interface DeliveryMessage {
   text: string;
   correlationId?: string;
   choices?: DeliveryChoice[];
+  actions?: DeliveryAction[];
 }
 
 export interface DeliveryContext {

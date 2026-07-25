@@ -67,6 +67,15 @@
   event, and creates a replacement topic without falling back to the general
   chat. Telegram's missing-thread response and the full recreation path are
   covered by deterministic HTTP and fake-transport fixtures.
+- FXO-1054 is green locally. Telegram output is now a compact, plain-text card
+  containing sanitized session identity, event kind and age, a 480-character
+  summary, and context-specific Continue, Details, Mute, and End actions. Action
+  callback data is fixed, versioned, opaque, under Telegram's 64-byte boundary,
+  and durably mapped back to the full local event; model text cannot supply it.
+  Resolved requests are edited into answered, expired, superseded, or failed
+  card states without echoing private answer text. Snapshots cover all ten event
+  kinds plus all terminal states, and malformed/oversized rendering is bounded.
+  Callback execution remains explicitly assigned to FXO-1053.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -119,7 +128,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 123 tests across 19 test files, including the
+- `pnpm check` passes all 126 tests across 20 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -162,5 +171,5 @@
 ## Next action
 
 Run one credentialed private-topic activation against the rebuilt daemon, retain
-only the sanitized response shape, then continue the Phase 1 operator
-interaction stories.
+only the sanitized response shape, then implement FXO-1053's idempotent card
+action execution.

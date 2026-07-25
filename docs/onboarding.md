@@ -206,6 +206,13 @@ The first event for a session records a `topic.created` log before
 and as durable `topic.create-failed` diagnostics. Retryable failures keep the
 owning event in the normal delivery spool.
 
+Notifications are rendered as compact plain-text cards with stable session
+identity, event age, a bounded one-line summary, and fixed callback data that
+cannot be supplied by model text. Full long content remains in the local durable
+event record and receives a Details action. Question-choice buttons are active;
+the newer Continue, Details, Mute, and End card payloads are registered but
+their execution is enabled by the following interaction milestone.
+
 ## 6. Prove the Telegram interaction loop
 
 In another terminal:

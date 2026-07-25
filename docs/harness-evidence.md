@@ -95,6 +95,13 @@ The fake transport proves this path without ever falling back to the unthreaded
 conversation. A live topic deletion has not been induced, so the exact error
 description remains fixture-proven rather than credentialed-account-proven.
 
+Compact card fixtures enforce Telegram's 4,096-character message boundary and
+64-byte callback-data boundary before the request. Card action payloads use a
+fixed `relay-card:v1` namespace, a one-character action code, and an opaque
+deterministic token that is registered against the full local event. Telegram
+receives no parse mode, so untrusted model text remains normalized plain text
+and cannot create formatting or callback payloads.
+
 A credentialed private-chat activation was run on 2026-07-24. The Bot API
 accepted the synthetic canary notification, loopback long polling received the
 operator's replied-to-message update, and SQLite recorded the exact challenge as

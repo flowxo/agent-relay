@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
+import {
+  renderDeliveryMessage,
+  renderDeliveryText,
+  type AttentionCardResolutionState,
+} from "./message.js";
 import type { RelayStore, ResolutionResult } from "./store.js";
 import type { NotificationTransport } from "./transport.js";
 import { isInteractiveTransport } from "./transport.js";
@@ -95,6 +100,24 @@ function routeOutcome(result: ResolutionResult): ReplyRouteOutcome {
   }
 }
 
+function cardResolutionState(
+  result: ResolutionResult,
+): AttentionCardResolutionState {
+  switch (result.outcome) {
+    case "answered":
+    case "duplicate":
+      return "answered";
+    case "expired":
+      return "expired";
+    case "cancelled":
+      return "superseded";
+    case "failed":
+    case "not_found":
+    case "identity_mismatch":
+      return "failed";
+  }
+}
+
 export class TelegramReplyRouter {
   private readonly now: () => Date;
   private readonly logger: RelayLogger;
@@ -140,18 +163,21 @@ export class TelegramReplyRouter {
     if (!isInteractiveTransport(this.transport)) {
       return;
     }
-    const answer = result.request?.answer ?? result.outcome;
-    const resolvedBy = result.request?.resolvedBy ?? "unknown";
     try {
+      const event =
+        result.request === undefined
+          ? undefined
+          : this.store.getEvent(result.request.eventId)?.event;
       await this.transport.editResolvedMessage(
         messageId,
-        [
-          "Agent Relay request resolved",
-          "",
-          `Outcome: ${result.outcome}`,
-          `Handled by: ${resolvedBy}`,
-          `Answer: ${answer}`,
-        ].join("\n"),
+        event === undefined
+          ? `Agent Relay request state: ${result.outcome}`
+          : renderDeliveryText(
+              renderDeliveryMessage(event, {
+                now: this.now(),
+                resolutionState: cardResolutionState(result),
+              }),
+            ),
       );
     } catch (error) {
       this.logger.log({

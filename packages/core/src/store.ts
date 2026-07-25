@@ -17,6 +17,12 @@ import type {
   Surface,
 } from "@agent-relay/protocol";
 
+import {
+  CardActionKindSchema,
+  CardActionTokenSchema,
+  type CardActionKind,
+} from "./card-action.js";
+
 export type DeliveryStatus =
   "queued" | "retry" | "delivering" | "delivered" | "dead_letter";
 
@@ -78,6 +84,13 @@ export interface SessionTopicRecord {
   lastErrorMessage?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CardActionRecord {
+  token: string;
+  eventId: string;
+  kind: CardActionKind;
+  createdAt: string;
 }
 
 export interface ClaimSessionTopicInput {
@@ -282,6 +295,13 @@ interface SessionTopicRow {
   last_error_message: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface CardActionRow {
+  action_token: string;
+  event_id: string;
+  action_kind: CardActionKind;
+  created_at: string;
 }
 
 interface CountRow {
@@ -516,6 +536,15 @@ export class RelayStore {
 
       CREATE INDEX IF NOT EXISTS events_due_idx
         ON events(status, next_attempt_at, created_at);
+
+      CREATE TABLE IF NOT EXISTS card_actions (
+        action_token TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        action_kind TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(event_id, action_kind),
+        FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE
+      );
 
       CREATE TABLE IF NOT EXISTS delivery_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1405,6 +1434,74 @@ export class RelayStore {
       ),
       status: row.status,
     };
+  }
+
+  public registerCardActions(
+    eventId: string,
+    actions: Array<{ token: string; kind: CardActionKind }>,
+    now: string,
+  ): CardActionRecord[] {
+    assertIsoCutoff(now, "card action registration time");
+    return this.database.transaction(() => {
+      for (const action of actions) {
+        const token = CardActionTokenSchema.parse(action.token);
+        const kind = CardActionKindSchema.parse(action.kind);
+        this.database
+          .prepare(
+            `
+            INSERT OR IGNORE INTO card_actions (
+              action_token, event_id, action_kind, created_at
+            ) VALUES (?, ?, ?, ?)
+          `,
+          )
+          .run(token, eventId, kind, now);
+        const existing = this.database
+          .prepare(
+            `
+            SELECT action_token, event_id, action_kind, created_at
+            FROM card_actions WHERE action_token = ?
+          `,
+          )
+          .get(token) as CardActionRow | undefined;
+        if (
+          existing === undefined ||
+          existing.event_id !== eventId ||
+          existing.action_kind !== kind
+        ) {
+          throw new Error(`card action token collision for ${token}`);
+        }
+      }
+      return actions.map((action) => {
+        const registered = this.getCardAction(action.token);
+        if (registered === undefined) {
+          throw new Error(`card action ${action.token} disappeared`);
+        }
+        return registered;
+      });
+    })();
+  }
+
+  public getCardAction(token: string): CardActionRecord | undefined {
+    const parsed = CardActionTokenSchema.safeParse(token);
+    if (!parsed.success) {
+      return undefined;
+    }
+    const row = this.database
+      .prepare(
+        `
+        SELECT action_token, event_id, action_kind, created_at
+        FROM card_actions WHERE action_token = ?
+      `,
+      )
+      .get(parsed.data) as CardActionRow | undefined;
+    return row === undefined
+      ? undefined
+      : {
+          token: row.action_token,
+          eventId: row.event_id,
+          kind: row.action_kind,
+          createdAt: row.created_at,
+        };
   }
 
   private pendingFromRow(row: PendingRow): PendingRequestRecord {

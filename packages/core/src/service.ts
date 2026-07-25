@@ -483,7 +483,19 @@ export class RelayService {
     for (const item of claimed) {
       let deliveryTopicId: string | undefined;
       try {
-        const rendered = renderDeliveryMessage(item.event);
+        const rendered = renderDeliveryMessage(item.event, {
+          now: this.now(),
+        });
+        if (rendered.actions !== undefined) {
+          this.store.registerCardActions(
+            item.event.eventId,
+            rendered.actions.map((action) => ({
+              token: action.token,
+              kind: action.kind,
+            })),
+            this.now().toISOString(),
+          );
+        }
         const pending = this.store.getPendingForEvent(item.event.eventId);
         const message =
           pending === undefined || pending.options.length === 0

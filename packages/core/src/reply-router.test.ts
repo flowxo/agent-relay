@@ -146,6 +146,11 @@ describe("Telegram reply correlation", () => {
     ).toBe("allow_once");
     expect(runtime.transport.callbackAcknowledgements).toHaveLength(1);
     expect(runtime.transport.messageEdits).toHaveLength(1);
+    expect(runtime.transport.messageEdits[0]?.text).toContain("Answered");
+    expect(runtime.transport.messageEdits[0]?.text).toContain(
+      "session rmission",
+    );
+    expect(runtime.transport.messageEdits[0]?.text).not.toContain("allow_once");
     runtime.store.close();
   });
 

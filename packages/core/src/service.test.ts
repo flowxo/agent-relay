@@ -110,25 +110,41 @@ describe("RelayService durable delivery loop", () => {
     store.close();
   });
 
-  it("renders the bounded assistant message instead of a shortened summary", async () => {
+  it("keeps a long assistant message retrievable behind a compact Details action", async () => {
     const store = new RelayStore();
     const transport = new FakeTelegramTransport();
     const service = new RelayService(store, transport);
     const finalSentence = "This final sentence must reach Telegram.";
-    service.ingest(
-      event({
-        eventId: "evt_complete_stop_message_12345678",
-        summary: "A shortened summary that must not win.",
-        lastAssistantMessage: `${"Detailed result. ".repeat(120)}${finalSentence}`,
-      }),
-    );
+    const input = event({
+      eventId: "evt_complete_stop_message_12345678",
+      summary: "A shortened summary that must not win.",
+      lastAssistantMessage: `${"Detailed result. ".repeat(120)}${finalSentence}`,
+    });
+    service.ingest(input);
 
     await service.drain();
 
-    const delivered = transport.deliveries[0]?.message.text;
-    expect(delivered).toContain(finalSentence);
-    expect(delivered).not.toContain("A shortened summary that must not win.");
-    expect(delivered).not.toContain("…[truncated]");
+    const delivery = transport.deliveries[0]?.message;
+    const details = delivery?.actions?.find(
+      (action) => action.kind === "details",
+    );
+    expect(delivery?.text).not.toContain(finalSentence);
+    expect(delivery?.text).not.toContain(
+      "A shortened summary that must not win.",
+    );
+    expect(delivery?.text).toContain("…[truncated]");
+    expect(details).toBeDefined();
+    const registered =
+      details === undefined ? undefined : store.getCardAction(details.token);
+    expect(registered).toMatchObject({
+      eventId: input.eventId,
+      kind: "details",
+    });
+    expect(
+      registered === undefined
+        ? undefined
+        : store.getEvent(registered.eventId)?.event.lastAssistantMessage,
+    ).toContain(finalSentence);
     store.close();
   });
 

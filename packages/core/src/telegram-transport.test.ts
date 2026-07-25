@@ -285,6 +285,13 @@ describe("TelegramBotTransport", () => {
       {
         ...message,
         choices: [{ token: "decision_opaque_12345678", label: "Allow once" }],
+        actions: [
+          {
+            kind: "details",
+            token: "card_0123456789abcdef0123456789abcdef",
+            label: "Details",
+          },
+        ],
       },
       { idempotencyKey: message.eventId },
     );
@@ -302,6 +309,11 @@ describe("TelegramBotTransport", () => {
       text: "Allow once",
       callback_data: "relay:decision_opaque_12345678",
     });
+    expect(firstBody.reply_markup.inline_keyboard[1]?.[0]).toEqual({
+      text: "Details",
+      callback_data: "relay-card:v1:d:card_0123456789abcdef0123456789abcdef",
+    });
+    expect(firstBody).not.toHaveProperty("parse_mode");
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
       "answerCallbackQuery",
     );
