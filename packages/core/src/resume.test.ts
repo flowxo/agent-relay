@@ -4,6 +4,7 @@ import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
 
 import { FakeTelegramTransport } from "./fake-transport.js";
+import { MemoryLogger } from "./logger.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
 
@@ -110,8 +111,10 @@ describe("durable late resume commands", () => {
 
   it("returns a waiting state without treating inactivity as a hang", () => {
     const store = new RelayStore();
+    const logger = new MemoryLogger();
     const service = new RelayService(store, new FakeTelegramTransport(), {
       now: () => new Date(now),
+      logger,
     });
     const event = continuationEvent();
     service.ingest(event);
@@ -129,6 +132,9 @@ describe("durable late resume commands", () => {
     });
     expect(store.listSessions()[0]?.state).toBe("waiting");
     expect(store.status().sessions.suspected_stalled).toBe(0);
+    expect(
+      logger.records.some((record) => record.code === "resume.waiting"),
+    ).toBe(false);
     store.close();
   });
 

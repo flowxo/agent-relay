@@ -351,6 +351,7 @@ describe("opt-in harness supervisor", () => {
       childRunner: runner,
       resumeWaitMs: 100,
       pollIntervalMs: 25,
+      maxResumes: 1,
       env: {
         AGENT_RELAY_TELEGRAM_TOKEN: "must-not-reach-child",
         AGENT_RELAY_DAEMON_TOKEN: "synthetic-daemon-token",
@@ -369,11 +370,14 @@ describe("opt-in harness supervisor", () => {
       args: [
         "exec",
         "resume",
+        "-c",
+        'sandbox_mode="read-only"',
         "session_supervisor_12345678",
         "Continue only this Codex turn",
       ],
     });
     expect(invocations[0]?.env["AGENT_RELAY_SUPERVISED"]).toBe("1");
+    expect(invocations[1]?.env["AGENT_RELAY_SUPERVISED"]).toBe("0");
     expect(invocations[0]?.env["AGENT_RELAY_TELEGRAM_TOKEN"]).toBeUndefined();
     expect(invocations[0]?.env["AGENT_RELAY_DAEMON_TOKEN"]).toBe(
       "synthetic-daemon-token",

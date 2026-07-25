@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import {
   buildLateResumeInvocation,
   capabilityFor,
+  deriveLateResumePolicy,
 } from "@agent-relay/harnesses";
 import type { ResumeInvocation } from "@agent-relay/harnesses";
 import type { RelayLogger, SessionRecord } from "@agent-relay/core";
@@ -60,6 +61,7 @@ export interface SupervisorOptions {
   childRunner?: OwnedChildRunner;
   resumeWaitMs?: number;
   pollIntervalMs?: number;
+  maxResumes?: number;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -377,6 +379,10 @@ export async function runSupervisor(
         : { token: options.daemonToken }),
     });
   const runner = options.childRunner ?? spawnOwnedChild;
+  const lateResumePolicy = deriveLateResumePolicy(
+    options.harness,
+    options.initialInvocation.args,
+  );
   const env = supervisedEnvironment(options.env ?? process.env, {
     machineId: options.machineId,
     bridgeSessionId,
@@ -401,6 +407,14 @@ export async function runSupervisor(
     pollIntervalMs > 60_000
   ) {
     throw new Error("resume poll interval must be between 25ms and 60s");
+  }
+  const maxResumes = options.maxResumes ?? 100;
+  if (
+    !Number.isSafeInteger(maxResumes) ||
+    maxResumes < 0 ||
+    maxResumes > 1_000
+  ) {
+    throw new Error("max resumes must be between zero and 1000");
   }
   let invocation = options.initialInvocation;
   let resumeCorrelationId: string | undefined;
@@ -457,7 +471,10 @@ export async function runSupervisor(
     const childResult = await runner({
       ...invocation,
       cwd: options.cwd,
-      env,
+      env: {
+        ...env,
+        AGENT_RELAY_SUPERVISED: resumed < maxResumes ? "1" : "0",
+      },
     });
     const classified = classifyOwnedExit(childResult, supervisorId);
     logger.log({
@@ -595,6 +612,16 @@ export async function runSupervisor(
       }
     }
 
+    if (resumed >= maxResumes) {
+      return {
+        bridgeSessionId,
+        supervisorId,
+        exitCode: classified.terminalExitCode,
+        resumed,
+        classification: classified.evidence.classification,
+      };
+    }
+
     const waitDeadline = Date.now() + resumeWaitMs;
     for (;;) {
       let claim;
@@ -642,6 +669,7 @@ export async function runSupervisor(
             claim.command.surface,
             claim.command.sessionId,
             claim.command.answer,
+            lateResumePolicy,
           );
         } catch (error) {
           await client.markResumeStarted(

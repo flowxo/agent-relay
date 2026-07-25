@@ -314,6 +314,7 @@ async function main(): Promise<void> {
         24 * 60 * 60_000,
       ),
       pollIntervalMs: numericFlag(supervisorArgs, "--poll-interval-ms", 250),
+      maxResumes: integerFlag(supervisorArgs, "--max-resumes", 100),
       logger: new JsonLineLogger(),
     });
     if (result.diagnostic !== undefined) {

@@ -51,11 +51,14 @@ permission fixture has a sanitized live capture. Cursor defaults to IDE
 capabilities; pass `--cursor-surface cli` for a CLI-only installation. A
 supervised Cursor child always overrides that surface to CLI.
 
-Codex requires new or changed command hooks to be reviewed in `/hooks`. Claude's
-`/hooks` browser and Cursor's trusted-workspace hook view provide corresponding
-runtime verification. `doctor` checks the files, exact-path launcher, installed
-harness binaries, tested versions, SQLite schema, and capability records.
-Version drift is a warning; a missing binary or hook is a failure.
+Codex requires new or changed command hooks to be reviewed in `/hooks`. For
+vetted one-off non-interactive automation, Codex also documents
+`--dangerously-bypass-hook-trust`; Agent Relay preserves that flag during late
+resume when it was present on the initial invocation. Claude's `/hooks` browser
+and Cursor's trusted-workspace hook view provide corresponding runtime
+verification. `doctor` checks the files, exact-path launcher, installed harness
+binaries, tested versions, SQLite schema, and capability records. Version drift
+is a warning; a missing binary or hook is a failure.
 
 Safe uninstall removes only entries carrying Agent Relay's ownership marker and
 its launcher/manifest. It preserves user hooks, unrelated settings, SQLite,
@@ -171,12 +174,21 @@ alive. Once the owned child has exited cleanly, a correlated Telegram answer is
 atomically claimed and resumed with the official Codex, Claude Code, or Cursor
 CLI argv. Resume claims and their running/succeeded/failed transitions are
 stored in SQLite, so concurrent supervisors cannot resume the same answer twice.
+Resume execution authority is derived once from the initial argv. Codex fails
+closed to `read-only` unless the initial invocation explicitly selected another
+sandbox or dangerous bypass; Claude fails closed to `plan`; Cursor carries
+`--force` only when it was originally present.
 
 By default the supervisor remains available for an open continuation until its
 24-hour expiry. Use `--resume-wait-ms` to shorten that bound, or
 `AGENT_RELAY_LATE_RESUME_TTL_MS` to shorten the hook-created request expiry. If
 the daemon is unavailable when a crash occurs, the normalized crash event is
 written to the privacy-safe fallback spool.
+
+Supervisors accept at most 100 late resumes by default. Use `--max-resumes 1`
+for a bounded activation canary or another explicit limit for automation. The
+last permitted resumed child runs with late-resume hook creation disabled, so
+its final Stop event cannot open an orphan continuation request.
 
 The supervisor does not infer a hang from inactivity. `suspected_stalled` is a
 distinct state reserved for an explicit failed harness health probe; no
@@ -251,7 +263,11 @@ including authorized routing and durable resolution. A credentialed private-chat
 canary on 2026-07-24 additionally proved real Bot API delivery, long-poll reply
 intake, replied-to-message correlation, exact answer validation, stale-answer
 rejection, and durable Telegram resolution. No credential or private message was
-retained in git. A model-backed late-resume canary has not been run because it
-would consume harness quota. Native hooks still do not prove crashes, Cursor IDE
-late resume remains explicitly unsupported, and an interactive child must exit
-before its session can be resumed through a new CLI process.
+retained in git. Model-backed private-chat canaries have proved installed Stop
+hooks and exact late resume for Codex `0.145.0` and Claude Code `2.1.219`. One
+failed Claude invocation also proved owned-child crash delivery. The installed
+Cursor `3.12.30` CLI is not authenticated on the activation machine, so Cursor's
+live canary remains blocked at sign-in and its current proof is fixture-backed.
+Native hooks still do not prove crashes, Cursor IDE late resume remains
+explicitly unsupported, and an interactive child must exit before its session
+can be resumed through a new CLI process.

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { HARNESS_CAPABILITIES, capabilityFor } from "./capabilities.js";
 import { renderStopContinuation } from "./continuation.js";
 import { parseHarnessJson } from "./parsers.js";
-import { buildLateResumeInvocation } from "./resume.js";
+import { buildLateResumeInvocation, deriveLateResumePolicy } from "./resume.js";
 
 const fixtures = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -121,7 +121,14 @@ describe("late resume capability", () => {
       buildLateResumeInvocation("codex", "cli", "session_12345678", answer),
     ).toEqual({
       executable: "codex",
-      args: ["exec", "resume", "session_12345678", answer],
+      args: [
+        "exec",
+        "resume",
+        "-c",
+        'sandbox_mode="read-only"',
+        "session_12345678",
+        answer,
+      ],
     });
     expect(
       buildLateResumeInvocation("claude", "cli", "session_12345678", answer)
@@ -131,6 +138,56 @@ describe("late resume capability", () => {
       buildLateResumeInvocation("cursor", "cli", "session_12345678", answer)
         .args,
     ).toContain(answer);
+  });
+
+  it("preserves explicit execution authority without widening defaults", () => {
+    expect(
+      deriveLateResumePolicy("codex", ["exec", "--sandbox", "workspace-write"]),
+    ).toEqual({
+      harness: "codex",
+      sandboxMode: "workspace-write",
+      dangerouslyBypassApprovalsAndSandbox: false,
+      dangerouslyBypassHookTrust: false,
+    });
+    expect(
+      buildLateResumeInvocation(
+        "codex",
+        "cli",
+        "session_12345678",
+        "continue",
+        deriveLateResumePolicy("codex", [
+          "--dangerously-bypass-hook-trust",
+          "exec",
+          "--sandbox=workspace-write",
+        ]),
+      ).args,
+    ).toEqual([
+      "exec",
+      "resume",
+      "--dangerously-bypass-hook-trust",
+      "-c",
+      'sandbox_mode="workspace-write"',
+      "session_12345678",
+      "continue",
+    ]);
+    expect(
+      deriveLateResumePolicy("claude", [
+        "--print",
+        "--permission-mode=dontAsk",
+      ]),
+    ).toEqual({
+      harness: "claude",
+      permissionMode: "dontAsk",
+      dangerouslySkipPermissions: false,
+    });
+    expect(deriveLateResumePolicy("cursor", ["--print"])).toEqual({
+      harness: "cursor",
+      force: false,
+    });
+    expect(deriveLateResumePolicy("cursor", ["--print", "--force"])).toEqual({
+      harness: "cursor",
+      force: true,
+    });
   });
 
   it("rejects Cursor IDE late resume explicitly", () => {

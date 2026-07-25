@@ -68,7 +68,29 @@
   deliver an event before the canary's explicit drain claimed it. The canary now
   waits for the durable delivery receipt instead of reporting a false delivery
   failure, with a regression test for that interleaving.
-- `pnpm check` passes all 103 tests across 17 test files, including the
+- The compiled installer is active in the real user configuration. A subsequent
+  doctor run found the owned launcher, the expected hook counts, a healthy
+  SQLite store, and the exact tested Codex, Claude Code, and Cursor versions.
+- A model-backed Codex CLI canary proved the installed Stop hook, real Telegram
+  delivery, stale-reply rejection, exact-session reply correlation, and
+  successful `codex exec resume`. The first non-interactive attempt also proved
+  that Codex skips an untrusted user hook; the vetted automation retry used the
+  documented one-invocation hook-trust override.
+- The Codex canary exposed execution-authority widening: a read-only initial
+  process resumed with full filesystem access. Late-resume policy is now derived
+  once from the initial argv, defaults to read-only, preserves explicit sandbox
+  and dangerous-bypass choices, and preserves the one-invocation hook-trust
+  override. A second live exact-session resume reported read-only mode.
+- A model-backed Claude Code CLI canary proved the installed Stop hook, real
+  Telegram delivery, exact-session reply correlation, and successful
+  `claude --resume` under the initial `plan` permission mode. An invalid initial
+  invocation exited non-zero first; the owning supervisor produced and delivered
+  a durable `process.exited` notification from observed child evidence.
+- Supervisors now have an explicit `--max-resumes` bound. The last allowed
+  resumed child cannot create another late-resume request, which keeps bounded
+  canaries from leaving orphan continuations. Expected empty resume polls are no
+  longer logged every 250 ms; claims and exceptional outcomes remain visible.
+- `pnpm check` passes all 104 tests across 17 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -79,10 +101,13 @@
 
 ## Assumptions and open risks
 
-- Live stop-hook canaries have not been run because they may consume model
-  quota. Current proof is official documentation plus local binary help.
 - Cursor's permission payload evolves quickly; its fixture must be replaced by a
   sanitized live capture before permission automation is enabled by default.
+- A Cursor CLI model canary reached the installed `3.12.30` binary, but that
+  binary has no authenticated account on this machine and opened its sign-in
+  flow. The bounded attempt was terminated without claiming hook or resume
+  success. Cursor CLI parsing, continuation, policy, and resume remain proven by
+  sanitized fixtures and integration tests until an account is connected.
 - Native hooks still cannot prove crashes. Crash reporting is supported only for
   processes launched through `agent-relay run`; the protocol rejects a
   `process.exited` event without owned-child evidence.
@@ -95,10 +120,6 @@
   account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
-- A model-backed late-resume canary has not been run because it would consume
-  harness quota. Local proof covers the official argv contracts, real child
-  process observation, durable command ownership, and the complete fake Telegram
-  loop.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.
@@ -107,15 +128,12 @@
   health probe supplies evidence.
 - Branch `codex/initial-mvp` is published in
   [PR #1](https://github.com/flowxo/agent-relay/pull/1).
-- Credential discovery on 2026-07-24 found no Telegram or daemon values in the
-  process environment, no repository credential file beyond `.env.example`, and
-  no available Doppler or 1Password CLI. No credential values were printed or
-  added to git. The recommended activation path is a dedicated BotFather bot and
-  private operator chat, with values supplied through a secret manager or a
-  mode-`0600`, gitignored `.env.activation` file.
+- Activation values remain only in a mode-`0600`, gitignored local environment
+  file. Credential values, numeric account identifiers, private messages,
+  harness session IDs, and machine-specific paths are not recorded in git.
 
 ## Next action
 
-With explicit approval to consume model quota, run one short live stop/resume
-canary per harness. Before enabling Cursor permission automation, replace its
-evolving permission fixture with a sanitized live capture.
+Authenticate the local Cursor CLI, then run its remaining stop/resume canary and
+replace its evolving permission fixture with a sanitized live capture. Until
+then, keep Cursor permission automation disabled by default.

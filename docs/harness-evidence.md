@@ -1,6 +1,6 @@
 # Harness contract evidence
 
-Recorded on 2026-07-24 on macOS arm64. The fixture corpus under
+Recorded on 2026-07-24 and 2026-07-25 on macOS arm64. The fixture corpus under
 `packages/harnesses/fixtures` contains only synthetic identifiers, paths, and
 messages.
 
@@ -41,6 +41,14 @@ Node's child-process contract. The supervisor preserves those statuses and
 records only bounded exit metadata; it inherits stdio and does not capture
 command output. These fixtures do not invoke a model.
 
+Late-resume argv is derived from the initial invocation once. Codex defaults to
+`read-only` and retains an explicit sandbox or dangerous bypass; Claude defaults
+to `plan` and retains an explicit permission mode or dangerous bypass; Cursor
+retains `--force` only when the initial invocation had it. Codex's documented
+one-invocation hook-trust override is also retained so an approved headless
+resume continues to emit hooks. The answer is always a discrete argv value and
+is never shell-interpreted.
+
 ## Telegram adapter observations
 
 Telegram's official Bot API documentation was rechecked on 2026-07-24. Local
@@ -71,6 +79,37 @@ private message content, and machine paths are deliberately omitted. The
 sanitized update shape is already represented by the deterministic reply-router
 and daemon canary fixtures.
 
+## Live harness activation
+
+Short model-backed canaries were run through the installed hooks and the real
+private-chat Telegram transport on 2026-07-24 and 2026-07-25. Identifiers,
+prompts, replies, transcripts, credentials, and working paths were not retained
+as fixtures.
+
+- Codex `0.145.0`: a first `codex exec` attempt skipped the untrusted user hook,
+  matching the official trust contract. A retry with the documented
+  `--dangerously-bypass-hook-trust` one-invocation override emitted Stop,
+  delivered it to Telegram, rejected stale replies, correlated a fresh reply,
+  and resumed the exact session successfully. The first resume exposed a
+  read-only-to-full-access sandbox widening. After late-resume policy was made
+  fail-closed, the exact-session canary was repeated and the resumed CLI
+  reported `read-only`.
+- Claude Code `2.1.219`: an invalid initial argv combination exited non-zero and
+  produced a real owned-child crash notification. The corrected `--print`
+  invocation emitted Stop, delivered it to Telegram, correlated the reply to the
+  exact session, and resumed successfully under `--permission-mode plan`.
+- Cursor `3.12.30`: the local binary reached its interactive sign-in screen
+  because no Cursor CLI account is connected on this machine. The bounded
+  attempt was terminated. No live hook or resume success is claimed; the
+  sanitized parser and invocation fixtures remain the current evidence.
+
+The live loops also exposed two operational issues now covered by tests:
+background delivery can race an activation command's explicit drain, and
+expected empty resume polls can amplify logs. Activation now waits for the
+durable delivery receipt, while expected `waiting` polls are silent. A
+`--max-resumes` bound prevents the last permitted resumed child from opening an
+orphan continuation request.
+
 ## Official contract sources
 
 - [Codex hooks](https://learn.chatgpt.com/docs/hooks) documents `Stop` input,
@@ -96,7 +135,9 @@ and daemon canary fixtures.
 
 The checked-in hook payloads are sanitized official examples adapted into
 synthetic fixtures, not private local transcripts. Adapter and continuation
-tests prove our parser and emitted JSON match the documented contracts. A live
-harness round trip would consume model quota and is not yet claimed. The real
-Telegram activation evidence above is limited to the private-chat configuration
-tested on 2026-07-24.
+tests prove our parser and emitted JSON match the documented contracts. The
+Codex and Claude live evidence above is limited to the exact installed versions,
+CLI surface, installed user hooks, and private-chat transport tested. Cursor
+remains fixture-backed until its CLI is authenticated. Native hooks still do not
+prove process crashes; the Claude crash notification was produced only because
+Agent Relay owned and observed the child process.

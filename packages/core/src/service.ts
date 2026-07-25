@@ -238,21 +238,23 @@ export class RelayService {
       ...input,
       now: this.now().toISOString(),
     });
-    this.logger.log({
-      level: result.outcome === "unsupported" ? "warn" : "info",
-      code: `resume.${result.outcome}`,
-      message: `late resume claim: ${result.outcome}`,
-      at: this.now().toISOString(),
-      details: {
-        machineId: input.machineId,
-        bridgeSessionId: input.bridgeSessionId,
-        harness: input.harness,
-        ownerId: input.ownerId,
-        ...(result.outcome === "claimed"
-          ? { correlationId: result.command.correlationId }
-          : {}),
-      },
-    });
+    if (result.outcome !== "waiting") {
+      this.logger.log({
+        level: result.outcome === "unsupported" ? "warn" : "info",
+        code: `resume.${result.outcome}`,
+        message: `late resume claim: ${result.outcome}`,
+        at: this.now().toISOString(),
+        details: {
+          machineId: input.machineId,
+          bridgeSessionId: input.bridgeSessionId,
+          harness: input.harness,
+          ownerId: input.ownerId,
+          ...(result.outcome === "claimed"
+            ? { correlationId: result.command.correlationId }
+            : {}),
+        },
+      });
+    }
     return result;
   }
 
