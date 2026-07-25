@@ -9,6 +9,8 @@ import type {
 } from "./transport.js";
 import { TransportError } from "./transport.js";
 
+const TELEGRAM_TEXT_LIMIT = 4_096;
+
 const successSchema = z
   .object({
     ok: z.literal(true),
@@ -81,9 +83,13 @@ export class TelegramBotTransport implements InteractiveNotificationTransport {
     message: DeliveryMessage,
     _context: DeliveryContext,
   ): Promise<DeliveryReceipt> {
+    const text = redactText(
+      `${message.title}\n\n${message.text}`,
+      TELEGRAM_TEXT_LIMIT,
+    );
     const body = await this.callApi("sendMessage", {
       chat_id: this.chatId,
-      text: `${message.title}\n\n${message.text}`,
+      text,
       disable_web_page_preview: true,
       ...(message.choices === undefined
         ? {}

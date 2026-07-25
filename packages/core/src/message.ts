@@ -3,6 +3,8 @@ import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { redactText } from "./redaction.js";
 import type { DeliveryMessage } from "./transport.js";
 
+const DELIVERY_CONTENT_LIMIT = 3_700;
+
 const STATE_LABELS: Record<AgentAttentionEventV1["type"], string> = {
   "session.started": "Session started",
   "turn.started": "Working",
@@ -32,6 +34,7 @@ export function renderDeliveryMessage(
   const shortSession = event.sessionId.slice(-8);
   const state = STATE_LABELS[event.type];
   const summary =
+    (event.type === "turn.stopped" ? event.lastAssistantMessage : undefined) ??
     event.summary ??
     event.failure?.message ??
     event.lastAssistantMessage ??
@@ -43,7 +46,7 @@ export function renderDeliveryMessage(
   const text = [
     `${state}`,
     "",
-    redactText(content, 1_500),
+    redactText(content, DELIVERY_CONTENT_LIMIT),
     "",
     `${event.harness}/${event.surface} · session ${shortSession}`,
   ].join("\n");

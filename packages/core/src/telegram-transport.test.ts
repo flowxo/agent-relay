@@ -33,6 +33,34 @@ describe("TelegramBotTransport", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("enforces Telegram's text limit with a visible truncation marker", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, result: { message_id: 43, date: 0 } }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await transport.deliver(
+      { ...message, text: "x".repeat(5_000) },
+      { idempotencyKey: message.eventId },
+    );
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      text: string;
+    };
+    expect(body.text.length).toBeLessThanOrEqual(4_096);
+    expect(body.text.endsWith("…[truncated]")).toBe(true);
+  });
+
   it("classifies rate limits as retryable and never exposes the bot token", async () => {
     const token = "123456:synthetic-token-value";
     const transport = new TelegramBotTransport({
