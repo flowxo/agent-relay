@@ -325,6 +325,11 @@ The status output distinguishes `pending`, `creating`, `ready`, `retry`, and
 to the queued event. A rejected topic request is dead-lettered rather than
 silently delivering into the General conversation.
 
+If an existing topic was deleted, Agent Relay records
+`topic.reconciliation-required`, invalidates only that session's stale mapping,
+and retries the event before creating a replacement topic. It never silently
+falls back to the General conversation.
+
 ### Telegram replies are ignored
 
 Confirm:

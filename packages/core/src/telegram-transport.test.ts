@@ -223,6 +223,38 @@ describe("TelegramBotTransport", () => {
     });
   });
 
+  it("classifies a missing persisted message thread for reconciliation", async () => {
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: "Bad Request: message thread not found",
+          }),
+          {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    });
+
+    await expect(
+      transport.deliver(message, {
+        idempotencyKey: message.eventId,
+        topicId: "77",
+      }),
+    ).rejects.toMatchObject({
+      name: "TopicUnavailableError",
+      code: "telegram-topic-unavailable",
+      retryable: true,
+      status: 400,
+    });
+  });
+
   it("renders opaque buttons and supports callback acknowledgement and message edits", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

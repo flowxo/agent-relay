@@ -926,6 +926,69 @@ export class RelayStore {
     return this.topicFromRow(row);
   }
 
+  public reconcileUnavailableSessionTopic(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+    errorCode: string;
+    errorMessage: string;
+    now: string;
+  }): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic reconciliation time");
+    return this.database.transaction(() => {
+      const currentRow = this.getSessionTopicRow(input);
+      if (currentRow === undefined) {
+        throw new Error("cannot reconcile an unknown session topic");
+      }
+      const current = this.topicFromRow(currentRow);
+      if (
+        current.provisioningStatus !== "ready" ||
+        current.topicId !== input.topicId
+      ) {
+        return current;
+      }
+      const changes = this.database
+        .prepare(
+          `
+          UPDATE session_topics SET
+            topic_id = NULL,
+            provisioning_status = 'retry',
+            next_attempt_at = @now,
+            lease_started_at = NULL,
+            last_error_code = @errorCode,
+            last_error_message = @errorMessage,
+            updated_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND provisioning_status = 'ready'
+            AND topic_id = @topicId
+        `,
+        )
+        .run({
+          ...input,
+          errorMessage: input.errorMessage.slice(0, 2_000),
+        }).changes;
+      if (changes !== 1) {
+        const raced = this.getSessionTopicRow(input);
+        if (raced === undefined) {
+          throw new Error("session topic disappeared during reconciliation");
+        }
+        return this.topicFromRow(raced);
+      }
+      const reconciled = this.getSessionTopicRow(input);
+      if (reconciled === undefined) {
+        throw new Error("reconciled session topic disappeared");
+      }
+      return this.topicFromRow(reconciled);
+    })();
+  }
+
   public recoverInterruptedTopics(now: string): number {
     assertIsoCutoff(now, "topic recovery time");
     return this.database

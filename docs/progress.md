@@ -59,6 +59,14 @@
   path/secret-safe topic metadata. The real adapter fixtures prove
   `createForumTopic` parsing and `message_thread_id` delivery; live
   private-topic creation is not yet claimed.
+- FXO-1052 is green locally. Every event uses the persisted topic ID on every
+  delivery attempt. Retryable delivery failures preserve the mapping; duplicate,
+  delayed, out-of-order, and interleaved events remain isolated. A
+  transport-level missing-topic signal now invalidates only the stale mapping,
+  emits a durable `topic.reconciliation-required` diagnostic, retries the owning
+  event, and creates a replacement topic without falling back to the general
+  chat. Telegram's missing-thread response and the full recreation path are
+  covered by deterministic HTTP and fake-transport fixtures.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -111,7 +119,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 119 tests across 19 test files, including the
+- `pnpm check` passes all 123 tests across 19 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -154,5 +162,5 @@
 ## Next action
 
 Run one credentialed private-topic activation against the rebuilt daemon, retain
-only the sanitized response shape, then begin FXO-1052 by routing every event
-and reply through the persisted topic mapping.
+only the sanitized response shape, then continue the Phase 1 operator
+interaction stories.

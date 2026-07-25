@@ -8,7 +8,7 @@ import type {
   TopicNotificationTransport,
   TopicReceipt,
 } from "./transport.js";
-import { TransportError } from "./transport.js";
+import { TopicUnavailableError, TransportError } from "./transport.js";
 
 export interface FakeDelivery {
   message: DeliveryMessage;
@@ -36,6 +36,7 @@ export class FakeTelegramTransport
   public readonly attempts: Array<{
     eventId: string;
     outcome: "delivered" | "failed" | "deduplicated";
+    topicId?: string;
   }> = [];
   public readonly topicAttempts: Array<{
     idempotencyKey: string;
@@ -90,6 +91,13 @@ export class FakeTelegramTransport
 
   public get topics(): readonly FakeTopic[] {
     return [...this.topicsByKey.values()];
+  }
+
+  public deleteTopic(topicId: string): boolean {
+    const entry = [...this.topicsByKey.entries()].find(
+      ([, topic]) => topic.receipt.topicId === topicId,
+    );
+    return entry === undefined ? false : this.topicsByKey.delete(entry[0]);
   }
 
   public async createTopic(
@@ -152,11 +160,32 @@ export class FakeTelegramTransport
       this.attempts.push({
         eventId: message.eventId,
         outcome: "deduplicated",
+        ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
       });
       return existing.receipt;
     }
+    if (
+      context.topicId !== undefined &&
+      ![...this.topicsByKey.values()].some(
+        (topic) => topic.receipt.topicId === context.topicId,
+      )
+    ) {
+      this.attempts.push({
+        eventId: message.eventId,
+        outcome: "failed",
+        topicId: context.topicId,
+      });
+      throw new TopicUnavailableError(
+        "fake message thread not found",
+        "fake-topic-unavailable",
+      );
+    }
     if (!this.online) {
-      this.attempts.push({ eventId: message.eventId, outcome: "failed" });
+      this.attempts.push({
+        eventId: message.eventId,
+        outcome: "failed",
+        ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
+      });
       throw new TransportError(
         "fake Telegram is offline",
         "fake-offline",
@@ -165,7 +194,11 @@ export class FakeTelegramTransport
     }
     const failure = this.failures.shift();
     if (failure !== undefined) {
-      this.attempts.push({ eventId: message.eventId, outcome: "failed" });
+      this.attempts.push({
+        eventId: message.eventId,
+        outcome: "failed",
+        ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
+      });
       throw new TransportError(
         failure.message,
         failure.code,
@@ -181,7 +214,11 @@ export class FakeTelegramTransport
       context,
       receipt,
     });
-    this.attempts.push({ eventId: message.eventId, outcome: "delivered" });
+    this.attempts.push({
+      eventId: message.eventId,
+      outcome: "delivered",
+      ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
+    });
     return receipt;
   }
 

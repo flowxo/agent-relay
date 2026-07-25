@@ -13,7 +13,7 @@ import type {
   TopicNotificationTransport,
   TopicReceipt,
 } from "./transport.js";
-import { TransportError } from "./transport.js";
+import { TopicUnavailableError, TransportError } from "./transport.js";
 
 const TELEGRAM_TEXT_LIMIT = 4_096;
 
@@ -60,6 +60,28 @@ const getUpdatesSuccessSchema = z
     result: z.array(polledUpdateSchema),
   })
   .passthrough();
+
+function identifiesUnavailableTopic(
+  method: string,
+  payload: Record<string, unknown>,
+  status: number,
+  description: string,
+): boolean {
+  if (
+    method !== "sendMessage" ||
+    !("message_thread_id" in payload) ||
+    status !== 400
+  ) {
+    return false;
+  }
+  const normalized = description.toLowerCase();
+  return [
+    "message thread not found",
+    "message thread is not found",
+    "message thread id is invalid",
+    "message_thread_id is invalid",
+  ].some((fragment) => normalized.includes(fragment));
+}
 
 export type TelegramPolledUpdate = z.infer<typeof polledUpdateSchema>;
 
@@ -337,6 +359,13 @@ export class TelegramBotTransport
     const description = failure.success
       ? (failure.data.description ?? "Telegram rejected the request")
       : "Telegram response did not match the Bot API schema";
+    if (identifiesUnavailableTopic(method, payload, status, description)) {
+      throw new TopicUnavailableError(
+        redactText(description, 500),
+        "telegram-topic-unavailable",
+        status,
+      );
+    }
     throw new TransportError(
       redactText(description, 500),
       `telegram-http-${status}`,

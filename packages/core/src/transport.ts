@@ -78,7 +78,7 @@ export function isInteractiveTransport(
 }
 
 export class TransportError extends Error {
-  public override readonly name = "TransportError";
+  public override readonly name: string = "TransportError";
 
   public constructor(
     message: string,
@@ -87,6 +87,14 @@ export class TransportError extends Error {
     public readonly status?: number,
   ) {
     super(message);
+  }
+}
+
+export class TopicUnavailableError extends TransportError {
+  public override readonly name = "TopicUnavailableError";
+
+  public constructor(message: string, code: string, status?: number) {
+    super(message, code, true, status);
   }
 }
 

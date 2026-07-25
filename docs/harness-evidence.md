@@ -86,6 +86,15 @@ and reuses that mapping after reopen. Tests cover repeated events, competing
 first deliveries, separate concurrent sessions, retryable and non-retryable
 topic failures, path/secret sanitization, and restart reuse.
 
+The Telegram HTTP fixtures classify a
+`400 Bad Request: message thread not found` response only when `sendMessage`
+included a persisted `message_thread_id`. The daemon then clears that stale
+mapping, records a `topic.reconciliation-required` diagnostic, retries the
+owning event through the durable spool, and lazily creates a replacement topic.
+The fake transport proves this path without ever falling back to the unthreaded
+conversation. A live topic deletion has not been induced, so the exact error
+description remains fixture-proven rather than credentialed-account-proven.
+
 A credentialed private-chat activation was run on 2026-07-24. The Bot API
 accepted the synthetic canary notification, loopback long polling received the
 operator's replied-to-message update, and SQLite recorded the exact challenge as

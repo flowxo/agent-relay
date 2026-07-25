@@ -32,6 +32,7 @@ import type {
 import {
   asTransportError,
   isTopicTransport,
+  TopicUnavailableError,
   TransportError,
 } from "./transport.js";
 
@@ -480,6 +481,7 @@ export class RelayService {
     };
 
     for (const item of claimed) {
+      let deliveryTopicId: string | undefined;
       try {
         const rendered = renderDeliveryMessage(item.event);
         const pending = this.store.getPendingForEvent(item.event.eventId);
@@ -493,10 +495,9 @@ export class RelayService {
                   label: option.label,
                 })),
               };
-        const receipt = await this.transport.deliver(
-          message,
-          await this.deliveryContext(item.event),
-        );
+        const deliveryContext = await this.deliveryContext(item.event);
+        deliveryTopicId = deliveryContext.topicId;
+        const receipt = await this.transport.deliver(message, deliveryContext);
         this.store.markDelivered(
           item.event.eventId,
           item.attemptNumber,
@@ -518,6 +519,62 @@ export class RelayService {
         });
       } catch (error) {
         const transportError = asTransportError(error);
+        if (
+          error instanceof TopicUnavailableError &&
+          deliveryTopicId !== undefined &&
+          isTopicTransport(this.transport)
+        ) {
+          const reconciledAt = this.now().toISOString();
+          const identity = this.sessionTopicIdentity(
+            item.event,
+            this.transport,
+          );
+          const safeMessage = redactText(transportError.message, 2_000);
+          const reconciled = this.store.reconcileUnavailableSessionTopic({
+            machineId: identity.machineId,
+            harness: identity.harness,
+            sessionId: identity.sessionId,
+            transportName: identity.transportName,
+            transportScope: identity.transportScope,
+            topicId: deliveryTopicId,
+            errorCode: transportError.code,
+            errorMessage: safeMessage,
+            now: reconciledAt,
+          });
+          this.reportDiagnostic({
+            schema: "agent-relay-diagnostic.v1",
+            diagnosticId: `diag_topic_reconcile_${sha256(
+              [
+                identity.machineId,
+                identity.harness,
+                identity.sessionId,
+                identity.transportName,
+                identity.transportScope,
+                deliveryTopicId,
+                item.event.eventId,
+                String(item.attemptNumber),
+              ].join("\u001f"),
+            ).slice(0, 36)}`,
+            recordedAt: reconciledAt,
+            source: "daemon",
+            level: "warn",
+            code: "topic.reconciliation-required",
+            message: `persisted session topic became unavailable: ${safeMessage}`,
+          });
+          this.logger.log({
+            level: "warn",
+            code: "topic.reconciliation-scheduled",
+            message: "session topic mapping was invalidated for recreation",
+            at: reconciledAt,
+            details: {
+              harness: reconciled.harness,
+              repository: reconciled.repository,
+              shortSessionId: reconciled.shortSessionId,
+              transport: reconciled.transportName,
+              unavailableTopicId: deliveryTopicId,
+            },
+          });
+        }
         const status = this.store.markDeliveryFailed(
           item.event.eventId,
           item.attemptNumber,

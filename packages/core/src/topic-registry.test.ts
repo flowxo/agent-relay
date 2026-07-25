@@ -34,6 +34,7 @@ function event(
     },
     type: overrides.type ?? "turn.stopped",
     summary: overrides.summary ?? "Synthetic topic event",
+    ...(overrides.failure === undefined ? {} : { failure: overrides.failure }),
     capabilities: overrides.capabilities ?? {
       inlineContinue: true,
       lateResume: true,
@@ -164,14 +165,14 @@ describe("durable session topic registry", () => {
       firstStore.close();
 
       const secondStore = new RelayStore(databasePath);
-      const secondTransport = new FakeTelegramTransport();
-      const secondService = new RelayService(secondStore, secondTransport);
+      const secondService = new RelayService(secondStore, firstTransport);
       secondService.recover();
       secondService.ingest(event("evt_topic_after_restart", { sequence: 2 }));
       await secondService.drain();
 
-      expect(secondTransport.topics).toHaveLength(0);
-      expect(secondTransport.deliveries[0]?.context.topicId).toBe("1000");
+      expect(firstTransport.topics).toHaveLength(1);
+      expect(firstTransport.topicAttempts).toHaveLength(1);
+      expect(firstTransport.deliveries[1]?.context.topicId).toBe("1000");
       expect(secondStore.listSessionTopics()).toEqual([
         expect.objectContaining({
           provisioningStatus: "ready",
@@ -232,6 +233,170 @@ describe("durable session topic registry", () => {
     expect(
       logger.records.some((record) => record.code === "topic.created"),
     ).toBe(true);
+    store.close();
+  });
+
+  it("preserves the assigned topic across retryable delivery failures", async () => {
+    const testClock = clock();
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    transport.failNext(1);
+    const service = new RelayService(store, transport, {
+      now: testClock.now,
+      retryPolicy: {
+        maxAttempts: 3,
+        baseDelayMs: 1_000,
+        maxDelayMs: 5_000,
+      },
+    });
+    service.ingest(event("evt_topic_delivery_retry_12345678"));
+
+    await expect(service.drain()).resolves.toMatchObject({
+      delivered: 0,
+      retrying: 1,
+    });
+    expect(transport.topics).toHaveLength(1);
+    expect(transport.attempts).toEqual([
+      expect.objectContaining({ outcome: "failed", topicId: "1000" }),
+    ]);
+
+    testClock.advance(1_000);
+    await expect(service.drain()).resolves.toMatchObject({
+      delivered: 1,
+      retrying: 0,
+    });
+    expect(transport.topics).toHaveLength(1);
+    expect(transport.attempts.map((attempt) => attempt.topicId)).toEqual([
+      "1000",
+      "1000",
+    ]);
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      provisioningStatus: "ready",
+      topicId: "1000",
+      attemptCount: 1,
+    });
+    store.close();
+  });
+
+  it("diagnoses and recreates a deleted topic without falling back to the general chat", async () => {
+    const testClock = clock();
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport, {
+      now: testClock.now,
+      retryPolicy: {
+        maxAttempts: 3,
+        baseDelayMs: 1_000,
+        maxDelayMs: 5_000,
+      },
+    });
+    service.ingest(event("evt_topic_before_delete_12345678", { sequence: 1 }));
+    await service.drain();
+    expect(transport.deleteTopic("1000")).toBe(true);
+
+    service.ingest(event("evt_topic_after_delete_12345678", { sequence: 2 }));
+    await expect(service.drain()).resolves.toMatchObject({
+      delivered: 0,
+      retrying: 1,
+    });
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      provisioningStatus: "retry",
+      lastErrorCode: "fake-topic-unavailable",
+    });
+    expect(store.listSessionTopics()[0]?.topicId).toBeUndefined();
+    expect(store.listDiagnostics()).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        code: "topic.reconciliation-required",
+      }),
+    );
+    expect(
+      transport.attempts.find(
+        (attempt) =>
+          attempt.eventId === "evt_topic_after_delete_12345678" &&
+          attempt.outcome === "failed",
+      ),
+    ).toMatchObject({ topicId: "1000" });
+
+    testClock.advance(1_000);
+    await expect(service.drain()).resolves.toMatchObject({
+      delivered: 1,
+      retrying: 0,
+    });
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      provisioningStatus: "ready",
+      topicId: "1001",
+      attemptCount: 2,
+    });
+    expect(
+      transport.deliveries.map((delivery) => delivery.context.topicId),
+    ).toEqual(["1000", "1001"]);
+    expect(
+      transport.deliveries.every(
+        (delivery) => delivery.context.topicId !== undefined,
+      ),
+    ).toBe(true);
+    store.close();
+  });
+
+  it("isolates duplicate, delayed, and out-of-order events across interleaved sessions", async () => {
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport);
+    const sessionA = "session_interleaved_a_12345678";
+    const sessionB = "session_interleaved_b_87654321";
+    const lateHighSequence = event("evt_interleaved_a_high", {
+      occurredAt: "2026-07-25T12:00:03.000Z",
+      sequence: 3,
+      sessionId: sessionA,
+      type: "turn.failed",
+      failure: {
+        class: "synthetic",
+        message: "Synthetic interleaved failure",
+      },
+    });
+
+    service.ingest(lateHighSequence);
+    service.ingest(
+      event("evt_interleaved_b_middle", {
+        occurredAt: "2026-07-25T12:00:02.000Z",
+        sequence: 2,
+        sessionId: sessionB,
+        type: "turn.stopped",
+      }),
+    );
+    service.ingest(
+      event("evt_interleaved_a_delayed", {
+        occurredAt: "2026-07-25T12:00:01.000Z",
+        sequence: 1,
+        sessionId: sessionA,
+        type: "session.started",
+      }),
+    );
+    expect(service.ingest(lateHighSequence).inserted).toBe(false);
+
+    await expect(service.drain()).resolves.toMatchObject({
+      claimed: 3,
+      delivered: 3,
+    });
+    const topicByEvent = new Map(
+      transport.deliveries.map((delivery) => [
+        delivery.message.eventId,
+        delivery.context.topicId,
+      ]),
+    );
+    expect(topicByEvent.get("evt_interleaved_a_high")).toBe(
+      topicByEvent.get("evt_interleaved_a_delayed"),
+    );
+    expect(topicByEvent.get("evt_interleaved_a_high")).not.toBe(
+      topicByEvent.get("evt_interleaved_b_middle"),
+    );
+    expect(
+      transport.deliveries.every(
+        (delivery) => delivery.context.topicId !== undefined,
+      ),
+    ).toBe(true);
+    expect(transport.topics).toHaveLength(2);
     store.close();
   });
 
