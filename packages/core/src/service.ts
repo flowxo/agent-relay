@@ -483,6 +483,28 @@ export class RelayService {
     for (const item of claimed) {
       let deliveryTopicId: string | undefined;
       try {
+        const suppressionReason = this.store.suppressionReason(item.event);
+        if (suppressionReason !== undefined) {
+          this.store.markDelivered(
+            item.event.eventId,
+            item.attemptNumber,
+            "session-control",
+            `suppressed:${suppressionReason}`,
+            this.now().toISOString(),
+          );
+          result.delivered += 1;
+          this.logger.log({
+            level: "info",
+            code: "delivery.suppressed",
+            message: "routine notification suppressed by session control",
+            at: this.now().toISOString(),
+            details: {
+              eventId: item.event.eventId,
+              reason: suppressionReason,
+            },
+          });
+          continue;
+        }
         const rendered = renderDeliveryMessage(item.event, {
           now: this.now(),
         });

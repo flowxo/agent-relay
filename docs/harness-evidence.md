@@ -102,6 +102,14 @@ deterministic token that is registered against the full local event. Telegram
 receives no parse mode, so untrusted model text remains normalized plain text
 and cannot create formatting or callback payloads.
 
+Card callback fixtures include Telegram's originating message and
+`message_thread_id`. The router validates the versioned payload, configured
+operator and chat, persisted delivery message, session, and topic before
+claiming an action. SQLite commits first-writer-wins execution before callback
+acknowledgement. Tests cover every action, repeated updates and taps, malformed
+and unknown tokens, unauthorized senders, cross-message/topic attempts, blocked
+End with a pending question, and an ambiguous Details delivery failure.
+
 A credentialed private-chat activation was run on 2026-07-24. The Bot API
 accepted the synthetic canary notification, loopback long polling received the
 operator's replied-to-message update, and SQLite recorded the exact challenge as

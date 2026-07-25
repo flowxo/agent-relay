@@ -91,7 +91,30 @@ export interface CardActionRecord {
   eventId: string;
   kind: CardActionKind;
   createdAt: string;
+  state: "open" | "claimed" | "succeeded" | "failed";
+  updateId?: number;
+  claimedAt?: string;
+  finishedAt?: string;
+  outcome?: string;
+  errorMessage?: string;
 }
+
+export interface SessionControlRecord {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+  mutedAt?: string;
+  endedAt?: string;
+  updatedAt: string;
+}
+
+export type CardActionExecutionResult =
+  | { outcome: "not_found" | "kind_mismatch"; action?: CardActionRecord }
+  | { outcome: "blocked"; action: CardActionRecord; reason: string }
+  | {
+      outcome: "claimed" | "succeeded" | "duplicate" | "stale";
+      action: CardActionRecord;
+    };
 
 export interface ClaimSessionTopicInput {
   machineId: string;
@@ -302,6 +325,21 @@ interface CardActionRow {
   event_id: string;
   action_kind: CardActionKind;
   created_at: string;
+  execution_state: "claimed" | "succeeded" | "failed" | null;
+  update_id: number | null;
+  claimed_at: string | null;
+  finished_at: string | null;
+  outcome: string | null;
+  error_message: string | null;
+}
+
+interface SessionControlRow {
+  machine_id: string;
+  harness: Harness;
+  session_id: string;
+  muted_at: string | null;
+  ended_at: string | null;
+  updated_at: string;
 }
 
 interface CountRow {
@@ -544,6 +582,31 @@ export class RelayStore {
         created_at TEXT NOT NULL,
         UNIQUE(event_id, action_kind),
         FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS card_action_executions (
+        action_token TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        update_id INTEGER NOT NULL,
+        claimed_at TEXT NOT NULL,
+        finished_at TEXT,
+        outcome TEXT,
+        error_message TEXT,
+        FOREIGN KEY (action_token)
+          REFERENCES card_actions(action_token) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS session_controls (
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        muted_at TEXT,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (machine_id, harness, session_id),
+        FOREIGN KEY (machine_id, harness, session_id)
+          REFERENCES sessions(machine_id, harness, session_id)
+          ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS delivery_attempts (
@@ -1455,18 +1518,11 @@ export class RelayStore {
           `,
           )
           .run(token, eventId, kind, now);
-        const existing = this.database
-          .prepare(
-            `
-            SELECT action_token, event_id, action_kind, created_at
-            FROM card_actions WHERE action_token = ?
-          `,
-          )
-          .get(token) as CardActionRow | undefined;
+        const existing = this.getCardAction(token);
         if (
           existing === undefined ||
-          existing.event_id !== eventId ||
-          existing.action_kind !== kind
+          existing.eventId !== eventId ||
+          existing.kind !== kind
         ) {
           throw new Error(`card action token collision for ${token}`);
         }
@@ -1489,8 +1545,21 @@ export class RelayStore {
     const row = this.database
       .prepare(
         `
-        SELECT action_token, event_id, action_kind, created_at
-        FROM card_actions WHERE action_token = ?
+        SELECT
+          actions.action_token,
+          actions.event_id,
+          actions.action_kind,
+          actions.created_at,
+          executions.state AS execution_state,
+          executions.update_id,
+          executions.claimed_at,
+          executions.finished_at,
+          executions.outcome,
+          executions.error_message
+        FROM card_actions AS actions
+        LEFT JOIN card_action_executions AS executions
+          ON executions.action_token = actions.action_token
+        WHERE actions.action_token = ?
       `,
       )
       .get(parsed.data) as CardActionRow | undefined;
@@ -1501,6 +1570,288 @@ export class RelayStore {
           eventId: row.event_id,
           kind: row.action_kind,
           createdAt: row.created_at,
+          state: row.execution_state ?? "open",
+          ...(row.update_id === null ? {} : { updateId: row.update_id }),
+          ...(row.claimed_at === null ? {} : { claimedAt: row.claimed_at }),
+          ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
+          ...(row.outcome === null ? {} : { outcome: row.outcome }),
+          ...(row.error_message === null
+            ? {}
+            : { errorMessage: row.error_message }),
+        };
+  }
+
+  private finishCardActionExecution(input: {
+    token: string;
+    state: "succeeded" | "failed";
+    outcome: string;
+    now: string;
+    errorMessage?: string;
+  }): CardActionRecord {
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE card_action_executions SET
+          state = @state,
+          finished_at = @now,
+          outcome = @outcome,
+          error_message = @errorMessage
+        WHERE action_token = @token AND state = 'claimed'
+      `,
+      )
+      .run({
+        ...input,
+        errorMessage: input.errorMessage?.slice(0, 2_000) ?? null,
+      }).changes;
+    if (changes !== 1) {
+      throw new Error(`card action ${input.token} is not claimed`);
+    }
+    const action = this.getCardAction(input.token);
+    if (action === undefined) {
+      throw new Error(`card action ${input.token} disappeared`);
+    }
+    return action;
+  }
+
+  private upsertSessionControl(
+    event: AgentAttentionEventV1,
+    field: "muted_at" | "ended_at",
+    now: string,
+  ): void {
+    this.database
+      .prepare(
+        `
+        INSERT INTO session_controls (
+          machine_id, harness, session_id, ${field}, updated_at
+        ) VALUES (
+          @machineId, @harness, @sessionId, @now, @now
+        )
+        ON CONFLICT(machine_id, harness, session_id) DO UPDATE SET
+          ${field} = excluded.${field},
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run({ ...event, now });
+  }
+
+  public executeCardAction(input: {
+    token: string;
+    kind: CardActionKind;
+    updateId: number;
+    now: string;
+  }): CardActionExecutionResult {
+    assertIsoCutoff(input.now, "card action execution time");
+    if (!Number.isSafeInteger(input.updateId) || input.updateId < 0) {
+      throw new Error("card action update id must be a non-negative integer");
+    }
+    return this.database.transaction((): CardActionExecutionResult => {
+      const action = this.getCardAction(input.token);
+      if (action === undefined) {
+        return { outcome: "not_found" };
+      }
+      if (action.kind !== input.kind) {
+        return { outcome: "kind_mismatch", action };
+      }
+      if (action.state !== "open") {
+        return { outcome: "duplicate", action };
+      }
+      const eventRecord = this.getEvent(action.eventId);
+      if (eventRecord === undefined) {
+        return { outcome: "not_found", action };
+      }
+      this.expireRequests(input.now);
+      const pending = this.getPendingForEvent(action.eventId);
+      if (
+        input.kind === "end" &&
+        pending !== undefined &&
+        pending.state === "open"
+      ) {
+        return {
+          outcome: "blocked",
+          action,
+          reason: "answer the pending question before ending this relay lane",
+        };
+      }
+      const claimed = this.database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO card_action_executions (
+            action_token, state, update_id, claimed_at
+          ) VALUES (?, 'claimed', ?, ?)
+        `,
+        )
+        .run(input.token, input.updateId, input.now).changes;
+      if (claimed !== 1) {
+        const raced = this.getCardAction(input.token);
+        if (raced === undefined) {
+          return { outcome: "not_found" };
+        }
+        return { outcome: "duplicate", action: raced };
+      }
+      if (input.kind === "details") {
+        const current = this.getCardAction(input.token);
+        if (current === undefined) {
+          throw new Error(`claimed card action ${input.token} disappeared`);
+        }
+        return { outcome: "claimed", action: current };
+      }
+      if (input.kind === "continue") {
+        if (
+          pending?.requestKind !== "continuation" ||
+          (!eventRecord.event.capabilities.inlineContinue &&
+            !eventRecord.event.capabilities.lateResume)
+        ) {
+          return {
+            outcome: "stale",
+            action: this.finishCardActionExecution({
+              token: input.token,
+              state: "failed",
+              outcome: "continuation-unavailable",
+              now: input.now,
+              errorMessage:
+                "event no longer has a supported continuation request",
+            }),
+          };
+        }
+        const resolution = this.resolveRequest({
+          correlationId: pending.correlationId,
+          answer: "Continue.",
+          resolvedBy: "telegram",
+          now: input.now,
+          expected: {
+            machineId: pending.machineId,
+            harness: pending.harness,
+            sessionId: pending.sessionId,
+            ...(pending.turnId === undefined ? {} : { turnId: pending.turnId }),
+          },
+        });
+        if (resolution.outcome !== "answered") {
+          return {
+            outcome: "stale",
+            action: this.finishCardActionExecution({
+              token: input.token,
+              state: "failed",
+              outcome: `continuation-${resolution.outcome}`,
+              now: input.now,
+              errorMessage: "continuation request is no longer actionable",
+            }),
+          };
+        }
+      } else if (input.kind === "mute") {
+        this.upsertSessionControl(eventRecord.event, "muted_at", input.now);
+      } else {
+        this.upsertSessionControl(eventRecord.event, "ended_at", input.now);
+      }
+      return {
+        outcome: "succeeded",
+        action: this.finishCardActionExecution({
+          token: input.token,
+          state: "succeeded",
+          outcome: input.kind,
+          now: input.now,
+        }),
+      };
+    })();
+  }
+
+  public finishCardAction(input: {
+    token: string;
+    succeeded: boolean;
+    outcome: string;
+    now: string;
+    errorMessage?: string;
+  }): CardActionRecord {
+    assertIsoCutoff(input.now, "card action completion time");
+    return this.finishCardActionExecution({
+      ...input,
+      state: input.succeeded ? "succeeded" : "failed",
+    });
+  }
+
+  private controlFromRow(row: SessionControlRow): SessionControlRecord {
+    return {
+      machineId: row.machine_id,
+      harness: row.harness,
+      sessionId: row.session_id,
+      ...(row.muted_at === null ? {} : { mutedAt: row.muted_at }),
+      ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getSessionControl(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): SessionControlRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT machine_id, harness, session_id, muted_at, ended_at, updated_at
+        FROM session_controls
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
+      )
+      .get(input) as SessionControlRow | undefined;
+    return row === undefined ? undefined : this.controlFromRow(row);
+  }
+
+  public listSessionControls(): SessionControlRecord[] {
+    const rows = this.database
+      .prepare(
+        `
+        SELECT machine_id, harness, session_id, muted_at, ended_at, updated_at
+        FROM session_controls
+        ORDER BY updated_at DESC, machine_id, harness, session_id
+      `,
+      )
+      .all() as SessionControlRow[];
+    return rows.map((row) => this.controlFromRow(row));
+  }
+
+  public suppressionReason(
+    event: AgentAttentionEventV1,
+  ): "muted" | "ended" | undefined {
+    if (
+      event.request !== undefined ||
+      event.type === "turn.failed" ||
+      event.type === "process.exited" ||
+      event.type === "process.stale"
+    ) {
+      return undefined;
+    }
+    const control = this.getSessionControl(event);
+    if (control?.endedAt !== undefined) {
+      return "ended";
+    }
+    return control?.mutedAt === undefined ? undefined : "muted";
+  }
+
+  public getEventTransportReceipt(
+    eventId: string,
+  ): { transportName: string; messageId: string } | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT transport_name, transport_message_id
+        FROM events WHERE event_id = ? AND status = 'delivered'
+      `,
+      )
+      .get(eventId) as
+      | {
+          transport_name: string | null;
+          transport_message_id: string | null;
+        }
+      | undefined;
+    return row?.transport_name === null ||
+      row?.transport_name === undefined ||
+      row.transport_message_id === null
+      ? undefined
+      : {
+          transportName: row.transport_name,
+          messageId: row.transport_message_id,
         };
   }
 

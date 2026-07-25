@@ -209,9 +209,20 @@ owning event in the normal delivery spool.
 Notifications are rendered as compact plain-text cards with stable session
 identity, event age, a bounded one-line summary, and fixed callback data that
 cannot be supplied by model text. Full long content remains in the local durable
-event record and receives a Details action. Question-choice buttons are active;
-the newer Continue, Details, Mute, and End card payloads are registered but
-their execution is enabled by the following interaction milestone.
+event record and receives a Details action. Question-choice buttons and card
+actions are active:
+
+- Continue appears only for an open continuation that the harness reports as
+  supported, and resolves it once through the existing resume queue.
+- Details posts the bounded full local event once.
+- Mute suppresses routine cards for that session while questions, stale
+  warnings, and proven failures remain visible.
+- End closes the relay lane after pending questions are resolved. It does not
+  claim to terminate an already-running harness process.
+
+Every action is committed before Telegram is acknowledged. Repeated taps return
+the stored result without repeating the action. Session controls are inspectable
+as `sessionControlRecords` in `status`.
 
 ## 6. Prove the Telegram interaction loop
 

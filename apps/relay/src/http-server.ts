@@ -191,6 +191,7 @@ export function createRelayHttpServer(
           ...service.store.status(),
           sessionRecords: service.store.listSessions(),
           topicRecords: service.store.listSessionTopics(),
+          sessionControlRecords: service.store.listSessionControls(),
         });
         return;
       }

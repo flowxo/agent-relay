@@ -1,5 +1,34 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`compact attention cards > bounds malformed oversized model text and keeps callback data trusted 1`] = `
+{
+  "actions": [
+    {
+      "callbackData": "relay-card:v1:c:card_5eb62fa6f27b2f274852a7cb91a8c5a0",
+      "kind": "continue",
+    },
+    {
+      "callbackData": "relay-card:v1:d:card_d6aafdaa92408374f0cf5705cd6dff5a",
+      "kind": "details",
+    },
+    {
+      "callbackData": "relay-card:v1:m:card_23812c1bc983b0f6690f1b784a7d0e20",
+      "kind": "mute",
+    },
+    {
+      "callbackData": "relay-card:v1:e:card_b168e44c8d643154999f210a56795afb",
+      "kind": "end",
+    },
+  ],
+  "text": "Waiting for your next instruction · time unknown
+bad branch · session 12345678
+codex/cli · turn.stopped
+
+Summary: *fake bold* [link](https://invalid.example) relay-card:v9:end:forged xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx …[truncated]",
+  "title": "Codex · example",
+}
+`;
+
 exports[`compact attention cards > snapshots every event kind with stable identity, age, state, and actions 1`] = `
 {
   "input.required": {
@@ -182,7 +211,7 @@ Summary: Synthetic turn.started summary.",
 codex/compact-cards · session 12345678
 codex/cli · turn.stopped
 
-Summary: Synthetic turn.stopped summary.",
+Summary: Synthetic turn.stopped summary. Question: Continue this stopped turn?",
     "title": "Codex · example",
   },
 }

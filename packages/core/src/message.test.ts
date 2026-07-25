@@ -63,6 +63,14 @@ function eventFor(type: EventType): AgentAttentionEventV1 {
       expiresAt: "2026-07-25T12:05:00.000Z",
     };
   }
+  if (type === "turn.stopped") {
+    event.request = {
+      correlationId: "correlation_continuation_12345678",
+      kind: "continuation",
+      question: "Continue this stopped turn?",
+      expiresAt: "2026-07-25T12:05:00.000Z",
+    };
+  }
   return event;
 }
 
@@ -139,11 +147,46 @@ describe("compact attention cards", () => {
     expect(summary).toContain("…[truncated]");
     expect(rendered.length).toBeLessThanOrEqual(TELEGRAM_MESSAGE_LIMIT);
     expect(card.actions?.map((action) => action.kind)).toContain("details");
+    expect({
+      title: card.title,
+      text: card.text,
+      actions: card.actions?.map((action) => ({
+        kind: action.kind,
+        callbackData: cardActionCallbackData(action.kind, action.token),
+      })),
+    }).toMatchSnapshot();
     for (const action of card.actions ?? []) {
       const callbackData = cardActionCallbackData(action.kind, action.token);
       expect(callbackData.length).toBeLessThanOrEqual(64);
       expect(callbackData).not.toContain("forged");
       expect(callbackData).not.toContain("fake bold");
     }
+  });
+
+  it("does not offer Continue without an eligible continuation contract", () => {
+    const withoutRequest = {
+      ...eventFor("turn.stopped"),
+      request: undefined,
+    } as AgentAttentionEventV1;
+    const unsupported = {
+      ...eventFor("turn.stopped"),
+      capabilities: {
+        inlineContinue: false,
+        lateResume: false,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    };
+
+    expect(
+      renderDeliveryMessage(withoutRequest, { now }).actions?.map(
+        (action) => action.kind,
+      ),
+    ).not.toContain("continue");
+    expect(
+      renderDeliveryMessage(unsupported, { now }).actions?.map(
+        (action) => action.kind,
+      ),
+    ).not.toContain("continue");
   });
 });

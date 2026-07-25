@@ -102,6 +102,7 @@ describe("relay HTTP daemon", () => {
       pendingDeliveryCount: 0,
       events: { delivered: 1 },
       topics: { ready: 1 },
+      sessionControlRecords: [],
       topicRecords: [
         expect.objectContaining({
           sessionId: input.sessionId,

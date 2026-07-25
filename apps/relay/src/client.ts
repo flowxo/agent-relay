@@ -16,6 +16,7 @@ import type {
   ResumeClaimResult,
   ResumeCommandRecord,
   ResolutionResult,
+  SessionControlRecord,
   SessionRecord,
   SessionTopicRecord,
   StoreStatus,
@@ -196,6 +197,7 @@ export class RelayClient {
       healthy: true;
       sessionRecords: SessionRecord[];
       topicRecords: SessionTopicRecord[];
+      sessionControlRecords: SessionControlRecord[];
     }
   > {
     return await this.request<
@@ -204,6 +206,7 @@ export class RelayClient {
         healthy: true;
         sessionRecords: SessionRecord[];
         topicRecords: SessionTopicRecord[];
+        sessionControlRecords: SessionControlRecord[];
       }
     >("/v1/status");
   }

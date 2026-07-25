@@ -125,6 +125,7 @@ function actionKinds(
   const kinds: CardActionKind[] = [];
   if (
     event.type === "turn.stopped" &&
+    event.request?.kind === "continuation" &&
     (event.capabilities.inlineContinue || event.capabilities.lateResume)
   ) {
     kinds.push("continue");
@@ -190,4 +191,25 @@ export function renderDeliveryText(message: DeliveryMessage): string {
     `${message.title}\n\n${message.text}`,
     TELEGRAM_MESSAGE_LIMIT,
   );
+}
+
+export function renderDetailsMessage(
+  event: AgentAttentionEventV1,
+): DeliveryMessage {
+  const metadata = sessionTopicMetadata(event);
+  const details = [...redactText(eventContent(event), 3_500)]
+    .map((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code <= 8 || (code >= 11 && code <= 31) || code === 127
+        ? " "
+        : character;
+    })
+    .join("")
+    .trim();
+  return {
+    eventId: event.eventId,
+    title: `Details · ${harnessName(event)} · ${metadata.repository}`,
+    text:
+      details.length === 0 ? "No additional details are available." : details,
+  };
 }
