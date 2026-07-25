@@ -239,6 +239,13 @@ export interface ResolutionResult {
   request?: PendingRequestRecord;
 }
 
+export type NumberedChoiceResolutionResult =
+  | ResolutionResult
+  | {
+      outcome: "invalid_choice";
+      request: PendingRequestRecord;
+    };
+
 export interface ResolveRequestInput {
   correlationId: string;
   answer: string;
@@ -269,7 +276,7 @@ export type TopicTextCorrelationResult =
       outcome: "resolved";
       eligibleCount: 1;
       request: PendingRequestRecord;
-      resolution: ResolutionResult;
+      resolution: NumberedChoiceResolutionResult;
     };
 
 export type ResumeCommandState =
@@ -2504,6 +2511,22 @@ export class RelayStore {
     return row === undefined ? undefined : this.pendingFromRow(row);
   }
 
+  public getPendingForOptionToken(
+    token: string,
+  ): PendingRequestRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT pending_requests.*
+        FROM pending_options
+        JOIN pending_requests USING (correlation_id)
+        WHERE pending_options.option_token = ?
+      `,
+      )
+      .get(token) as PendingRow | undefined;
+    return row === undefined ? undefined : this.pendingFromRow(row);
+  }
+
   private requirePending(correlationId: string): PendingRequestRecord {
     const request = this.getPendingRequest(correlationId);
     if (request === undefined) {
@@ -2582,6 +2605,13 @@ export class RelayStore {
     token: string,
     resolvedBy: "terminal" | "telegram",
     now: string,
+    expected?: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    },
   ): ResolutionResult {
     const option = this.database
       .prepare(
@@ -2595,12 +2625,100 @@ export class RelayStore {
     if (option === undefined) {
       return { outcome: "not_found" };
     }
+    const request = this.getPendingRequest(option.correlation_id);
+    if (
+      request === undefined ||
+      (expected !== undefined &&
+        (request.machineId !== expected.machineId ||
+          request.harness !== expected.harness ||
+          request.sessionId !== expected.sessionId ||
+          request.turnId !== expected.turnId ||
+          request.transportMessageId !== expected.transportMessageId))
+    ) {
+      return {
+        outcome: request === undefined ? "not_found" : "identity_mismatch",
+        ...(request === undefined ? {} : { request }),
+      };
+    }
     return this.resolveRequest({
       correlationId: option.correlation_id,
       answer: option.option_id,
       resolvedBy,
       now,
+      ...(expected === undefined
+        ? {}
+        : {
+            expected: {
+              machineId: expected.machineId,
+              harness: expected.harness,
+              sessionId: expected.sessionId,
+              ...(expected.turnId === undefined
+                ? {}
+                : { turnId: expected.turnId }),
+            },
+          }),
     });
+  }
+
+  private resolveNumberedChoice(
+    request: PendingRequestRecord,
+    answer: string,
+    now: string,
+    minimumOptionCount: number,
+  ): NumberedChoiceResolutionResult {
+    if (
+      request.requestKind !== "select" ||
+      request.options.length <= minimumOptionCount
+    ) {
+      return { outcome: "not_found" };
+    }
+    const normalized = answer.trim();
+    if (!/^[1-9][0-9]*$/.test(normalized)) {
+      return { outcome: "invalid_choice", request };
+    }
+    const option = request.options[Number(normalized) - 1];
+    if (option === undefined) {
+      return { outcome: "invalid_choice", request };
+    }
+    return this.resolveRequest({
+      correlationId: request.correlationId,
+      answer: option.optionId,
+      resolvedBy: "telegram",
+      now,
+      expected: {
+        machineId: request.machineId,
+        harness: request.harness,
+        sessionId: request.sessionId,
+        ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+      },
+    });
+  }
+
+  public resolveTransportNumberedChoice(
+    messageId: string,
+    answer: string,
+    now: string,
+    minimumOptionCount: number,
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+    },
+  ): NumberedChoiceResolutionResult {
+    const request = this.getPendingForTransportMessage(messageId);
+    if (request === undefined) {
+      return { outcome: "not_found" };
+    }
+    if (
+      request.machineId !== expected.machineId ||
+      request.harness !== expected.harness ||
+      request.sessionId !== expected.sessionId ||
+      request.turnId !== expected.turnId
+    ) {
+      return { outcome: "identity_mismatch", request };
+    }
+    return this.resolveNumberedChoice(request, answer, now, minimumOptionCount);
   }
 
   public resolveTransportReply(
@@ -2656,6 +2774,7 @@ export class RelayStore {
     topicId: string;
     answer: string;
     now: string;
+    numberedChoiceMinimumOptions?: number;
   }): TopicTextCorrelationResult {
     return this.database.transaction((): TopicTextCorrelationResult => {
       const topic = this.database
@@ -2710,7 +2829,19 @@ export class RelayStore {
             AND session_id = @sessionId
             AND state = 'open'
             AND expires_at > @now
-            AND request_kind IN ('input', 'continuation')
+            AND (
+              request_kind IN ('input', 'continuation')
+              OR (
+                @numberedChoiceMinimumOptions IS NOT NULL
+                AND request_kind = 'select'
+                AND (
+                  SELECT COUNT(*)
+                  FROM pending_options
+                  WHERE pending_options.correlation_id =
+                    pending_requests.correlation_id
+                ) > @numberedChoiceMinimumOptions
+              )
+            )
           ORDER BY created_at, correlation_id
           LIMIT 2
         `,
@@ -2720,6 +2851,8 @@ export class RelayStore {
           harness: topic.harness,
           sessionId: topic.session_id,
           now: input.now,
+          numberedChoiceMinimumOptions:
+            input.numberedChoiceMinimumOptions ?? null,
         }) as PendingRow[];
       if (candidates.length === 0) {
         return { outcome: "no_eligible_request", eligibleCount: 0 };
@@ -2736,18 +2869,28 @@ export class RelayStore {
         outcome: "resolved",
         eligibleCount: 1,
         request,
-        resolution: this.resolveRequest({
-          correlationId: request.correlationId,
-          answer: input.answer,
-          resolvedBy: "telegram",
-          now: input.now,
-          expected: {
-            machineId: request.machineId,
-            harness: request.harness,
-            sessionId: request.sessionId,
-            ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
-          },
-        }),
+        resolution:
+          request.requestKind === "select"
+            ? this.resolveNumberedChoice(
+                request,
+                input.answer,
+                input.now,
+                input.numberedChoiceMinimumOptions ?? Number.MAX_SAFE_INTEGER,
+              )
+            : this.resolveRequest({
+                correlationId: request.correlationId,
+                answer: input.answer,
+                resolvedBy: "telegram",
+                now: input.now,
+                expected: {
+                  machineId: request.machineId,
+                  harness: request.harness,
+                  sessionId: request.sessionId,
+                  ...(request.turnId === undefined
+                    ? {}
+                    : { turnId: request.turnId }),
+                },
+              }),
       };
     })();
   }

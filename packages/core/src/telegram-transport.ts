@@ -5,6 +5,10 @@ import { sha256 } from "@agent-relay/protocol";
 import { cardActionCallbackData } from "./card-action.js";
 import { renderDeliveryText } from "./message.js";
 import { redactText } from "./redaction.js";
+import {
+  choiceCallbackData,
+  TELEGRAM_INLINE_CHOICE_LIMIT,
+} from "./telegram-choice.js";
 import type {
   DeliveryContext,
   DeliveryMessage,
@@ -230,10 +234,14 @@ function rowsOf<T>(items: T[], size: number): T[][] {
 function inlineKeyboard(
   message: DeliveryMessage,
 ): Array<Array<{ text: string; callback_data: string }>> {
-  const choiceButtons = (message.choices ?? []).map((choice) => ({
-    text: choice.label,
-    callback_data: `relay:${choice.token}`,
-  }));
+  const choices = message.choices ?? [];
+  const choiceButtons =
+    choices.length > TELEGRAM_INLINE_CHOICE_LIMIT
+      ? []
+      : choices.map((choice) => ({
+          text: choice.label,
+          callback_data: choiceCallbackData(choice.token),
+        }));
   const actionButtons = (message.actions ?? []).map((action) => ({
     text: action.label,
     callback_data: cardActionCallbackData(action.kind, action.token),

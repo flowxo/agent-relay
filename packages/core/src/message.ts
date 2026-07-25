@@ -2,6 +2,7 @@ import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 
 import { cardActionToken, type CardActionKind } from "./card-action.js";
 import { redactText } from "./redaction.js";
+import { TELEGRAM_INLINE_CHOICE_LIMIT } from "./telegram-choice.js";
 import { sessionTopicMetadata } from "./topic.js";
 import type { DeliveryAction, DeliveryMessage } from "./transport.js";
 
@@ -196,8 +197,20 @@ export function renderDeliveryMessage(
 }
 
 export function renderDeliveryText(message: DeliveryMessage): string {
+  const numberedChoices =
+    message.choices !== undefined &&
+    message.choices.length > TELEGRAM_INLINE_CHOICE_LIMIT
+      ? [
+          "",
+          "Reply with one option number:",
+          ...message.choices.map(
+            (choice, index) =>
+              `${String(index + 1)}. ${oneLineUntrusted(choice.label)}`,
+          ),
+        ].join("\n")
+      : "";
   return redactText(
-    `${message.title}\n\n${message.text}`,
+    `${message.title}\n\n${message.text}${numberedChoices}`,
     TELEGRAM_MESSAGE_LIMIT,
   );
 }

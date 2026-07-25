@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { TelegramBotTransport } from "./telegram-transport.js";
@@ -7,6 +11,12 @@ const message = {
   title: "Codex · example",
   text: "Waiting",
 };
+const fixtures = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "fixtures",
+  "telegram",
+);
 
 describe("TelegramBotTransport", () => {
   it("creates a private topic and delivers into its message thread", async () => {
@@ -649,6 +659,14 @@ describe("TelegramBotTransport", () => {
       text: "Details",
       callback_data: "relay-card:v1:d:card_0123456789abcdef0123456789abcdef",
     });
+    expect(firstBody).toEqual(
+      JSON.parse(
+        readFileSync(
+          join(fixtures, "single-choice-send-message.v10.2.json"),
+          "utf8",
+        ),
+      ),
+    );
     expect(firstBody).not.toHaveProperty("parse_mode");
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
       "answerCallbackQuery",
@@ -671,6 +689,41 @@ describe("TelegramBotTransport", () => {
       },
     });
     expect(String(fetchMock.mock.calls[3]?.[0])).toContain("editMessageText");
+  });
+
+  it("falls back to numbered text when a choice set exceeds the compact button budget", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, result: { message_id: 45, date: 0 } }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+    const choices = Array.from({ length: 11 }, (_, index) => ({
+      token: `decision_${String(index + 1).padStart(16, "0")}`,
+      label: `Synthetic choice ${String(index + 1)}`,
+    }));
+
+    await transport.deliver(
+      { ...message, choices },
+      { idempotencyKey: "evt_numbered_fallback_12345678" },
+    );
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      text: string;
+      reply_markup?: unknown;
+    };
+    expect(body.reply_markup).toBeUndefined();
+    expect(body.text).toContain("Reply with one option number:");
+    expect(body.text).toContain("11. Synthetic choice 11");
+    expect(body.text).not.toContain("decision_");
   });
 
   it("long-polls only supported reply updates and returns validated update ids", async () => {

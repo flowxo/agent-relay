@@ -1,0 +1,21 @@
+{
+  "chat_id": "10001",
+  "text": "Codex · example\n\nWaiting",
+  "disable_web_page_preview": true,
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "Allow once",
+          "callback_data": "relay:decision_opaque_12345678"
+        }
+      ],
+      [
+        {
+          "text": "Details",
+          "callback_data": "relay-card:v1:d:card_0123456789abcdef0123456789abcdef"
+        }
+      ]
+    ]
+  }
+}

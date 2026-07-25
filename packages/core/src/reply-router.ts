@@ -14,7 +14,15 @@ import {
   renderDeliveryText,
   type AttentionCardResolutionState,
 } from "./message.js";
-import type { RelayStore, ResolutionResult } from "./store.js";
+import type {
+  NumberedChoiceResolutionResult,
+  RelayStore,
+  ResolutionResult,
+} from "./store.js";
+import {
+  parseChoiceCallbackData,
+  TELEGRAM_INLINE_CHOICE_LIMIT,
+} from "./telegram-choice.js";
 import type { NotificationTransport } from "./transport.js";
 import {
   asTransportError,
@@ -54,7 +62,7 @@ const callbackSchema = z
   .object({
     id: z.string().min(1),
     from: userSchema,
-    data: z.string().min(1).optional(),
+    data: z.string().min(1).max(128).optional(),
     message: messageSchema.optional(),
   })
   .passthrough();
@@ -80,6 +88,7 @@ export type ReplyRouteOutcome =
   | "uncorrelated"
   | "no-eligible-request"
   | "ambiguous-request"
+  | "invalid-choice"
   | "malformed"
   | "unsupported"
   | "action-completed"
@@ -90,7 +99,7 @@ export type ReplyRouteOutcome =
 export interface ReplyRouteResult {
   outcome: ReplyRouteOutcome;
   updateId?: number;
-  resolution?: ResolutionResult;
+  resolution?: NumberedChoiceResolutionResult;
 }
 
 type TelegramCallback = NonNullable<TelegramUpdate["callback_query"]>;
@@ -102,7 +111,9 @@ export interface TelegramReplyRouterOptions {
   logger?: RelayLogger;
 }
 
-function routeOutcome(result: ResolutionResult): ReplyRouteOutcome {
+function routeOutcome(
+  result: NumberedChoiceResolutionResult,
+): ReplyRouteOutcome {
   switch (result.outcome) {
     case "answered":
       return "answered";
@@ -117,6 +128,8 @@ function routeOutcome(result: ResolutionResult): ReplyRouteOutcome {
     case "not_found":
     case "identity_mismatch":
       return "uncorrelated";
+    case "invalid_choice":
+      return "invalid-choice";
   }
 }
 
@@ -192,12 +205,26 @@ export class TelegramReplyRouter {
         messageId,
         event === undefined
           ? `Agent Relay request state: ${result.outcome}`
-          : renderDeliveryText(
-              renderDeliveryMessage(event, {
+          : (() => {
+              const rendered = renderDeliveryMessage(event, {
                 now: this.now(),
                 resolutionState: cardResolutionState(result),
-              }),
-            ),
+              });
+              const selected =
+                result.request?.answer === undefined
+                  ? undefined
+                  : result.request.options.find(
+                      (option) => option.optionId === result.request?.answer,
+                    );
+              return renderDeliveryText(
+                selected === undefined
+                  ? rendered
+                  : {
+                      ...rendered,
+                      text: `${rendered.text}\n\nSelected: ${selected.label}`,
+                    },
+              );
+            })(),
       );
     } catch (error) {
       this.logger.log({
@@ -256,7 +283,7 @@ export class TelegramReplyRouter {
   private async sendTopicGuidance(
     updateId: number,
     topicId: string,
-    kind: "none" | "ambiguous" | "incompatible",
+    kind: "none" | "ambiguous" | "incompatible" | "invalid-choice",
   ): Promise<void> {
     const guidance = {
       none: {
@@ -270,6 +297,10 @@ export class TelegramReplyRouter {
       incompatible: {
         title: "Agent Relay · use the request buttons",
         text: "That request requires a button choice. Ordinary topic text was not used as an answer.",
+      },
+      "invalid-choice": {
+        title: "Agent Relay · invalid option",
+        text: "Reply with one number shown on the open choice card. The request is still waiting.",
       },
     }[kind];
     const idempotencyKey = `guidance_${sha256(
@@ -319,6 +350,7 @@ export class TelegramReplyRouter {
       topicId,
       answer,
       now: receivedAt,
+      numberedChoiceMinimumOptions: TELEGRAM_INLINE_CHOICE_LIMIT,
     });
     if (
       correlation.outcome === "topic_not_found" ||
@@ -349,6 +381,19 @@ export class TelegramReplyRouter {
     }
 
     const resolution = correlation.resolution;
+    if (resolution.outcome === "invalid_choice") {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.topic-text-invalid-choice",
+        "Numbered choice text did not identify an option on the correlated request",
+      );
+      await this.sendTopicGuidance(updateId, topicId, "invalid-choice");
+      return {
+        outcome: "invalid-choice",
+        updateId,
+        resolution,
+      };
+    }
     if (correlation.request.transportMessageId !== undefined) {
       await this.editResolved(
         correlation.request.transportMessageId,
@@ -367,6 +412,118 @@ export class TelegramReplyRouter {
       route.outcome === "answered" ? "info" : "warn",
     );
     return route;
+  }
+
+  private async rejectChoiceCallback(
+    callback: TelegramCallback,
+    updateId: number,
+    code: string,
+    response: string,
+  ): Promise<ReplyRouteResult> {
+    this.diagnoseCardCallback(updateId, code, response);
+    await this.acknowledge(callback.id, response);
+    return { outcome: "uncorrelated", updateId };
+  }
+
+  private async handleChoiceCallback(
+    callback: TelegramCallback,
+    token: string,
+    updateId: number,
+    receivedAt: string,
+  ): Promise<ReplyRouteResult> {
+    const request = this.store.getPendingForOptionToken(token);
+    const messageId =
+      callback.message === undefined
+        ? undefined
+        : String(callback.message.message_id);
+    const receipt =
+      request === undefined
+        ? undefined
+        : this.store.getEventTransportReceipt(request.eventId);
+    if (request === undefined || receipt === undefined) {
+      return await this.rejectChoiceCallback(
+        callback,
+        updateId,
+        "telegram.choice-unknown",
+        "Stale or invalid choice",
+      );
+    }
+    if (
+      messageId === undefined ||
+      request.transportMessageId !== messageId ||
+      receipt.transportName !== this.transport.name ||
+      receipt.messageId !== messageId
+    ) {
+      return await this.rejectChoiceCallback(
+        callback,
+        updateId,
+        "telegram.choice-session-mismatch",
+        "This choice belongs to a different or stale session card",
+      );
+    }
+    if (isTopicTransport(this.transport)) {
+      const topic = this.store.getSessionTopic({
+        machineId: request.machineId,
+        harness: request.harness,
+        sessionId: request.sessionId,
+        transportName: this.transport.name,
+        transportScope: this.transport.topicScope,
+      });
+      if (
+        topic?.provisioningStatus !== "ready" ||
+        topic.topicId === undefined ||
+        callback.message?.message_thread_id === undefined ||
+        String(callback.message.message_thread_id) !== topic.topicId
+      ) {
+        return await this.rejectChoiceCallback(
+          callback,
+          updateId,
+          "telegram.choice-topic-mismatch",
+          "This choice belongs to a different or stale topic",
+        );
+      }
+    }
+
+    const resolution = this.store.resolveOptionToken(
+      token,
+      "telegram",
+      receivedAt,
+      {
+        machineId: request.machineId,
+        harness: request.harness,
+        sessionId: request.sessionId,
+        ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+        transportMessageId: messageId,
+      },
+    );
+    if (
+      resolution.outcome === "not_found" ||
+      resolution.outcome === "identity_mismatch"
+    ) {
+      return await this.rejectChoiceCallback(
+        callback,
+        updateId,
+        "telegram.choice-session-mismatch",
+        "This choice belongs to a different or stale session card",
+      );
+    }
+
+    const acknowledgement = {
+      answered: "Recorded",
+      duplicate: "Already handled",
+      expired: "Request expired",
+      cancelled: "Request canceled",
+      failed: "Request failed",
+    }[resolution.outcome];
+    // SQLite is the answer authority. Acknowledge only after its transaction
+    // commits so Telegram can never claim an unrecorded selection succeeded.
+    await this.acknowledge(callback.id, acknowledgement);
+    await this.editResolved(messageId, resolution);
+    return {
+      outcome: routeOutcome(resolution),
+      updateId,
+      resolution,
+    };
   }
 
   private async rejectCardCallback(
@@ -623,11 +780,16 @@ export class TelegramReplyRouter {
       const callback = update.callback_query;
       const chatId = callback.message?.chat.id;
       if (chatId === undefined || !this.authorized(callback.from.id, chatId)) {
-        if (callback.data?.startsWith("relay-card:") === true) {
+        if (
+          callback.data?.startsWith("relay-card:") === true ||
+          callback.data?.startsWith("relay:") === true
+        ) {
           this.diagnoseCardCallback(
             update.update_id,
-            "telegram.card-action-unauthorized",
-            "Unauthorized card action callback",
+            callback.data.startsWith("relay-card:")
+              ? "telegram.card-action-unauthorized"
+              : "telegram.choice-unauthorized",
+            "Unauthorized Telegram callback",
           );
         }
         await this.acknowledge(callback.id, "Not authorized");
@@ -647,30 +809,25 @@ export class TelegramReplyRouter {
                 cardAction,
                 update.update_id,
               );
-      } else if (
-        callback.data === undefined ||
-        !callback.data.startsWith("relay:")
-      ) {
+      } else if (callback.data === undefined) {
         await this.acknowledge(callback.id, "Stale or invalid choice");
         route = { outcome: "uncorrelated", updateId: update.update_id };
       } else {
-        await this.acknowledge(callback.id, "Recorded");
-        const resolution = this.store.resolveOptionToken(
-          callback.data.slice("relay:".length),
-          "telegram",
-          receivedAt,
-        );
-        if (callback.message !== undefined) {
-          await this.editResolved(
-            String(callback.message.message_id),
-            resolution,
-          );
-        }
-        route = {
-          outcome: routeOutcome(resolution),
-          updateId: update.update_id,
-          resolution,
-        };
+        const token = parseChoiceCallbackData(callback.data);
+        route =
+          token === undefined
+            ? await this.rejectChoiceCallback(
+                callback,
+                update.update_id,
+                "telegram.choice-malformed",
+                "Stale or invalid choice",
+              )
+            : await this.handleChoiceCallback(
+                callback,
+                token,
+                update.update_id,
+                receivedAt,
+              );
       }
     } else if (update.message !== undefined) {
       const message = update.message;
@@ -735,6 +892,43 @@ export class TelegramReplyRouter {
               "Explicit reply did not match a request in the same session topic",
             );
             route = { outcome: "uncorrelated", updateId: update.update_id };
+          } else if (
+            request.requestKind === "select" &&
+            request.options.length > TELEGRAM_INLINE_CHOICE_LIMIT
+          ) {
+            const resolution = this.store.resolveTransportNumberedChoice(
+              targetMessageId,
+              message.text,
+              receivedAt,
+              TELEGRAM_INLINE_CHOICE_LIMIT,
+              {
+                machineId: topic.machineId,
+                harness: topic.harness,
+                sessionId: topic.sessionId,
+                ...(request.turnId === undefined
+                  ? {}
+                  : { turnId: request.turnId }),
+              },
+            );
+            if (resolution.outcome === "invalid_choice") {
+              this.diagnoseTextCorrelation(
+                update.update_id,
+                "telegram.topic-text-invalid-choice",
+                "Explicit numbered choice did not identify an option on the correlated request",
+              );
+              await this.sendTopicGuidance(
+                update.update_id,
+                topicId,
+                "invalid-choice",
+              );
+            } else {
+              await this.editResolved(targetMessageId, resolution);
+            }
+            route = {
+              outcome: routeOutcome(resolution),
+              updateId: update.update_id,
+              resolution,
+            };
           } else if (
             request.requestKind !== "input" &&
             request.requestKind !== "continuation"

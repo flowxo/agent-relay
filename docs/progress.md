@@ -160,6 +160,17 @@
   `docs/structured-interactions.md` document the lifecycle, privacy boundary,
   provider fallback vocabulary, and non-duplicating projection to the blocked
   FXO-1048 Notifications contract consumer.
+- FXO-1062 is green locally. Single-choice requests with up to ten options use
+  opaque bounded Telegram callback tokens; callbacks are bound to the retained
+  request, delivered message, transport, session, topic, chat, and operator.
+  SQLite commits before callback acknowledgement, and resolved cards show the
+  selected label with their keyboards removed. Eleven through twenty options use
+  a correlated numbered-text fallback without truncation. Fake-transport tests
+  prove success, same-update and repeated-tap duplicates, expiry, malformed and
+  unknown tokens, wrong operator, wrong topic, cross-session rejection, invalid
+  numbers, and first-writer-wins behavior. The Telegram Bot API 10.2 request
+  shape is retained as a sanitized fixture; current official documentation
+  confirms the 64-byte callback-data boundary.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -212,7 +223,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 170 tests across 24 test files, including the
+- `pnpm check` passes all 178 tests across 25 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -305,5 +316,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1062 single-choice Telegram interactions against the new
-provider-neutral contract.
+Implement FXO-1061 durable multi-select drafts with toggle, Submit, and Cancel
+semantics.

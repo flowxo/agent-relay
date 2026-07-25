@@ -95,6 +95,39 @@ describe("AgentAttentionEventV1Schema", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("accepts twenty bounded select options and rejects a twenty-first", () => {
+    const request = {
+      correlationId: "correlation_select_12345678",
+      kind: "select" as const,
+      question: "Choose one",
+      options: Array.from({ length: 20 }, (_, index) => ({
+        id: `option_${String(index + 1).padStart(8, "0")}`,
+        label: `Choice ${String(index + 1)}`,
+      })),
+      expiresAt: "2026-07-24T12:05:00.000Z",
+    };
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request,
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: {
+          ...request,
+          options: [
+            ...request.options,
+            { id: "option_00000021", label: "Choice 21" },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("AgentCommandV1Schema", () => {

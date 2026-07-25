@@ -124,7 +124,7 @@ export const AttentionRequestSchema = z
           .strict(),
       )
       .min(2)
-      .max(6)
+      .max(20)
       .optional(),
     expiresAt: isoTimestamp,
   })

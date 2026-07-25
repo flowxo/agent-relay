@@ -105,6 +105,42 @@ request is rejected. A hosted response remains evidence only: Agent Relay
 validates local request identity, question kind, options, ordering, and expiry,
 then commits through the existing local first-writer-wins transition.
 
+## Telegram single-choice projection
+
+The tested Telegram boundary is Bot API 10.2. The current official
+[InlineKeyboardButton](https://core.telegram.org/bots/api#inlinekeyboardbutton)
+contract limits `callback_data` to 1–64 bytes, and
+[CallbackQuery](https://core.telegram.org/bots/api#callbackquery) requires the
+bot to answer a callback so the client can clear its progress indicator.
+Telegram documents inline keyboards as arrays of button rows but does not
+publish a total button-count limit.
+
+Agent Relay therefore applies a product-level compactness budget:
+
+- two through ten options render as inline buttons, two per row;
+- callback data is `relay:` plus a random `decision_` token, bounded to 63 ASCII
+  bytes; labels, option IDs, request IDs, paths, and credentials are never
+  callback data;
+- eleven through twenty options render as a numbered list with no choice
+  buttons; the operator replies with one displayed number in the exact session
+  topic or explicitly replies to the request card; and
+- more than twenty options are rejected by the versioned protocol rather than
+  being truncated.
+
+The numbered fallback retains every option and uses the same durable option-ID
+mapping as a button. Plain topic text is accepted only when the topic has one
+eligible free-text, continuation, or numbered-choice request. An invalid number
+leaves the request open and produces bounded guidance. An explicit reply may
+identify the oversized request even when other requests are pending.
+
+A button callback is authorized against the configured operator and chat, then
+bound to the retained option token, delivered message ID, transport, session
+identity, and ready topic ID. SQLite commits the first valid option ID before
+`answerCallbackQuery` is called. The card is then edited to remove its keyboard
+and show both terminal state and the selected label. Duplicate, expired,
+unknown, malformed, wrong-topic, and cross-session callbacks never replace the
+durable first answer.
+
 ## Fixtures and compatibility
 
 Sanitized fixtures live in `packages/protocol/fixtures/interactions`. They

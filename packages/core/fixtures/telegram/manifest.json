@@ -1,0 +1,19 @@
+{
+  "schema": "agent-relay-telegram-fixtures.v1",
+  "capturedAt": "2026-07-25",
+  "botApiVersion": "10.2",
+  "scope": "private chat with topics enabled",
+  "fixtures": [
+    {
+      "file": "single-choice-send-message.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Sanitized from the request shape exercised by the credentialed private-topic activation",
+      "sanitization": [
+        "chat ID replaced",
+        "message and event content replaced",
+        "decision and card tokens replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    }
+  ]
+}
