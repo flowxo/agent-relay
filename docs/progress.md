@@ -125,6 +125,29 @@
   stable actionable codes. The living guide covers BotFather enablement, ID
   discovery, private environment activation, preflight, verification, recovery,
   and the explicit fake-only credential-free fallback.
+- FXO-1059's fake acceptance matrix is green. The SQLite-backed fake transport
+  suite proves two-session isolation, event and update deduplication, retry,
+  daemon lease/restart recovery, malformed callbacks, timeout, stale-answer
+  rejection, deleted-topic replacement without General fallback, and
+  supervisor-proven crash delivery. The evidence is spread across the focused
+  service, topic registry, card action, reply router, canary, and supervisor
+  tests so each failure boundary can be reproduced independently.
+- A credentialed Phase 1 Codex acceptance run on 2026-07-25 used the installed
+  `codex-cli 0.145.0` Stop hook and Telegram Bot API 10.2. It proved lazy
+  private topic creation, separate topics for concurrent supervised sessions,
+  compact cards, direct topic-text correlation, Continue-button correlation,
+  exact-session read-only resume, and durable SQLite answered/succeeded state
+  with exit code zero for both interaction paths. Identifiers, prompts, answers,
+  topic IDs, message IDs, credentials, and machine paths were not retained in
+  git.
+- The live Phase 1 run exposed two reliability defects before acceptance.
+  Telegram can attach reply metadata that does not identify a request to
+  ordinary topic text; the router now falls back only to the same topic's single
+  eligible request while retaining strict stale, ambiguous, cross-topic, and
+  button-only rejection. A daemon restart also caused a waiting supervisor to
+  abandon its claim loop; claim failures now emit one durable diagnostic, retry
+  with bounded backoff through the configured wait window, and log recovery.
+  Both defects have regression tests.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -177,7 +200,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 159 tests across 22 test files, including the
+- `pnpm check` passes all 161 tests across 22 test files, including the
   SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
   privacy, inline and late continuation, owned-child exit observation, stale
   answer rejection, concurrent-session isolation, installation rollback,
@@ -185,6 +208,57 @@
   canary. The check also validates formatting, lint, types, capability drift,
   and compiled package exports. `pnpm audit --prod` reports no known
   vulnerabilities.
+
+## Phase 1 reproduction
+
+Run the deterministic acceptance matrix without credentials:
+
+```sh
+corepack pnpm install --frozen-lockfile
+pnpm check
+pnpm audit --prod
+```
+
+Run the credentialed boundary from a private, mode-`0600`, gitignored
+`.env.activation` prepared as described in `docs/onboarding.md`:
+
+```sh
+pnpm build
+set -a
+. ./.env.activation
+set +a
+
+node apps/relay/dist/cli.js doctor
+node apps/relay/dist/cli.js daemon
+```
+
+In a second terminal with the same environment, launch one bounded read-only
+Codex continuation and keep the process open:
+
+```sh
+~/.agent-relay/bin/agent-relay run codex \
+  --harness-version "$(codex --version)" \
+  --max-resumes 1 \
+  --resume-wait-ms 3600000 \
+  -- exec --sandbox read-only \
+  "Return a short sentinel and stop. If resumed, return the operator answer and stop."
+```
+
+In the new session topic, either tap **Continue** or type one direct answer
+while exactly one request is open. Confirm the resumed child exits zero, then
+inspect only state metadata:
+
+```sh
+sqlite3 "$HOME/.agent-relay/relay.sqlite" \
+  "SELECT request_kind,state,resolved_by,COUNT(*) FROM pending_requests GROUP BY request_kind,state,resolved_by;"
+sqlite3 "$HOME/.agent-relay/relay.sqlite" \
+  "SELECT state,exit_code,COUNT(*) FROM resume_commands GROUP BY state,exit_code;"
+```
+
+The live proof is valid only when the Telegram topic/card appears, the
+supervisor reports `resume.succeeded`, and SQLite shows a Telegram-resolved
+request plus a succeeded exit-zero resume. The daemon and supervisor logs must
+also remain free of silent delivery, hook, or correlation failures.
 
 ## Assumptions and open risks
 
@@ -199,10 +273,10 @@
   normal duplicate messages and concurrent topic creators, but a process crash
   or ambiguous timeout after Telegram accepts a message or topic and before the
   receipt commits remains an at-least-once duplicate window.
-- The real Telegram activation proves one private-chat send/reply path. Rate
-  limiting, network retries, webhook intake, and shutdown remain proven through
-  deterministic HTTP fixtures rather than induced failures against the live
-  account.
+- The real Telegram activation proves private-topic creation and direct
+  private-chat interaction on the tested account. Rate limiting, network
+  retries, webhook intake, and shutdown remain proven through deterministic HTTP
+  fixtures rather than induced failures against the live account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
@@ -219,5 +293,4 @@
 
 ## Next action
 
-Run the FXO-1059 credentialed multi-topic/card/direct-text proof and close the
-Phase 1 acceptance checklist.
+Begin Phase 2 structured question contracts with FXO-1060.

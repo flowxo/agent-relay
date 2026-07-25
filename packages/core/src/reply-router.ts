@@ -306,6 +306,69 @@ export class TelegramReplyRouter {
     }
   }
 
+  private async resolvePlainTopicText(
+    updateId: number,
+    topicId: string,
+    answer: string,
+    receivedAt: string,
+    transportScope: string,
+  ): Promise<ReplyRouteResult> {
+    const correlation = this.store.resolveTopicText({
+      transportName: this.transport.name,
+      transportScope,
+      topicId,
+      answer,
+      now: receivedAt,
+    });
+    if (
+      correlation.outcome === "topic_not_found" ||
+      correlation.outcome === "no_eligible_request"
+    ) {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.topic-text-no-eligible-request",
+        "Plain topic text had no eligible request in its session topic",
+      );
+      await this.sendTopicGuidance(updateId, topicId, "none");
+      return {
+        outcome: "no-eligible-request",
+        updateId,
+      };
+    }
+    if (correlation.outcome === "ambiguous_request") {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.topic-text-ambiguous-request",
+        "Plain topic text matched more than one eligible request",
+      );
+      await this.sendTopicGuidance(updateId, topicId, "ambiguous");
+      return {
+        outcome: "ambiguous-request",
+        updateId,
+      };
+    }
+
+    const resolution = correlation.resolution;
+    if (correlation.request.transportMessageId !== undefined) {
+      await this.editResolved(
+        correlation.request.transportMessageId,
+        resolution,
+      );
+    }
+    const route = {
+      outcome: routeOutcome(resolution),
+      updateId,
+      resolution,
+    };
+    this.diagnoseTextCorrelation(
+      updateId,
+      `telegram.topic-text-${route.outcome}`,
+      `Plain topic text correlation outcome: ${route.outcome}`,
+      route.outcome === "answered" ? "info" : "warn",
+    );
+    return route;
+  }
+
   private async rejectCardCallback(
     callback: TelegramCallback,
     updateId: number,
@@ -650,14 +713,17 @@ export class TelegramReplyRouter {
           if (request === undefined) {
             this.diagnoseTextCorrelation(
               update.update_id,
-              "telegram.topic-text-no-eligible-request",
-              "Explicit topic reply did not identify an eligible retained request",
+              "telegram.topic-text-reply-fallback",
+              "Reply target was not a retained request; correlating by the exact session topic",
+              "info",
             );
-            await this.sendTopicGuidance(update.update_id, topicId, "none");
-            route = {
-              outcome: "no-eligible-request",
-              updateId: update.update_id,
-            };
+            route = await this.resolvePlainTopicText(
+              update.update_id,
+              topicId,
+              message.text,
+              receivedAt,
+              this.transport.topicScope,
+            );
           } else if (
             request.machineId !== topic.machineId ||
             request.harness !== topic.harness ||
@@ -712,62 +778,13 @@ export class TelegramReplyRouter {
             );
           }
         } else {
-          const correlation = this.store.resolveTopicText({
-            transportName: this.transport.name,
-            transportScope: this.transport.topicScope,
+          route = await this.resolvePlainTopicText(
+            update.update_id,
             topicId,
-            answer: message.text,
-            now: receivedAt,
-          });
-          if (
-            correlation.outcome === "topic_not_found" ||
-            correlation.outcome === "no_eligible_request"
-          ) {
-            this.diagnoseTextCorrelation(
-              update.update_id,
-              "telegram.topic-text-no-eligible-request",
-              "Plain topic text had no eligible request in its session topic",
-            );
-            await this.sendTopicGuidance(update.update_id, topicId, "none");
-            route = {
-              outcome: "no-eligible-request",
-              updateId: update.update_id,
-            };
-          } else if (correlation.outcome === "ambiguous_request") {
-            this.diagnoseTextCorrelation(
-              update.update_id,
-              "telegram.topic-text-ambiguous-request",
-              "Plain topic text matched more than one eligible request",
-            );
-            await this.sendTopicGuidance(
-              update.update_id,
-              topicId,
-              "ambiguous",
-            );
-            route = {
-              outcome: "ambiguous-request",
-              updateId: update.update_id,
-            };
-          } else {
-            const resolution = correlation.resolution;
-            if (correlation.request.transportMessageId !== undefined) {
-              await this.editResolved(
-                correlation.request.transportMessageId,
-                resolution,
-              );
-            }
-            route = {
-              outcome: routeOutcome(resolution),
-              updateId: update.update_id,
-              resolution,
-            };
-            this.diagnoseTextCorrelation(
-              update.update_id,
-              `telegram.topic-text-${route.outcome}`,
-              `Plain topic text correlation outcome: ${route.outcome}`,
-              route.outcome === "answered" ? "info" : "warn",
-            );
-          }
+            message.text,
+            receivedAt,
+            this.transport.topicScope,
+          );
         }
       } else if (message.reply_to_message === undefined) {
         route = { outcome: "unsupported", updateId: update.update_id };

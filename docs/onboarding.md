@@ -273,7 +273,10 @@ Agent Relay never searches another topic. If no eligible request exists, it
 posts guidance without consuming the text as an answer. If more than one is
 eligible, it asks you to reply to the specific request card rather than
 guessing. Button-only confirmations, selections, and permissions cannot be
-answered by ordinary topic chatter.
+answered by ordinary topic chatter. Some Telegram clients attach automatic reply
+metadata to ordinary topic text. When that metadata does not identify a retained
+request, Agent Relay still applies the exact-topic, exactly-one-open request
+rule. A known stale or cross-topic request remains rejected.
 
 ## 6. Prove the Telegram interaction loop
 

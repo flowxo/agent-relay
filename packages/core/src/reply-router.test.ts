@@ -159,6 +159,58 @@ describe("Telegram reply correlation", () => {
     runtime.store.close();
   });
 
+  it("ignores non-request reply metadata when one topic request is unambiguous", async () => {
+    const runtime = await setup();
+    const input = questionEvent(
+      "correlation_automatic_topic_reply",
+      "session_automatic_topic_reply",
+      1,
+      "continuation",
+    );
+    runtime.service.ingest(input);
+    await runtime.service.drain();
+    const delivery = runtime.transport.deliveries[0];
+
+    const result = await runtime.router.handle({
+      update_id: 114,
+      message: {
+        message_id: 514,
+        message_thread_id: Number(delivery?.context.topicId),
+        from: { id: 7001 },
+        chat: { id: 9001 },
+        text: "Continue despite automatic topic reply metadata",
+        reply_to_message: {
+          message_id: 999_999,
+        },
+      },
+    });
+
+    expect(result).toMatchObject({ outcome: "answered" });
+    expect(
+      runtime.store.getPendingRequest("correlation_automatic_topic_reply"),
+    ).toMatchObject({
+      state: "answered",
+      answer: "Continue despite automatic topic reply metadata",
+      resolvedBy: "telegram",
+    });
+    expect(runtime.store.listDiagnostics()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "info",
+          code: "telegram.topic-text-reply-fallback",
+        }),
+        expect.objectContaining({
+          level: "info",
+          code: "telegram.topic-text-answered",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(runtime.store.listDiagnostics())).not.toContain(
+      "Continue despite automatic topic reply metadata",
+    );
+    runtime.store.close();
+  });
+
   it("guides without guessing when zero or multiple text requests are eligible", async () => {
     const runtime = await setup();
     const structured = questionEvent(

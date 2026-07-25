@@ -4,10 +4,11 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   FakeTelegramTransport,
+  MemoryLogger,
   RelayService,
   RelayStore,
   TelegramReplyRouter,
@@ -430,6 +431,89 @@ describe("opt-in harness supervisor", () => {
         exitCode: 0,
       }),
     ]);
+    await runtime.close();
+  });
+
+  it("keeps polling through a transient daemon outage", async () => {
+    const runtime = await setup();
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-supervisor-"));
+    const fallbackPath = join(directory, "fallback.ndjson");
+    const logger = new MemoryLogger();
+    let invocationCount = 0;
+    const runner = async (): Promise<OwnedChildResult> => {
+      invocationCount += 1;
+      if (invocationCount === 1) {
+        await runHook({
+          harness: "codex",
+          surface: "cli",
+          harnessVersion: "0.145.0",
+          raw: codexStop,
+          machineId,
+          bridgeSessionId,
+          occurredAt: "2026-07-24T12:00:00.000Z",
+          client: runtime.client,
+          lateResume: true,
+          lateResumeTtlMs: 60_000,
+        });
+        await runtime.service.drain();
+        const delivery = runtime.transport.deliveries[0];
+        await runtime.router.handle({
+          update_id: 750,
+          message: {
+            message_id: 751,
+            message_thread_id: Number(delivery?.context.topicId),
+            from: { id: 7001 },
+            chat: { id: 9001 },
+            text: "Continue after the daemon restarts",
+          },
+        });
+      }
+      return childResult();
+    };
+    const claim = runtime.client.claimNextResume.bind(runtime.client);
+    vi.spyOn(runtime.client, "claimNextResume")
+      .mockRejectedValueOnce(new TypeError("synthetic connection refused"))
+      .mockImplementation(claim);
+
+    const result = await runSupervisor({
+      harness: "codex",
+      harnessVersion: "0.145.0",
+      machineId,
+      bridgeSessionId,
+      supervisorId,
+      cwd: "/workspace/example",
+      initialInvocation: { executable: "synthetic-codex", args: ["exec"] },
+      client: runtime.client,
+      fallbackPath,
+      logger,
+      childRunner: runner,
+      resumeWaitMs: 1_000,
+      pollIntervalMs: 25,
+      maxResumes: 1,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      classification: "clean-exit",
+      resumed: 1,
+    });
+    expect(invocationCount).toBe(2);
+    expect(logger.records.map((record) => record.code)).toEqual(
+      expect.arrayContaining([
+        "supervisor.resume-claim-retrying",
+        "supervisor.resume-claim-recovered",
+      ]),
+    );
+    const fallback = JSON.parse(
+      (await readFile(fallbackPath, "utf8")).trim(),
+    ) as Record<string, unknown>;
+    expect(fallback).toMatchObject({
+      schema: "agent-relay-fallback.v1",
+      kind: "diagnostic",
+      payload: {
+        code: "resume-claim-retrying",
+      },
+    });
     await runtime.close();
   });
 

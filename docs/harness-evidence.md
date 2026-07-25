@@ -58,8 +58,8 @@ Bot API 10.2. The current contract documents `createForumTopic` for forum
 supergroups and private bot chats, a 1-128-character topic name, and
 `message_thread_id` on `sendMessage`. Agent Relay's deterministic HTTP fixtures
 cover the documented success and malformed-response shapes. A credentialed
-private-topic creation has not yet been captured, so that boundary remains
-contract-tested rather than live-proven.
+2026-07-25 activation also created and reused private topics for several
+independent Codex sessions; no live identifier or message was retained.
 
 Local reply intake defaults to `getUpdates` long polling because the daemon
 binds to loopback. The implementation sends an offset one greater than the
@@ -162,8 +162,11 @@ button-only requests reject ordinary chatter. Explicit replies additionally bind
 the replied-to delivery to the same session topic. Concurrent messages,
 duplicates, stale replies, unauthorized senders, cross-topic attempts, and
 guidance-delivery failures are covered without retaining rejected text in
-diagnostics. This behavior is fake-transport proven; a live direct-topic-text
-activation is not yet claimed.
+diagnostics. Some Telegram clients attach reply metadata that does not identify
+a request to ordinary topic text. A sanitized regression fixture proves that
+this shape falls back only to exact-topic correlation when one eligible request
+exists; known stale, cross-topic, ambiguous, and button-only targets remain
+strict. The credentialed continuation below also live-proved this fallback.
 
 A credentialed private-chat activation was run on 2026-07-24. The Bot API
 accepted the synthetic canary notification, loopback long polling received the
@@ -189,6 +192,13 @@ as fixtures.
   read-only-to-full-access sandbox widening. After late-resume policy was made
   fail-closed, the exact-session canary was repeated and the resumed CLI
   reported `read-only`.
+- Phase 1 multi-session acceptance: concurrent supervised Codex stops created
+  distinct private topics and compact cards. One direct topic-text answer and
+  one Continue button were each durably correlated to their own session, resumed
+  the exact Codex session in read-only mode, returned the expected sentinel, and
+  recorded a succeeded exit-zero resume. Earlier intentionally bounded
+  supervisors closed before two late actions arrived; those late actions remain
+  resolution evidence but are not counted as resume evidence.
 - Claude Code `2.1.219`: an invalid initial argv combination exited non-zero and
   produced a real owned-child crash notification. The corrected `--print`
   invocation emitted Stop, delivered it to Telegram, correlated the reply to the
@@ -207,10 +217,14 @@ resume polls can amplify logs. Activation now waits for the durable delivery
 receipt, while expected `waiting` polls are silent. A `--max-resumes` bound
 prevents the last permitted resumed child from opening an orphan continuation
 request. Supervised version metadata overrides the install-time hook version.
-Cursor workspace trust is distinct from `--force`. A terminal interrupt that a
-child normalizes to status 130 or 143 is expected only when it matches the
-signal observed and forwarded by the owning supervisor; unrelated non-zero exits
-remain crash evidence.
+Unknown automatic Telegram reply metadata now falls back to exact-topic
+correlation only when one eligible request exists. A transient daemon outage
+while a supervisor is waiting produces one durable diagnostic, retries with
+bounded backoff, and records recovery instead of abandoning the supervised
+session. Cursor workspace trust is distinct from `--force`. A terminal interrupt
+that a child normalizes to status 130 or 143 is expected only when it matches
+the signal observed and forwarded by the owning supervisor; unrelated non-zero
+exits remain crash evidence.
 
 ## Official contract sources
 
