@@ -16,6 +16,27 @@ first release-planning specification is
 The hosted transport is specified in
 [`FlowXO Notifications Transport Adapter`](docs/projects/notifications-transport-adapter/project-spec.md).
 
+## Trust and governance
+
+Agent Relay is local-first and sends no product analytics or remote crash
+reports. Notification providers receive bounded attention cards, which can
+include an agent summary or question; local state and uninstall behavior are
+documented in [PRIVACY.md](PRIVACY.md).
+
+Before reporting or operating the software, read:
+
+- [SECURITY.md](SECURITY.md) for private vulnerability reporting;
+- [SUPPORT.md](SUPPORT.md) for the verified support boundary and safe
+  diagnostics;
+- [PRIVACY.md](PRIVACY.md) for local files, outbound data, retention, and
+  erasure;
+- [MAINTAINERS.md](MAINTAINERS.md) for review and release authority;
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations; and
+- the [MIT license](LICENSE).
+
+Never post a token, private transcript, SQLite database, raw log, username,
+hostname, account identifier, or real working path in an issue or pull request.
+
 ## Development
 
 Requirements: Node.js 22 or newer and pnpm 11.

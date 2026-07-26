@@ -1,0 +1,63 @@
+name: Sanitized bug report
+description: Report a reproducible Agent Relay defect without private data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Agent Relay. Report vulnerabilities privately through the Security contact link.
+
+        Never paste tokens, `.env` files, SQLite data, raw logs, hook payloads, transcripts, usernames, hostnames, account/chat/session IDs, repository names, or real working paths. Reproduce with the fake transport and synthetic values whenever possible.
+  - type: input
+    id: version
+    attributes:
+      label: Agent Relay version or commit
+      placeholder: 0.1.0-alpha.1 or an immutable commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Sanitized environment
+      description: Include macOS version/architecture and Node.js version only.
+      placeholder: macOS 15 arm64; Node.js 22.x
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Harness and surface
+      description: Include the harness version if relevant.
+      placeholder: Codex CLI, synthetic version
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Synthetic reproduction
+      description:
+        Use fake credentials, fake transport, and machine-neutral paths.
+      placeholder:
+        Describe the smallest safe sequence that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label:
+            I reviewed this report and removed all credentials, private content,
+            account identifiers, machine identifiers, and machine-specific
+            paths.
+          required: true
+        - label: This is not a vulnerability or sensitive security report.
+          required: true

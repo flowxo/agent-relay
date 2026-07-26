@@ -29,6 +29,16 @@
   known vulnerability. Repository scans found no tracked activation file,
   database, log, actual machine path, Telegram-token shape, or credential value;
   the local `.env.activation` remained gitignored and mode `0600`.
+- FXO-1142 establishes the public governance boundary. The standard MIT license
+  names Flow XO, LLC; all six workspace manifests declare `MIT`; security,
+  privacy, support, conduct, and maintainer policies agree with implemented
+  local state, outbound payload, retention, uninstall, and review behavior; and
+  the issue chooser prevents blank or unsanitized bug reports.
+  `pnpm governance:check` is part of the full quality gate. On 2026-07-26 the
+  slice passed `pnpm check` (40 Vitest files/305 tests, 17 contract and
+  supply-chain tests, and the six-test isolated Notifications consumer proof),
+  all three Chromium end-to-end scenarios, `pnpm audit --prod`, YAML parsing,
+  diff checks, and a credential/path scan.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -486,12 +496,16 @@ also remain free of silent delivery, hook, or correlation failures.
 - Browser end-to-end coverage currently uses current Chromium with the fake
   Telegram transport. Real Telegram activation remains proven separately, and
   Safari/Firefox compatibility is not yet claimed.
+- GitHub private vulnerability reporting is unavailable while the repository
+  remains private. The policy and exact private-report URL are ready, but
+  enabling and verifying the feature is a mandatory part of the later,
+  explicitly approved public-promotion step. No security email was invented.
 
 ## Next action
 
-Land the reviewable FXO-1141 baseline without rewriting its preserved C0 commit
-line, then start AR1 governance and public-product work with FXO-1142 and
-FXO-1143. AR1 packaging begins at FXO-1144. Mock-backed AR2 work may proceed
+Complete FXO-1143's public product, architecture, operation, troubleshooting,
+compatibility, and extension documentation against the implemented product
+boundary. AR1 packaging begins at FXO-1144. Mock-backed AR2 work may proceed
 against the pinned `1.0.0-draft.1` artifacts, but production hosted dogfood must
 wait for AR1, AR2, and a central C0-09 go disposition.
 
