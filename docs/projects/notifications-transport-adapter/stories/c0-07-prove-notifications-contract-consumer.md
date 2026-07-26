@@ -1,16 +1,18 @@
 # Story specification: Prove Agent Relay against the Notifications contract
 
-> Status: Specification ready; blocked by C0-03 and C0-05  
-> Story code: C0-07  
-> Product: Agent Relay  
-> Project: Shared Contracts and Autonomous Delivery Conventions  
-> Wave: Wave 0  
-> Priority: P0  
-> Linear issue: [FXO-1048](https://linear.app/flowxo/issue/FXO-1048)  
-> Owning repository: `agent-relay`  
-> Intended owner: Agent Relay transport boundary  
-> Depends on: C0-03; C0-05  
-> Last reviewed: 2026-07-25
+- **Status:** Complete against `1.0.0-draft.1`; release promotion gated by C0-09
+- **Story code:** C0-07
+- **Product:** Agent Relay
+- **Project:** Shared Contracts and Autonomous Delivery Conventions
+- **Wave:** Wave 0
+- **Priority:** P0
+- **Linear issue:** [FXO-1048](https://linear.app/flowxo/issue/FXO-1048)
+- **Owning repository:** `agent-relay`
+- **Intended owner:** Agent Relay transport boundary
+- **Depends on:** C0-03 (complete); C0-05 (complete)
+- **Implemented in:** `68b2fbf`; compatibility gate extended in `100c250`
+- **Review:** [Agent Relay PR #2](https://github.com/flowxo/agent-relay/pull/2)
+- **Last reviewed:** 2026-07-26
 
 ## User story
 
@@ -266,9 +268,10 @@ logs.
 
 ## Delivery and rollout
 
-Land in Agent Relay after C0-05 publishes a pinned draft artifact. Keep the
-contract consumer behind test-only construction; do not expose incomplete
-production transport selection. AR2 promotes the proven mapping into the daemon.
+The consumer proof landed after C0-05 published pinned draft artifacts. It
+remains behind test-only construction and does not expose incomplete production
+transport selection, credential storage, or continuous polling. AR2 promotes the
+proven mapping into the daemon.
 
 ## Implementation guidance
 
@@ -305,11 +308,23 @@ The implementation agent must stop before:
 
 ## Completion evidence
 
-- Pinned artifact/version/digest.
-- Mapping and contract-test output.
-- Crash-before-ack replay trace.
-- First-writer-wins race and cross-identity security output.
-- Direct-Telegram parity suite output.
+- `contracts/contract-lock.json` pins exact `1.0.0-draft.1` artifacts:
+  `@flowxo/notifications-contracts` at
+  `88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106`,
+  `@flowxo/notifications` at
+  `4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c`, and
+  `@flowxo/notifications-contract-mock` at
+  `ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e`.
+- `pnpm contracts:notifications` verifies artifact safety and identity, mapping,
+  schema compatibility, SQLite-to-separate-process-mock delivery, equivalent
+  retry, crash-before-ack replay, acknowledgement, quarantine, cross-identity
+  rejection, first-writer-wins behavior, and direct-Telegram parity.
+- C0-08 adds canonical lock/policy digests, an additive-compatibility gate,
+  fresh scripts-disabled installation, and deterministic generated evidence.
+- The exact `76240c4` PR #2 head passed CI, packaged browser E2E, and secret
+  scanning when this status was reconciled.
+- No production daemon transport selection, hosted credential persistence, or
+  continuous poller is claimed by this story.
 
 ## References
 
