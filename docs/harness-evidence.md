@@ -1,8 +1,10 @@
 # Harness contract evidence
 
-Recorded on 2026-07-24 and 2026-07-25 on macOS arm64. The fixture corpus under
-`packages/harnesses/fixtures` contains only synthetic identifiers, paths, and
-messages.
+Recorded on 2026-07-24 through 2026-07-26 on macOS arm64. The fixture corpus
+under `packages/harnesses/fixtures` contains only synthetic identifiers, paths,
+and messages. Primary Codex, Claude Code, Cursor, and Telegram documentation was
+rechecked on 2026-07-26 for the public guides; no support claim was widened
+without new fixture and canary evidence.
 
 ## Local observations
 

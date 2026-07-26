@@ -9,6 +9,10 @@ second source of truth: browser answers use the same SQLite request state,
 runtime validation, expiry checks, and first-writer-wins transition as Telegram
 and terminal answers.
 
+For operator setup and the shorter privacy/threat summary, start with the
+[local web companion guide](./web-companion.md). This document is the versioned
+HTTP and browser-behavior reference.
+
 The built-in session board is served at `http://127.0.0.1:4317/ui/`. Its static
 shell is public on loopback and contains no relay data or credential. Paste the
 generated bearer and CSRF token into its connection form; the page retains both

@@ -5,16 +5,113 @@ Claude Code, and Cursor sessions. It normalizes deterministic harness events,
 durably spools them, routes them through replaceable notification transports,
 and keeps continuation capabilities explicit.
 
-The implementation follows
-[`docs/implementation-brief.md`](docs/implementation-brief.md). Current
-evidence, risks, and the next action are tracked in
-[`docs/progress.md`](docs/progress.md). The product boundary and public-release
-outcome are defined in the
-[`Open Source V1 product charter`](docs/product/open-source-v1-charter.md). The
-first release-planning specification is
-[`Open Source Release Readiness`](docs/projects/open-source-release-readiness/project-spec.md).
-The hosted transport is specified in
-[`FlowXO Notifications Transport Adapter`](docs/projects/notifications-transport-adapter/project-spec.md).
+It gives one operator a dependable way to notice when several coding agents
+stop, fail, or need an answer; identify the exact session; respond through
+buttons, text, or the local web board; and continue only where the harness has
+an official continuation contract.
+
+> **Release status:** source-build prerelease preparation. No public npm package
+> or stable support claim exists yet.
+
+## What it can prove
+
+| Signal or action    | Evidence and boundary                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| Stop or question    | Native runtime-validated hook payload from the exact harness session                  |
+| Inline continuation | The original hook remains open for a bounded reply and returns native harness JSON    |
+| Late CLI resume     | An Agent Relay-owned supervisor exits, claims one answer, and invokes official resume |
+| Process crash       | Reported only from the exit status of a child process Agent Relay owns                |
+| Silent hang         | Never inferred from inactivity; no automatic hang restart is claimed                  |
+| Cursor IDE resume   | Unsupported; an IDE Stop hook cannot safely become a new Cursor CLI process           |
+
+Native hooks do not prove that a process crashed. Installing hooks alone gives
+stop/question notifications and bounded inline replies. Use
+`agent-relay run <harness>` when proven exit reporting or late CLI resume is
+required.
+
+The current end-user validation target is macOS on Apple silicon with
+Node.js 22. Exact harness versions and surfaces are evidence-based, not guessed
+from a version range; see [compatibility and evidence](docs/compatibility.md)
+and the [generated capability matrix](docs/capability-matrix.md). Windows, Linux
+runtime operation, Intel macOS, automatic service installation, and Cursor IDE
+late resume are not current support claims.
+
+## Try the complete local loop first
+
+No Telegram account or hosted service is needed for the first proof:
+
+```sh
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm contracts:preinstall
+pnpm rebuild
+pnpm check
+pnpm build
+```
+
+In one terminal, start the local daemon with Telegram credentials removed:
+
+```sh
+env -u AGENT_RELAY_TELEGRAM_TOKEN \
+  -u AGENT_RELAY_TELEGRAM_CHAT_ID \
+  node apps/relay/dist/cli.js daemon --no-web
+```
+
+In a second terminal:
+
+```sh
+env -u AGENT_RELAY_TELEGRAM_TOKEN \
+  -u AGENT_RELAY_TELEGRAM_CHAT_ID \
+  node apps/relay/dist/cli.js canary
+```
+
+The canary must report a durable fake-Telegram delivery. Stop the daemon with
+`Ctrl-C`. Next, follow the
+[installation/upgrade/uninstall guide](docs/install-upgrade-uninstall.md).
+Configure [direct Telegram](docs/telegram.md) only when private credentials are
+available.
+
+## What runs and what changes
+
+The Node.js daemon binds to loopback, uses local SQLite as the source of truth,
+and writes bounded redacted diagnostics. The installer creates one owned
+launcher and minimally merges owned hook entries into:
+
+- `~/.codex/hooks.json`;
+- `~/.claude/settings.json`; and
+- `~/.cursor/hooks.json`.
+
+Existing entries are preserved and changed files receive private backups.
+Uninstall removes only owned hooks, launcher, and manifest; retained state is
+preserved until the operator explicitly erases it.
+
+The fake transport stays local. Direct Telegram sends bounded attention cards
+that can include an agent summary or question. The optional local web companion
+talks only to the loopback daemon. Flow XO Notifications is an optional,
+replaceable transport: local operation requires no hosted account, Cloudflare
+runtime, public callback, or Flow XO credential. See the
+[architecture and threat boundaries](docs/architecture.md),
+[privacy policy](PRIVACY.md), and
+[hosted Notifications boundary](docs/hosted-notifications.md).
+
+## Documentation
+
+- [Architecture and threat boundaries](docs/architecture.md)
+- [Install, upgrade, uninstall, and erasure](docs/install-upgrade-uninstall.md)
+- [Direct Telegram setup and operation](docs/telegram.md)
+- [Local web companion](docs/web-companion.md)
+- [Troubleshooting and doctor](docs/troubleshooting.md)
+- [Compatibility and evidence policy](docs/compatibility.md)
+- [Write a notification transport](docs/extending-transports.md)
+- [Write or update a harness adapter](docs/extending-harnesses.md)
+- [Optional hosted Notifications boundary](docs/hosted-notifications.md)
+- [Living clean-checkout onboarding](docs/onboarding.md)
+
+Implementation history and deeper evidence remain available in the
+[implementation brief](docs/implementation-brief.md),
+[progress ledger](docs/progress.md),
+[harness evidence](docs/harness-evidence.md),
+[Open Source V1 charter](docs/product/open-source-v1-charter.md), and
+[AR1 project specification](docs/projects/open-source-release-readiness/project-spec.md).
 
 ## Trust and governance
 

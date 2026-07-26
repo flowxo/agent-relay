@@ -39,6 +39,20 @@
   supply-chain tests, and the six-test isolated Notifications consumer proof),
   all three Chromium end-to-end scenarios, `pnpm audit --prod`, YAML parsing,
   diff checks, and a credential/path scan.
+- FXO-1143 adds a public landing path plus nine focused guides for architecture,
+  lifecycle installation, Telegram, local web, troubleshooting, compatibility,
+  transport extensions, harness extensions, and the optional hosted
+  Notifications boundary. The guides distinguish native hook evidence,
+  supervised exit proof, inline continuation, late CLI resume, and unsupported
+  Cursor IDE resume; route new users through the fake canary before credentialed
+  Telegram; and keep local operation independent of hosted accounts and
+  Cloudflare. Primary Codex, Claude Code, Cursor, and Telegram sources were
+  rechecked on 2026-07-26 without widening support beyond exact fixture/canary
+  evidence. `pnpm docs:check` validates the guide set, local links, required
+  boundary statements, onboarding order, and private-data patterns as part of
+  `pnpm check`. The full 305-test/contract/distribution gate, all three Chromium
+  scenarios, production audit, and an isolated compiled fake-daemon canary all
+  passed.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -503,11 +517,12 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Complete FXO-1143's public product, architecture, operation, troubleshooting,
-compatibility, and extension documentation against the implemented product
-boundary. AR1 packaging begins at FXO-1144. Mock-backed AR2 work may proceed
-against the pinned `1.0.0-draft.1` artifacts, but production hosted dogfood must
-wait for AR1, AR2, and a central C0-09 go disposition.
+Prove the exact standalone publish artifact in FXO-1144: package identity and
+metadata, compiled runtime boundary, allowlisted file list and size budget,
+source-map policy, isolated install/help/fake canary, and absence of workspace
+or private-state leakage. Mock-backed AR2 work may proceed against the pinned
+`1.0.0-draft.1` artifacts, but production hosted dogfood must wait for AR1, AR2,
+and a central C0-09 go disposition.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,
