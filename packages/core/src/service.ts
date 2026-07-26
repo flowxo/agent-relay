@@ -20,6 +20,7 @@ import {
 import { redactText } from "./redaction.js";
 import type {
   DiagnosticIngestResult,
+  BrowserResolutionResult,
   IngestResult,
   PendingRequestRecord,
   RelayStore,
@@ -249,6 +250,12 @@ export class RelayService {
       sessionBefore: before(
         retentionDays(options.sessionDays, 90, "sessionDays"),
       ),
+      webChangeBefore: before(
+        retentionDays(options.deliveredDays, 30, "deliveredDays"),
+      ),
+      browserCommandBefore: before(
+        retentionDays(options.requestDays, 30, "requestDays"),
+      ),
       ...(options.limit === undefined ? {} : { limit: options.limit }),
     });
     result.requestsExpired = requestsExpired;
@@ -267,6 +274,19 @@ export class RelayService {
     return this.store.getPendingRequest(correlationId);
   }
 
+  public listPendingRequests(limit = 100): PendingRequestRecord[] {
+    this.store.expireRequests(this.now().toISOString());
+    return this.store.listPendingRequests(limit);
+  }
+
+  public listSessionsWithAttention(limit = 100) {
+    this.store.expireRequests(this.now().toISOString());
+    return this.store.listSessions(limit).map((session) => ({
+      session,
+      attentionCount: this.store.countOpenRequests(session),
+    }));
+  }
+
   public resolveTerminal(
     input: Omit<ResolveRequestInput, "resolvedBy" | "now">,
   ): ResolutionResult {
@@ -283,6 +303,29 @@ export class RelayService {
       details: {
         correlationId: input.correlationId,
         resolvedBy: "terminal",
+      },
+    });
+    return result;
+  }
+
+  public resolveBrowser(input: {
+    operationId: string;
+    correlationId: string;
+    answer: string;
+  }): BrowserResolutionResult {
+    const result = this.store.resolveBrowserRequest({
+      ...input,
+      now: this.now().toISOString(),
+    });
+    this.logger.log({
+      level: result.outcome === "answered" ? "info" : "warn",
+      code: `browser.request-${result.outcome}`,
+      message: `browser request resolution: ${result.outcome}`,
+      at: this.now().toISOString(),
+      details: {
+        operationId: input.operationId,
+        correlationId: input.correlationId,
+        replayed: result.replayed,
       },
     });
     return result;

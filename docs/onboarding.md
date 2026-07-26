@@ -211,6 +211,14 @@ Expected startup evidence includes:
 - loopback host and port `127.0.0.1:4317`; and
 - transport `telegram`, not `fake-telegram`.
 
+Startup also creates a private local-web credential beside the SQLite database,
+normally `~/.agent-relay/web-credential.json`. It must remain a regular
+mode-`0600` file. This credential is independent from Telegram and
+`AGENT_RELAY_DAEMON_TOKEN`; the daemon never prints its bearer or CSRF values.
+The local browser API is documented in [`local-web-api.md`](./local-web-api.md).
+It is available before a graphical UI, so its authenticated read models and
+resumable stream can be exercised with `curl` without a real bot token.
+
 Starting after an offline period may replay previously spooled events. Stable
 event IDs keep replay idempotent, but events that were never delivered before
 the restart may produce historical notifications.

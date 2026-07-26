@@ -224,6 +224,23 @@
   restart, timeout and stale states, Cancel, supersession, first-writer races,
   same-topic ambiguity, cross-topic isolation, and unsupported capability
   fallback without live credentials.
+- FXO-1068 is green locally. Daemon startup generates and reuses an independent
+  mode-`0600` local-web bearer/CSRF credential and fails closed on symlinks,
+  malformed content, or permissive file modes. Authenticated, bounded session,
+  attention, and event-detail read models omit assistant transcripts, working
+  paths, machine/session identifiers, callback tokens, stored answers, and
+  process arguments. SQLite triggers produce a monotonically ordered,
+  transcript-free change ledger; JSON cursor reads and SSE support replay by
+  query cursor or `Last-Event-ID`, live delivery after connection, and explicit
+  reset after retained-history gaps or database replacement. Browser mutations
+  require loopback, exact same-origin, CSRF, bounded runtime-validated bodies,
+  and an idempotency operation ID. They use the same expiry, identity, option,
+  and first-writer authority as Telegram and terminal answers. Tests cover
+  missing/wrong credentials, cross-origin requests, absent CSRF, oversized
+  bodies, replay conflict, expired answers, safe response projection,
+  concurrent-session isolation, live/reconnected streams, credential
+  permissions, and restart cursor durability. Structured browser drafts remain
+  deliberately deferred to FXO-1070.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -276,7 +293,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 212 tests across 31 test files, including
+- The implementation gates pass all 228 tests across 33 test files, including
   the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
   fallback privacy, inline and late continuation, owned-child exit observation,
   stale answer rejection, concurrent-session isolation, installation rollback,
@@ -372,6 +389,6 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1068, the authenticated localhost daemon API and ordered live
-event stream, while retaining the same runtime validation, SQLite first-writer
-authority, localhost-only default, and transcript-private boundaries.
+Implement FXO-1070's structured browser interaction workflow on top of the
+authenticated FXO-1068 API, retaining SQLite draft authority and the same
+Telegram/terminal/browser first-writer boundary.

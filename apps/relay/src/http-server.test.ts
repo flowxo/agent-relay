@@ -15,6 +15,14 @@ import { makeProjectRef } from "@agent-relay/protocol";
 
 import { RelayClient } from "./client.js";
 import { createRelayHttpServer } from "./http-server.js";
+import type { WebCredential } from "./web-credential.js";
+
+const webCredential: WebCredential = {
+  schema: "agent-relay-web-credential.v1",
+  token: "synthetic-local-web-token-1234567890",
+  csrfToken: "synthetic-local-csrf-token-123456789",
+  createdAt: "2026-07-24T12:00:00.000Z",
+};
 
 function event(): AgentAttentionEventV1 {
   return {
@@ -40,7 +48,11 @@ function event(): AgentAttentionEventV1 {
   };
 }
 
-async function setup(token?: string, telegramWebhookSecret?: string) {
+async function setup(
+  token?: string,
+  telegramWebhookSecret?: string,
+  credential?: WebCredential,
+) {
   const store = new RelayStore();
   const transport = new FakeTelegramTransport();
   const logger = new MemoryLogger();
@@ -58,6 +70,8 @@ async function setup(token?: string, telegramWebhookSecret?: string) {
     logger,
     replyRouter,
     ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
+    ...(credential === undefined ? {} : { webCredential: credential }),
+    webStreamPollMs: 10,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -79,6 +93,17 @@ async function setup(token?: string, telegramWebhookSecret?: string) {
     }),
     baseUrl: `http://127.0.0.1:${address.port}`,
     close,
+  };
+}
+
+function webHeaders(
+  runtime: Awaited<ReturnType<typeof setup>>,
+  options: { csrf?: boolean } = {},
+): Record<string, string> {
+  return {
+    authorization: `Bearer ${webCredential.token}`,
+    origin: runtime.baseUrl,
+    ...(options.csrf ? { "x-agent-relay-csrf": webCredential.csrfToken } : {}),
   };
 }
 
@@ -290,6 +315,277 @@ describe("relay HTTP daemon", () => {
       outcome: "unsupported",
       updateId: 901,
     });
+    await runtime.close();
+  });
+
+  it("exposes only bounded, transcript-free browser read models", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    const input: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_web_safe_detail_12345678",
+      turnId: "turn_web_safe_detail_12345678",
+      type: "input.required",
+      summary: "Choose a safe label",
+      lastAssistantMessage: "PRIVATE_TRANSCRIPT_SENTINEL",
+      request: {
+        correlationId: "request_web_safe_detail_12345678",
+        kind: "select",
+        question: "Where should this run?",
+        options: [
+          { id: "option_web_staging_12345678", label: "Staging" },
+          { id: "option_web_prod_1234567890", label: "Production" },
+        ],
+        expiresAt: "2026-07-24T12:10:00.000Z",
+      },
+    };
+    runtime.service.ingest(input);
+
+    const sessions = await fetch(`${runtime.baseUrl}/v1/web/sessions?limit=1`, {
+      headers: webHeaders(runtime),
+    });
+    const attention = await fetch(
+      `${runtime.baseUrl}/v1/web/attention?limit=1`,
+      { headers: webHeaders(runtime) },
+    );
+    const detail = await fetch(
+      `${runtime.baseUrl}/v1/web/events/${input.eventId}`,
+      { headers: webHeaders(runtime) },
+    );
+    const changes = await fetch(`${runtime.baseUrl}/v1/web/changes?limit=20`, {
+      headers: webHeaders(runtime),
+    });
+    expect(sessions.status).toBe(200);
+    expect(attention.status).toBe(200);
+    expect(detail.status).toBe(200);
+    expect(changes.status).toBe(200);
+
+    const combined = [
+      await sessions.text(),
+      await attention.text(),
+      await detail.text(),
+      await changes.text(),
+    ].join("\n");
+    expect(combined).not.toContain("PRIVATE_TRANSCRIPT_SENTINEL");
+    expect(combined).not.toContain(input.machineId);
+    expect(combined).not.toContain(input.sessionId);
+    expect(combined).not.toContain("option_token");
+    expect(combined).toContain("option_web_staging_12345678");
+    expect(combined).toContain("choose-option");
+    expect(combined).toContain("example");
+    await runtime.close();
+  });
+
+  it("requires an independent bearer token and rejects cross-origin browser requests", async () => {
+    const runtime = await setup(
+      "synthetic-daemon-secret",
+      undefined,
+      webCredential,
+    );
+    const missing = await fetch(`${runtime.baseUrl}/v1/web/sessions`);
+    expect(missing.status).toBe(401);
+    const daemonToken = await fetch(`${runtime.baseUrl}/v1/web/sessions`, {
+      headers: { authorization: "Bearer synthetic-daemon-secret" },
+    });
+    expect(daemonToken.status).toBe(401);
+    const crossOrigin = await fetch(`${runtime.baseUrl}/v1/web/sessions`, {
+      headers: {
+        authorization: `Bearer ${webCredential.token}`,
+        origin: "https://attacker.invalid",
+        "sec-fetch-site": "cross-site",
+      },
+    });
+    expect(crossOrigin.status).toBe(403);
+    expect(crossOrigin.headers.get("access-control-allow-origin")).toBeNull();
+    expect(await crossOrigin.text()).not.toContain(webCredential.token);
+    await runtime.close();
+  });
+
+  it("requires same-origin CSRF validation and bounds browser bodies", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    runtime.service.ingest({
+      ...event(),
+      eventId: "evt_web_csrf_question_12345678",
+      turnId: "turn_web_csrf_question_12345678",
+      type: "input.required",
+      request: {
+        correlationId: "request_web_csrf_question_12345678",
+        kind: "input",
+        question: "Name?",
+        expiresAt: "2026-07-24T12:10:00.000Z",
+      },
+    });
+    const url = `${runtime.baseUrl}/v1/web/requests/request_web_csrf_question_12345678/resolve`;
+    const body = JSON.stringify({
+      schema: "agent-relay-web-resolve.v1",
+      operationId: "operation_web_csrf_12345678",
+      answer: "safe-answer",
+    });
+    const missingCsrf = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...webHeaders(runtime),
+        "content-type": "application/json",
+      },
+      body,
+    });
+    expect(missingCsrf.status).toBe(403);
+    const oversized = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...webHeaders(runtime, { csrf: true }),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        schema: "agent-relay-web-resolve.v1",
+        operationId: "operation_web_oversize_12345678",
+        answer: "x".repeat(140_000),
+      }),
+    });
+    expect(oversized.status).toBe(413);
+    await runtime.close();
+  });
+
+  it("applies idempotent browser answers through the shared first-writer store", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    const input: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_web_resolution_12345678",
+      turnId: "turn_web_resolution_12345678",
+      type: "input.required",
+      request: {
+        correlationId: "request_web_resolution_12345678",
+        kind: "input",
+        question: "Release label?",
+        expiresAt: "2026-07-24T12:10:00.000Z",
+      },
+    };
+    runtime.service.ingest(input);
+    const url = `${runtime.baseUrl}/v1/web/requests/${input.request?.correlationId}/resolve`;
+    const request = async (answer: string) =>
+      await fetch(url, {
+        method: "POST",
+        headers: {
+          ...webHeaders(runtime, { csrf: true }),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-resolve.v1",
+          operationId: "operation_web_resolution_12345678",
+          answer,
+        }),
+      });
+
+    const first = await request("release-42");
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toEqual({
+      outcome: "answered",
+      replayed: false,
+      requestState: "answered",
+    });
+    const replay = await request("release-42");
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      outcome: "answered",
+      replayed: true,
+    });
+    const conflict = await request("release-43");
+    expect(conflict.status).toBe(409);
+    const conflictBody = await conflict.text();
+    expect(JSON.parse(conflictBody)).toEqual({
+      outcome: "replay_conflict",
+      replayed: true,
+    });
+    expect(conflictBody).not.toContain("release-42");
+    expect(
+      runtime.store.getPendingRequest(input.request!.correlationId),
+    ).toMatchObject({
+      answer: "release-42",
+      resolvedBy: "web",
+    });
+    await runtime.close();
+  });
+
+  it("streams only changes after the resumable SSE cursor", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    runtime.service.ingest(event());
+    const cursor = runtime.store.webChangeBounds().lastCursor ?? 0;
+    const nextEvent: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_web_sse_next_12345678",
+      sequence: 2,
+      type: "turn.stopped",
+      summary: "Second event",
+    };
+    delete nextEvent.request;
+    delete nextEvent.turnId;
+    runtime.service.ingest(nextEvent);
+    const abort = new AbortController();
+    const response = await fetch(`${runtime.baseUrl}/v1/web/stream`, {
+      headers: {
+        ...webHeaders(runtime),
+        "last-event-id": String(cursor),
+      },
+      signal: abort.signal,
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let payload = "";
+    while (!payload.includes("\n\n")) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      payload += decoder.decode(chunk.value, { stream: true });
+    }
+    abort.abort();
+    await reader.cancel().catch(() => undefined);
+    const id = Number(payload.match(/(?:^|\n)id: (\d+)/)?.[1]);
+    expect(id).toBeGreaterThan(cursor);
+    expect(payload).not.toContain(`id: ${cursor}\n`);
+    await runtime.close();
+  });
+
+  it("pushes changes that occur after an SSE connection is established", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    runtime.service.ingest(event());
+    const cursor = runtime.store.webChangeBounds().lastCursor ?? 0;
+    const abort = new AbortController();
+    const response = await fetch(
+      `${runtime.baseUrl}/v1/web/stream?after=${cursor}`,
+      {
+        headers: webHeaders(runtime),
+        signal: abort.signal,
+      },
+    );
+    const nextEvent: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_web_sse_live_12345678",
+      sequence: 2,
+      type: "turn.stopped",
+      summary: "Live event",
+    };
+    delete nextEvent.request;
+    delete nextEvent.turnId;
+    runtime.service.ingest(nextEvent);
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let payload = "";
+    while (!/(?:^|\n)id: \d+/.test(payload)) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      payload += decoder.decode(chunk.value, { stream: true });
+    }
+    abort.abort();
+    await reader.cancel().catch(() => undefined);
+    expect(Number(payload.match(/(?:^|\n)id: (\d+)/)?.[1])).toBeGreaterThan(
+      cursor,
+    );
+    expect(payload).toContain("evt_web_sse_live_12345678");
     await runtime.close();
   });
 });

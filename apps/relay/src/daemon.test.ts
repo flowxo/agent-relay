@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startDaemon } from "./daemon.js";
+import { WebCredentialSchema } from "./web-credential.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -23,6 +24,28 @@ afterEach(async () => {
 });
 
 describe("startDaemon Telegram update mode", () => {
+  it("creates and reports only the path to a private web credential", async () => {
+    const databasePath = await temporaryDatabase();
+    const daemon = await startDaemon({
+      databasePath,
+      port: 0,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+
+    expect(daemon.webCredentialPath).toBe(
+      join(dirname(databasePath), "web-credential.json"),
+    );
+    expect((await stat(daemon.webCredentialPath)).mode & 0o777).toBe(0o600);
+    expect(
+      WebCredentialSchema.parse(
+        JSON.parse(await readFile(daemon.webCredentialPath, "utf8")) as unknown,
+      ),
+    ).toMatchObject({ schema: "agent-relay-web-credential.v1" });
+    expect(JSON.stringify(daemon)).not.toContain("csrfToken");
+    await daemon.close();
+  });
+
   it("starts long polling for a fully configured local Telegram adapter", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

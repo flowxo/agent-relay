@@ -8,6 +8,7 @@ import {
   encodeInteractionAnswer,
   InteractionPresentationModeSchema,
   InteractionQuestionAnswerSchema,
+  ProjectRefSchema,
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
@@ -66,6 +67,7 @@ export interface SessionRecord {
   surface: Surface;
   harnessVersion: string;
   sessionId: string;
+  project: AgentAttentionEventV1["project"];
   state: "active" | "waiting" | "stopped" | "suspected_stalled" | "exited";
   lastEventType?: EventType;
   lastSeenAt: string;
@@ -192,6 +194,8 @@ export interface RetentionCutoffs {
   diagnosticBefore: string;
   telegramUpdateBefore: string;
   sessionBefore: string;
+  webChangeBefore: string;
+  browserCommandBefore: string;
   limit?: number;
 }
 
@@ -206,6 +210,26 @@ export interface RetentionResult {
   diagnostics: number;
   telegramUpdates: number;
   sessions: number;
+  webChanges: number;
+  browserCommands: number;
+}
+
+export type WebChangeKind =
+  "session" | "event" | "request" | "diagnostic" | "session-control";
+
+export interface WebChangeRecord {
+  cursor: number;
+  kind: WebChangeKind;
+  action: "insert" | "update" | "delete";
+  entityId: string;
+  sessionId?: string;
+  occurredAt: string;
+  payload: Record<string, unknown>;
+}
+
+export interface WebChangeBounds {
+  firstCursor?: number;
+  lastCursor?: number;
 }
 
 export type PendingRequestState =
@@ -235,7 +259,7 @@ export interface PendingRequestRecord {
     | "continuation";
   question: string;
   expiresAt: string;
-  resolvedBy?: "terminal" | "telegram";
+  resolvedBy?: "terminal" | "telegram" | "web";
   answer?: string;
   resolvedAt?: string;
   transportMessageId?: string;
@@ -433,7 +457,7 @@ export type NumberedChoiceResolutionResult =
 export interface ResolveRequestInput {
   correlationId: string;
   answer: string;
-  resolvedBy: "terminal" | "telegram";
+  resolvedBy: "terminal" | "telegram" | "web";
   now: string;
   expected?: {
     machineId: string;
@@ -441,6 +465,18 @@ export interface ResolveRequestInput {
     sessionId: string;
     turnId?: string;
   };
+}
+
+export type BrowserResolutionOutcome =
+  | ResolutionOutcome
+  | "invalid_answer"
+  | "unsupported_request"
+  | "replay_conflict";
+
+export interface BrowserResolutionResult {
+  outcome: BrowserResolutionOutcome;
+  replayed: boolean;
+  request?: PendingRequestRecord;
 }
 
 export type TopicTextCorrelationResult =
@@ -542,6 +578,7 @@ interface SessionRow {
   surface: Surface;
   harness_version: string;
   session_id: string;
+  project_json: string;
   state: SessionRecord["state"];
   last_event_type: EventType | null;
   last_seen_at: string;
@@ -608,7 +645,7 @@ interface PendingRow {
   request_kind: PendingRequestRecord["requestKind"];
   question: string;
   expires_at: string;
-  resolved_by: "terminal" | "telegram" | null;
+  resolved_by: "terminal" | "telegram" | "web" | null;
   answer: string | null;
   resolved_at: string | null;
   transport_message_id: string | null;
@@ -684,6 +721,16 @@ interface ResumeCandidateRow {
   state: PendingRequestState;
   expires_at: string;
   capabilities_json: string;
+}
+
+interface WebChangeRow {
+  change_id: number;
+  kind: WebChangeKind;
+  action: WebChangeRecord["action"];
+  entity_id: string;
+  session_id: string | null;
+  occurred_at: string;
+  payload_json: string;
 }
 
 function stateForEvent(
@@ -1095,6 +1142,244 @@ export class RelayStore {
 
       CREATE INDEX IF NOT EXISTS diagnostics_recorded_idx
         ON diagnostics(recorded_at, diagnostic_id);
+
+      CREATE TABLE IF NOT EXISTS browser_commands (
+        operation_id TEXT PRIMARY KEY,
+        correlation_id TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS browser_commands_created_idx
+        ON browser_commands(created_at, operation_id);
+
+      CREATE TABLE IF NOT EXISTS web_changes (
+        change_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        session_id TEXT,
+        occurred_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS web_changes_cursor_idx
+        ON web_changes(change_id);
+
+      CREATE TRIGGER IF NOT EXISTS web_sessions_insert
+      AFTER INSERT ON sessions
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session', 'insert',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'harness', NEW.harness,
+            'surface', NEW.surface,
+            'state', NEW.state,
+            'lastSeenAt', NEW.last_seen_at,
+            'lastSequence', NEW.last_sequence
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_sessions_update
+      AFTER UPDATE ON sessions
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session', 'update',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'harness', NEW.harness,
+            'surface', NEW.surface,
+            'state', NEW.state,
+            'lastEventType', NEW.last_event_type,
+            'lastSeenAt', NEW.last_seen_at,
+            'lastSequence', NEW.last_sequence
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_sessions_delete
+      AFTER DELETE ON sessions
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session', 'delete',
+          OLD.machine_id || ':' || OLD.harness || ':' || OLD.session_id,
+          OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('harness', OLD.harness)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_events_insert
+      AFTER INSERT ON events
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'event', 'insert', NEW.event_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('type', NEW.type, 'status', NEW.status)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_events_update
+      AFTER UPDATE ON events
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'event', 'update', NEW.event_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('type', NEW.type, 'status', NEW.status)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_events_delete
+      AFTER DELETE ON events
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'event', 'delete', OLD.event_id, OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('type', OLD.type, 'status', OLD.status)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_requests_insert
+      AFTER INSERT ON pending_requests
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'request', 'insert', NEW.correlation_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'eventId', NEW.event_id,
+            'requestKind', NEW.request_kind,
+            'state', NEW.state,
+            'expiresAt', NEW.expires_at
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_requests_update
+      AFTER UPDATE ON pending_requests
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'request', 'update', NEW.correlation_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'eventId', NEW.event_id,
+            'requestKind', NEW.request_kind,
+            'state', NEW.state,
+            'expiresAt', NEW.expires_at,
+            'resolvedBy', NEW.resolved_by
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_requests_delete
+      AFTER DELETE ON pending_requests
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'request', 'delete', OLD.correlation_id, OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'eventId', OLD.event_id,
+            'requestKind', OLD.request_kind,
+            'state', OLD.state
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_diagnostics_insert
+      AFTER INSERT ON diagnostics
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, occurred_at, payload_json
+        ) VALUES (
+          'diagnostic', 'insert', NEW.diagnostic_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('level', NEW.level, 'code', NEW.code)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_diagnostics_delete
+      AFTER DELETE ON diagnostics
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, occurred_at, payload_json
+        ) VALUES (
+          'diagnostic', 'delete', OLD.diagnostic_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('level', OLD.level, 'code', OLD.code)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_controls_insert
+      AFTER INSERT ON session_controls
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session-control', 'insert',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'muted', NEW.muted_at IS NOT NULL,
+            'ended', NEW.ended_at IS NOT NULL
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_controls_update
+      AFTER UPDATE ON session_controls
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session-control', 'update',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'muted', NEW.muted_at IS NOT NULL,
+            'ended', NEW.ended_at IS NOT NULL
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_controls_delete
+      AFTER DELETE ON session_controls
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session-control', 'delete',
+          OLD.machine_id || ':' || OLD.harness || ':' || OLD.session_id,
+          OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object()
+        );
+      END;
     `);
     const sessionColumns = this.database
       .prepare("PRAGMA table_info(sessions)")
@@ -2908,6 +3193,46 @@ export class RelayStore {
     return row === undefined ? undefined : this.pendingFromRow(row);
   }
 
+  public listPendingRequests(limit = 100): PendingRequestRecord[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("pending request limit must be between 1 and 500");
+    }
+    const rows = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM pending_requests
+        WHERE state = 'open'
+        ORDER BY expires_at, created_at, correlation_id
+        LIMIT ?
+      `,
+      )
+      .all(limit) as PendingRow[];
+    return rows.map((row) => this.pendingFromRow(row));
+  }
+
+  public countOpenRequests(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): number {
+    const row = this.database
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM pending_requests
+        WHERE machine_id = ?
+          AND harness = ?
+          AND session_id = ?
+          AND state = 'open'
+      `,
+      )
+      .get(input.machineId, input.harness, input.sessionId) as {
+      count: number;
+    };
+    return row.count;
+  }
+
   public getPendingForEvent(eventId: string): PendingRequestRecord | undefined {
     const row = this.database
       .prepare(
@@ -4184,9 +4509,125 @@ export class RelayStore {
     })();
   }
 
+  public resolveBrowserRequest(input: {
+    operationId: string;
+    correlationId: string;
+    answer: string;
+    now: string;
+  }): BrowserResolutionResult {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(input.operationId)) {
+      throw new Error("browser operation id is malformed");
+    }
+    assertIsoCutoff(input.now, "browser resolution time");
+    const normalizedAnswer = input.answer.trim().slice(0, 4_000);
+    if (normalizedAnswer.length === 0) {
+      throw new Error("browser answer cannot be empty");
+    }
+    const payloadHash = sha256(
+      JSON.stringify([input.correlationId, normalizedAnswer]),
+    );
+    return this.database.transaction((): BrowserResolutionResult => {
+      const prior = this.database
+        .prepare(
+          `
+          SELECT correlation_id, payload_hash, outcome
+          FROM browser_commands
+          WHERE operation_id = ?
+        `,
+        )
+        .get(input.operationId) as
+        | {
+            correlation_id: string;
+            payload_hash: string;
+            outcome: Exclude<BrowserResolutionOutcome, "replay_conflict">;
+          }
+        | undefined;
+      if (prior !== undefined) {
+        if (
+          prior.correlation_id !== input.correlationId ||
+          prior.payload_hash !== payloadHash
+        ) {
+          return { outcome: "replay_conflict", replayed: true };
+        }
+        const request = this.getPendingRequest(prior.correlation_id);
+        return {
+          outcome: prior.outcome,
+          replayed: true,
+          ...(request === undefined ? {} : { request }),
+        };
+      }
+
+      const request = this.getPendingRequest(input.correlationId);
+      let outcome: Exclude<BrowserResolutionOutcome, "replay_conflict">;
+      let resolutionRequest: PendingRequestRecord | undefined;
+      if (request === undefined) {
+        outcome = "not_found";
+      } else if (
+        request.requestKind === "multi-select" ||
+        request.requestKind === "question-set"
+      ) {
+        outcome = "unsupported_request";
+        resolutionRequest = request;
+      } else {
+        const answer =
+          request.requestKind === "input" ||
+          request.requestKind === "continuation"
+            ? normalizedAnswer
+            : request.options.some(
+                  (option) => option.optionId === normalizedAnswer,
+                )
+              ? normalizedAnswer
+              : undefined;
+        if (answer === undefined) {
+          outcome = "invalid_answer";
+          resolutionRequest = request;
+        } else {
+          const resolution = this.resolveRequest({
+            correlationId: request.correlationId,
+            answer,
+            resolvedBy: "web",
+            now: input.now,
+            expected: {
+              machineId: request.machineId,
+              harness: request.harness,
+              sessionId: request.sessionId,
+              ...(request.turnId === undefined
+                ? {}
+                : { turnId: request.turnId }),
+            },
+          });
+          outcome = resolution.outcome;
+          resolutionRequest = resolution.request;
+        }
+      }
+      this.database
+        .prepare(
+          `
+          INSERT INTO browser_commands (
+            operation_id, correlation_id, payload_hash, outcome, created_at
+          ) VALUES (?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          input.operationId,
+          input.correlationId,
+          payloadHash,
+          outcome,
+          input.now,
+        );
+      return {
+        outcome,
+        replayed: false,
+        ...(resolutionRequest === undefined
+          ? {}
+          : { request: resolutionRequest }),
+      };
+    })();
+  }
+
   public resolveOptionToken(
     token: string,
-    resolvedBy: "terminal" | "telegram",
+    resolvedBy: "terminal" | "telegram" | "web",
     now: string,
     expected?: {
       machineId: string;
@@ -5054,6 +5495,58 @@ export class RelayStore {
     }));
   }
 
+  public listWebChanges(afterCursor = 0, limit = 100): WebChangeRecord[] {
+    if (
+      !Number.isSafeInteger(afterCursor) ||
+      afterCursor < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 500
+    ) {
+      throw new Error("web change cursor or limit is outside supported bounds");
+    }
+    const rows = this.database
+      .prepare(
+        `
+        SELECT
+          change_id, kind, action, entity_id, session_id, occurred_at,
+          payload_json
+        FROM web_changes
+        WHERE change_id > ?
+        ORDER BY change_id
+        LIMIT ?
+      `,
+      )
+      .all(afterCursor, limit) as WebChangeRow[];
+    return rows.map((row) => ({
+      cursor: row.change_id,
+      kind: row.kind,
+      action: row.action,
+      entityId: row.entity_id,
+      ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+      occurredAt: row.occurred_at,
+      payload: JSON.parse(row.payload_json) as Record<string, unknown>,
+    }));
+  }
+
+  public webChangeBounds(): WebChangeBounds {
+    const row = this.database
+      .prepare(
+        `
+        SELECT MIN(change_id) AS first_cursor, MAX(change_id) AS last_cursor
+        FROM web_changes
+      `,
+      )
+      .get() as {
+      first_cursor: number | null;
+      last_cursor: number | null;
+    };
+    return {
+      ...(row.first_cursor === null ? {} : { firstCursor: row.first_cursor }),
+      ...(row.last_cursor === null ? {} : { lastCursor: row.last_cursor }),
+    };
+  }
+
   public pruneRetention(cutoffs: RetentionCutoffs): RetentionResult {
     for (const [name, value] of Object.entries(cutoffs)) {
       if (name !== "limit") {
@@ -5077,6 +5570,8 @@ export class RelayStore {
         diagnostics: 0,
         telegramUpdates: 0,
         sessions: 0,
+        webChanges: 0,
+        browserCommands: 0,
       };
       const requestRows = this.database
         .prepare(
@@ -5221,22 +5716,56 @@ export class RelayStore {
         `,
         )
         .run(cutoffs.sessionBefore, limit).changes;
+      result.webChanges = this.database
+        .prepare(
+          `
+          DELETE FROM web_changes
+          WHERE change_id IN (
+            SELECT change_id FROM web_changes
+            WHERE occurred_at < ?
+            ORDER BY change_id
+            LIMIT ?
+          )
+        `,
+        )
+        .run(cutoffs.webChangeBefore, limit).changes;
+      result.browserCommands = this.database
+        .prepare(
+          `
+          DELETE FROM browser_commands
+          WHERE operation_id IN (
+            SELECT operation_id FROM browser_commands
+            WHERE created_at < ?
+            ORDER BY created_at, operation_id
+            LIMIT ?
+          )
+        `,
+        )
+        .run(cutoffs.browserCommandBefore, limit).changes;
       return result;
     })();
   }
 
-  public listSessions(): SessionRecord[] {
+  public listSessions(limit?: number): SessionRecord[] {
+    if (
+      limit !== undefined &&
+      (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+    ) {
+      throw new Error("session limit must be between 1 and 500");
+    }
     const rows = this.database
       .prepare(
         `
         SELECT
           machine_id, bridge_session_id, harness, surface, harness_version,
-          session_id, state, last_event_type, last_seen_at, last_sequence
+          session_id, project_json, state, last_event_type, last_seen_at,
+          last_sequence
         FROM sessions
         ORDER BY last_seen_at DESC, machine_id, harness, session_id
+        ${limit === undefined ? "" : "LIMIT ?"}
       `,
       )
-      .all() as SessionRow[];
+      .all(...(limit === undefined ? [] : [limit])) as SessionRow[];
     return rows.map((row) => ({
       machineId: row.machine_id,
       bridgeSessionId: row.bridge_session_id,
@@ -5244,6 +5773,7 @@ export class RelayStore {
       surface: row.surface,
       harnessVersion: row.harness_version,
       sessionId: row.session_id,
+      project: ProjectRefSchema.parse(JSON.parse(row.project_json) as unknown),
       state: row.state,
       ...(row.last_event_type === null
         ? {}

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
@@ -6,11 +7,34 @@ import {
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
+  sha256,
 } from "@agent-relay/protocol";
-import type { RelayLogger, RelayService } from "@agent-relay/core";
-import { NOOP_LOGGER } from "@agent-relay/core";
+import type {
+  PendingRequestRecord,
+  RelayLogger,
+  RelayService,
+  SessionRecord,
+  WebChangeRecord,
+} from "@agent-relay/core";
+import { NOOP_LOGGER, redactText } from "@agent-relay/core";
 import type { TelegramReplyRouter } from "@agent-relay/core";
 import { z } from "zod";
+
+import {
+  WebAttentionItemV1Schema,
+  WebChangeV1Schema,
+  WebEventDetailV1Schema,
+  WebResolveRequestV1Schema,
+  WebSessionSummaryV1Schema,
+} from "./web-contract.js";
+import type {
+  WebAttentionItemV1,
+  WebChangeV1,
+  WebEventDetailV1,
+  WebSessionSummaryV1,
+  WebSupportedAction,
+} from "./web-contract.js";
+import type { WebCredential } from "./web-credential.js";
 
 const drainSchema = z
   .object({
@@ -19,6 +43,8 @@ const drainSchema = z
   .strict();
 
 const diagnosticLimitSchema = z.coerce.number().int().min(1).max(500);
+const webLimitSchema = z.coerce.number().int().min(1).max(500);
+const webCursorSchema = z.coerce.number().int().nonnegative();
 
 const retentionSchema = z
   .object({
@@ -88,6 +114,8 @@ export interface RelayHttpServerOptions {
   logger?: RelayLogger;
   replyRouter?: TelegramReplyRouter;
   telegramWebhookSecret?: string;
+  webCredential?: WebCredential;
+  webStreamPollMs?: number;
 }
 
 class HttpRequestError extends Error {
@@ -163,6 +191,218 @@ function assertAuthorized(
   }
 }
 
+function secretsMatch(actual: string | undefined, expected: string): boolean {
+  if (actual === undefined) {
+    return false;
+  }
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    actualBytes.length === expectedBytes.length &&
+    timingSafeEqual(actualBytes, expectedBytes)
+  );
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === "127.0.0.1" ||
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname === "[::1]" ||
+    hostname === "::ffff:127.0.0.1"
+  );
+}
+
+function assertWebAuthorized(
+  request: IncomingMessage,
+  credential: WebCredential | undefined,
+): WebCredential {
+  if (credential === undefined) {
+    throw new HttpRequestError(404, "not-found", "relay route not found");
+  }
+  const authorization = request.headers.authorization;
+  const token = authorization?.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : undefined;
+  if (!secretsMatch(token, credential.token)) {
+    throw new HttpRequestError(
+      401,
+      "web-unauthorized",
+      "web control authorization failed",
+    );
+  }
+  return credential;
+}
+
+function assertWebOrigin(
+  request: IncomingMessage,
+  credential: WebCredential,
+  requireCsrf: boolean,
+): void {
+  if (
+    request.headers["sec-fetch-site"] === "cross-site" ||
+    !isLoopbackHostname(request.socket.localAddress ?? "")
+  ) {
+    throw new HttpRequestError(
+      403,
+      "web-origin-rejected",
+      "web control requests must remain on the loopback interface",
+    );
+  }
+  const rawOrigin = request.headers.origin;
+  if (rawOrigin !== undefined) {
+    let origin: URL;
+    try {
+      origin = new URL(rawOrigin);
+    } catch {
+      throw new HttpRequestError(
+        403,
+        "web-origin-rejected",
+        "web control origin is malformed",
+      );
+    }
+    const host = request.headers.host;
+    if (
+      origin.protocol !== "http:" ||
+      !isLoopbackHostname(origin.hostname) ||
+      host === undefined ||
+      origin.host !== host
+    ) {
+      throw new HttpRequestError(
+        403,
+        "web-origin-rejected",
+        "web control origin does not match the local daemon",
+      );
+    }
+  }
+  if (requireCsrf) {
+    if (rawOrigin === undefined) {
+      throw new HttpRequestError(
+        403,
+        "web-origin-required",
+        "browser mutations require an explicit same-origin Origin header",
+      );
+    }
+    const csrf = request.headers["x-agent-relay-csrf"];
+    if (typeof csrf !== "string" || !secretsMatch(csrf, credential.csrfToken)) {
+      throw new HttpRequestError(
+        403,
+        "web-csrf-rejected",
+        "browser mutation CSRF validation failed",
+      );
+    }
+  }
+}
+
+function sessionKey(input: {
+  machineId: string;
+  harness: string;
+  sessionId: string;
+}): string {
+  return sha256(
+    `${input.machineId}\u001f${input.harness}\u001f${input.sessionId}`,
+  ).slice(0, 24);
+}
+
+function supportedActions(request: PendingRequestRecord): WebSupportedAction[] {
+  switch (request.requestKind) {
+    case "input":
+    case "continuation":
+      return ["respond-text"];
+    case "confirm":
+    case "select":
+    case "permission":
+      return ["choose-option"];
+    case "multi-select":
+    case "question-set":
+      return [];
+  }
+}
+
+function webOptions(request: PendingRequestRecord) {
+  return request.options.map((option) => ({
+    optionId: option.optionId,
+    label: redactText(option.label, 120),
+  }));
+}
+
+function toWebSession(
+  session: SessionRecord,
+  attentionCount: number,
+): WebSessionSummaryV1 {
+  const key = sessionKey(session);
+  return WebSessionSummaryV1Schema.parse({
+    schema: "agent-relay-web-session.v1",
+    sessionKey: key,
+    harness: session.harness,
+    surface: session.surface,
+    repository: redactText(session.project.displayName, 120),
+    ...(session.project.branch === undefined
+      ? {}
+      : { branch: redactText(session.project.branch, 240) }),
+    state: session.state,
+    ...(session.lastEventType === undefined
+      ? {}
+      : { lastEventType: session.lastEventType }),
+    lastSeenAt: session.lastSeenAt,
+    attentionCount,
+  });
+}
+
+function toWebAttention(request: PendingRequestRecord): WebAttentionItemV1 {
+  return WebAttentionItemV1Schema.parse({
+    schema: "agent-relay-web-attention.v1",
+    requestId: request.correlationId,
+    eventId: request.eventId,
+    sessionKey: sessionKey(request),
+    harness: request.harness,
+    requestKind: request.requestKind,
+    state: "open",
+    promptPreview: redactText(request.question, 240),
+    expiresAt: request.expiresAt,
+    supportedActions: supportedActions(request),
+    options: webOptions(request),
+  });
+}
+
+function parseWebCursor(
+  url: URL,
+  request: IncomingMessage,
+  allowLastEventId: boolean,
+): number {
+  const queryCursor = url.searchParams.get("after");
+  const lastEventId = allowLastEventId
+    ? request.headers["last-event-id"]
+    : undefined;
+  const candidate =
+    queryCursor ??
+    (typeof lastEventId === "string" && lastEventId.length > 0
+      ? lastEventId
+      : "0");
+  return webCursorSchema.parse(candidate);
+}
+
+function sendSseChange(response: ServerResponse, change: WebChangeV1): void {
+  response.write(`id: ${change.cursor}\n`);
+  response.write("event: change\n");
+  response.write(`data: ${JSON.stringify(change)}\n\n`);
+}
+
+function toWebChange(change: WebChangeRecord): WebChangeV1 {
+  const hidesMachineIdentity =
+    change.kind === "session" || change.kind === "session-control";
+  return WebChangeV1Schema.parse({
+    cursor: change.cursor,
+    kind: change.kind,
+    action: change.action,
+    entityId: hidesMachineIdentity
+      ? `session_${sha256(change.entityId).slice(0, 24)}`
+      : change.entityId,
+    occurredAt: change.occurredAt,
+    payload: change.payload,
+  });
+}
+
 export function createRelayHttpServer(
   service: RelayService,
   options: RelayHttpServerOptions = {},
@@ -174,10 +414,221 @@ export function createRelayHttpServer(
     const at = new Date().toISOString();
     try {
       const url = new URL(request.url ?? "/", "http://relay.local");
+      const isWebRoute =
+        url.pathname === "/v1/web" || url.pathname.startsWith("/v1/web/");
       const isTelegramWebhook =
         request.method === "POST" && url.pathname === "/v1/telegram/updates";
-      if (!isTelegramWebhook || options.telegramWebhookSecret === undefined) {
+      if (isWebRoute) {
+        const credential = assertWebAuthorized(request, options.webCredential);
+        assertWebOrigin(request, credential, request.method === "POST");
+      } else if (
+        !isTelegramWebhook ||
+        options.telegramWebhookSecret === undefined
+      ) {
         assertAuthorized(request, options.token);
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/web/sessions") {
+        const limit = webLimitSchema.parse(
+          url.searchParams.get("limit") ?? "100",
+        );
+        sendJson(response, 200, {
+          sessions: service
+            .listSessionsWithAttention(limit)
+            .map(({ session, attentionCount }) =>
+              toWebSession(session, attentionCount),
+            ),
+        });
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/v1/web/attention") {
+        const limit = webLimitSchema.parse(
+          url.searchParams.get("limit") ?? "100",
+        );
+        sendJson(response, 200, {
+          attention: service
+            .listPendingRequests(limit)
+            .map((pending) => toWebAttention(pending)),
+        });
+        return;
+      }
+      const webEventMatch = url.pathname.match(/^\/v1\/web\/events\/([^/]+)$/);
+      if (request.method === "GET" && webEventMatch !== null) {
+        const eventId = decodeURIComponent(webEventMatch[1] ?? "");
+        const record = service.store.getEvent(eventId);
+        if (record === undefined) {
+          throw new HttpRequestError(
+            404,
+            "web-event-not-found",
+            "web event was not found",
+          );
+        }
+        const event = record.event;
+        const pending = service.store.getPendingForEvent(event.eventId);
+        const detail: WebEventDetailV1 = WebEventDetailV1Schema.parse({
+          schema: "agent-relay-web-event.v1",
+          eventId: event.eventId,
+          occurredAt: event.occurredAt,
+          harness: event.harness,
+          surface: event.surface,
+          harnessVersion: event.harnessVersion,
+          sessionKey: sessionKey(event),
+          type: event.type,
+          deliveryStatus: record.status,
+          repository: redactText(event.project.displayName, 120),
+          ...(event.project.branch === undefined
+            ? {}
+            : { branch: redactText(event.project.branch, 240) }),
+          ...(event.summary === undefined
+            ? {}
+            : { summary: redactText(event.summary, 1_000) }),
+          ...(event.failure === undefined
+            ? {}
+            : {
+                failure: {
+                  code: event.failure.class,
+                  message: redactText(event.failure.message, 500),
+                },
+              }),
+          ...(pending === undefined
+            ? {}
+            : {
+                request: {
+                  requestId: pending.correlationId,
+                  kind: pending.requestKind,
+                  state: pending.state,
+                  promptPreview: redactText(pending.question, 240),
+                  expiresAt: pending.expiresAt,
+                  supportedActions:
+                    pending.state === "open" ? supportedActions(pending) : [],
+                  options: webOptions(pending),
+                },
+              }),
+        });
+        sendJson(response, 200, { event: detail });
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/v1/web/changes") {
+        const after = parseWebCursor(url, request, false);
+        const limit = webLimitSchema.parse(
+          url.searchParams.get("limit") ?? "100",
+        );
+        sendJson(response, 200, {
+          after,
+          bounds: service.store.webChangeBounds(),
+          changes: service.store
+            .listWebChanges(after, limit)
+            .map((change) => toWebChange(change)),
+        });
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/v1/web/stream") {
+        let cursor = parseWebCursor(url, request, true);
+        const bounds = service.store.webChangeBounds();
+        response.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-store",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+          "x-content-type-options": "nosniff",
+        });
+        response.flushHeaders();
+        const missingHistory =
+          (bounds.firstCursor !== undefined &&
+            cursor + 1 < bounds.firstCursor) ||
+          (bounds.lastCursor !== undefined && cursor > bounds.lastCursor) ||
+          (bounds.lastCursor === undefined && cursor > 0);
+        if (missingHistory) {
+          response.write("event: reset\n");
+          response.write(`data: ${JSON.stringify(bounds)}\n\n`);
+          cursor = bounds.lastCursor ?? 0;
+        } else {
+          for (const change of service.store.listWebChanges(cursor, 500)) {
+            sendSseChange(response, toWebChange(change));
+            cursor = change.cursor;
+          }
+        }
+        response.write(": connected\n\n");
+        let polling = false;
+        const poll = setInterval(() => {
+          if (polling || response.destroyed || response.writableEnded) {
+            return;
+          }
+          polling = true;
+          try {
+            const changes = service.store.listWebChanges(cursor, 500);
+            for (const change of changes) {
+              sendSseChange(response, toWebChange(change));
+              cursor = change.cursor;
+            }
+          } catch (error) {
+            logger.log({
+              level: "error",
+              code: "web.stream-failed",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "web event stream failed",
+              at: new Date().toISOString(),
+            });
+            response.destroy();
+          } finally {
+            polling = false;
+          }
+        }, options.webStreamPollMs ?? 250);
+        const heartbeat = setInterval(() => {
+          if (!response.destroyed && !response.writableEnded) {
+            response.write(": heartbeat\n\n");
+          }
+        }, 15_000);
+        const cleanUp = (): void => {
+          clearInterval(poll);
+          clearInterval(heartbeat);
+        };
+        response.once("close", cleanUp);
+        return;
+      }
+      const webResolveMatch = url.pathname.match(
+        /^\/v1\/web\/requests\/([^/]+)\/resolve$/,
+      );
+      if (request.method === "POST" && webResolveMatch !== null) {
+        const correlationId = decodeURIComponent(webResolveMatch[1] ?? "");
+        const command = WebResolveRequestV1Schema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.resolveBrowser({
+          correlationId,
+          operationId: command.operationId,
+          answer: command.answer,
+        });
+        const status =
+          result.outcome === "answered"
+            ? 200
+            : result.outcome === "not_found"
+              ? 404
+              : result.outcome === "invalid_answer" ||
+                  result.outcome === "unsupported_request"
+                ? 422
+                : 409;
+        sendJson(response, status, {
+          outcome: result.outcome,
+          replayed: result.replayed,
+          ...(result.request === undefined
+            ? {}
+            : { requestState: result.request.state }),
+        });
+        return;
+      }
+      if (isWebRoute) {
+        throw new HttpRequestError(
+          request.method === "OPTIONS" ? 405 : 404,
+          request.method === "OPTIONS"
+            ? "web-preflight-not-supported"
+            : "not-found",
+          request.method === "OPTIONS"
+            ? "cross-origin web requests are not supported"
+            : "relay route not found",
+        );
       }
 
       if (request.method === "GET" && url.pathname === "/v1/health") {
