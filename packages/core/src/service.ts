@@ -30,6 +30,8 @@ import type {
   ResolutionResult,
   RetryPolicy,
   ResolveRequestInput,
+  SessionRecord,
+  SessionTimelineRecord,
 } from "./store.js";
 import { DEFAULT_RETRY_POLICY } from "./store.js";
 import { sessionTopicMetadata } from "./topic.js";
@@ -286,6 +288,30 @@ export class RelayService {
       laneState: this.store.getSessionLaneState(session),
       attentionCount: this.store.countOpenRequests(session),
     }));
+  }
+
+  public findSessionByWebKey(key: string): SessionRecord | undefined {
+    if (!/^[a-f0-9]{24}$/.test(key)) {
+      return undefined;
+    }
+    return this.store
+      .listSessions()
+      .find(
+        (session) =>
+          sha256(
+            `${session.machineId}\u001f${session.harness}\u001f${session.sessionId}`,
+          ).slice(0, 24) === key,
+      );
+  }
+
+  public listSessionTimeline(
+    key: string,
+    limit = 100,
+  ): SessionTimelineRecord[] | undefined {
+    const session = this.findSessionByWebKey(key);
+    return session === undefined
+      ? undefined
+      : this.store.listSessionTimeline(session, limit);
   }
 
   public resolveTerminal(

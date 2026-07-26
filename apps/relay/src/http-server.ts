@@ -17,25 +17,35 @@ import type {
   SessionRecord,
   WebChangeRecord,
 } from "@agent-relay/core";
-import { NOOP_LOGGER, redactText } from "@agent-relay/core";
+import {
+  NOOP_LOGGER,
+  redactDiagnosticText,
+  redactText,
+} from "@agent-relay/core";
 import type { TelegramReplyRouter } from "@agent-relay/core";
 import { z } from "zod";
 
 import {
   WebAttentionItemV1Schema,
   WebChangeV1Schema,
+  WebDiagnosticExportV1Schema,
   WebEventDetailV1Schema,
+  WebEventRevealV1Schema,
   WebResolveRequestV1Schema,
   WebSessionSummaryV1Schema,
+  WebTimelineEntryV1Schema,
 } from "./web-contract.js";
 import { loadWebAsset } from "./web-assets.js";
 import type { WebAssetName } from "./web-assets.js";
 import type {
   WebAttentionItemV1,
   WebChangeV1,
+  WebDiagnosticExportV1,
   WebEventDetailV1,
+  WebEventRevealV1,
   WebSessionSummaryV1,
   WebSupportedAction,
+  WebTimelineEntryV1,
 } from "./web-contract.js";
 import type { WebCredential } from "./web-credential.js";
 
@@ -168,12 +178,14 @@ function sendJson(
   response: ServerResponse,
   status: number,
   body: unknown,
+  headers: Record<string, string> = {},
 ): void {
   const payload = JSON.stringify(body);
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(payload),
     "cache-control": "no-store",
+    ...headers,
   });
   response.end(payload);
 }
@@ -540,6 +552,37 @@ export function createRelayHttpServer(
         });
         return;
       }
+      const webTimelineMatch = url.pathname.match(
+        /^\/v1\/web\/sessions\/([^/]+)\/timeline$/,
+      );
+      if (request.method === "GET" && webTimelineMatch !== null) {
+        const key = decodeURIComponent(webTimelineMatch[1] ?? "");
+        const limit = webLimitSchema.parse(
+          url.searchParams.get("limit") ?? "100",
+        );
+        const records = service.listSessionTimeline(key, limit);
+        if (records === undefined) {
+          throw new HttpRequestError(
+            404,
+            "web-session-not-found",
+            "web session was not found",
+          );
+        }
+        const timeline: WebTimelineEntryV1[] = records.map((record) =>
+          WebTimelineEntryV1Schema.parse({
+            ...record,
+            status: redactDiagnosticText(record.status, 120),
+            label: redactDiagnosticText(record.label, 120),
+            ...(record.detailCode === undefined
+              ? {}
+              : {
+                  detailCode: redactDiagnosticText(record.detailCode, 120),
+                }),
+          }),
+        );
+        sendJson(response, 200, { sessionKey: key, timeline });
+        return;
+      }
       const webEventMatch = url.pathname.match(/^\/v1\/web\/events\/([^/]+)$/);
       if (request.method === "GET" && webEventMatch !== null) {
         const eventId = decodeURIComponent(webEventMatch[1] ?? "");
@@ -594,6 +637,74 @@ export function createRelayHttpServer(
               }),
         });
         sendJson(response, 200, { event: detail });
+        return;
+      }
+      const webRevealMatch = url.pathname.match(
+        /^\/v1\/web\/events\/([^/]+)\/reveal$/,
+      );
+      if (request.method === "GET" && webRevealMatch !== null) {
+        const eventId = decodeURIComponent(webRevealMatch[1] ?? "");
+        const record = service.store.getEvent(eventId);
+        if (record === undefined) {
+          throw new HttpRequestError(
+            404,
+            "web-event-not-found",
+            "web event was not found",
+          );
+        }
+        const event = record.event;
+        const reveal: WebEventRevealV1 = WebEventRevealV1Schema.parse({
+          schema: "agent-relay-web-event-reveal.v1",
+          eventId: event.eventId,
+          notice: "explicit-private-content",
+          ...(event.summary === undefined
+            ? {}
+            : { summary: redactText(event.summary, 2_000) }),
+          ...(event.lastAssistantMessage === undefined
+            ? {}
+            : {
+                assistantExcerpt: redactText(event.lastAssistantMessage, 2_000),
+              }),
+          ...(event.failure === undefined
+            ? {}
+            : {
+                failure: {
+                  code: event.failure.class,
+                  message: redactText(event.failure.message, 1_000),
+                },
+              }),
+        });
+        sendJson(response, 200, { event: reveal });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/v1/web/diagnostics/export"
+      ) {
+        const limit = webLimitSchema.parse(
+          url.searchParams.get("limit") ?? "200",
+        );
+        const diagnosticExport: WebDiagnosticExportV1 =
+          WebDiagnosticExportV1Schema.parse({
+            schema: "agent-relay-web-diagnostics.v1",
+            generatedAt: new Date().toISOString(),
+            sanitized: true,
+            retention: { defaultDays: 90, limit },
+            diagnostics: service.store
+              .listDiagnostics(limit)
+              .map((diagnostic) => ({
+                diagnosticId: diagnostic.diagnosticId,
+                recordedAt: diagnostic.recordedAt,
+                source: diagnostic.source,
+                level: diagnostic.level,
+                code: diagnostic.code,
+                message: redactDiagnosticText(diagnostic.message, 500),
+              })),
+          });
+        sendJson(response, 200, diagnosticExport, {
+          "content-disposition":
+            'attachment; filename="agent-relay-diagnostics.json"',
+        });
         return;
       }
       if (request.method === "GET" && url.pathname === "/v1/web/changes") {

@@ -136,6 +136,9 @@
                 <option value="all">All repositories</option>
               </select>
             </label>
+            <button class="export-button" type="button" data-export-diagnostics>
+              Export diagnostics
+            </button>
           </section>
 
           <div class="workspace">
@@ -174,6 +177,74 @@
                 </p>
               </div>
             </aside>
+          </div>
+
+          <div class="drawer-backdrop" data-drawer-backdrop hidden>
+            <section
+              class="timeline-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="timeline-title"
+            >
+              <header class="drawer-header">
+                <div>
+                  <p class="eyebrow">Session evidence</p>
+                  <h2 id="timeline-title" data-timeline-title>Timeline</h2>
+                  <p data-timeline-subtitle></p>
+                </div>
+                <button
+                  class="close-button"
+                  type="button"
+                  aria-label="Close session timeline"
+                  data-close-timeline
+                >
+                  ×
+                </button>
+              </header>
+              <div class="drawer-content">
+                <div>
+                  <div class="timeline-list" data-timeline-list></div>
+                  <div class="empty-state compact" data-timeline-empty hidden>
+                    <span aria-hidden="true">◌</span>
+                    <h3>No retained evidence</h3>
+                    <p>
+                      This session has no timeline rows inside the current
+                      retention window.
+                    </p>
+                  </div>
+                </div>
+                <aside class="event-detail" data-event-detail-panel hidden>
+                  <div class="detail-heading">
+                    <div>
+                      <p class="eyebrow">Bounded detail</p>
+                      <h3>Event evidence</h3>
+                    </div>
+                    <button type="button" data-close-detail>Close</button>
+                  </div>
+                  <pre data-event-detail></pre>
+                  <button
+                    class="reveal-button"
+                    type="button"
+                    data-reveal-event
+                    hidden
+                  >
+                    Reveal private assistant excerpt
+                  </button>
+                  <div class="private-reveal" data-private-reveal hidden>
+                    <strong>Explicit private content</strong>
+                    <p>
+                      Secret patterns remain redacted. This excerpt is never
+                      loaded by the default detail view.
+                    </p>
+                    <pre data-private-reveal-content></pre>
+                  </div>
+                </aside>
+              </div>
+              <footer class="drawer-footer">
+                Timeline and diagnostic history are retention-bounded. Missing
+                older rows are not inferred.
+              </footer>
+            </section>
           </div>
         </section>
       </main>

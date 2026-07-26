@@ -133,6 +133,76 @@ export const WebChangeV1Schema = z
   })
   .strict();
 
+export const WebTimelineEntryV1Schema = z
+  .object({
+    id: z.string().min(8).max(256),
+    kind: z.enum([
+      "hook-event",
+      "delivery",
+      "request",
+      "operator-action",
+      "continuation",
+    ]),
+    at: timestamp,
+    status: z.string().min(1).max(120),
+    label: z.string().min(1).max(120),
+    eventId: opaqueId.optional(),
+    correlationId: opaqueId.optional(),
+    detailCode: z.string().min(1).max(120).optional(),
+  })
+  .strict();
+
+export const WebEventRevealV1Schema = z
+  .object({
+    schema: z.literal("agent-relay-web-event-reveal.v1"),
+    eventId: opaqueId,
+    notice: z.literal("explicit-private-content"),
+    summary: z.string().max(2_000).optional(),
+    assistantExcerpt: z.string().max(2_000).optional(),
+    failure: z
+      .object({
+        code: z.string().min(1).max(120),
+        message: z.string().max(1_000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export const WebDiagnosticExportV1Schema = z
+  .object({
+    schema: z.literal("agent-relay-web-diagnostics.v1"),
+    generatedAt: timestamp,
+    sanitized: z.literal(true),
+    retention: z
+      .object({
+        defaultDays: z.number().int().positive(),
+        limit: z.number().int().positive().max(500),
+      })
+      .strict(),
+    diagnostics: z
+      .array(
+        z
+          .object({
+            diagnosticId: opaqueId,
+            recordedAt: timestamp,
+            source: z.enum([
+              "hook",
+              "supervisor",
+              "fallback-spool",
+              "installer",
+              "daemon",
+            ]),
+            level: z.enum(["info", "warn", "error"]),
+            code: z.string().min(1).max(120),
+            message: z.string().max(500),
+          })
+          .strict(),
+      )
+      .max(500),
+  })
+  .strict();
+
 export type WebSupportedAction = z.infer<typeof WebSupportedActionSchema>;
 export type WebOptionV1 = z.infer<typeof WebOptionV1Schema>;
 export type WebSessionSummaryV1 = z.infer<typeof WebSessionSummaryV1Schema>;
@@ -140,3 +210,6 @@ export type WebAttentionItemV1 = z.infer<typeof WebAttentionItemV1Schema>;
 export type WebEventDetailV1 = z.infer<typeof WebEventDetailV1Schema>;
 export type WebResolveRequestV1 = z.infer<typeof WebResolveRequestV1Schema>;
 export type WebChangeV1 = z.infer<typeof WebChangeV1Schema>;
+export type WebTimelineEntryV1 = z.infer<typeof WebTimelineEntryV1Schema>;
+export type WebEventRevealV1 = z.infer<typeof WebEventRevealV1Schema>;
+export type WebDiagnosticExportV1 = z.infer<typeof WebDiagnosticExportV1Schema>;

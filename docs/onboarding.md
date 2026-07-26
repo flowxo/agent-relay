@@ -227,6 +227,14 @@ expiry-ordered attention queue. Reloading deliberately requires the credential
 again. A disconnected, degraded, or stale board keeps those states visually
 distinct instead of presenting cached data as live.
 
+Select any session row to open its bounded evidence timeline. Event, delivery,
+request, operator-action, and continuation entries share their retained event
+and correlation IDs. Default details remain transcript-free. The separate
+**Reveal private assistant excerpt** action is the only UI path that requests
+bounded assistant content, and recognized secrets remain redacted. **Export
+diagnostics** downloads at most 500 retained records after applying current
+secret and machine-path redaction again.
+
 Starting after an offline period may replay previously spooled events. Stable
 event IDs keep replay idempotent, but events that were never delivered before
 the restart may produce historical notifications.

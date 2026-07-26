@@ -7,6 +7,15 @@ const laneOrder = new Map([
   ["ended", 5],
 ]);
 
+export function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 export function reconcileSessions(sessions) {
   const byKey = new Map();
   for (const session of sessions) {

@@ -52,7 +52,10 @@ All list limits default to 100 and are bounded from 1 through 500.
 | ------------------------------------------ | ---------------------------------------------------------------------------- |
 | `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, lane state, attention count |
 | `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions               |
+| `GET /v1/web/sessions/:key/timeline`       | Correlated retained session evidence                                         |
 | `GET /v1/web/events/:eventId`              | One bounded event/request detail                                             |
+| `GET /v1/web/events/:eventId/reveal`       | Explicit bounded private-content reveal                                      |
+| `GET /v1/web/diagnostics/export`           | Downloadable re-sanitized diagnostic evidence                                |
 | `GET /v1/web/changes?after=0&limit=100`    | Ordered durable changes and retained cursor bounds                           |
 | `GET /v1/web/stream?after=0`               | Ordered Server-Sent Events                                                   |
 | `POST /v1/web/requests/:requestId/resolve` | Idempotent text or option-ID resolution                                      |
@@ -76,6 +79,32 @@ The currently supported browser actions are:
 
 Multi-select and question-set requests remain visible but advertise no action
 until the structured browser UI implements their durable draft workflow.
+
+## Timeline, detail, and diagnostics
+
+Selecting a session in the board loads at most 200 newest timeline rows. The
+timeline is assembled from the same retained SQLite records and distinguishes:
+
+- harness hook events, including proven crashes and failures;
+- individual delivery attempts, retries, and terminal delivery states;
+- request creation and the winning Telegram, terminal, or browser resolution;
+- Telegram card actions; and
+- claimed, running, succeeded, or failed harness continuation attempts.
+
+Event IDs and request correlation IDs connect those rows without copying the
+operator answer, assistant transcript, delivery error message, process
+arguments, or draft text into the timeline. The default event-detail route
+continues to omit `lastAssistantMessage`.
+
+The separate `/reveal` route is called only after the operator activates
+**Reveal private assistant excerpt**. It returns at most 2,000 characters and
+still redacts recognized credentials. The UI renders default details and
+revealed content as text, never injected markup.
+
+Diagnostic export is bounded to 500 newest retained records. It applies current
+secret and machine-path redaction again at export time, including to older
+records stored before a redaction improvement. The response declares
+`sanitized: true` and includes the default 90-day diagnostic retention window.
 
 ## Idempotent resolution
 
@@ -112,6 +141,13 @@ replaced and the cursor is ahead of it, the stream emits `event: reset` with the
 current bounds. The client must refetch sessions and attention, then reconnect
 from the reported last cursor. Change rows and idempotency commands use the same
 bounded retention windows as delivered events and resolved requests.
+
+Timeline rows are projections of their source records, not a second unbounded
+history. Event and delivery rows disappear with event retention; resolved
+request, action, and continuation rows disappear with request retention;
+diagnostics disappear with diagnostic retention; and terminal sessions may then
+be removed. The UI reports an empty/pruned state rather than inferring missing
+history.
 
 ## Local verification
 

@@ -232,6 +232,20 @@ export interface WebChangeBounds {
   lastCursor?: number;
 }
 
+export type SessionTimelineKind =
+  "hook-event" | "delivery" | "request" | "operator-action" | "continuation";
+
+export interface SessionTimelineRecord {
+  id: string;
+  kind: SessionTimelineKind;
+  at: string;
+  status: string;
+  label: string;
+  eventId?: string;
+  correlationId?: string;
+  detailCode?: string;
+}
+
 export type PendingRequestState =
   "open" | "answered" | "expired" | "cancelled" | "failed";
 
@@ -731,6 +745,17 @@ interface WebChangeRow {
   session_id: string | null;
   occurred_at: string;
   payload_json: string;
+}
+
+interface SessionTimelineRow {
+  id: string;
+  kind: SessionTimelineKind;
+  at: string;
+  status: string;
+  label: string;
+  event_id: string | null;
+  correlation_id: string | null;
+  detail_code: string | null;
 }
 
 function stateForEvent(
@@ -5526,6 +5551,162 @@ export class RelayStore {
       ...(row.session_id === null ? {} : { sessionId: row.session_id }),
       occurredAt: row.occurred_at,
       payload: JSON.parse(row.payload_json) as Record<string, unknown>,
+    }));
+  }
+
+  public listSessionTimeline(
+    input: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+    },
+    limit = 100,
+  ): SessionTimelineRecord[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("session timeline limit must be between 1 and 500");
+    }
+    const rows = this.database
+      .prepare(
+        `
+        WITH timeline AS (
+          SELECT
+            'event:' || events.event_id AS id,
+            'hook-event' AS kind,
+            json_extract(events.payload_json, '$.occurredAt') AS at,
+            events.status AS status,
+            events.type AS label,
+            events.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            events.last_error_code AS detail_code
+          FROM events
+          LEFT JOIN pending_requests AS pending
+            ON pending.event_id = events.event_id
+          WHERE events.machine_id = @machineId
+            AND events.harness = @harness
+            AND events.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'delivery:' || attempts.id AS id,
+            'delivery' AS kind,
+            COALESCE(attempts.finished_at, attempts.started_at) AS at,
+            attempts.status AS status,
+            'attempt-' || attempts.attempt_number AS label,
+            events.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            attempts.error_code AS detail_code
+          FROM delivery_attempts AS attempts
+          JOIN events ON events.event_id = attempts.event_id
+          LEFT JOIN pending_requests AS pending
+            ON pending.event_id = events.event_id
+          WHERE events.machine_id = @machineId
+            AND events.harness = @harness
+            AND events.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'request:' || pending.correlation_id || ':opened' AS id,
+            'request' AS kind,
+            pending.created_at AS at,
+            'open' AS status,
+            pending.request_kind AS label,
+            pending.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            NULL AS detail_code
+          FROM pending_requests AS pending
+          WHERE pending.machine_id = @machineId
+            AND pending.harness = @harness
+            AND pending.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'request:' || pending.correlation_id || ':resolved' AS id,
+            'operator-action' AS kind,
+            pending.resolved_at AS at,
+            pending.state AS status,
+            COALESCE(pending.resolved_by, 'unknown') AS label,
+            pending.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            'request-resolution' AS detail_code
+          FROM pending_requests AS pending
+          WHERE pending.machine_id = @machineId
+            AND pending.harness = @harness
+            AND pending.session_id = @sessionId
+            AND pending.resolved_at IS NOT NULL
+
+          UNION ALL
+
+          SELECT
+            'action:' || actions.action_token AS id,
+            'operator-action' AS kind,
+            COALESCE(executions.finished_at, executions.claimed_at) AS at,
+            executions.state AS status,
+            actions.action_kind AS label,
+            events.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            executions.outcome AS detail_code
+          FROM card_action_executions AS executions
+          JOIN card_actions AS actions
+            ON actions.action_token = executions.action_token
+          JOIN events ON events.event_id = actions.event_id
+          LEFT JOIN pending_requests AS pending
+            ON pending.event_id = events.event_id
+          WHERE events.machine_id = @machineId
+            AND events.harness = @harness
+            AND events.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'resume:' || commands.correlation_id AS id,
+            'continuation' AS kind,
+            COALESCE(
+              commands.finished_at,
+              commands.started_at,
+              commands.claimed_at
+            ) AS at,
+            commands.state AS status,
+            'harness-resume' AS label,
+            pending.event_id AS event_id,
+            commands.correlation_id AS correlation_id,
+            COALESCE(
+              commands.error_code,
+              commands.signal,
+              CASE
+                WHEN commands.exit_code IS NULL THEN NULL
+                ELSE 'exit-' || commands.exit_code
+              END
+            ) AS detail_code
+          FROM resume_commands AS commands
+          LEFT JOIN pending_requests AS pending
+            ON pending.correlation_id = commands.correlation_id
+          WHERE commands.machine_id = @machineId
+            AND commands.harness = @harness
+            AND commands.session_id = @sessionId
+        )
+        SELECT
+          id, kind, at, status, label, event_id, correlation_id, detail_code
+        FROM timeline
+        WHERE at IS NOT NULL
+        ORDER BY at DESC, id DESC
+        LIMIT @limit
+      `,
+      )
+      .all({ ...input, limit }) as SessionTimelineRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      at: row.at,
+      status: row.status,
+      label: row.label,
+      ...(row.event_id === null ? {} : { eventId: row.event_id }),
+      ...(row.correlation_id === null
+        ? {}
+        : { correlationId: row.correlation_id }),
+      ...(row.detail_code === null ? {} : { detailCode: row.detail_code }),
     }));
   }
 

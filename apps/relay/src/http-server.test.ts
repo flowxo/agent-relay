@@ -129,13 +129,19 @@ describe("relay HTTP daemon", () => {
     const html = await page.text();
     expect(html).toContain("Agent Relay Console");
     expect(html).toContain("data-attention-list");
+    expect(html).toContain("data-timeline-list");
+    expect(html).toContain("data-export-diagnostics");
     expect(html).not.toContain(webCredential.token);
     expect(html).not.toContain(webCredential.csrfToken);
 
     const app = await fetch(`${runtime.baseUrl}/ui/app.js`);
     expect(app.status).toBe(200);
     expect(app.headers.get("content-type")).toContain("text/javascript");
-    expect(await app.text()).toContain("/v1/web/stream");
+    const appText = await app.text();
+    expect(appText).toContain("/v1/web/stream");
+    expect(appText).toContain("/timeline?limit=200");
+    expect(appText).toContain("/reveal");
+    expect(appText).toContain("/diagnostics/export?limit=500");
     const head = await fetch(`${runtime.baseUrl}/ui/styles.css`, {
       method: "HEAD",
     });
@@ -418,6 +424,116 @@ describe("relay HTTP daemon", () => {
     expect(combined).toContain("option_web_staging_12345678");
     expect(combined).toContain("choose-option");
     expect(combined).toContain("example");
+    await runtime.close();
+  });
+
+  it("correlates a bounded session timeline and reveals private content only explicitly", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    const secret = "sk-syntheticRevealSecret123456789";
+    const input: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_web_timeline_detail_12345678",
+      turnId: "turn_web_timeline_detail_12345678",
+      type: "input.required",
+      summary: "A bounded timeline summary",
+      lastAssistantMessage: `Explicit assistant detail with ${secret}`,
+      request: {
+        correlationId: "request_web_timeline_detail_12345678",
+        kind: "input",
+        question: "What should happen next?",
+        expiresAt: "2026-07-24T12:10:00.000Z",
+      },
+    };
+    runtime.service.ingest(input);
+    await runtime.service.drain();
+    const sessionResponse = await fetch(
+      `${runtime.baseUrl}/v1/web/sessions?limit=1`,
+      { headers: webHeaders(runtime) },
+    );
+    const sessionBody = (await sessionResponse.json()) as {
+      sessions: Array<{ sessionKey: string }>;
+    };
+    const key = sessionBody.sessions[0]?.sessionKey ?? "";
+    const timelineResponse = await fetch(
+      `${runtime.baseUrl}/v1/web/sessions/${key}/timeline?limit=20`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(timelineResponse.status).toBe(200);
+    const timelineText = await timelineResponse.text();
+    const timeline = JSON.parse(timelineText) as {
+      timeline: Array<{
+        kind: string;
+        eventId?: string;
+        correlationId?: string;
+      }>;
+    };
+    expect(timeline.timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "hook-event",
+          eventId: input.eventId,
+          correlationId: input.request!.correlationId,
+        }),
+        expect.objectContaining({
+          kind: "delivery",
+          eventId: input.eventId,
+        }),
+        expect.objectContaining({
+          kind: "request",
+          correlationId: input.request!.correlationId,
+        }),
+      ]),
+    );
+    expect(timelineText).not.toContain("Explicit assistant detail");
+    expect(timelineText).not.toContain(secret);
+
+    const defaultDetail = await fetch(
+      `${runtime.baseUrl}/v1/web/events/${input.eventId}`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(await defaultDetail.text()).not.toContain(
+      "Explicit assistant detail",
+    );
+    const reveal = await fetch(
+      `${runtime.baseUrl}/v1/web/events/${input.eventId}/reveal`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(reveal.status).toBe(200);
+    const revealText = await reveal.text();
+    expect(revealText).toContain("explicit-private-content");
+    expect(revealText).toContain("Explicit assistant detail");
+    expect(revealText).not.toContain(secret);
+    expect(revealText).toContain("[REDACTED_OPENAI_KEY]");
+    await runtime.close();
+  });
+
+  it("exports bounded diagnostics with legacy secrets and paths re-sanitized", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    const secret = "ghp_syntheticDiagnosticSecret123456";
+    runtime.store.recordDiagnostic({
+      schema: "agent-relay-diagnostic.v1",
+      diagnosticId: "diag_web_export_12345678",
+      recordedAt: "2026-07-24T12:00:00.000Z",
+      source: "daemon",
+      level: "error",
+      code: "synthetic.export",
+      message: `failed at /Users/operator/private/project with ${secret}`,
+    });
+
+    const response = await fetch(
+      `${runtime.baseUrl}/v1/web/diagnostics/export?limit=20`,
+      { headers: webHeaders(runtime) },
+    );
+    const body = await response.text();
+    expect(response.status, body).toBe(200);
+    expect(response.headers.get("content-disposition")).toContain(
+      "agent-relay-diagnostics.json",
+    );
+    expect(body).toContain('"sanitized":true');
+    expect(body).toContain("[REDACTED_PATH]");
+    expect(body).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(body).not.toContain("/Users/operator");
+    expect(body).not.toContain(secret);
     await runtime.close();
   });
 

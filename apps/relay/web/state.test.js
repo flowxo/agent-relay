@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  escapeHtml,
   filterSessions,
   mergeCursor,
   parseSseBlock,
@@ -160,5 +161,8 @@ describe("local session board state", () => {
       event: "change",
       data: '{"kind":"session"}',
     });
+    expect(escapeHtml('<script data-secret="x">&</script>')).toBe(
+      "&lt;script data-secret=&quot;x&quot;&gt;&amp;&lt;/script&gt;",
+    );
   });
 });

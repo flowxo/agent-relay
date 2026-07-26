@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { CompositeLogger, MemoryLogger, RotatingFileLogger } from "./logger.js";
+import { redactDiagnosticText } from "./redaction.js";
 
 describe("bounded structured logging", () => {
   it("redacts, rotates, and applies private file modes", async () => {
@@ -67,5 +68,19 @@ describe("bounded structured logging", () => {
         code: "log.file-write-failed",
       }),
     ]);
+  });
+
+  it("removes secrets and machine-specific paths from diagnostic exports", () => {
+    const secret = "sk-syntheticDiagnosticSecret123456";
+    const value = redactDiagnosticText(
+      `failed at /Users/operator/private/project/file.ts with ${secret} and C:\\Users\\operator\\private.txt`,
+      500,
+    );
+
+    expect(value).not.toContain(secret);
+    expect(value).not.toContain("/Users/operator");
+    expect(value).not.toContain("C:\\Users\\operator");
+    expect(value).toContain("[REDACTED_OPENAI_KEY]");
+    expect(value.match(/\[REDACTED_PATH\]/g)).toHaveLength(2);
   });
 });

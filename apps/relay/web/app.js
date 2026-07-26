@@ -1,6 +1,7 @@
-/* global AbortController, CSS, FormData, Option, TextDecoder, clearTimeout, document, fetch, setInterval, setTimeout */
+/* global AbortController, Blob, CSS, FormData, Option, TextDecoder, URL, clearTimeout, document, fetch, setInterval, setTimeout */
 
 import {
+  escapeHtml,
   filterSessions,
   mergeCursor,
   parseSseBlock,
@@ -36,6 +37,19 @@ const elements = {
   attentionList: select("[data-attention-list]"),
   attentionCount: select("[data-attention-count]"),
   attentionEmpty: select("[data-attention-empty]"),
+  exportDiagnostics: select("[data-export-diagnostics]"),
+  drawerBackdrop: select("[data-drawer-backdrop]"),
+  timelineTitle: select("[data-timeline-title]"),
+  timelineSubtitle: select("[data-timeline-subtitle]"),
+  timelineList: select("[data-timeline-list]"),
+  timelineEmpty: select("[data-timeline-empty]"),
+  closeTimeline: select("[data-close-timeline]"),
+  eventDetailPanel: select("[data-event-detail-panel]"),
+  eventDetail: select("[data-event-detail]"),
+  closeDetail: select("[data-close-detail]"),
+  revealEvent: select("[data-reveal-event]"),
+  privateReveal: select("[data-private-reveal]"),
+  privateRevealContent: select("[data-private-reveal-content]"),
 };
 
 const model = {
@@ -47,6 +61,7 @@ const model = {
   lastSync: 0,
   lastContact: 0,
   highlightedSession: "",
+  openSessionKey: "",
   filters: {
     query: "",
     state: "all",
@@ -57,15 +72,6 @@ const model = {
   streamAbort: undefined,
   refreshTimer: undefined,
 };
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function relativeTime(timestamp) {
   const difference = Date.now() - Date.parse(timestamp);
@@ -164,11 +170,11 @@ function renderSessions() {
   elements.sessionList.innerHTML = filtered
     .map(
       (session) => `
-        <article class="session-card ${
+        <button type="button" class="session-card ${
           model.highlightedSession === session.sessionKey
             ? "is-highlighted"
             : ""
-        }" data-session-key="${escapeHtml(session.sessionKey)}">
+        }" data-session-key="${escapeHtml(session.sessionKey)}" data-open-session>
           <span class="lane-indicator ${escapeHtml(session.state)}" aria-hidden="true"></span>
           <div class="session-identity">
             <strong>${escapeHtml(session.displayId)}</strong>
@@ -191,7 +197,7 @@ function renderSessions() {
           }" aria-label="${session.attentionCount} open attention items">
             ${session.attentionCount}
           </span>
-        </article>`,
+        </button>`,
     )
     .join("");
 }
@@ -249,6 +255,122 @@ function render() {
   renderAttention();
 }
 
+function renderTimeline(timeline) {
+  elements.timelineEmpty.hidden = timeline.length !== 0;
+  elements.timelineList.hidden = timeline.length === 0;
+  elements.timelineList.innerHTML = timeline
+    .map(
+      (entry) => `
+        <button
+          class="timeline-entry"
+          type="button"
+          ${
+            entry.eventId === undefined
+              ? "disabled"
+              : `data-timeline-event="${escapeHtml(entry.eventId)}"`
+          }
+        >
+          <span class="timeline-marker ${escapeHtml(entry.kind)}" aria-hidden="true"></span>
+          <span>
+            <span class="timeline-entry-head">
+              <strong>${escapeHtml(entry.kind)} · ${escapeHtml(entry.label)}</strong>
+              <time datetime="${escapeHtml(entry.at)}">${escapeHtml(relativeTime(entry.at))}</time>
+            </span>
+            <span class="timeline-entry-meta">
+              <span class="timeline-correlation" title="${escapeHtml(entry.correlationId ?? entry.eventId ?? entry.id)}">
+                ${escapeHtml(entry.correlationId ?? entry.eventId ?? entry.id)}
+              </span>
+              <span class="timeline-status">${escapeHtml(entry.status)}</span>
+            </span>
+          </span>
+        </button>`,
+    )
+    .join("");
+}
+
+async function loadTimeline(key) {
+  elements.timelineList.innerHTML =
+    '<div class="empty-state compact"><span>↻</span><h3>Loading evidence</h3></div>';
+  elements.timelineList.hidden = false;
+  elements.timelineEmpty.hidden = true;
+  try {
+    const result = await api(
+      `/v1/web/sessions/${encodeURIComponent(key)}/timeline?limit=200`,
+    );
+    if (model.openSessionKey === key) {
+      renderTimeline(result.timeline);
+    }
+  } catch (error) {
+    if (model.openSessionKey !== key) return;
+    elements.timelineList.textContent =
+      error.status === 404
+        ? "This session was pruned while the timeline was open."
+        : "Timeline evidence is temporarily unavailable.";
+  }
+}
+
+function openTimeline(key) {
+  const session = model.sessions.find(({ sessionKey }) => sessionKey === key);
+  if (session === undefined) return;
+  model.openSessionKey = key;
+  elements.timelineTitle.textContent = `${session.repository} · ${session.displayId}`;
+  elements.timelineSubtitle.textContent = `${session.harness} · ${
+    session.branch ?? "default branch"
+  } · ${session.state}`;
+  elements.eventDetailPanel.hidden = true;
+  elements.privateReveal.hidden = true;
+  elements.drawerBackdrop.hidden = false;
+  document.body.classList.add("drawer-open");
+  elements.closeTimeline.focus();
+  void loadTimeline(key);
+}
+
+function closeTimeline() {
+  const key = model.openSessionKey;
+  model.openSessionKey = "";
+  elements.drawerBackdrop.hidden = true;
+  elements.eventDetailPanel.hidden = true;
+  document.body.classList.remove("drawer-open");
+  document.querySelector(`[data-session-key="${CSS.escape(key)}"]`)?.focus();
+}
+
+async function showEventDetail(eventId) {
+  elements.eventDetailPanel.hidden = false;
+  elements.privateReveal.hidden = true;
+  elements.eventDetail.textContent = "Loading bounded event detail…";
+  elements.revealEvent.hidden = true;
+  try {
+    const result = await api(`/v1/web/events/${encodeURIComponent(eventId)}`);
+    elements.eventDetail.textContent = JSON.stringify(result.event, null, 2);
+    elements.revealEvent.dataset.eventId = eventId;
+    elements.revealEvent.hidden = false;
+  } catch {
+    elements.eventDetail.textContent =
+      "This event is unavailable inside the current retention window.";
+  }
+}
+
+async function revealEventDetail(eventId) {
+  elements.revealEvent.disabled = true;
+  try {
+    const result = await api(
+      `/v1/web/events/${encodeURIComponent(eventId)}/reveal`,
+    );
+    elements.privateRevealContent.textContent = JSON.stringify(
+      result.event,
+      null,
+      2,
+    );
+    elements.privateReveal.hidden = false;
+  } catch {
+    elements.privateRevealContent.textContent =
+      "Private content is unavailable inside the current retention window.";
+    elements.privateReveal.hidden = false;
+  } finally {
+    elements.revealEvent.disabled = false;
+  }
+}
+
 async function api(path) {
   const response = await fetch(path, {
     headers: { authorization: `Bearer ${model.token}` },
@@ -274,6 +396,9 @@ async function refresh() {
   model.reconnectAttempt = 0;
   setConnection("connected");
   render();
+  if (model.openSessionKey.length > 0) {
+    void loadTimeline(model.openSessionKey);
+  }
 }
 
 function scheduleRefresh() {
@@ -408,6 +533,64 @@ elements.repositoryFilter.addEventListener("change", () => {
   renderSessions();
 });
 
+elements.sessionList.addEventListener("click", (event) => {
+  const session = event.target.closest("[data-open-session]");
+  if (session !== null) {
+    openTimeline(session.dataset.sessionKey);
+  }
+});
+
+elements.timelineList.addEventListener("click", (event) => {
+  const entry = event.target.closest("[data-timeline-event]");
+  if (entry !== null) {
+    void showEventDetail(entry.dataset.timelineEvent);
+  }
+});
+
+elements.closeTimeline.addEventListener("click", closeTimeline);
+elements.drawerBackdrop.addEventListener("click", (event) => {
+  if (event.target === elements.drawerBackdrop) {
+    closeTimeline();
+  }
+});
+elements.closeDetail.addEventListener("click", () => {
+  elements.eventDetailPanel.hidden = true;
+  elements.privateReveal.hidden = true;
+});
+elements.revealEvent.addEventListener("click", () => {
+  const eventId = elements.revealEvent.dataset.eventId;
+  if (eventId !== undefined) {
+    void revealEventDetail(eventId);
+  }
+});
+
+elements.exportDiagnostics.addEventListener("click", async () => {
+  elements.exportDiagnostics.disabled = true;
+  try {
+    const response = await fetch("/v1/web/diagnostics/export?limit=500", {
+      headers: { authorization: `Bearer ${model.token}` },
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("diagnostic export failed");
+    const blob = new Blob([await response.text()], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "agent-relay-diagnostics.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch {
+    setConnection(
+      "degraded",
+      "The sanitized diagnostic export could not be created.",
+    );
+  } finally {
+    elements.exportDiagnostics.disabled = false;
+  }
+});
+
 function highlightAttention(event) {
   const item = event.target.closest("[data-attention-session]");
   if (item === null) return;
@@ -435,6 +618,12 @@ elements.attentionList.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
     highlightAttention(event);
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && model.openSessionKey.length > 0) {
+    closeTimeline();
   }
 });
 

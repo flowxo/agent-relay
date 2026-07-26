@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
-import { makeProjectRef } from "@agent-relay/protocol";
+import { makeProjectRef, sha256 } from "@agent-relay/protocol";
 
 import { FakeTelegramTransport } from "./fake-transport.js";
 import { RelayService } from "./service.js";
@@ -294,6 +294,78 @@ describe("durable web control", () => {
     ).toMatchObject({ state: "expired" });
     expect(
       store.getPendingRequest("request_web_control_12345678")?.answer,
+    ).toBeUndefined();
+    store.close();
+  });
+
+  it("correlates hook, delivery, answer, and continuation timeline entries", async () => {
+    const { store, service } = runtime();
+    const input: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "event_web_timeline_12345678",
+      type: "turn.stopped",
+      request: {
+        correlationId: "request_web_timeline_12345678",
+        kind: "continuation",
+        question: "Continue?",
+        expiresAt: "2026-07-25T12:10:00.000Z",
+      },
+    };
+    service.ingest(input);
+    await service.drain();
+    service.resolveBrowser({
+      operationId: "operation_web_timeline_12345678",
+      correlationId: input.request!.correlationId,
+      answer: "continue safely",
+    });
+    expect(
+      service.claimNextResume({
+        machineId: input.machineId,
+        bridgeSessionId: input.bridgeSessionId,
+        harness: input.harness,
+        ownerId: "owner_web_timeline_12345678",
+      }),
+    ).toMatchObject({ outcome: "claimed" });
+    service.markResumeStarted(
+      input.request!.correlationId,
+      "owner_web_timeline_12345678",
+    );
+    service.markResumeFinished({
+      correlationId: input.request!.correlationId,
+      ownerId: "owner_web_timeline_12345678",
+      succeeded: true,
+      exitCode: 0,
+    });
+
+    const key = sha256(
+      `${input.machineId}\u001f${input.harness}\u001f${input.sessionId}`,
+    ).slice(0, 24);
+    expect(service.listSessionTimeline(key, 100)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "hook-event",
+          eventId: input.eventId,
+          correlationId: input.request!.correlationId,
+        }),
+        expect.objectContaining({
+          kind: "delivery",
+          eventId: input.eventId,
+        }),
+        expect.objectContaining({
+          kind: "operator-action",
+          label: "web",
+          correlationId: input.request!.correlationId,
+        }),
+        expect.objectContaining({
+          kind: "continuation",
+          status: "succeeded",
+          correlationId: input.request!.correlationId,
+          detailCode: "exit-0",
+        }),
+      ]),
+    );
+    expect(
+      service.listSessionTimeline("unknown-session-key", 100),
     ).toBeUndefined();
     store.close();
   });

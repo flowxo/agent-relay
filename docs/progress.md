@@ -257,6 +257,20 @@
   credential-rotated, and heartbeat-stale states without presenting cached data
   as live. Source and compiled distributions both carry the four fixed static
   assets; no frontend runtime dependency was added.
+- FXO-1069 is green locally. A bounded per-session timeline unions retained hook
+  events, delivery attempts and retries, request creation/resolution, Telegram
+  card actions, and harness continuation state without copying answers,
+  transcripts, error messages, process arguments, or draft content. Event and
+  request correlation IDs connect the full chain, and deterministic ordering is
+  stable at timestamp ties. Default detail remains transcript-free; a distinct
+  operator click calls the explicit reveal route for a secret-redacted
+  2,000-character assistant excerpt. The UI renders both paths as text rather
+  than markup. Diagnostic export returns at most 500 retained records and
+  re-applies current secret and machine-path redaction to legacy rows before
+  download. Retention tests prove pruned terminal sessions lose their timeline
+  rather than presenting invented history, while the living API/onboarding guide
+  maps event, request, diagnostic, and session retention to visible empty
+  states.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -309,7 +323,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 234 tests across 34 test files, including
+- The implementation gates pass all 238 tests across 34 test files, including
   the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
   fallback privacy, inline and late continuation, owned-child exit observation,
   stale answer rejection, concurrent-session isolation, installation rollback,
@@ -405,5 +419,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1069's per-session timeline, bounded detail reveal, and sanitized
-diagnostic export on top of the authenticated local console.
+Implement FXO-1070's shared browser controls and structured response forms,
+retaining the same Telegram/terminal/browser first-writer authority.
