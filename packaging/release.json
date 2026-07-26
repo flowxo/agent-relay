@@ -1,0 +1,13 @@
+{
+  "schema": "agent-relay-release-candidate.v1",
+  "name": "@flowxo/agent-relay",
+  "version": "0.1.0-alpha.1",
+  "priorFixtureVersion": "0.1.0-alpha.0",
+  "node": ">=22",
+  "os": ["darwin"],
+  "cpu": ["arm64", "x64"],
+  "dependencies": {
+    "better-sqlite3": "13.0.1",
+    "zod": "4.4.3"
+  }
+}

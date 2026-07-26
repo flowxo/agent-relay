@@ -18,6 +18,9 @@ const root = resolve(import.meta.dirname, "..");
 const packageSnapshot = JSON.parse(
   await readFile(resolve(root, "packaging/package-files.json"), "utf8"),
 );
+const release = JSON.parse(
+  await readFile(resolve(root, "packaging/release.json"), "utf8"),
+);
 
 function sanitized(value, temporaryRoot) {
   return value.replaceAll(temporaryRoot, "<isolated-package-check>");
@@ -237,18 +240,15 @@ try {
       dependencies: manifest.dependencies,
     },
     {
-      name: "@flowxo/agent-relay",
-      version: "0.1.0-alpha.0",
+      name: release.name,
+      version: release.version,
       private: true,
       type: "module",
       bin: { "agent-relay": "./dist/cli.js" },
-      os: ["darwin"],
-      cpu: ["arm64", "x64"],
-      engines: { node: ">=22" },
-      dependencies: {
-        "better-sqlite3": "13.0.1",
-        zod: "4.4.3",
-      },
+      os: release.os,
+      cpu: release.cpu,
+      engines: { node: release.node },
+      dependencies: release.dependencies,
     },
     "packed manifest differs from the reviewed runtime boundary",
   );
@@ -334,6 +334,13 @@ try {
       !help.stdout.includes("daemon")
     ) {
       throw new Error("packed executable help output is incomplete");
+    }
+    const version = await run(binary, ["--version"], {
+      env: { ...process.env, HOME: isolatedHome },
+      temporaryRoot,
+    });
+    if (version.stdout.trim() !== release.version) {
+      throw new Error("packed executable version differs from its manifest");
     }
 
     const port = await freePort();

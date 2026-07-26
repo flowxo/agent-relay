@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -27,6 +28,7 @@ import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
+import { AGENT_RELAY_VERSION } from "./release.js";
 import { runSupervisor } from "./supervisor.js";
 import { seedWebDemo } from "./web-demo.js";
 
@@ -34,6 +36,7 @@ const USAGE = `Agent Relay
 
 Usage:
   agent-relay <command> [options]
+  agent-relay --version
 
 Commands:
   daemon             Start the local relay daemon
@@ -138,13 +141,13 @@ function harnessExecutable(harness: "codex" | "claude" | "cursor"): string {
 function installEntryPath(args: string[]): string {
   const explicit = flag(args, "--entry");
   if (explicit !== undefined) {
-    return resolve(explicit);
+    return realpathSync(resolve(explicit));
   }
   const invokedEntry = process.argv[1];
   if (invokedEntry === undefined) {
     throw new Error("cannot determine the Agent Relay executable path");
   }
-  const currentEntry = resolve(invokedEntry);
+  const currentEntry = realpathSync(resolve(invokedEntry));
   if (currentEntry.endsWith(".ts")) {
     return resolve(dirname(currentEntry), "..", "dist", "cli.js");
   }
@@ -160,6 +163,10 @@ async function main(): Promise<void> {
     command === "-h"
   ) {
     process.stdout.write(USAGE);
+    return;
+  }
+  if (command === "--version" || command === "-V") {
+    process.stdout.write(`${AGENT_RELAY_VERSION}\n`);
     return;
   }
   if (command === "daemon" || command === "web-demo") {
@@ -420,6 +427,9 @@ async function main(): Promise<void> {
     const report = await runDoctor({
       databasePath: flag(args, "--db") ?? ":memory:",
       rootDir: resolve(flag(args, "--root") ?? homedir()),
+      packageVersion: AGENT_RELAY_VERSION,
+      runtimeEntryPath: installEntryPath(args),
+      runtimeNodePath: process.execPath,
     });
     output(report);
     process.exitCode = report.healthy ? 0 : 1;
@@ -442,6 +452,7 @@ async function main(): Promise<void> {
       await installAgentRelay({
         rootDir: resolve(flag(args, "--root") ?? homedir()),
         entryPath: installEntryPath(args),
+        packageVersion: AGENT_RELAY_VERSION,
         ...(flag(args, "--node") === undefined
           ? {}
           : { nodePath: resolve(flag(args, "--node") ?? "") }),

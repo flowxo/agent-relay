@@ -3,23 +3,40 @@ import {
   access,
   chmod,
   copyFile,
+  lstat,
   mkdir,
   readFile,
+  realpath,
   rename,
   stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import { constants } from "node:fs";
-import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  parse,
+  relative,
+  resolve,
+} from "node:path";
 
 import type { Harness } from "@agent-relay/protocol";
 import { z } from "zod";
+
+import { AGENT_RELAY_VERSION } from "./release.js";
 
 const INSTALL_SCHEMA = "agent-relay-install.v1";
 const INSTALL_VERSION = "1";
 const OWNER_MARKER = "AGENT_RELAY_HOOK_OWNER=agent-relay-v1";
 const MAX_CONFIG_BYTES = 1024 * 1024;
+const PackageVersionSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 
 const HarnessVersionMapSchema = z
   .object({
@@ -33,6 +50,7 @@ const InstallManifestSchema = z
   .object({
     schema: z.literal(INSTALL_SCHEMA),
     version: z.literal(INSTALL_VERSION),
+    packageVersion: PackageVersionSchema.optional(),
     installedAt: z.iso.datetime({ offset: true }),
     launcherPath: z.string().min(1),
     entryPath: z.string().min(1),
@@ -65,6 +83,7 @@ export interface InstallerPaths {
 export interface InstallOptions {
   rootDir: string;
   entryPath: string;
+  packageVersion?: string;
   nodePath?: string;
   cursorSurface?: "cli" | "ide";
   harnessVersions?: Partial<HarnessVersionMap>;
@@ -98,6 +117,12 @@ export interface InstallationReport {
   installed: boolean;
   checks: InstallationCheck[];
   paths: InstallerPaths;
+}
+
+export interface InstallationExpectation {
+  packageVersion?: string;
+  runtimeEntryPath?: string;
+  runtimeNodePath?: string;
 }
 
 interface FileSnapshot {
@@ -157,6 +182,49 @@ export function installerPaths(rootInput: string): InstallerPaths {
       cursor: join(rootDir, ".cursor", "hooks.json"),
     },
   };
+}
+
+async function assertOwnedPathsAreNotSymlinks(
+  paths: InstallerPaths,
+): Promise<void> {
+  const rootMetadata = await lstat(paths.rootDir);
+  if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
+    throw new Error("installer root must be a real directory, not a symlink");
+  }
+
+  for (const target of [
+    paths.stateDir,
+    paths.launcherPath,
+    paths.manifestPath,
+    ...Object.values(paths.configs),
+  ]) {
+    const relativeTarget = relative(paths.rootDir, target);
+    if (
+      relativeTarget.length === 0 ||
+      relativeTarget.startsWith("..") ||
+      isAbsolute(relativeTarget)
+    ) {
+      throw new Error("installer target escapes the selected root");
+    }
+    const segments = relativeTarget.split(/[\\/]/);
+    let current = paths.rootDir;
+    for (const segment of segments) {
+      current = join(current, segment);
+      try {
+        const metadata = await lstat(current);
+        if (metadata.isSymbolicLink()) {
+          throw new Error(
+            `installer refuses symbolic links in owned path ${basename(current)}`,
+          );
+        }
+      } catch (error) {
+        if (isErrorCode(error, "ENOENT")) {
+          break;
+        }
+        throw error;
+      }
+    }
+  }
 }
 
 function quoteShellArgument(value: string): string {
@@ -581,19 +649,25 @@ export async function installAgentRelay(
   options: InstallOptions,
 ): Promise<InstallResult> {
   const paths = installerPaths(options.rootDir);
-  const entryPath = resolve(options.entryPath);
-  const nodePath = resolve(options.nodePath ?? process.execPath);
   if (!isAbsolute(options.entryPath)) {
     throw new Error("installer entryPath must be absolute");
   }
+  if (options.nodePath !== undefined && !isAbsolute(options.nodePath)) {
+    throw new Error("installer nodePath must be absolute");
+  }
+  await assertOwnedPathsAreNotSymlinks(paths);
+  const entryPath = await realpath(resolve(options.entryPath));
+  const nodePath = await realpath(
+    resolve(options.nodePath ?? process.execPath),
+  );
   await access(entryPath, constants.R_OK);
   await access(nodePath, constants.X_OK);
   const cursorSurface = options.cursorSurface ?? "ide";
   const harnessVersions = normalizedVersions(options.harnessVersions);
+  const packageVersion = PackageVersionSchema.parse(
+    options.packageVersion ?? AGENT_RELAY_VERSION,
+  );
   const now = (options.now ?? (() => new Date()))();
-  if (options.nodePath !== undefined && !isAbsolute(options.nodePath)) {
-    throw new Error("installer nodePath must be absolute");
-  }
   const configSnapshots = {
     codex: await snapshot(paths.configs.codex),
     claude: await snapshot(paths.configs.claude),
@@ -620,6 +694,7 @@ export async function installAgentRelay(
   const manifestCandidate: InstallManifest = {
     schema: INSTALL_SCHEMA,
     version: INSTALL_VERSION,
+    packageVersion,
     installedAt: now.toISOString(),
     launcherPath: paths.launcherPath,
     entryPath,
@@ -705,6 +780,7 @@ export async function uninstallAgentRelay(options: {
   dryRun?: boolean;
 }): Promise<InstallResult> {
   const paths = installerPaths(options.rootDir);
+  await assertOwnedPathsAreNotSymlinks(paths);
   const now = (options.now ?? (() => new Date()))();
   const manifest = await existingManifest(paths.manifestPath);
   const createdByHarness = new Map(
@@ -795,14 +871,16 @@ function countOwnedCursor(
 
 export async function inspectAgentRelayInstallation(
   rootDir: string,
+  expectation: InstallationExpectation = {},
 ): Promise<InstallationReport> {
   const paths = installerPaths(rootDir);
+  await assertOwnedPathsAreNotSymlinks(paths);
   const checks: InstallationCheck[] = [];
   const manifest = await existingManifest(paths.manifestPath);
   checks.push({
     name: "install-manifest",
     ok: manifest !== undefined,
-    level: manifest === undefined ? "warn" : "pass",
+    level: manifest === undefined ? "fail" : "pass",
     detail:
       manifest === undefined
         ? "Agent Relay install manifest is absent or invalid"
@@ -822,6 +900,82 @@ export async function inspectAgentRelayInstallation(
       ? "managed exact-path hook launcher is executable"
       : "managed hook launcher is missing or not executable",
   });
+
+  if (manifest !== undefined) {
+    const expectedPackageVersion =
+      expectation.packageVersion ?? AGENT_RELAY_VERSION;
+    const packageVersionMatches =
+      manifest.packageVersion === expectedPackageVersion;
+    checks.push({
+      name: "package-version",
+      ok: packageVersionMatches,
+      level: packageVersionMatches ? "pass" : "fail",
+      detail:
+        manifest.packageVersion === undefined
+          ? "install manifest predates package-version tracking; rerun agent-relay install"
+          : packageVersionMatches
+            ? `installed package ${manifest.packageVersion} matches the running CLI`
+            : "installed package version differs from the running CLI; rerun agent-relay install",
+    });
+
+    const targetsMatch =
+      manifest.launcherPath === paths.launcherPath &&
+      manifest.targets.length === 3 &&
+      (["codex", "claude", "cursor"] as const).every(
+        (harness) =>
+          manifest.targets.filter(
+            (target) =>
+              target.harness === harness &&
+              target.configPath === paths.configs[harness],
+          ).length === 1,
+      );
+    checks.push({
+      name: "install-ownership",
+      ok: targetsMatch,
+      level: targetsMatch ? "pass" : "fail",
+      detail: targetsMatch
+        ? "manifest owns exactly the expected launcher and harness targets"
+        : "manifest ownership paths do not match the selected install root",
+    });
+
+    const launcherMatches =
+      launcher.exists &&
+      launcher.content ===
+        launcherContent(manifest.nodePath, manifest.entryPath);
+    checks.push({
+      name: "launcher-target",
+      ok: launcherMatches,
+      level: launcherMatches ? "pass" : "fail",
+      detail: launcherMatches
+        ? "managed launcher exactly matches the install manifest"
+        : "managed launcher differs from the install manifest; rerun agent-relay install",
+    });
+
+    if (expectation.runtimeEntryPath !== undefined) {
+      const entryMatches =
+        resolve(manifest.entryPath) === resolve(expectation.runtimeEntryPath);
+      checks.push({
+        name: "runtime-entry",
+        ok: entryMatches,
+        level: entryMatches ? "pass" : "fail",
+        detail: entryMatches
+          ? "install manifest entry matches the running package"
+          : "install manifest entry differs from the running package; rerun agent-relay install",
+      });
+    }
+    if (expectation.runtimeNodePath !== undefined) {
+      const nodeMatches =
+        resolve(manifest.nodePath) === resolve(expectation.runtimeNodePath);
+      checks.push({
+        name: "runtime-node",
+        ok: nodeMatches,
+        level: nodeMatches ? "pass" : "fail",
+        detail: nodeMatches
+          ? "install manifest Node executable matches the running CLI"
+          : "install manifest Node executable differs from the running CLI; rerun agent-relay install",
+      });
+    }
+  }
 
   for (const harness of ["codex", "claude", "cursor"] as const) {
     const file = await snapshot(paths.configs[harness]);

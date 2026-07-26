@@ -16,15 +16,26 @@ const stage = resolve(root, ".artifacts/package");
 const rootPackage = JSON.parse(
   await readFile(resolve(root, "package.json"), "utf8"),
 );
+const release = JSON.parse(
+  await readFile(resolve(root, "packaging/release.json"), "utf8"),
+);
+const releaseSource = await readFile(
+  resolve(root, "apps/relay/src/release.ts"),
+  "utf8",
+);
 
 if (
-  rootPackage.name !== "@flowxo/agent-relay" ||
-  rootPackage.version !== "0.1.0-alpha.0" ||
+  release.schema !== "agent-relay-release-candidate.v1" ||
+  rootPackage.name !== release.name ||
+  rootPackage.version !== release.version ||
   rootPackage.private !== true
 ) {
   throw new Error(
     "root package identity must remain the approved private alpha candidate",
   );
+}
+if (!releaseSource.includes(`const sourceVersion = "${release.version}";`)) {
+  throw new Error("source-build version differs from packaging/release.json");
 }
 
 await rm(stage, { recursive: true, force: true });
@@ -44,6 +55,9 @@ await build({
   minifyWhitespace: true,
   minifySyntax: true,
   minifyIdentifiers: false,
+  define: {
+    __AGENT_RELAY_BUILD_VERSION__: JSON.stringify(release.version),
+  },
   external: ["better-sqlite3", "zod"],
   alias: {
     "@agent-relay/core": resolve(root, "packages/core/src/index.ts"),
@@ -78,8 +92,8 @@ for (const [source, destination] of [
 }
 
 const packageManifest = {
-  name: rootPackage.name,
-  version: rootPackage.version,
+  name: release.name,
+  version: release.version,
   private: true,
   description: rootPackage.description,
   license: rootPackage.license,
@@ -94,19 +108,16 @@ const packageManifest = {
     "CHANGELOG.md",
     "THIRD_PARTY_NOTICES.md",
   ],
-  os: ["darwin"],
-  cpu: ["arm64", "x64"],
+  os: release.os,
+  cpu: release.cpu,
   engines: {
-    node: ">=22",
+    node: release.node,
   },
   repository: rootPackage.repository,
   bugs: rootPackage.bugs,
   homepage: rootPackage.homepage,
   keywords: rootPackage.keywords,
-  dependencies: {
-    "better-sqlite3": "13.0.1",
-    zod: "4.4.3",
-  },
+  dependencies: release.dependencies,
   publishConfig: {
     access: "public",
     provenance: true,

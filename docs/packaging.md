@@ -3,7 +3,7 @@
 Agent Relay has one end-user package candidate:
 
 - **name:** `@flowxo/agent-relay`
-- **version:** `0.1.0-alpha.0`
+- **version:** `0.1.0-alpha.1`
 - **public surface:** the `agent-relay` executable
 - **supported target:** macOS on Apple silicon, Node.js 22 or newer
 - **publication state:** private and unpublished
@@ -11,6 +11,8 @@ Agent Relay has one end-user package candidate:
 The scoped name avoids the unrelated unscoped `agent-relay` package already on
 npm. Control of the Flow XO npm scope remains an explicit owner gate before any
 publication. Building, packing, or testing this candidate does not publish it.
+`packaging/release.json` is the reviewed identity/runtime metadata used by the
+staging and verification scripts.
 
 ## Why one package
 
@@ -75,6 +77,7 @@ From a scripts-disabled, preflighted checkout:
 ```sh
 pnpm package:build
 pnpm package:check
+pnpm package:lifecycle:check
 ```
 
 `package:check` executes `pnpm pack`, then:
@@ -95,11 +98,27 @@ The runtime portion runs on macOS; unsupported CI operating systems still prove
 the content, manifest, scan, and size boundary and report the runtime skip
 explicitly.
 
+The lifecycle check derives a sanitized `0.1.0-alpha.0` prior-package fixture
+from the exact current artifact, installs it with scripts disabled, records a
+durable answered request, and upgrades the same isolated prefix to
+`0.1.0-alpha.1`. It requires doctor to expose the stale package/entry mismatch
+before reconciliation, then proves:
+
+- install dry runs do not mutate configuration;
+- an install followed by a repeat install is idempotent;
+- SQLite migrates an unversioned prior store to schema `1`;
+- a schema newer than `1` is refused without modification;
+- the answer, web credential, diagnostic log, explicit retained files, and
+  installer backups survive;
+- unrelated Codex, Claude, and Cursor configuration survives;
+- uninstall removes only the owned launcher, manifest, and hook entries; and
+- package-manager removal happens last and leaves no owned hook.
+
 To retain a tarball for manual review:
 
 ```sh
-pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.0.tgz
-tar -tzf .artifacts/agent-relay-0.1.0-alpha.0.tgz
+pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.1.tgz
+tar -tzf .artifacts/agent-relay-0.1.0-alpha.1.tgz
 ```
 
 `.artifacts/` is generated and gitignored. Never put credentials, activation

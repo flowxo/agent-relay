@@ -1,6 +1,6 @@
 {
   "name": "@flowxo/agent-relay",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "description": "Local-first attention and control layer for concurrent coding agents",
   "license": "MIT",
@@ -33,7 +33,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:notifications && pnpm dist:check && pnpm package:check",
+    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:notifications && pnpm dist:check && pnpm package:check && pnpm package:lifecycle:check",
     "capabilities:check": "pnpm --filter @agent-relay/harnesses capabilities:check",
     "contracts:preinstall": "node contracts/scripts/verify-notifications.mjs",
     "contracts:notifications": "node --test contracts/test/*.node-test.mjs && pnpm --filter @agent-relay/notifications-transport contract:check && node contracts/scripts/write-notifications-result.mjs",
@@ -46,6 +46,7 @@
     "notifications:contract:check": "pnpm contracts:notifications",
     "package:build": "node scripts/build-package.mjs",
     "package:check": "node scripts/check-package.mjs",
+    "package:lifecycle:check": "node scripts/check-package-lifecycle.mjs",
     "prepack": "pnpm package:build",
     "relay": "pnpm --filter @agent-relay/relay dev",
     "test": "vitest run",

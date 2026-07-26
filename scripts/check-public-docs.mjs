@@ -129,7 +129,9 @@ if (fakeCanary === -1 || directTelegram === -1 || directTelegram < fakeCanary) {
 }
 for (const pattern of [
   /install --dry-run/,
+  /package:lifecycle:check/,
   /Reconcile an upgrade/,
+  /refusing unsafe downgrade/,
   /Uninstall safely/,
   /Package-manager removal alone/,
   /Optional erasure/,

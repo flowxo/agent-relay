@@ -10,7 +10,7 @@ stop, fail, or need an answer; identify the exact session; respond through
 buttons, text, or the local web board; and continue only where the harness has
 an official continuation contract.
 
-> **Release status:** an installable `0.1.0-alpha.0` package candidate is proven
+> **Release status:** an installable `0.1.0-alpha.1` package candidate is proven
 > locally, but no npm package or stable support claim exists yet.
 
 ## What it can prove
@@ -80,6 +80,7 @@ Build and prove the exact local artifact:
 
 ```sh
 pnpm package:check
+pnpm package:lifecycle:check
 ```
 
 That command packs the staged release directory, compares all 11 files to a
@@ -89,6 +90,12 @@ in an isolated prefix, explicitly rebuilds the approved SQLite native
 dependency, and proves CLI help, the fake canary, static web assets, and the
 authenticated local web API. It publishes nothing and removes its temporary
 artifact.
+
+The lifecycle check then generates the sanitized prior `0.1.0-alpha.0` fixture
+and proves dry run, install, doctor, retained answer/state, forward migration,
+stale-manifest diagnosis, upgrade, idempotent reconciliation, unsafe-downgrade
+refusal, owned uninstall, unrelated-config preservation, and package removal. It
+also publishes nothing.
 
 See [package identity and artifact boundary](docs/packaging.md) for the exact
 contents, metadata, source-map decision, and a command that retains a local

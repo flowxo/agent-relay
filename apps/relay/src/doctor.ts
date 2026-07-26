@@ -10,6 +10,7 @@ import type { Harness } from "@agent-relay/protocol";
 
 import { inspectAgentRelayInstallation } from "./installer.js";
 import type { InstallationCheck } from "./installer.js";
+import { AGENT_RELAY_VERSION } from "./release.js";
 
 export const TESTED_HARNESS_VERSIONS: Record<Harness, string> = {
   codex: "codex-cli 0.145.0",
@@ -41,6 +42,9 @@ export interface DoctorOptions {
   databasePath?: string;
   rootDir?: string;
   executables?: Partial<Record<Harness, string>>;
+  packageVersion?: string;
+  runtimeEntryPath?: string;
+  runtimeNodePath?: string;
 }
 
 export interface HarnessVersionObservation {
@@ -160,7 +164,18 @@ export async function runDoctor(
 
   if (options.rootDir !== undefined) {
     try {
-      const installation = await inspectAgentRelayInstallation(options.rootDir);
+      const installation = await inspectAgentRelayInstallation(
+        options.rootDir,
+        {
+          packageVersion: options.packageVersion ?? AGENT_RELAY_VERSION,
+          ...(options.runtimeEntryPath === undefined
+            ? {}
+            : { runtimeEntryPath: options.runtimeEntryPath }),
+          ...(options.runtimeNodePath === undefined
+            ? {}
+            : { runtimeNodePath: options.runtimeNodePath }),
+        },
+      );
       checks.push(...installation.checks.map(installationDoctorCheck));
     } catch (error) {
       checks.push({

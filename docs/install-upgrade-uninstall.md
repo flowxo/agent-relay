@@ -1,6 +1,6 @@
 # Install, upgrade, uninstall, and erase
 
-> **Current distribution:** locally packable `0.1.0-alpha.0` candidate; not
+> **Current distribution:** locally packable `0.1.0-alpha.1` candidate; not
 > published to npm
 >
 > **Verified target:** macOS on Apple silicon, Node.js 22, pnpm 11
@@ -35,13 +35,14 @@ The repository quality gate includes an isolated package proof:
 
 ```sh
 pnpm package:check
+pnpm package:lifecycle:check
 ```
 
 To retain the exact candidate tarball locally:
 
 ```sh
-pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.0.tgz
-tar -tzf .artifacts/agent-relay-0.1.0-alpha.0.tgz
+pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.1.tgz
+tar -tzf .artifacts/agent-relay-0.1.0-alpha.1.tgz
 ```
 
 Packing runs only the repository's deterministic staging build. It does not
@@ -53,6 +54,21 @@ disabled, explicitly rebuilds the reviewed SQLite native dependency, and runs
 CLI help, the fake delivery canary, and web asset/API checks from an isolated
 home and prefix. See [the packaging boundary](packaging.md) for the exact
 allowlist and budgets.
+
+For a retained local installation from that exact tarball:
+
+```sh
+mkdir -p .artifacts/local-install
+pnpm --dir .artifacts/local-install add \
+  --ignore-scripts \
+  "$PWD/.artifacts/agent-relay-0.1.0-alpha.1.tgz"
+pnpm --dir .artifacts/local-install rebuild better-sqlite3
+.artifacts/local-install/node_modules/.bin/agent-relay --version
+```
+
+Keep that prefix in place while hooks are installed because the owned launcher
+targets its exact package entry. A future registry release will replace this
+checkout-relative evaluation flow.
 
 ## Inspect and install hooks
 
@@ -116,26 +132,30 @@ Continue to [direct Telegram setup](telegram.md) only after this passes.
 For a new source commit or local packed candidate:
 
 1. stop the daemon and supervised Agent Relay processes;
-2. install dependencies through the same scripts-disabled/preflight/rebuild
+2. install the new artifact through the same scripts-disabled/explicit-rebuild
    sequence;
-3. run `pnpm check` and `pnpm build`;
+3. run `agent-relay doctor` and confirm that any package/runtime/manifest
+   mismatch is the expected pre-reconciliation state;
 4. run `install --dry-run` and inspect exact changes;
 5. run `install` to update only owned entries and the launcher;
-6. start the daemon, allowing forward SQLite migrations; and
-7. run `doctor` and the fake canary before enabling a real transport.
+6. run `install` again and require an unchanged result;
+7. start the daemon, allowing forward SQLite migrations; and
+8. run `doctor` and the fake canary before enabling a real transport.
 
 An upgrade preserves local state, credentials, logs, fallback records, config
 backups, and unrelated hooks. The install reconciliation is idempotent.
 
-SQLite migrations are forward-only. Do not open a database with an older release
-unless that release explicitly supports the current schema. A later packaging
-story adds an isolated packed-artifact upgrade proof and explicit
-schema-downgrade refusal; until that evidence lands, keep a backup and do not
-claim arbitrary downgrade safety.
+SQLite migrations are forward-only. Schema version `1` upgrades the unversioned
+alpha fixture without losing its answered request. If a database advertises a
+newer schema than the running package supports, Agent Relay refuses to open it
+and doctor reports `refusing unsafe downgrade`; use the newer package or restore
+a database backup instead of forcing the older binary. Arbitrary downgrade
+safety is not claimed.
 
 ## Uninstall safely
 
-Uninstall hooks before removing the source checkout or future package:
+Uninstall hooks before removing the source checkout, local prefix, or future
+registry package:
 
 ```sh
 node apps/relay/dist/cli.js uninstall --dry-run
@@ -149,6 +169,13 @@ configuration, and installer backups.
 
 Package-manager removal alone does not remove installed hooks because those
 hooks live in user configuration and point to the owned launcher.
+
+For the retained local prefix above, remove the package only after the
+successful owned uninstall:
+
+```sh
+pnpm --dir .artifacts/local-install remove @flowxo/agent-relay
+```
 
 ## Optional erasure
 

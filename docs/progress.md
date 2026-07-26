@@ -66,6 +66,22 @@
   web API from an isolated home. The check caught and resolved Apple-silicon
   Rosetta Node metadata before acceptance. Registry scope ownership, trusted
   publishing, and actual publication remain owner-controlled gates.
+- FXO-1145 advances the private candidate to `0.1.0-alpha.1` and proves the
+  complete packed lifecycle against a deterministic sanitized `0.1.0-alpha.0`
+  fixture. A quoted-path isolated home/prefix passes install dry run, install,
+  healthy doctor, fake canary, stale package/entry diagnosis, upgrade dry run,
+  reconciliation, unchanged repeat install, post-upgrade doctor/canary, owned
+  uninstall, and package removal. The durable answered request, SQLite state,
+  web credential, prior relay log, explicit retained credential/log fixtures,
+  installer backups, and unrelated harness settings survive. Install manifests
+  now record package version; doctor validates package/runtime/manifest and
+  launcher agreement; owned paths reject symlinks; SQLite migrates unversioned
+  stores to schema `1`; and schema `2` is refused without modification. The
+  lifecycle checker is part of `pnpm check` and publishes nothing. The final
+  local gate passed 41 Vitest files/309 tests, 17 contract and supply-chain
+  tests, the six-test isolated Notifications consumer, the 102,408-byte
+  packed/479,554-byte unpacked artifact proof, all three Chromium scenarios, and
+  a production audit with no known vulnerability.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -530,11 +546,10 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Prove the complete packed-artifact lifecycle in FXO-1145: install dry run,
-install, doctor, idempotent reconciliation, state-preserving upgrade,
-package/runtime/manifest mismatch diagnosis, unsafe schema-downgrade refusal,
-owned uninstall, unrelated-config preservation, and explicit retained-data
-handling. Mock-backed AR2 work may proceed against the pinned `1.0.0-draft.1`
+Consolidate compatibility and support into one generated, drift-checked evidence
+artifact in FXO-1146. The public summary must classify exact harness
+surface/version evidence without widening claims and doctor must consume the
+same source. Mock-backed AR2 work may proceed against the pinned `1.0.0-draft.1`
 artifacts, but production hosted dogfood must wait for AR1, AR2, and a central
 C0-09 go disposition.
 

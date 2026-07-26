@@ -157,6 +157,17 @@ Never delete an entire harness configuration file. Agent Relay owns only marked
 handlers. Follow the
 [install/upgrade/uninstall guide](install-upgrade-uninstall.md).
 
+`package-version`, `runtime-entry`, `runtime-node`, or `launcher-target`
+failures mean the package manager changed the running CLI but the owned
+installation has not been reconciled, or the launcher was modified. Confirm the
+new package is intentional, run `agent-relay install --dry-run`, then
+`agent-relay install` and doctor again.
+
+If `sqlite-spool` says `refusing unsafe downgrade`, the database was opened by a
+newer schema than this package supports. Stop the older package and use the
+newer release or restore an appropriate backup. Do not edit SQLite
+`user_version` to bypass the refusal.
+
 ## Preparing a public report
 
 Reproduce with the fake transport and synthetic data if possible. Include only

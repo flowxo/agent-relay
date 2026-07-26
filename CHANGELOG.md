@@ -4,7 +4,25 @@ All notable user-visible changes to Agent Relay will be documented here. The
 project uses Semantic Versioning; prerelease entries explicitly call out
 breaking changes and required operator action.
 
-## 0.1.0-alpha.0 — Unreleased
+## 0.1.0-alpha.1 — Unreleased
+
+### Added
+
+- Exact packed-artifact lifecycle proof covering dry run, install, doctor,
+  upgrade, idempotent reconciliation, fake canary, uninstall, and package
+  removal from an isolated quoted-path home.
+- Package/runtime/install-manifest and launcher-target diagnosis.
+- Explicit SQLite schema versioning, forward migration from the unversioned
+  alpha fixture, and refusal to open a newer schema.
+- Symlinked owned-path refusal before installer mutation.
+
+### Changed
+
+- Install manifests now record the public package version.
+- The release candidate version advances to `0.1.0-alpha.1`; it remains private
+  and unpublished.
+
+## 0.1.0-alpha.0 — 2026-07-26 (local candidate only)
 
 ### Added
 
@@ -28,4 +46,4 @@ breaking changes and required operator action.
 - Cursor permission automation remains disabled pending current live evidence.
 - Native hooks do not prove process crashes; crash reporting requires the Agent
   Relay supervisor to own the child process.
-- This candidate is not published to npm and remains marked private.
+- This candidate was not published to npm and remained marked private.

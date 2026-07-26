@@ -5,8 +5,8 @@ Claude Code, and Cursor sessions. This package contains the supported
 `agent-relay` command-line application; it does not expose a public JavaScript
 library API.
 
-> This is an unpublished alpha candidate. The package remains marked `private`
-> until the Flow XO npm scope and prerelease are explicitly approved.
+> This is the unpublished `0.1.0-alpha.1` candidate. The package remains marked
+> `private` until the Flow XO npm scope and prerelease are explicitly approved.
 
 ## Supported target
 
@@ -17,6 +17,7 @@ Start with the credential-free local proof:
 
 ```sh
 agent-relay --help
+agent-relay --version
 agent-relay daemon
 ```
 
