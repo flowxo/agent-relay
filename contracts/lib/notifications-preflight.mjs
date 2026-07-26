@@ -32,8 +32,10 @@ export const CANONICAL_POLICY_SHA256 =
   "555cdfd33ef52c796928d04404b71f1d0c2567af593f1ba024a40b3949eb54e1";
 export const CONTRACT_CHECK_RESULT_SCHEMA_SHA256 =
   "a28b5432904413bdef7d88af1818f0c31c210ceb1103d0391e193930700f8688";
-export const NOTIFICATIONS_SOURCE_COMMIT =
+export const NOTIFICATIONS_BASE_SOURCE_COMMIT =
   "be00a5db1c94c5606c2b8853ab16a960aef1b593";
+export const NOTIFICATIONS_MOCK_SOURCE_COMMIT =
+  "89a6c4d738b9c14d611f3bbf3d114ac99ff90b42";
 export const NOTIFICATIONS_VERSION = "1.0.0-draft.1";
 
 const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
@@ -48,6 +50,7 @@ const EXPECTED_DEPENDENCIES = [
     artifact: "@flowxo/notifications-contracts",
     artifact_file:
       "vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz",
+    source_commit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
     sha256: "88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106",
     fixture_sets: [
       "core-api-bodies",
@@ -67,6 +70,7 @@ const EXPECTED_DEPENDENCIES = [
     artifact: "@flowxo/notifications",
     artifact_file:
       "vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz",
+    source_commit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
     sha256: "4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c",
     fixture_sets: [],
   },
@@ -74,7 +78,8 @@ const EXPECTED_DEPENDENCIES = [
     artifact: "@flowxo/notifications-contract-mock",
     artifact_file:
       "vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz",
-    sha256: "c803f181213b3a86ce5fb566719dfe7833be1a6ffc9d228be9ec1bf396289c63",
+    source_commit: NOTIFICATIONS_MOCK_SOURCE_COMMIT,
+    sha256: "ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e",
     fixture_sets: ["contract-mock-scenarios.v1"],
   },
 ];
@@ -138,7 +143,7 @@ function assertNotificationsTopology(lock) {
       pin.artifact !== expected.artifact ||
       pin.version !== NOTIFICATIONS_VERSION ||
       pin.source_repository !== "flowxo/flowxo-notifications" ||
-      pin.source_commit !== NOTIFICATIONS_SOURCE_COMMIT ||
+      pin.source_commit !== expected.source_commit ||
       pin.sha256 !== expected.sha256 ||
       pin.artifact_file !== expected.artifact_file ||
       !sameJson(pin.fixture_sets, fixtureSets)
@@ -428,6 +433,19 @@ function assertMockFixtures(entries, pin) {
     !sameJson(identity, pin.fixture_sets)
   ) {
     throw new Error("Mock artifact fixture identity does not match the lock.");
+  }
+  if (
+    !Array.isArray(manifest.scenarios) ||
+    new Set(manifest.scenarios).size !== manifest.scenarios.length ||
+    manifest.scenarios.some(
+      (scenario) =>
+        typeof scenario !== "string" || !/^[a-z0-9][a-z0-9-]*$/u.test(scenario),
+    ) ||
+    !manifest.scenarios.includes("cross-machine-answer-origin")
+  ) {
+    throw new Error(
+      "Mock artifact is missing the cross-machine answer-origin scenario.",
+    );
   }
 }
 
@@ -762,6 +780,7 @@ export function buildNotificationsCheckResult({
       "production-import-boundary",
       "notifications-consumer",
       "consumer-mapping-temporal-behavior",
+      "cross-machine-answer-origin",
       "unknown-additive-tolerance",
     ],
   };

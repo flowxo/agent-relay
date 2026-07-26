@@ -76,11 +76,13 @@ classification vocabulary.
 
 Every update is an explicit reviewable change:
 
-1. Start from an immutable full commit in `flowxo/flowxo-notifications`. Confirm
-   the owner changelog, canonical schema, generated artifact, fixture, manifest
-   version, and any required migration or deprecation note.
-2. Produce or obtain the three tarballs from that exact commit without running
-   their lifecycle scripts. Record the package versions and SHA-256 digests.
+1. Start from an immutable full source commit for every Notifications artifact
+   being updated. Confirm the owner changelog, canonical schema, generated
+   artifact, fixture, manifest version, and any required migration or
+   deprecation note.
+2. Produce or obtain the replacement tarball from its exact source commit
+   without running lifecycle scripts. Record its package version and SHA-256
+   digest; unchanged artifacts retain their existing source commits and bytes.
 3. Replace only the corresponding files under `vendor/notifications-c0`. Update
    its provenance manifest and `contract-lock.json` with the exact commit,
    versions, digests, paths, and fixture identities.

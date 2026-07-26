@@ -410,7 +410,7 @@ packages:
   "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz":
     resolution:
       {
-        integrity: sha512-t/opuhdRYg19Tv6yc3/RdP2QXsZ8UfHO+tH85YsWmKHF2RvAOE0IwbQ82egbVV1rVipM9UlH+CDsPRyA+JpnfA==,
+        integrity: sha512-v1YMKSGdwCJCLt/VTMBjSSNUNE5kQ9ObevAgcnRLRXtq5ZX6jkT4esMykzKL0qLAZ6uP9HP/QwhScBpO3hD/4w==,
         tarball: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz,
       }
     version: 1.0.0-draft.1

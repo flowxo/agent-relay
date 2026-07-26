@@ -9,7 +9,8 @@ import {
   CANONICAL_POLICY_SHA256,
   CANONICAL_SCHEMA_SHA256,
   loadNotificationsContractLock,
-  NOTIFICATIONS_SOURCE_COMMIT,
+  NOTIFICATIONS_BASE_SOURCE_COMMIT,
+  NOTIFICATIONS_MOCK_SOURCE_COMMIT,
 } from "../lib/notifications-preflight.mjs";
 
 const digest = "a".repeat(64);
@@ -119,8 +120,24 @@ describe("flowxo.contract-lock.v1", () => {
     assert.equal(lock.dependencies.length, 3);
     assert.equal(lock.owned_artifacts.length, 0);
     assert.deepEqual(
-      [...new Set(lock.dependencies.map((pin) => pin.source_commit))],
-      [NOTIFICATIONS_SOURCE_COMMIT],
+      lock.dependencies.map(({ artifact, source_commit: sourceCommit }) => ({
+        artifact,
+        sourceCommit,
+      })),
+      [
+        {
+          artifact: "@flowxo/notifications-contracts",
+          sourceCommit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
+        },
+        {
+          artifact: "@flowxo/notifications",
+          sourceCommit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
+        },
+        {
+          artifact: "@flowxo/notifications-contract-mock",
+          sourceCommit: NOTIFICATIONS_MOCK_SOURCE_COMMIT,
+        },
+      ],
     );
   });
 

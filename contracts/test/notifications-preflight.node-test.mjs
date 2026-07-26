@@ -270,6 +270,7 @@ describe("Agent Relay contract evidence", () => {
       false,
     );
     assert.equal(new Set(result.checks).size, result.checks.length);
+    assert.equal(result.checks.includes("cross-machine-answer-origin"), true);
 
     const invalidResults = [
       {

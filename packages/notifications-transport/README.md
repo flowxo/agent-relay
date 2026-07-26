@@ -14,7 +14,7 @@ Agent Relay consumes immutable tarballs from `vendor/notifications-c0`:
 | ------------------------------------- | --------------- | ------------------------------------------------------------------ |
 | `@flowxo/notifications-contracts`     | `1.0.0-draft.1` | `88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106` |
 | `@flowxo/notifications`               | `1.0.0-draft.1` | `4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c` |
-| `@flowxo/notifications-contract-mock` | `1.0.0-draft.1` | `c803f181213b3a86ce5fb566719dfe7833be1a6ffc9d228be9ec1bf396289c63` |
+| `@flowxo/notifications-contract-mock` | `1.0.0-draft.1` | `ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e` |
 
 The C0-08 source of truth is
 [`contracts/contract-lock.json`](../../contracts/contract-lock.json). The
