@@ -4,8 +4,8 @@
 >
 > **Default boundary:** authenticated HTTP on `127.0.0.1:4317`
 
-The daemon exposes a small local API for a future browser control surface. It is
-not a second source of truth: browser answers use the same SQLite request state,
+The daemon exposes an optional built-in browser control surface. It is not a
+second source of truth: browser answers use the same SQLite request state,
 runtime validation, expiry checks, and first-writer-wins transition as Telegram
 and terminal answers.
 
@@ -14,6 +14,12 @@ shell is public on loopback and contains no relay data or credential. Paste the
 generated bearer and CSRF token into its connection form; the page retains both
 only in JavaScript memory, never browser storage. Authenticated API responses
 remain the only source of session and attention data.
+
+The companion is enabled by default for loopback development. Set
+`AGENT_RELAY_WEB_ENABLED=0` or pass `agent-relay daemon --no-web` to disable the
+UI and every `/v1/web/*` route. Disabled startup does not create or read a web
+credential. Hook ingestion, health/status, the durable spool, Telegram
+delivery/replies, and supervision keep their existing routes and behavior.
 
 ## Credential
 
@@ -50,6 +56,7 @@ All list limits default to 100 and are bounded from 1 through 500.
 
 | Method and route                           | Result                                                                       |
 | ------------------------------------------ | ---------------------------------------------------------------------------- |
+| `GET /v1/web/meta`                         | Static-asset/API and mutation-contract compatibility                         |
 | `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, lane state, attention count |
 | `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions               |
 | `GET /v1/web/sessions/:key/timeline`       | Correlated retained session evidence                                         |
@@ -88,6 +95,11 @@ Unavailable controls remain visible but disabled in the UI. Details opens the
 bounded transcript-free event view; End affects only the relay lane and never
 claims to terminate an unowned harness process. End is unavailable while a
 request remains open.
+
+The UI refuses to connect when `/v1/web/meta` reports a different API or asset
+version. The package check separately verifies that all five static files, their
+version marker, API negotiation, and both mutation schemas survived the build.
+CI runs that check from compiled output before the browser suite.
 
 ## Timeline, detail, and diagnostics
 
@@ -200,6 +212,41 @@ history.
 
 ## Local verification
 
+### Credential-free concurrent-session demo
+
+Build and start a separate synthetic daemon:
+
+```sh
+pnpm build
+node apps/relay/dist/cli.js web-demo
+```
+
+The command uses `127.0.0.1:4318`, the fake Telegram transport, a dedicated demo
+SQLite file, and four bounded synthetic lanes (running, waiting, and crashed).
+It ignores Telegram and daemon bearer environment credentials, never contains
+assistant transcript content, and does not log either generated local credential
+value. Open `http://127.0.0.1:4318/ui/` and copy the two fields from
+`~/.agent-relay/web-demo/web-credential.json`. With `--db`, the credential is
+named `web-credential.json` beside that database. Use `--port` or `--log` to
+isolate another demo instance.
+
+### Automated package and browser proof
+
+```sh
+pnpm check
+pnpm exec playwright install chromium
+pnpm test:e2e
+pnpm audit --prod
+```
+
+The Chromium suite starts real loopback daemons with fake Telegram and synthetic
+data. It covers reconnect plus page-memory draft recovery, a complete daemon
+close/reopen on the same SQLite database, a stale browser form after a
+Telegram-first answer, and a synchronized Telegram/browser race with one durable
+winner. CI follows
+[Playwright's documented browser installation](https://playwright.dev/docs/ci)
+and runs one worker for reproducibility.
+
 Keep token values out of shell tracing and terminal output:
 
 ```sh
@@ -222,3 +269,24 @@ curl --no-buffer --silent --show-error \
 Unset the temporary shell variables after verification. Do not place either
 token in `.env.activation`, browser storage, screenshots, fixtures, issues, or
 git.
+
+## Security and privacy defaults
+
+- The listener defaults to `127.0.0.1`; exposing it on another interface is an
+  explicit operator decision and is not a hosted/deployment mode.
+- The static shell is credential-free, but every data/API route requires the
+  independent local bearer. Mutations additionally require the independent CSRF
+  token and an exact loopback same-origin request.
+- Static responses use no-store, a same-origin-only Content Security Policy,
+  frame denial, no-referrer, MIME sniffing protection, and cross-origin opener
+  isolation. There is no CORS opt-in.
+- Tokens and unfinished drafts exist only in page memory. Reloading requires
+  authentication again. The credential file is regular, private, non-symlinked,
+  and mode `0600`.
+- Default projections exclude machine/session identifiers, working paths,
+  process arguments, stored answers, callback tokens, draft content, and
+  assistant transcript text. Explicit reveal and diagnostic export remain
+  bounded and secret-redacted.
+- The console does not contact a CDN, analytics service, hosted backend, or
+  Telegram directly. Disabling it removes its static and API attack surface
+  without disabling relay operation.

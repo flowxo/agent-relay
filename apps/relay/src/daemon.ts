@@ -21,6 +21,7 @@ import { loadOrCreateWebCredential } from "./web-credential.js";
 
 export interface DaemonOptions {
   databasePath: string;
+  webEnabled?: boolean;
   webCredentialPath?: string;
   host?: string;
   port?: number;
@@ -44,7 +45,7 @@ export interface DaemonOptions {
 export interface RunningDaemon {
   server: Server;
   service: RelayService;
-  webCredentialPath: string;
+  webCredentialPath?: string;
   initialFallbackReplay?: FallbackReplayResult;
   initialRetention: RetentionResult;
   close(): Promise<void>;
@@ -81,10 +82,15 @@ export async function startDaemon(
     throw new Error("Telegram update mode must be poll or webhook");
   }
   await mkdir(dirname(options.databasePath), { recursive: true, mode: 0o700 });
-  const webCredentialPath =
-    options.webCredentialPath ??
-    join(dirname(options.databasePath), "web-credential.json");
-  const webCredential = await loadOrCreateWebCredential(webCredentialPath);
+  const webEnabled = options.webEnabled ?? true;
+  const webCredentialPath = webEnabled
+    ? (options.webCredentialPath ??
+      join(dirname(options.databasePath), "web-credential.json"))
+    : undefined;
+  const webCredential =
+    webCredentialPath === undefined
+      ? undefined
+      : await loadOrCreateWebCredential(webCredentialPath);
   const logger = options.logger ?? new JsonLineLogger();
   const transport = selectTransport(options);
   if (
@@ -129,7 +135,8 @@ export async function startDaemon(
     ...(options.telegramWebhookSecret === undefined
       ? {}
       : { telegramWebhookSecret: options.telegramWebhookSecret }),
-    webCredential,
+    webEnabled,
+    ...(webCredential === undefined ? {} : { webCredential }),
     logger,
   });
 
@@ -307,6 +314,7 @@ export async function startDaemon(
         transport instanceof TelegramBotTransport
           ? telegramUpdateMode
           : "disabled",
+      webEnabled,
     },
   });
 
@@ -345,7 +353,7 @@ export async function startDaemon(
   return {
     server,
     service,
-    webCredentialPath,
+    ...(webCredentialPath === undefined ? {} : { webCredentialPath }),
     ...(initialFallbackReplay === undefined ? {} : { initialFallbackReplay }),
     initialRetention,
     close,

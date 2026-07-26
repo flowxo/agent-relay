@@ -286,6 +286,20 @@
   cover typed contract projection, invalid/bounded answers, canonical
   multi-selects, ordered question sets, Telegram-first races, operation replay
   conflict, stale events, cross-session rejection, and losing-surface updates.
+- FXO-1071 is green locally. `web-demo` starts a separate fake-transport daemon
+  with four concurrent sanitized sessions and no external credential or
+  assistant transcript. The packaged console now negotiates an explicit API and
+  asset version; the compiled-output gate verifies all five assets and both
+  mutation schemas. A real headless Chromium suite proves page-memory draft
+  recovery through SSE reconnect and complete daemon restart, a stale browser
+  form after a Telegram-first answer, and a synchronized fake-Telegram/browser
+  race with one durable winner. `AGENT_RELAY_WEB_ENABLED=0` and
+  `daemon --no-web` create no web credential and return diagnosed 404s for all
+  UI/web routes while health, hook APIs, SQLite, and fake-Telegram delivery
+  continue. CI installs Chromium using Playwright's supported command and runs
+  the browser proof with one worker. The living onboarding/API guides cover
+  development and packaged startup, demo use, disablement, compatibility, and
+  security/privacy defaults.
 - The clean-commit verification gate exposed and now covers a fallback-spool
   replay race: a completed worker may remove its processing segment after a
   second worker's directory scan. A missing segment during stale-claim
@@ -343,17 +357,17 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 246 tests across 34 test files, including
-  the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
-  fallback privacy, inline and late continuation, owned-child exit observation,
-  stale answer rejection, concurrent-session isolation, installation rollback,
-  retention, log rotation, Telegram poll/webhook intake, and the activation
-  canary. The check also validates formatting, lint, types, capability drift,
-  and compiled package exports. The current dirty-worktree `pnpm check` reaches
-  only the formatter gate because five unrelated user-owned README/planning
-  drafts are not Prettier-clean; all story files pass formatting, and the exact
-  committed tree is verified separately in a clean worktree. `pnpm audit --prod`
-  reports no known vulnerabilities.
+- The implementation gates pass all 251 unit/integration tests across 35 test
+  files plus 3 Chromium end-to-end scenarios, including the SQLite-backed
+  daemon, retries/dead letters, malformed ingress, hook fallback privacy, inline
+  and late continuation, owned-child exit observation, stale answer rejection,
+  concurrent-session isolation, installation rollback, retention, log rotation,
+  Telegram poll/webhook intake, and the activation canary. The check also
+  validates formatting, lint, types, capability drift, compiled package exports,
+  static/API compatibility, web disablement, reconnect, stale forms, daemon
+  restart, and cross-surface races. The exact committed tree is verified
+  separately in a clean worktree. `pnpm audit --prod` reports no known
+  vulnerabilities.
 
 ## Phase 1 reproduction
 
@@ -436,8 +450,12 @@ also remain free of silent delivery, hook, or correlation failures.
 - Activation values remain only in a mode-`0600`, gitignored local environment
   file. Credential values, numeric account identifiers, private messages,
   harness session IDs, and machine-specific paths are not recorded in git.
+- Browser end-to-end coverage currently uses current Chromium with the fake
+  Telegram transport. Real Telegram activation remains proven separately, and
+  Safari/Firefox compatibility is not yet claimed.
 
 ## Next action
 
-Implement FXO-1071's optional packaging, fake concurrent-session demo, browser
-end-to-end proof, and disablement/security documentation.
+Close the Phase 3 project after exact-commit verification, then prioritize any
+remaining product roadmap outside the completed multi-session operator
+experience epic.

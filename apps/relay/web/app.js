@@ -10,6 +10,7 @@ import {
   sortAttention,
   summarizeSessions,
 } from "./state.js";
+import { WEB_API_VERSION, WEB_ASSET_VERSION } from "./version.js";
 
 const select = (selector) => document.querySelector(selector);
 const elements = {
@@ -79,6 +80,18 @@ const model = {
   streamAbort: undefined,
   refreshTimer: undefined,
 };
+
+function assertApiCompatibility(meta) {
+  if (
+    meta?.schema !== "agent-relay-web-meta.v1" ||
+    meta.apiVersion !== WEB_API_VERSION ||
+    meta.assetVersion !== WEB_ASSET_VERSION
+  ) {
+    const error = new Error("Local web companion version mismatch");
+    error.status = 426;
+    throw error;
+  }
+}
 
 function relativeTime(timestamp) {
   const difference = Date.now() - Date.parse(timestamp);
@@ -702,10 +715,12 @@ async function api(path) {
 }
 
 async function refresh() {
-  const [sessionResult, attentionResult] = await Promise.all([
+  const [meta, sessionResult, attentionResult] = await Promise.all([
+    api("/v1/web/meta"),
     api("/v1/web/sessions?limit=500"),
     api("/v1/web/attention?limit=500"),
   ]);
+  assertApiCompatibility(meta);
   model.sessions = reconcileSessions(sessionResult.sessions);
   model.attention = sortAttention(attentionResult.attention);
   const openRequestIds = new Set(
@@ -874,7 +889,9 @@ elements.connectForm.addEventListener("submit", async (event) => {
     elements.connectError.textContent =
       error.status === 401
         ? "Credential rejected. Copy the token field from the current local credential."
-        : "The local daemon could not be reached.";
+        : error.status === 426
+          ? "The console assets and daemon API are incompatible. Rebuild or reinstall Agent Relay."
+          : "The local daemon could not be reached.";
   }
 });
 

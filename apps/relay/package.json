@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
+    "web:package:check": "node scripts/check-web-package.mjs",
     "dev": "tsx --conditions=development src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

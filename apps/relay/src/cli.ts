@@ -20,7 +20,7 @@ import {
 
 import { RelayClient } from "./client.js";
 import { runTelegramCanary } from "./canary.js";
-import { resolveHookHarnessVersion } from "./cli-options.js";
+import { resolveHookHarnessVersion, resolveWebEnabled } from "./cli-options.js";
 import { startDaemon } from "./daemon.js";
 import { observeHarnessVersions, runDoctor } from "./doctor.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
@@ -28,6 +28,7 @@ import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
 import { runSupervisor } from "./supervisor.js";
+import { seedWebDemo } from "./web-demo.js";
 
 function environment(name: string): string | undefined {
   const value = process.env[name];
@@ -122,17 +123,29 @@ function installEntryPath(args: string[]): string {
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
-  if (command === "daemon") {
-    const databasePath = flag(args, "--db") ?? join(stateDir, "relay.sqlite");
-    const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
-    const telegramToken = environment("AGENT_RELAY_TELEGRAM_TOKEN");
-    const telegramChatId = environment("AGENT_RELAY_TELEGRAM_CHAT_ID");
-    const telegramOperatorId = environment("AGENT_RELAY_TELEGRAM_OPERATOR_ID");
-    const telegramWebhookSecret = environment(
-      "AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
-    );
-    const configuredTelegramUpdateMode =
-      environment("AGENT_RELAY_TELEGRAM_UPDATE_MODE") ?? "poll";
+  if (command === "daemon" || command === "web-demo") {
+    const demo = command === "web-demo";
+    const commandStateDir = demo ? join(stateDir, "web-demo") : stateDir;
+    const databasePath =
+      flag(args, "--db") ?? join(commandStateDir, "relay.sqlite");
+    const daemonToken = demo
+      ? undefined
+      : environment("AGENT_RELAY_DAEMON_TOKEN");
+    const telegramToken = demo
+      ? undefined
+      : environment("AGENT_RELAY_TELEGRAM_TOKEN");
+    const telegramChatId = demo
+      ? undefined
+      : environment("AGENT_RELAY_TELEGRAM_CHAT_ID");
+    const telegramOperatorId = demo
+      ? undefined
+      : environment("AGENT_RELAY_TELEGRAM_OPERATOR_ID");
+    const telegramWebhookSecret = demo
+      ? undefined
+      : environment("AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET");
+    const configuredTelegramUpdateMode = demo
+      ? "poll"
+      : (environment("AGENT_RELAY_TELEGRAM_UPDATE_MODE") ?? "poll");
     if (
       configuredTelegramUpdateMode !== "poll" &&
       configuredTelegramUpdateMode !== "webhook"
@@ -157,7 +170,7 @@ async function main(): Promise<void> {
       new RotatingFileLogger(
         flag(args, "--log") ??
           environment("AGENT_RELAY_LOG_PATH") ??
-          join(stateDir, "relay.ndjson"),
+          join(commandStateDir, "relay.ndjson"),
         {
           maxBytes: integerFlag(
             args,
@@ -176,10 +189,17 @@ async function main(): Promise<void> {
         },
       ),
     ]);
+    const webEnabled = demo
+      ? true
+      : resolveWebEnabled({
+          environmentValue: environment("AGENT_RELAY_WEB_ENABLED"),
+          disabledByFlag: args.includes("--no-web"),
+        });
     const daemon = await startDaemon({
       databasePath,
+      webEnabled,
       host: flag(args, "--host") ?? "127.0.0.1",
-      port: Number(flag(args, "--port") ?? "4317"),
+      port: Number(flag(args, "--port") ?? (demo ? "4318" : "4317")),
       ...(daemonToken === undefined ? {} : { token: daemonToken }),
       ...(telegramToken === undefined ? {} : { telegramToken }),
       ...(telegramChatId === undefined ? {} : { telegramChatId }),
@@ -194,7 +214,7 @@ async function main(): Promise<void> {
         "--coalesce-window-ms",
         Number(environment("AGENT_RELAY_COALESCE_WINDOW_MS") ?? "60000"),
       ),
-      fallbackPath: join(stateDir, "fallback-spool.ndjson"),
+      fallbackPath: join(commandStateDir, "fallback-spool.ndjson"),
       retention: {
         deliveredDays: integerFlag(
           args,
@@ -214,6 +234,26 @@ async function main(): Promise<void> {
       },
       logger: daemonLogger,
     });
+    if (demo) {
+      try {
+        const seed = await seedWebDemo(daemon.service);
+        daemonLogger.log({
+          level: "info",
+          code: "web.demo-started",
+          message: "sanitized local web demo started",
+          at: new Date().toISOString(),
+          details: {
+            url: `http://127.0.0.1:${flag(args, "--port") ?? "4318"}/ui/`,
+            credentialFile: "web-credential.json beside the demo database",
+            sessions: seed.sessionIds.length,
+            externalCredentials: false,
+          },
+        });
+      } catch (error) {
+        await daemon.close();
+        throw error;
+      }
+    }
     const stop = async () => {
       await daemon.close();
       process.exitCode = 0;
@@ -487,7 +527,7 @@ async function main(): Promise<void> {
     mode: 0o700,
   });
   process.stderr.write(
-    "Usage: agent-relay daemon|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary|telegram-canary\n",
+    "Usage: agent-relay daemon|web-demo|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary|telegram-canary\n",
   );
   process.exitCode = 2;
 }

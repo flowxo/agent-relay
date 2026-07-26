@@ -31,11 +31,14 @@ import type { TelegramReplyRouter } from "@agent-relay/core";
 import { z } from "zod";
 
 import {
+  WEB_API_VERSION,
+  WEB_ASSET_VERSION,
   WebAttentionItemV1Schema,
   WebChangeV1Schema,
   WebDiagnosticExportV1Schema,
   WebEventDetailV1Schema,
   WebEventRevealV1Schema,
+  WebMetaV1Schema,
   WebResolveRequestV1Schema,
   WebSessionActionV1Schema,
   WebSessionSummaryV1Schema,
@@ -134,6 +137,7 @@ export interface RelayHttpServerOptions {
   logger?: RelayLogger;
   replyRouter?: TelegramReplyRouter;
   telegramWebhookSecret?: string;
+  webEnabled?: boolean;
   webCredential?: WebCredential;
   webStreamPollMs?: number;
 }
@@ -615,6 +619,7 @@ export function createRelayHttpServer(
 ): Server {
   const logger = options.logger ?? NOOP_LOGGER;
   const maxBodyBytes = options.maxBodyBytes ?? 128 * 1024;
+  const webEnabled = options.webEnabled ?? true;
 
   return createServer(async (request, response) => {
     const at = new Date().toISOString();
@@ -628,6 +633,13 @@ export function createRelayHttpServer(
         url.pathname.startsWith("/ui/");
       const isTelegramWebhook =
         request.method === "POST" && url.pathname === "/v1/telegram/updates";
+      if (!webEnabled && (isWebRoute || isWebUiRoute)) {
+        throw new HttpRequestError(
+          404,
+          "web-companion-disabled",
+          "local web companion is disabled",
+        );
+      }
       if (isWebRoute) {
         const credential = assertWebAuthorized(request, options.webCredential);
         assertWebOrigin(request, credential, request.method === "POST");
@@ -665,7 +677,12 @@ export function createRelayHttpServer(
                   name: "state.js",
                   contentType: "text/javascript; charset=utf-8",
                 }
-              : undefined;
+              : url.pathname === "/ui/version.js"
+                ? {
+                    name: "version.js",
+                    contentType: "text/javascript; charset=utf-8",
+                  }
+                : undefined;
       if (
         (request.method === "GET" || request.method === "HEAD") &&
         webAsset !== undefined
@@ -679,6 +696,22 @@ export function createRelayHttpServer(
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/web/meta") {
+        sendJson(
+          response,
+          200,
+          WebMetaV1Schema.parse({
+            schema: "agent-relay-web-meta.v1",
+            apiVersion: WEB_API_VERSION,
+            assetVersion: WEB_ASSET_VERSION,
+            commandSchemas: [
+              "agent-relay-web-resolve.v1",
+              "agent-relay-web-session-action.v1",
+            ],
+          }),
+        );
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/v1/web/sessions") {
         const limit = webLimitSchema.parse(
           url.searchParams.get("limit") ?? "100",
@@ -1050,6 +1083,7 @@ export function createRelayHttpServer(
         sendJson(response, 200, {
           healthy: true,
           transport: service.transport.name,
+          webEnabled,
           ...service.store.status(),
           sessionRecords: service.store.listSessions(),
           topicRecords: service.store.listSessionTopics(),

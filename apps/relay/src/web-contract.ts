@@ -5,12 +5,31 @@ import {
   InteractionQuestionSchema,
 } from "@agent-relay/protocol";
 
+export const WEB_API_VERSION = "1";
+export const WEB_ASSET_VERSION = "1";
+
 const opaqueId = z
   .string()
   .min(8)
   .max(128)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
 const timestamp = z.iso.datetime({ offset: true });
+
+export const WebMetaV1Schema = z
+  .object({
+    schema: z.literal("agent-relay-web-meta.v1"),
+    apiVersion: z.literal(WEB_API_VERSION),
+    assetVersion: z.literal(WEB_ASSET_VERSION),
+    commandSchemas: z
+      .array(
+        z.enum([
+          "agent-relay-web-resolve.v1",
+          "agent-relay-web-session-action.v1",
+        ]),
+      )
+      .length(2),
+  })
+  .strict();
 
 export const WebSupportedActionSchema = z.enum([
   "continue",
@@ -291,6 +310,7 @@ export const WebDiagnosticExportV1Schema = z
 
 export type WebSupportedAction = z.infer<typeof WebSupportedActionSchema>;
 export type WebSessionAction = z.infer<typeof WebSessionActionSchema>;
+export type WebMetaV1 = z.infer<typeof WebMetaV1Schema>;
 export type WebOptionV1 = z.infer<typeof WebOptionV1Schema>;
 export type WebSessionSummaryV1 = z.infer<typeof WebSessionSummaryV1Schema>;
 export type WebAttentionItemV1 = z.infer<typeof WebAttentionItemV1Schema>;

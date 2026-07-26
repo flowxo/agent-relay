@@ -205,6 +205,22 @@ describe("relay HTTP daemon", () => {
     expect(appText).toContain("agent-relay-web-resolve.v1");
     expect(appText).toContain("agent-relay-web-session-action.v1");
     expect(appText).toContain("x-agent-relay-csrf");
+    const version = await fetch(`${runtime.baseUrl}/ui/version.js`);
+    expect(version.status).toBe(200);
+    expect(await version.text()).toContain('WEB_API_VERSION = "1"');
+    const meta = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
+      headers: webHeaders(runtime),
+    });
+    expect(meta.status).toBe(200);
+    await expect(meta.json()).resolves.toEqual({
+      schema: "agent-relay-web-meta.v1",
+      apiVersion: "1",
+      assetVersion: "1",
+      commandSchemas: [
+        "agent-relay-web-resolve.v1",
+        "agent-relay-web-session-action.v1",
+      ],
+    });
     const head = await fetch(`${runtime.baseUrl}/ui/styles.css`, {
       method: "HEAD",
     });

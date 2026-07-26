@@ -194,6 +194,7 @@ export class RelayClient {
   public async status(): Promise<
     StoreStatus & {
       transport: string;
+      webEnabled: boolean;
       healthy: true;
       sessionRecords: SessionRecord[];
       topicRecords: SessionTopicRecord[];
@@ -203,6 +204,7 @@ export class RelayClient {
     return await this.request<
       StoreStatus & {
         transport: string;
+        webEnabled: boolean;
         healthy: true;
         sessionRecords: SessionRecord[];
         topicRecords: SessionTopicRecord[];

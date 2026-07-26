@@ -11,3 +11,4 @@ coverage/
 .DS_Store
 .agent-relay/
 web-credential.json
+.artifacts/

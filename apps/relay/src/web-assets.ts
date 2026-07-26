@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type WebAssetName = "index.html" | "styles.css" | "app.js" | "state.js";
+export type WebAssetName =
+  "index.html" | "styles.css" | "app.js" | "state.js" | "version.js";
 
 const assetDirectories = [
   fileURLToPath(new URL("./web/", import.meta.url)),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveHookHarnessVersion } from "./cli-options.js";
+import { resolveHookHarnessVersion, resolveWebEnabled } from "./cli-options.js";
 
 describe("hook harness version resolution", () => {
   it("prefers the live supervisor version over install-time hook metadata", () => {
@@ -45,5 +45,41 @@ describe("hook harness version resolution", () => {
         supervised: false,
       }),
     ).toBe("unknown");
+  });
+});
+
+describe("local web companion enablement", () => {
+  it("defaults to enabled and accepts explicit environment values", () => {
+    expect(
+      resolveWebEnabled({
+        environmentValue: undefined,
+        disabledByFlag: false,
+      }),
+    ).toBe(true);
+    for (const value of ["1", "true", "YES", "on"]) {
+      expect(
+        resolveWebEnabled({ environmentValue: value, disabledByFlag: false }),
+      ).toBe(true);
+    }
+    for (const value of ["0", "false", "NO", "off"]) {
+      expect(
+        resolveWebEnabled({ environmentValue: value, disabledByFlag: false }),
+      ).toBe(false);
+    }
+  });
+
+  it("gives the local no-web flag precedence and diagnoses invalid values", () => {
+    expect(
+      resolveWebEnabled({
+        environmentValue: "true",
+        disabledByFlag: true,
+      }),
+    ).toBe(false);
+    expect(() =>
+      resolveWebEnabled({
+        environmentValue: "sometimes",
+        disabledByFlag: false,
+      }),
+    ).toThrow("AGENT_RELAY_WEB_ENABLED");
   });
 });

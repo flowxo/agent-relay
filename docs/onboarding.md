@@ -151,6 +151,8 @@ AGENT_RELAY_TELEGRAM_OPERATOR_ID=<authorized user id>
 AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll
 # Optional; defaults to 60000. Use 0 to disable.
 AGENT_RELAY_COALESCE_WINDOW_MS=60000
+# Optional local companion; defaults to 1. Set to 0 to disable.
+AGENT_RELAY_WEB_ENABLED=1
 ```
 
 Long polling is the simplest loopback-daemon setup and requires no public
@@ -204,6 +206,15 @@ set +a
 ~/.agent-relay/bin/agent-relay daemon
 ```
 
+For repository development, the equivalent source command is:
+
+```sh
+pnpm relay -- daemon
+```
+
+The built and installed command serves the same packaged assets and versioned
+API; `pnpm check` verifies that compatibility from compiled output.
+
 Expected startup evidence includes:
 
 - `telegram.poll-started`;
@@ -248,6 +259,36 @@ transition wins. The other surface changes to the terminal state without showing
 or resubmitting the winning private answer. A browser winner also asks the
 daemon to remove the Telegram controls; any transport edit failure is durably
 diagnosed rather than hidden.
+
+### Try the board without Telegram credentials
+
+Use the separate synthetic demo to see four concurrent lanes and actionable
+forms without a bot token, account ID, private transcript, or hosted service:
+
+```sh
+pnpm build
+node apps/relay/dist/cli.js web-demo
+```
+
+Open `http://127.0.0.1:4318/ui/` and use
+`~/.agent-relay/web-demo/web-credential.json`; `web.demo-started` names the
+credential file without logging either value. The demo always selects the fake
+transport even if Telegram variables exist in the calling shell. Stop it with
+`Ctrl-C`.
+
+### Disable the companion
+
+Either set `AGENT_RELAY_WEB_ENABLED=0` or start the normal daemon with
+`--no-web`. No `web-credential.json` is then created; `/`, `/ui/*`, and
+`/v1/web/*` return a diagnosed 404; and the hook, status, durable spool,
+Telegram, and supervisor paths remain active. The listener remains necessary for
+those local daemon APIs.
+
+Keep the default loopback host. Binding to another interface expands the trust
+boundary and is not part of the supported local-only deployment. The console
+uses no CDN, telemetry, browser storage, or hosted backend; see
+[`local-web-api.md`](./local-web-api.md) for the complete security and privacy
+defaults.
 
 Starting after an offline period may replay previously spooled events. Stable
 event IDs keep replay idempotent, but events that were never delivered before
