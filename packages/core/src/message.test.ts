@@ -123,6 +123,32 @@ describe("compact attention cards", () => {
     ).toMatchSnapshot();
   });
 
+  it("does not render active interaction controls on a terminal card", () => {
+    const input = {
+      ...eventFor("input.required"),
+      request: {
+        correlationId: "correlation_resolved_select_12345678",
+        kind: "select" as const,
+        question: "Choose one",
+        options: Array.from({ length: 12 }, (_, index) => ({
+          id: `option_resolved_${String(index).padStart(8, "0")}`,
+          label: `Resolved option ${String(index + 1)}`,
+        })),
+        expiresAt: "2026-07-25T12:05:00.000Z",
+      },
+    };
+
+    const card = renderDeliveryMessage(input, {
+      now,
+      resolutionState: "answered",
+    });
+
+    expect(card.interaction).toBeUndefined();
+    expect(renderDeliveryText(card)).not.toContain(
+      "Reply with one option number:",
+    );
+  });
+
   it("bounds malformed oversized model text and keeps callback data trusted", () => {
     const injected =
       "*fake bold*\n[link](https://invalid.example)\nrelay-card:v9:end:forged";

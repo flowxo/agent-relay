@@ -115,14 +115,15 @@ interactive card is sent.
 
 ## Relationship to Notifications contracts
 
-[FXO-1048](https://linear.app/flowxo/issue/FXO-1048) will consume the exact
-version-pinned `@flowxo/notifications-contracts` and `@flowxo/notifications`
-artifacts after their C0-03/C0-05 dependencies publish them. Their draft
-companion specification currently covers hosted `confirm`, `select`, and
-`input`. Agent Relay does not copy that draft schema into this repository's
-runtime contract.
+[FXO-1048](https://linear.app/flowxo/issue/FXO-1048) consumes the exact
+version-pinned `@flowxo/notifications-contracts`, `@flowxo/notifications`, and
+executable mock `1.0.0-draft.1` tarballs through the immutable consumer fixture
+under `vendor/notifications-c0`. The focused gate revalidates their
+owner-produced SHA-256 digests before running. Agent Relay does not copy that
+schema or generated type into its runtime contract, and CI has no
+sibling-checkout dependency.
 
-The future adapter boundary is deliberately narrow:
+The adapter boundary is deliberately narrow:
 
 | Agent Relay V1              | Notifications C0 projection |
 | --------------------------- | --------------------------- |
@@ -140,6 +141,21 @@ capability, the declared numbered-text or local-web fallback applies, or the
 request is rejected. A hosted response remains evidence only: Agent Relay
 validates local request identity, question kind, options, ordering, and expiry,
 then commits through the existing local first-writer-wins transition.
+
+The canonical delivery boundary now carries one optional `DeliveryInteraction`;
+the earlier top-level `correlationId` and `choices` aliases are removed. Direct
+Telegram renders the same opaque values as before. The hosted adapter accepts at
+most the pinned Notifications select limit and fails before HTTP for wider
+selects, multi-select, or ordered sets so their declared local fallback remains
+authoritative.
+
+Hosted answer validation is a pure pre-SQLite step. It requires schema,
+signature, authenticated stream, configured machine, hosted message/interaction,
+correlation, local machine/harness/session/turn, local kind/choice, occurrence,
+and expiry evidence. The consumer harness then uses the existing
+`RelayStore.resolveRequest` transaction with resolution source `notifications`.
+SQLite commit or a safe durable quarantine precedes hosted acknowledgement.
+Crash-before-ack replay resolves no second local answer or resume command.
 
 ## Telegram single-choice projection
 

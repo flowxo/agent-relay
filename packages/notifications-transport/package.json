@@ -1,0 +1,28 @@
+{
+  "name": "@agent-relay/notifications-transport",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "contract:check": "node scripts/verify-artifacts.mjs && vitest run test/contract-consumer.contract.test.ts --no-file-parallelism",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agent-relay/core": "workspace:*",
+    "@agent-relay/protocol": "workspace:*",
+    "@flowxo/notifications": "file:../../vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz",
+    "@flowxo/notifications-contracts": "file:../../vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@flowxo/notifications-contract-mock": "file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz"
+  }
+}

@@ -14,6 +14,7 @@ import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
 import {
   renderDeliveryText,
+  renderDeliveryInteraction,
   renderDeliveryMessage,
   renderMultiSelectDeliveryMessage,
   renderQuestionSetDeliveryMessage,
@@ -1121,6 +1122,10 @@ export class RelayService {
             },
           });
         }
+        const deliveryInteraction =
+          pending === undefined
+            ? undefined
+            : renderDeliveryInteraction(item.event, pending);
         const message =
           pending !== undefined && questionSetDraft !== undefined
             ? renderQuestionSetDeliveryMessage(
@@ -1136,14 +1141,13 @@ export class RelayService {
                   multiSelectDraft,
                   { now: this.now() },
                 )
-              : pending === undefined || pending.options.length === 0
+              : pending === undefined
                 ? rendered
                 : {
                     ...rendered,
-                    choices: pending.options.map((option) => ({
-                      token: option.token,
-                      label: option.label,
-                    })),
+                    ...(deliveryInteraction === undefined
+                      ? {}
+                      : { interaction: deliveryInteraction }),
                   };
         const deliveryContext = await this.deliveryContext(item.event);
         deliveryTopicId = deliveryContext.topicId;

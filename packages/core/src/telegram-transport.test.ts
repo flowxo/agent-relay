@@ -620,7 +620,13 @@ describe("TelegramBotTransport", () => {
     await transport.deliver(
       {
         ...message,
-        choices: [{ token: "decision_opaque_12345678", label: "Allow once" }],
+        interaction: {
+          type: "select",
+          correlationId: "correlation_opaque_12345678",
+          prompt: "Choose",
+          expiresAt: "2026-07-25T12:00:00.000Z",
+          options: [{ value: "decision_opaque_12345678", label: "Allow once" }],
+        },
         actions: [
           {
             kind: "details",
@@ -708,12 +714,21 @@ describe("TelegramBotTransport", () => {
       fetch: fetchMock,
     });
     const choices = Array.from({ length: 11 }, (_, index) => ({
-      token: `decision_${String(index + 1).padStart(16, "0")}`,
+      value: `decision_${String(index + 1).padStart(16, "0")}`,
       label: `Synthetic choice ${String(index + 1)}`,
     }));
 
     await transport.deliver(
-      { ...message, choices },
+      {
+        ...message,
+        interaction: {
+          type: "select",
+          correlationId: "correlation_numbered_12345678",
+          prompt: "Choose",
+          expiresAt: "2026-07-25T12:00:00.000Z",
+          options: choices,
+        },
+      },
       { idempotencyKey: "evt_numbered_fallback_12345678" },
     );
 
@@ -749,12 +764,12 @@ describe("TelegramBotTransport", () => {
         multiSelect: {
           options: [
             {
-              token: "decision_00000000-0000-4000-8000-000000000001",
+              value: "decision_00000000-0000-4000-8000-000000000001",
               label: "Unit one",
               selected: false,
             },
             {
-              token: "decision_00000000-0000-4000-8000-000000000002",
+              value: "decision_00000000-0000-4000-8000-000000000002",
               label: "Unit two",
               selected: true,
             },
@@ -847,12 +862,12 @@ describe("TelegramBotTransport", () => {
           total: 3,
           options: [
             {
-              token: "decision_00000000-0000-4000-8000-000000000001",
+              value: "decision_00000000-0000-4000-8000-000000000001",
               label: "Core",
               selected: true,
             },
             {
-              token: "decision_00000000-0000-4000-8000-000000000002",
+              value: "decision_00000000-0000-4000-8000-000000000002",
               label: "UI",
               selected: false,
             },

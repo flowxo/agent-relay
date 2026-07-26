@@ -8,6 +8,11 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./transport": {
+      "types": "./src/transport.ts",
+      "development": "./src/transport.ts",
+      "default": "./dist/transport.js"
     }
   },
   "scripts": {

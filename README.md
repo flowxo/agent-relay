@@ -18,6 +18,7 @@ Requirements: Node.js 22 or newer and pnpm 11.
 pnpm install
 pnpm check
 pnpm build
+pnpm notifications:contract:check
 ```
 
 The checked-in capability matrix is generated from code and verified by
@@ -26,6 +27,11 @@ under `packages/harnesses/fixtures`.
 
 No bot token, transcript, credential, hostname, username, or raw working path is
 required for the contract test suite.
+
+The focused Notifications C0 consumer command verifies exact immutable
+contract/client/mock artifacts, runs the SQLite-to-mock crash-replay proof, and
+starts the packed mock as a guarded separate loopback process. It requires no
+hosted account, public callback, or sibling checkout.
 
 ## Safe installation
 

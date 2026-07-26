@@ -266,7 +266,7 @@ describe("structured question-set free text", () => {
       callback(
         delivery,
         407,
-        questionSetCallbackData("choose", submitOption.token),
+        questionSetCallbackData("choose", submitOption.value),
       ),
     );
     expect(

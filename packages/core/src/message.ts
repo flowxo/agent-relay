@@ -13,7 +13,11 @@ import type {
 } from "./store.js";
 import { TELEGRAM_INLINE_CHOICE_LIMIT } from "./telegram-choice.js";
 import { sessionTopicMetadata } from "./topic.js";
-import type { DeliveryAction, DeliveryMessage } from "./transport.js";
+import type {
+  DeliveryAction,
+  DeliveryInteraction,
+  DeliveryMessage,
+} from "./transport.js";
 
 export const TELEGRAM_MESSAGE_LIMIT = 4_096;
 const CARD_SUMMARY_LIMIT = 480;
@@ -171,6 +175,129 @@ function actionsFor(
   }));
 }
 
+function interactionOptions(
+  event: AgentAttentionEventV1,
+  request: PendingRequestRecord | undefined,
+): Array<{ value: string; label: string }> {
+  if (request !== undefined) {
+    return request.options.map((option) => ({
+      value: option.token,
+      label: option.label,
+    }));
+  }
+  const attentionRequest = event.request;
+  if (attentionRequest === undefined) {
+    return [];
+  }
+  if (attentionRequest.kind === "confirm") {
+    return [
+      { value: "yes_option", label: "Yes" },
+      { value: "no_option", label: "No" },
+    ];
+  }
+  if (attentionRequest.kind === "permission") {
+    return [
+      { value: "allow_once", label: "Allow once" },
+      { value: "deny_request", label: "Deny" },
+      { value: "terminal_only", label: "Handle at terminal" },
+    ];
+  }
+  if (
+    attentionRequest.kind === "select" ||
+    attentionRequest.kind === "multi-select"
+  ) {
+    return (attentionRequest.options ?? []).map((option) => ({
+      value: option.id,
+      label: option.label,
+    }));
+  }
+  const question = attentionRequest.interaction?.questions[0];
+  if (question?.kind === "confirm") {
+    return [
+      {
+        value: question.confirm.optionId,
+        label: question.confirm.label,
+      },
+      {
+        value: question.decline.optionId,
+        label: question.decline.label,
+      },
+    ];
+  }
+  return question?.kind === "single-select"
+    ? question.options.map((option) => ({
+        value: option.optionId,
+        label: option.label,
+      }))
+    : [];
+}
+
+export function renderDeliveryInteraction(
+  event: AgentAttentionEventV1,
+  request?: PendingRequestRecord,
+): DeliveryInteraction | undefined {
+  const attentionRequest = event.request;
+  if (attentionRequest === undefined) {
+    return undefined;
+  }
+  const base = {
+    correlationId: attentionRequest.correlationId,
+    expiresAt: attentionRequest.expiresAt,
+  };
+  if (attentionRequest.kind === "confirm") {
+    return {
+      ...base,
+      type: "confirm",
+      prompt: attentionRequest.question,
+      options: interactionOptions(event, request),
+    };
+  }
+  if (
+    attentionRequest.kind === "select" ||
+    attentionRequest.kind === "permission"
+  ) {
+    return {
+      ...base,
+      type: "select",
+      prompt: attentionRequest.question,
+      options: interactionOptions(event, request),
+    };
+  }
+  if (
+    attentionRequest.kind === "input" ||
+    attentionRequest.kind === "continuation"
+  ) {
+    return {
+      ...base,
+      type: "input",
+      prompt: attentionRequest.question,
+    };
+  }
+  if (
+    attentionRequest.kind !== "question-set" ||
+    attentionRequest.interaction?.questions.length !== 1
+  ) {
+    return undefined;
+  }
+  const question = attentionRequest.interaction.questions[0];
+  if (question === undefined || question.kind === "multi-select") {
+    return undefined;
+  }
+  if (question.kind === "free-text") {
+    return {
+      ...base,
+      type: "input",
+      prompt: question.prompt,
+    };
+  }
+  return {
+    ...base,
+    type: question.kind === "confirm" ? "confirm" : "select",
+    prompt: question.prompt,
+    options: interactionOptions(event, request),
+  };
+}
+
 export function renderDeliveryMessage(
   event: AgentAttentionEventV1,
   options: AttentionCardOptions = {},
@@ -199,26 +326,31 @@ export function renderDeliveryMessage(
     `Summary: ${summary}`,
   ].join("\n");
   const actions = actionsFor(event, truncated || options.forceDetails === true);
+  const interaction =
+    options.resolutionState === undefined
+      ? renderDeliveryInteraction(event)
+      : undefined;
 
   return {
     eventId: event.eventId,
     title: `${harnessName(event)} · ${metadata.repository}`,
     text,
-    ...(event.request === undefined
-      ? {}
-      : { correlationId: event.request.correlationId }),
+    ...(interaction === undefined ? {} : { interaction }),
     ...(actions.length === 0 ? {} : { actions }),
   };
 }
 
 export function renderDeliveryText(message: DeliveryMessage): string {
+  const choices =
+    message.multiSelect === undefined && message.questionSet === undefined
+      ? (message.interaction?.options ?? [])
+      : [];
   const numberedChoices =
-    message.choices !== undefined &&
-    message.choices.length > TELEGRAM_INLINE_CHOICE_LIMIT
+    choices.length > TELEGRAM_INLINE_CHOICE_LIMIT
       ? [
           "",
           "Reply with one option number:",
-          ...message.choices.map(
+          ...choices.map(
             (choice, index) =>
               `${String(index + 1)}. ${oneLineUntrusted(choice.label)}`,
           ),
@@ -259,8 +391,21 @@ export function renderDeliveryText(message: DeliveryMessage): string {
                   : ""
               }`
         }`;
+  const questionSetNumberedChoices =
+    message.questionSet?.presentationMode === "numbered-text"
+      ? [
+          "",
+          "Reply with one option number:",
+          ...message.questionSet.options.map(
+            (option, index) =>
+              `${String(index + 1)}. ${oneLineUntrusted(
+                `${option.selected ? "✓ " : ""}${option.label}`,
+              )}`,
+          ),
+        ].join("\n")
+      : "";
   return redactText(
-    `${message.title}\n\n${message.text}${multiSelectSummary}${questionSetSummary}${numberedChoices}`,
+    `${message.title}\n\n${message.text}${multiSelectSummary}${questionSetSummary}${numberedChoices}${questionSetNumberedChoices}`,
     TELEGRAM_MESSAGE_LIMIT,
   );
 }
@@ -276,7 +421,7 @@ export function renderMultiSelectDeliveryMessage(
     ...renderDeliveryMessage(event, options),
     multiSelect: {
       options: request.options.map((option) => ({
-        token: option.token,
+        value: option.token,
         label: option.label,
         selected: selected.has(option.optionId),
       })),
@@ -350,20 +495,14 @@ export function renderQuestionSetDeliveryMessage(
   const questionOptions = request.options
     .filter((option) => optionIds.has(option.optionId))
     .map((option) => ({
-      token: option.token,
+      value: option.token,
       label: option.label,
       selected: selected.has(option.optionId),
     }));
+  const interaction = renderDeliveryInteraction(event, request);
   return {
     ...renderDeliveryMessage(event, options),
-    ...(presentationMode === "numbered-text"
-      ? {
-          choices: questionOptions.map((option) => ({
-            token: option.token,
-            label: `${option.selected ? "✓ " : ""}${option.label}`,
-          })),
-        }
-      : {}),
+    ...(interaction === undefined ? {} : { interaction }),
     questionSet: {
       requestId: draft.interaction.requestId,
       questionId: question.questionId,

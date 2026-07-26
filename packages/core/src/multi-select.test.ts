@@ -156,7 +156,7 @@ describe("durable Telegram multi-select drafts", () => {
     };
     expect(
       await testRuntime.router.handle(
-        callback(delivery, 202, multiSelectCallbackData("select", first.token)),
+        callback(delivery, 202, multiSelectCallbackData("select", first.value)),
       ),
     ).toEqual({ outcome: "draft-updated", updateId: 202 });
     expect(
@@ -165,7 +165,7 @@ describe("durable Telegram multi-select drafts", () => {
     ).toBe(true);
     expect(
       await testRuntime.router.handle(
-        callback(delivery, 203, multiSelectCallbackData("select", first.token)),
+        callback(delivery, 203, multiSelectCallbackData("select", first.value)),
       ),
     ).toEqual({ outcome: "draft-unchanged", updateId: 203 });
 
@@ -178,14 +178,14 @@ describe("durable Telegram multi-select drafts", () => {
             callback(
               delivery,
               204,
-              multiSelectCallbackData("select", second!.token),
+              multiSelectCallbackData("select", second!.value),
             ),
           ),
           testRuntime.router.handle(
             callback(
               delivery,
               205,
-              multiSelectCallbackData("select", third!.token),
+              multiSelectCallbackData("select", third!.value),
             ),
           ),
         ])
@@ -202,7 +202,7 @@ describe("durable Telegram multi-select drafts", () => {
         callback(
           delivery,
           206,
-          multiSelectCallbackData("select", fourth!.token),
+          multiSelectCallbackData("select", fourth!.value),
         ),
       ),
     ).toEqual({ outcome: "draft-rejected", updateId: 206 });
@@ -212,7 +212,7 @@ describe("durable Telegram multi-select drafts", () => {
         callback(
           delivery,
           207,
-          multiSelectCallbackData("unselect", third!.token),
+          multiSelectCallbackData("unselect", third!.value),
         ),
       ),
     ).toEqual({ outcome: "draft-updated", updateId: 207 });
@@ -288,7 +288,7 @@ describe("durable Telegram multi-select drafts", () => {
       callback(
         delivery,
         210,
-        multiSelectCallbackData("select", controls.options[1]!.token),
+        multiSelectCallbackData("select", controls.options[1]!.value),
       ),
     );
     firstRuntime.store.close();
@@ -366,7 +366,7 @@ describe("durable Telegram multi-select drafts", () => {
         callback(
           expiredDelivery,
           212,
-          multiSelectCallbackData("select", expiredControls.options[0]!.token),
+          multiSelectCallbackData("select", expiredControls.options[0]!.value),
         ),
       ),
     ).toEqual({ outcome: "expired", updateId: 212 });
@@ -388,7 +388,7 @@ describe("durable Telegram multi-select drafts", () => {
       callback(
         staleDelivery,
         213,
-        multiSelectCallbackData("select", staleControls.options[0]!.token),
+        multiSelectCallbackData("select", staleControls.options[0]!.value),
       ),
     );
     expect(
@@ -413,7 +413,7 @@ describe("durable Telegram multi-select drafts", () => {
         callback(
           staleDelivery,
           214,
-          multiSelectCallbackData("select", staleControls.options[1]!.token),
+          multiSelectCallbackData("select", staleControls.options[1]!.value),
         ),
       ),
     ).toEqual({ outcome: "draft-rejected", updateId: 214 });

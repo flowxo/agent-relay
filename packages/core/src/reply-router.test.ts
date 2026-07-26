@@ -525,17 +525,17 @@ describe("Telegram reply correlation", () => {
     runtime.service.ingest(input);
     await runtime.service.drain();
     const delivery = runtime.transport.deliveries[0];
-    const choice = delivery?.message.choices?.find(
+    const choice = delivery?.message.interaction?.options?.find(
       (candidate) => candidate.label === "Allow once",
     );
-    expect(choice?.token).toMatch(/^decision_/);
-    expect(choice?.token).not.toContain(input.sessionId);
+    expect(choice?.value).toMatch(/^decision_/);
+    expect(choice?.value).not.toContain(input.sessionId);
     const update = {
       update_id: 101,
       callback_query: {
         id: "callback_101",
         from: { id: 7001 },
-        data: `relay:${choice?.token ?? ""}`,
+        data: `relay:${choice?.value ?? ""}`,
         message: {
           message_id: Number(delivery?.receipt.messageId),
           message_thread_id: Number(delivery?.context.topicId),
@@ -591,7 +591,7 @@ describe("Telegram reply correlation", () => {
     runtime.service.ingest(input);
     await runtime.service.drain();
     const delivery = runtime.transport.deliveries[0];
-    const choice = delivery?.message.choices?.[0];
+    const choice = delivery?.message.interaction?.options?.[0];
     expect(
       runtime.service.resolveTerminal({
         correlationId: "correlation_terminal_first",
@@ -610,7 +610,7 @@ describe("Telegram reply correlation", () => {
       callback_query: {
         id: "callback_102",
         from: { id: 7001 },
-        data: `relay:${choice?.token ?? ""}`,
+        data: `relay:${choice?.value ?? ""}`,
         message: {
           message_id: Number(delivery?.receipt.messageId),
           message_thread_id: Number(delivery?.context.topicId),
@@ -640,7 +640,7 @@ describe("Telegram reply correlation", () => {
     service.ingest(input);
     await service.drain();
     const delivery = transport.deliveries[0];
-    const choice = delivery?.message.choices?.[0];
+    const choice = delivery?.message.interaction?.options?.[0];
     const router = new TelegramReplyRouter(store, transport, {
       operatorUserId: 7001,
       chatId: 9001,
@@ -653,7 +653,7 @@ describe("Telegram reply correlation", () => {
         callback_query: {
           id: "callback_116",
           from: { id: 7001 },
-          data: `relay:${choice?.token ?? ""}`,
+          data: `relay:${choice?.value ?? ""}`,
           message: {
             message_id: Number(delivery?.receipt.messageId),
             message_thread_id: Number(delivery?.context.topicId),
@@ -695,7 +695,7 @@ describe("Telegram reply correlation", () => {
     const secondDelivery = runtime.transport.deliveries.find(
       (delivery) => delivery.message.eventId === second.eventId,
     );
-    const firstChoice = firstDelivery?.message.choices?.[0];
+    const firstChoice = firstDelivery?.message.interaction?.options?.[0];
 
     expect(
       await runtime.router.handle({
@@ -703,7 +703,7 @@ describe("Telegram reply correlation", () => {
         callback_query: {
           id: "callback_117",
           from: { id: 9999 },
-          data: `relay:${firstChoice?.token ?? ""}`,
+          data: `relay:${firstChoice?.value ?? ""}`,
           message: {
             message_id: Number(firstDelivery?.receipt.messageId),
             message_thread_id: Number(firstDelivery?.context.topicId),
@@ -722,7 +722,7 @@ describe("Telegram reply correlation", () => {
         callback_query: {
           id: "callback_118",
           from: { id: 7001 },
-          data: `relay:${firstChoice?.token ?? ""}`,
+          data: `relay:${firstChoice?.value ?? ""}`,
           message: {
             message_id: Number(firstDelivery?.receipt.messageId),
             message_thread_id: Number(secondDelivery?.context.topicId),
@@ -738,7 +738,7 @@ describe("Telegram reply correlation", () => {
         callback_query: {
           id: "callback_119",
           from: { id: 7001 },
-          data: `relay:${firstChoice?.token ?? ""}`,
+          data: `relay:${firstChoice?.value ?? ""}`,
           message: {
             message_id: Number(secondDelivery?.receipt.messageId),
             message_thread_id: Number(secondDelivery?.context.topicId),
@@ -825,7 +825,7 @@ describe("Telegram reply correlation", () => {
     runtime.service.ingest(input);
     await runtime.service.drain();
     const delivery = runtime.transport.deliveries[0];
-    expect(delivery?.message.choices).toHaveLength(12);
+    expect(delivery?.message.interaction?.options).toHaveLength(12);
     expect(renderDeliveryText(delivery!.message)).toContain(
       "Reply with one option number:",
     );
