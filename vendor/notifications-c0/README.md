@@ -7,6 +7,7 @@ contents, and SHA-256 digests are checked before the consumer contract suite
 runs.
 
 The fixture keeps Agent Relay CI independent from a sibling checkout or mutable
-branch. It is not a shared runtime package, a copy of Notifications-owned
-schemas or types, or the cross-repository compatibility lock introduced by
-C0-08.
+branch. It is not a shared runtime package or a copy of Notifications-owned
+schemas or types. C0-08's canonical consumer inventory is
+[`contracts/contract-lock.json`](../../contracts/contract-lock.json); the legacy
+`artifacts.json` provenance manifest is checked for exact parity with that lock.

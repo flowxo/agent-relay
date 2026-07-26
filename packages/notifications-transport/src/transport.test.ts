@@ -2,6 +2,7 @@ import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
   createNotificationsContractMock,
 } from "@flowxo/notifications-contract-mock";
+import { NotificationsClient } from "@flowxo/notifications";
 import { describe, expect, it, vi } from "vitest";
 
 import { NotificationsContractTransport } from "./index.js";
@@ -65,6 +66,101 @@ describe("Notifications contract transport", () => {
       eventId: message.eventId,
       messageId: first.messageId,
       interactionId: mock.inspect().messages[0]?.interaction?.id,
+    });
+  });
+
+  it("ignores unknown optional response fields while retaining known identity", async () => {
+    const mock = createNotificationsContractMock();
+    const additiveFetch: typeof fetch = async (input, init) => {
+      const response = await fetchFor(mock)(input, init);
+      const body = (await response.json()) as Record<string, unknown>;
+      const headers = new Headers(response.headers);
+      headers.delete("content-length");
+      return new Response(
+        JSON.stringify({
+          ...body,
+          future_optional_response: {
+            synthetic: true,
+          },
+        }),
+        {
+          headers,
+          status: response.status,
+        },
+      );
+    };
+    const transport = transportFor(mock, additiveFetch);
+    const message = delivery();
+    const receipt = await transport.deliver(message, {
+      idempotencyKey: message.eventId,
+    });
+
+    expect(receipt).toMatchObject({
+      transport: "notifications",
+      messageId: mock.inspect().messages[0]?.id,
+    });
+    expect(transport.getHostedDeliveryIdentity(message.eventId)).toMatchObject({
+      eventId: message.eventId,
+      messageId: receipt.messageId,
+    });
+  });
+
+  it("tolerates additive fields on a known machine event", async () => {
+    const additiveEvent = {
+      schema: "notifications.interaction-event.v1",
+      id: "event_additive_12345678",
+      cursor: "mcur_additive_12345678",
+      type: "interaction.received",
+      message_id: "message_additive_12345678",
+      interaction_id: "interaction_additive_12345678",
+      correlation_id: "request_additive_12345678",
+      response: {
+        type: "input",
+        value: "continue safely",
+        future_response_evidence: "synthetic",
+      },
+      channel_context: {
+        binding_id: "binding_additive_12345678",
+        channel: "telegram",
+        conversation_kind: "private_chat",
+        future_channel_evidence: "synthetic",
+      },
+      occurred_at: "2026-07-25T17:50:00.000Z",
+      expires_at: "2026-07-25T18:00:00.000Z",
+      future_event_evidence: "synthetic",
+    };
+    const client = new NotificationsClient({
+      baseUrl: "https://notifications.mock.test",
+      credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            schema: "notifications.machine-events.v1",
+            events: [additiveEvent],
+            committed_cursor: null,
+            server_time: "2026-07-25T17:50:00.000Z",
+            future_batch_evidence: "synthetic",
+          }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          },
+        ),
+    });
+
+    const batch = await client.pollMachineEvents({ wait: 0 });
+    expect(batch).toMatchObject({
+      future_batch_evidence: "synthetic",
+      events: [
+        {
+          id: additiveEvent.id,
+          future_event_evidence: "synthetic",
+          response: {
+            type: "input",
+            value: "continue safely",
+          },
+        },
+      ],
     });
   });
 

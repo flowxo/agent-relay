@@ -15,10 +15,12 @@ evidence, risks, and the next action are tracked in
 Requirements: Node.js 22 or newer and pnpm 11.
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm contracts:preinstall
+pnpm rebuild
 pnpm check
 pnpm build
-pnpm notifications:contract:check
+pnpm contracts:notifications
 ```
 
 The checked-in capability matrix is generated from code and verified by
@@ -28,10 +30,13 @@ under `packages/harnesses/fixtures`.
 No bot token, transcript, credential, hostname, username, or raw working path is
 required for the contract test suite.
 
-The focused Notifications C0 consumer command verifies exact immutable
-contract/client/mock artifacts, runs the SQLite-to-mock crash-replay proof, and
-starts the packed mock as a guarded separate loopback process. It requires no
-hosted account, public callback, or sibling checkout.
+The stable Notifications C0 consumer command verifies the exact immutable
+contract/client/mock lock and a fresh scripts-disabled install, runs the
+SQLite-to-mock crash-replay proof, and starts the packed mock as a guarded
+separate loopback process. It requires no hosted account, public callback, or
+sibling checkout. Its lock, safe install order, compatibility policy, generated
+evidence, and update procedure are documented in
+[`contracts/README.md`](contracts/README.md).
 
 ## Safe installation
 

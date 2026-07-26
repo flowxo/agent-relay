@@ -1,0 +1,34 @@
+{
+  "schema": "flowxo.compatibility-policy.v1",
+  "version": "1.0.0",
+  "unknown_response_fields": "ignore",
+  "unknown_request_discriminators": "reject",
+  "classifications": {
+    "add_optional_response_field": "additive",
+    "add_event_or_enum_with_declared_unknown_tolerance": "additive",
+    "implementation_conformance_fix_with_fixture": "patch",
+    "make_optional_field_required": "breaking",
+    "remove_or_rename_public_element": "breaking",
+    "change_authorization_semantics": "breaking",
+    "change_expiry_semantics": "breaking",
+    "change_idempotency_semantics": "breaking",
+    "change_identity_semantics": "breaking",
+    "change_ordering_semantics": "breaking",
+    "change_retry_semantics": "breaking",
+    "change_signing_semantics": "breaking",
+    "tighten_accepted_input_bound": "breaking",
+    "add_event_or_enum_without_declared_unknown_tolerance": "breaking"
+  },
+  "required_change_evidence": [
+    "owner_changelog",
+    "canonical_schema",
+    "generated_artifact",
+    "compatibility_fixture",
+    "manifest_version",
+    "named_consumer_result"
+  ],
+  "migration_note_required_for": [
+    "breaking",
+    "deprecated"
+  ]
+}

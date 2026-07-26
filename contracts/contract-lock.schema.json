@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.flowxo.com/schemas/contract-lock-v1.schema.json",
+  "title": "FlowXO cross-repository contract lock",
+  "description": "Exact immutable artifact pins used by independent FlowXO reference-stack repositories.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_sha256",
+    "policy_sha256",
+    "repository",
+    "dependencies",
+    "owned_artifacts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "flowxo.contract-lock.v1"
+    },
+    "schema_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "policy_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactPin"
+      }
+    },
+    "owned_artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactPin"
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "properties": {
+        "dependencies": {
+          "type": "array",
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "owned_artifacts": {
+          "type": "array",
+          "minItems": 1
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "artifactPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "artifact",
+        "version",
+        "source_repository",
+        "source_commit",
+        "sha256",
+        "artifact_file",
+        "fixture_sets"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "artifact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 214,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "$ref": "#/$defs/exactSemver"
+        },
+        "source_repository": {
+          "$ref": "#/$defs/repository"
+        },
+        "source_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifact_file": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 512,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*(?:file|link|workspace):)[A-Za-z0-9@+._/-]+\\.tgz$"
+        },
+        "fixture_sets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fixtureSet"
+          }
+        }
+      }
+    },
+    "exactSemver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "fixtureSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "version": {
+          "$ref": "#/$defs/exactSemver"
+        }
+      }
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

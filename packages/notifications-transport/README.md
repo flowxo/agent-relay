@@ -16,10 +16,13 @@ Agent Relay consumes immutable tarballs from `vendor/notifications-c0`:
 | `@flowxo/notifications`               | `1.0.0-draft.1` | `4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c` |
 | `@flowxo/notifications-contract-mock` | `1.0.0-draft.1` | `c803f181213b3a86ce5fb566719dfe7833be1a6ffc9d228be9ec1bf396289c63` |
 
-The focused check verifies these hashes, archive paths, package identities,
-exact owner dependency versions, install-script absence, and the production
-package import boundary. No owner schema or generated type is copied into Agent
-Relay. This fixture is not the C0-08 cross-repository lock.
+The C0-08 source of truth is
+[`contracts/contract-lock.json`](../../contracts/contract-lock.json). The
+focused check verifies its hashes, canonical schema and policy digests, fixture
+identities, archive paths, package identities, exact owner dependency versions,
+install-script and secret-path absence, scripts-disabled fresh pnpm install, and
+the production package import boundary. No owner schema or generated type is
+copied into Agent Relay.
 
 ## Mapping and failure policy
 
@@ -59,5 +62,7 @@ resume command cannot be claimed twice.
 Run the exact artifact and round-trip proof with:
 
 ```sh
-pnpm notifications:contract:check
+pnpm contracts:notifications
 ```
+
+The previous `pnpm notifications:contract:check` spelling remains an alias.

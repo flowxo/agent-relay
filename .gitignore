@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+.contract-results/
 *.log
 *.sqlite
 *.sqlite-shm
