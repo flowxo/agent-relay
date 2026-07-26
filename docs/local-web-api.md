@@ -1,6 +1,6 @@
 # Local web control API
 
-> **Status:** FXO-1068 implementation contract
+> **Status:** Phase 3 local companion contract
 >
 > **Default boundary:** authenticated HTTP on `127.0.0.1:4317`
 
@@ -11,9 +11,9 @@ and terminal answers.
 
 The built-in session board is served at `http://127.0.0.1:4317/ui/`. Its static
 shell is public on loopback and contains no relay data or credential. Paste the
-generated bearer token into its connection form; the page retains it only in
-JavaScript memory, never browser storage. Authenticated API responses remain the
-only source of session and attention data.
+generated bearer and CSRF token into its connection form; the page retains both
+only in JavaScript memory, never browser storage. Authenticated API responses
+remain the only source of session and attention data.
 
 ## Credential
 
@@ -58,7 +58,8 @@ All list limits default to 100 and are bounded from 1 through 500.
 | `GET /v1/web/diagnostics/export`           | Downloadable re-sanitized diagnostic evidence                                |
 | `GET /v1/web/changes?after=0&limit=100`    | Ordered durable changes and retained cursor bounds                           |
 | `GET /v1/web/stream?after=0`               | Ordered Server-Sent Events                                                   |
-| `POST /v1/web/requests/:requestId/resolve` | Idempotent text or option-ID resolution                                      |
+| `POST /v1/web/requests/:requestId/resolve` | Idempotent typed response resolution                                         |
+| `POST /v1/web/sessions/:key/actions`       | Exact-event Continue, Mute, or End command                                   |
 
 Session summaries use a stable 24-character key instead of returning the machine
 or harness session ID. Their display ID matches Telegram's readable
@@ -72,13 +73,21 @@ Session `state` is the operator-facing lane state: `running`, `waiting`,
 `crashed`, `stale`, `muted`, or `ended`. `lifecycleState` retains the underlying
 harness lifecycle without asking the browser to infer controls or failures.
 
-The currently supported browser actions are:
+Request read models advertise only actions proven for the event's harness
+capabilities:
 
-- `respond-text` for input and continuation requests;
-- `choose-option` for confirmation, single-select, and permission requests.
+- `continue` and `respond-text` for eligible continuation requests;
+- `respond-text` for free text;
+- `choose-option` for confirmation, single-select, and permission requests;
+- `choose-multiple` with explicit selection bounds; and
+- `answer-question-set` for ordered confirm, single-select, multi-select, and
+  free-text sets.
 
-Multi-select and question-set requests remain visible but advertise no action
-until the structured browser UI implements their durable draft workflow.
+Session summaries separately advertise `details`, `continue`, `mute`, and `end`.
+Unavailable controls remain visible but disabled in the UI. Details opens the
+bounded transcript-free event view; End affects only the relay lane and never
+claims to terminate an unowned harness process. End is unavailable while a
+request remains open.
 
 ## Timeline, detail, and diagnostics
 
@@ -114,16 +123,49 @@ A mutation body is runtime validated:
 {
   "schema": "agent-relay-web-resolve.v1",
   "operationId": "browser-operation-opaque-1234",
-  "answer": "provider-option-id-or-free-text"
+  "sessionKey": "0123456789abcdef01234567",
+  "response": {
+    "kind": "multi-select",
+    "optionIds": ["provider-option-one", "provider-option-two"]
+  }
 }
 ```
 
-`operationId` is persisted with a digest of the request ID and normalized
-answer; the private answer is not copied into the replay ledger. Repeating the
-same operation returns its stored outcome. Reusing an operation ID for different
-content returns `409 replay_conflict`. A different operation that loses the
-Telegram/terminal/browser race returns the shared terminal state and cannot
-overwrite the winner.
+The response discriminator is `text`, `option`, `multi-select`, or
+`question-set`. Question-set answers use the existing ordered
+`InteractionQuestionAnswer` contract; the daemon constructs and validates the
+canonical `agent-interaction-answer.v1` envelope. Multi-select IDs are validated
+against the retained request and stored in request order.
+
+`operationId` is persisted with a digest of the request ID and typed response;
+private text is not copied into the replay ledger. Repeating the same operation
+returns its stored outcome. Reusing an operation ID for different content
+returns `409 replay_conflict`. The submitted `sessionKey` must match the
+retained request, preventing a stale form from crossing lanes.
+
+A different operation that loses the Telegram/terminal/browser race returns the
+shared immutable terminal state and `resolvedBy` without returning the private
+answer. When the browser wins, the daemon removes controls and marks the
+Telegram card terminal through the interactive transport. An edit failure never
+rolls back the committed answer, but it returns a surface-sync failure and
+records a durable sanitized diagnostic.
+
+Session mutations carry an exact retained `eventId`:
+
+```json
+{
+  "schema": "agent-relay-web-session-action.v1",
+  "operationId": "browser-session-operation-1234",
+  "eventId": "event-opaque-1234",
+  "action": "mute"
+}
+```
+
+They execute through the same card-action command used by Telegram. The event
+must belong to the URL's session and remain that session's latest event.
+Duplicate operations replay their durable result; changed payloads conflict; and
+a Telegram action that arrives after a browser win observes the already
+completed command instead of repeating it.
 
 ## Stream resume
 
@@ -141,6 +183,13 @@ replaced and the cursor is ahead of it, the stream emits `event: reset` with the
 current bounds. The client must refetch sessions and attention, then reconnect
 from the reported last cursor. Change rows and idempotency commands use the same
 bounded retention windows as delivered events and resolved requests.
+
+The built-in UI keeps unfinished form values only in page memory while live
+snapshots re-render. It never writes private drafts to browser storage. Terminal
+request change events identify the winning surface and remove stale controls;
+reconnecting then refreshes the authoritative request list. Server identity,
+expiry, compatibility, and operation-ledger checks remain authoritative even if
+the page was open across a race.
 
 Timeline rows are projections of their source records, not a second unbounded
 history. Event and delivery rows disappear with event retention; resolved

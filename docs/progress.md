@@ -239,8 +239,7 @@
   missing/wrong credentials, cross-origin requests, absent CSRF, oversized
   bodies, replay conflict, expired answers, safe response projection,
   concurrent-session isolation, live/reconnected streams, credential
-  permissions, and restart cursor durability. Structured browser drafts remain
-  deliberately deferred to FXO-1070.
+  permissions, and restart cursor durability.
 - FXO-1067 is green locally. The daemon serves a no-dependency, responsive local
   session board whose static shell contains no credential or relay data and is
   locked down by same-origin Content Security Policy, frame denial, no-referrer,
@@ -271,6 +270,22 @@
   rather than presenting invented history, while the living API/onboarding guide
   maps event, request, diagnostic, and session retention to visible empty
   states.
+- FXO-1070 is green locally. The local companion projects free-text,
+  single-select, bounded multi-select, and ordered mixed question-set forms from
+  the retained provider-neutral contracts. Browser submissions carry the stable
+  session key, use runtime-validated typed responses, canonicalize selection
+  order, validate `agent-interaction-answer.v1`, and resolve the same immutable
+  SQLite request row as Telegram and terminal answers. Page-memory-only drafts
+  survive live re-renders without entering browser storage. Request change
+  events remove stale controls and name the winning surface without returning
+  its private answer. Continue, Details, Mute, and End target an exact retained
+  event; unavailable actions stay disabled, End never claims to terminate the
+  harness, and session command operation IDs reject changed replays. Browser
+  wins update the Telegram card through the interactive transport; failed edits
+  preserve the committed action and create a durable sanitized diagnostic. Tests
+  cover typed contract projection, invalid/bounded answers, canonical
+  multi-selects, ordered question sets, Telegram-first races, operation replay
+  conflict, stale events, cross-session rejection, and losing-surface updates.
 - The clean-commit verification gate exposed and now covers a fallback-spool
   replay race: a completed worker may remove its processing segment after a
   second worker's directory scan. A missing segment during stale-claim
@@ -328,7 +343,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 238 tests across 34 test files, including
+- The implementation gates pass all 246 tests across 34 test files, including
   the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
   fallback privacy, inline and late continuation, owned-child exit observation,
   stale answer rejection, concurrent-session isolation, installation rollback,
@@ -424,5 +439,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1070's shared browser controls and structured response forms,
-retaining the same Telegram/terminal/browser first-writer authority.
+Implement FXO-1071's optional packaging, fake concurrent-session demo, browser
+end-to-end proof, and disablement/security documentation.

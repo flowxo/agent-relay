@@ -219,13 +219,13 @@ The local browser API is documented in [`local-web-api.md`](./local-web-api.md).
 Its authenticated read models and resumable stream can also be exercised with
 `curl` without a real bot token.
 
-Open `http://127.0.0.1:4317/ui/` for the compact session board. Copy only the
-`token` field from the private web credential into the connection form. The
-board keeps it in page memory, shows stable session identities, filters real
-running/waiting/crashed/stale/muted/ended lane states, and maintains a global
-expiry-ordered attention queue. Reloading deliberately requires the credential
-again. A disconnected, degraded, or stale board keeps those states visually
-distinct instead of presenting cached data as live.
+Open `http://127.0.0.1:4317/ui/` for the compact session board. Copy the `token`
+and `csrfToken` fields from the private web credential into the connection form.
+The board keeps both in page memory, shows stable session identities, filters
+real running/waiting/crashed/stale/muted/ended lane states, and maintains a
+global expiry-ordered attention queue. Reloading deliberately requires the
+credential again. A disconnected, degraded, or stale board keeps those states
+visually distinct instead of presenting cached data as live.
 
 Select any session row to open its bounded evidence timeline. Event, delivery,
 request, operator-action, and continuation entries share their retained event
@@ -234,6 +234,20 @@ and correlation IDs. Default details remain transcript-free. The separate
 bounded assistant content, and recognized secrets remain redacted. **Export
 diagnostics** downloads at most 500 retained records after applying current
 secret and machine-path redaction again.
+
+Open attention cards contain the locally supported response form: free text,
+single choice, bounded multi-select, or an ordered mixed question set. Form
+drafts survive live board re-renders only in page memory and are discarded when
+the request becomes terminal. **Continue**, **Details**, **Mute**, and **End**
+use the same retained request/card commands as Telegram. Disabled buttons mean
+the exact harness/event state does not support that action. End changes only the
+relay lane; it does not terminate the harness process.
+
+When Telegram and the browser answer at nearly the same time, the first SQLite
+transition wins. The other surface changes to the terminal state without showing
+or resubmitting the winning private answer. A browser winner also asks the
+daemon to remove the Telegram controls; any transport edit failure is durably
+diagnosed rather than hidden.
 
 Starting after an offline period may replay previously spooled events. Stable
 event IDs keep replay idempotent, but events that were never delivered before

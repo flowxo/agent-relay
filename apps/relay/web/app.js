@@ -1,6 +1,7 @@
-/* global AbortController, Blob, CSS, FormData, Option, TextDecoder, URL, clearTimeout, document, fetch, setInterval, setTimeout */
+/* global AbortController, Blob, CSS, FormData, Option, TextDecoder, URL, clearTimeout, crypto, document, fetch, setInterval, setTimeout */
 
 import {
+  buildResponse,
   escapeHtml,
   filterSessions,
   mergeCursor,
@@ -37,6 +38,7 @@ const elements = {
   attentionList: select("[data-attention-list]"),
   attentionCount: select("[data-attention-count]"),
   attentionEmpty: select("[data-attention-empty]"),
+  resolutionList: select("[data-resolution-list]"),
   exportDiagnostics: select("[data-export-diagnostics]"),
   drawerBackdrop: select("[data-drawer-backdrop]"),
   timelineTitle: select("[data-timeline-title]"),
@@ -50,12 +52,17 @@ const elements = {
   revealEvent: select("[data-reveal-event]"),
   privateReveal: select("[data-private-reveal]"),
   privateRevealContent: select("[data-private-reveal-content]"),
+  sessionControls: select("[data-session-controls]"),
+  sessionControlStatus: select("[data-session-control-status]"),
 };
 
 const model = {
   token: "",
+  csrfToken: "",
   sessions: [],
   attention: [],
+  terminalRequests: [],
+  responseDrafts: new Map(),
   cursor: 0,
   connection: "disconnected",
   lastSync: 0,
@@ -122,6 +129,8 @@ function setConnection(connection, detail) {
 function requireCredential(message) {
   model.streamAbort?.abort();
   model.token = "";
+  model.csrfToken = "";
+  model.responseDrafts.clear();
   model.connection = "disconnected";
   elements.console.hidden = true;
   elements.connectPanel.hidden = false;
@@ -202,10 +211,171 @@ function renderSessions() {
     .join("");
 }
 
+function optionFields(options, type, name) {
+  return options
+    .map(
+      (option) => `
+        <label class="response-option">
+          <input
+            type="${type}"
+            name="${escapeHtml(name)}"
+            value="${escapeHtml(option.optionId)}"
+            ${type === "radio" ? "required" : ""}
+          />
+          <span>${escapeHtml(option.label)}</span>
+        </label>`,
+    )
+    .join("");
+}
+
+function questionOptions(question) {
+  if (question.kind === "confirm") {
+    return [question.confirm, question.decline];
+  }
+  return question.options ?? [];
+}
+
+function renderQuestion(question) {
+  const name = `question:${question.questionId}`;
+  if (question.kind === "free-text") {
+    return `
+      <fieldset data-question="${escapeHtml(question.questionId)}">
+        <legend>${escapeHtml(question.prompt)}</legend>
+        <textarea
+          name="${escapeHtml(name)}"
+          minlength="${question.minLength}"
+          maxlength="${question.maxLength}"
+          ${question.multiline ? "" : 'rows="2"'}
+          required
+        ></textarea>
+      </fieldset>`;
+  }
+  const type = question.kind === "multi-select" ? "checkbox" : "radio";
+  const bounds =
+    question.kind === "multi-select"
+      ? ` · choose ${question.minSelections}–${question.maxSelections}`
+      : "";
+  return `
+    <fieldset data-question="${escapeHtml(question.questionId)}">
+      <legend>${escapeHtml(question.prompt)}${escapeHtml(bounds)}</legend>
+      ${optionFields(questionOptions(question), type, name)}
+    </fieldset>`;
+}
+
+function renderResponseForm(item) {
+  const form = item.form;
+  if (form === undefined) {
+    return `
+      <div class="unsupported-response">
+        This harness/request combination is visible but cannot be answered from
+        the local companion.
+      </div>`;
+  }
+  let fields;
+  if (form.kind === "text") {
+    fields = `
+      <textarea
+        name="response"
+        minlength="${form.minLength}"
+        maxlength="${form.maxLength}"
+        required
+      ></textarea>`;
+  } else if (form.kind === "single-select") {
+    fields = `<fieldset>${optionFields(form.options, "radio", "response")}</fieldset>`;
+  } else if (form.kind === "multi-select") {
+    fields = `
+      <fieldset>
+        <legend>Choose ${form.minSelections}–${form.maxSelections}</legend>
+        ${optionFields(form.options, "checkbox", "response")}
+      </fieldset>`;
+  } else {
+    fields = `
+      <strong>${escapeHtml(form.title)}</strong>
+      ${form.questions.map(renderQuestion).join("")}`;
+  }
+  const quickContinue = item.supportedActions.includes("continue")
+    ? '<button type="button" data-quick-continue>Continue</button>'
+    : "";
+  return `
+    <form
+      class="response-form"
+      data-response-form
+      data-request-id="${escapeHtml(item.requestId)}"
+      data-session-key="${escapeHtml(item.sessionKey)}"
+    >
+      ${fields}
+      <div class="response-actions">
+        <button type="submit">Submit response</button>
+        ${quickContinue}
+      </div>
+      <span class="response-status" data-response-status role="status"></span>
+    </form>`;
+}
+
+function captureResponseDrafts() {
+  for (const form of elements.attentionList.querySelectorAll(
+    "[data-response-form]",
+  )) {
+    const item = model.attention.find(
+      ({ requestId, sessionKey }) =>
+        requestId === form.dataset.requestId &&
+        sessionKey === form.dataset.sessionKey,
+    );
+    if (item !== undefined) {
+      model.responseDrafts.set(item.requestId, valuesFromForm(item, form));
+    }
+  }
+}
+
+function restoreResponseDrafts() {
+  for (const form of elements.attentionList.querySelectorAll(
+    "[data-response-form]",
+  )) {
+    const item = model.attention.find(
+      ({ requestId, sessionKey }) =>
+        requestId === form.dataset.requestId &&
+        sessionKey === form.dataset.sessionKey,
+    );
+    const values =
+      item === undefined ? undefined : model.responseDrafts.get(item.requestId);
+    if (item === undefined || values === undefined) continue;
+    const restore = (name, value) => {
+      for (const control of form.querySelectorAll(
+        `[name="${CSS.escape(name)}"]`,
+      )) {
+        if (control.type === "radio" || control.type === "checkbox") {
+          control.checked = Array.isArray(value)
+            ? value.includes(control.value)
+            : control.value === value;
+        } else {
+          control.value = String(value ?? "");
+        }
+      }
+    };
+    if (item.form?.kind === "question-set") {
+      for (const question of item.form.questions) {
+        restore(`question:${question.questionId}`, values[question.questionId]);
+      }
+    } else {
+      restore("response", values.value);
+    }
+  }
+}
+
 function renderAttention() {
+  captureResponseDrafts();
   elements.attentionCount.textContent = `${model.attention.length} open`;
-  elements.attentionEmpty.hidden = model.attention.length !== 0;
+  elements.attentionEmpty.hidden =
+    model.attention.length !== 0 || model.terminalRequests.length !== 0;
   elements.attentionList.hidden = model.attention.length === 0;
+  elements.resolutionList.innerHTML = model.terminalRequests
+    .map(
+      (notice) => `
+        <div class="resolution-notice">
+          ${escapeHtml(notice.label)}
+        </div>`,
+    )
+    .join("");
   elements.attentionList.innerHTML = model.attention
     .map((item) => {
       const session = model.sessions.find(
@@ -230,9 +400,11 @@ function renderAttention() {
             <span>${escapeHtml(item.harness)} · ${escapeHtml(branch)}</span>
             <span>${escapeHtml(expiresIn(item.expiresAt))}</span>
           </div>
+          ${renderResponseForm(item)}
         </article>`;
     })
     .join("");
+  restoreResponseDrafts();
 }
 
 function render() {
@@ -288,6 +460,21 @@ function renderTimeline(timeline) {
     .join("");
 }
 
+function renderSessionControls(session) {
+  const supported = new Set(session.supportedActions);
+  for (const button of elements.sessionControls.querySelectorAll(
+    "[data-session-action]",
+  )) {
+    const available =
+      supported.has(button.dataset.sessionAction) &&
+      session.latestEventId !== undefined;
+    button.disabled = !available;
+    button.title = available
+      ? ""
+      : "Unavailable for the retained event and harness state";
+  }
+}
+
 async function loadTimeline(key) {
   elements.timelineList.innerHTML =
     '<div class="empty-state compact"><span>↻</span><h3>Loading evidence</h3></div>';
@@ -317,12 +504,142 @@ function openTimeline(key) {
   elements.timelineSubtitle.textContent = `${session.harness} · ${
     session.branch ?? "default branch"
   } · ${session.state}`;
+  elements.sessionControlStatus.textContent = "";
+  renderSessionControls(session);
   elements.eventDetailPanel.hidden = true;
   elements.privateReveal.hidden = true;
   elements.drawerBackdrop.hidden = false;
   document.body.classList.add("drawer-open");
   elements.closeTimeline.focus();
   void loadTimeline(key);
+}
+
+function recordTerminalRequest(item, state, resolvedBy) {
+  const winner =
+    resolvedBy === undefined
+      ? ""
+      : ` · resolved in ${resolvedBy === "web" ? "this browser" : resolvedBy}`;
+  const repository =
+    model.sessions.find(({ sessionKey }) => sessionKey === item.sessionKey)
+      ?.repository ?? item.sessionKey.slice(-10);
+  model.terminalRequests = [
+    {
+      requestId: item.requestId,
+      label: `${repository}: ${state}${winner}`,
+    },
+    ...model.terminalRequests.filter(
+      ({ requestId }) => requestId !== item.requestId,
+    ),
+  ].slice(0, 5);
+}
+
+function valuesFromForm(item, form) {
+  const data = new FormData(form);
+  if (item.form?.kind === "question-set") {
+    return Object.fromEntries(
+      item.form.questions.map((question) => {
+        const name = `question:${question.questionId}`;
+        return [
+          question.questionId,
+          question.kind === "multi-select"
+            ? data.getAll(name).map(String)
+            : String(data.get(name) ?? ""),
+        ];
+      }),
+    );
+  }
+  return {
+    value:
+      item.form?.kind === "multi-select"
+        ? data.getAll("response").map(String)
+        : String(data.get("response") ?? ""),
+  };
+}
+
+async function mutationApi(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${model.token}`,
+      "content-type": "application/json",
+      "x-agent-relay-csrf": model.csrfToken,
+    },
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    result = { code: "invalid-response" };
+  }
+  return { ok: response.ok, status: response.status, result };
+}
+
+async function submitResponse(form, quickContinue = false) {
+  const requestId = form.dataset.requestId;
+  const sessionKey = form.dataset.sessionKey;
+  const item = model.attention.find(
+    (candidate) =>
+      candidate.requestId === requestId && candidate.sessionKey === sessionKey,
+  );
+  if (item === undefined) {
+    return;
+  }
+  const status = form.querySelector("[data-response-status]");
+  const buttons = [...form.querySelectorAll("button")];
+  for (const button of buttons) button.disabled = true;
+  status.textContent = "Submitting through the shared request authority…";
+  const response = quickContinue
+    ? { kind: "text", text: "Continue." }
+    : buildResponse(item, valuesFromForm(item, form));
+  if (response === undefined) {
+    status.textContent = "This request does not expose a browser response.";
+    for (const button of buttons) button.disabled = false;
+    return;
+  }
+  const operationId = `web_response_${crypto.randomUUID()}`;
+  let outcome;
+  try {
+    outcome = await mutationApi(
+      `/v1/web/requests/${encodeURIComponent(item.requestId)}/resolve`,
+      {
+        schema: "agent-relay-web-resolve.v1",
+        operationId,
+        sessionKey: item.sessionKey,
+        response,
+      },
+    );
+  } catch {
+    status.textContent =
+      "Connection interrupted before the request authority replied.";
+    for (const button of buttons) button.disabled = false;
+    return;
+  }
+  if (
+    outcome.result.requestState !== undefined &&
+    outcome.result.requestState !== "open"
+  ) {
+    model.attention = model.attention.filter(
+      (candidate) => candidate.requestId !== item.requestId,
+    );
+    model.responseDrafts.delete(item.requestId);
+    recordTerminalRequest(
+      item,
+      outcome.result.requestState,
+      outcome.result.resolvedBy,
+    );
+    renderAttention();
+    scheduleRefresh();
+    return;
+  }
+  status.textContent =
+    outcome.status === 422
+      ? "Review the response bounds and complete every required answer."
+      : outcome.status === 409
+        ? "This form is stale or another surface already handled it."
+        : "The response could not be committed.";
+  for (const button of buttons) button.disabled = false;
 }
 
 function closeTimeline() {
@@ -391,13 +708,32 @@ async function refresh() {
   ]);
   model.sessions = reconcileSessions(sessionResult.sessions);
   model.attention = sortAttention(attentionResult.attention);
+  const openRequestIds = new Set(
+    model.attention.map(({ requestId }) => requestId),
+  );
+  for (const requestId of model.responseDrafts.keys()) {
+    if (!openRequestIds.has(requestId)) {
+      model.responseDrafts.delete(requestId);
+    }
+  }
   model.lastSync = Date.now();
   model.lastContact = model.lastSync;
   model.reconnectAttempt = 0;
   setConnection("connected");
   render();
   if (model.openSessionKey.length > 0) {
-    void loadTimeline(model.openSessionKey);
+    const openSession = model.sessions.find(
+      ({ sessionKey }) => sessionKey === model.openSessionKey,
+    );
+    if (openSession === undefined) {
+      closeTimeline();
+    } else {
+      elements.timelineSubtitle.textContent = `${openSession.harness} · ${
+        openSession.branch ?? "default branch"
+      } · ${openSession.state}`;
+      renderSessionControls(openSession);
+      void loadTimeline(model.openSessionKey);
+    }
   }
 }
 
@@ -422,6 +758,38 @@ function consumeSseBlock(block) {
     model.cursor = mergeCursor(model.cursor, parsed.id);
   }
   if (parsed.event === "change" || parsed.event === "reset") {
+    if (parsed.event === "change" && parsed.data.length > 0) {
+      try {
+        const change = JSON.parse(parsed.data);
+        if (
+          change.kind === "request" &&
+          change.action === "update" &&
+          change.payload?.state !== undefined &&
+          change.payload.state !== "open"
+        ) {
+          const item = model.attention.find(
+            ({ requestId }) => requestId === change.entityId,
+          );
+          if (item !== undefined) {
+            recordTerminalRequest(
+              item,
+              change.payload.state,
+              change.payload.resolvedBy,
+            );
+            model.attention = model.attention.filter(
+              ({ requestId }) => requestId !== change.entityId,
+            );
+            model.responseDrafts.delete(change.entityId);
+            renderAttention();
+          }
+        }
+      } catch {
+        setConnection(
+          "degraded",
+          "A malformed live update was rejected; refreshing authoritative state.",
+        );
+      }
+    }
     if (parsed.event === "reset" && parsed.data.length > 0) {
       try {
         const bounds = JSON.parse(parsed.data);
@@ -492,6 +860,7 @@ elements.connectForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(elements.connectForm);
   model.token = String(form.get("credential") ?? "").trim();
+  model.csrfToken = String(form.get("csrfCredential") ?? "").trim();
   elements.connectError.textContent = "";
   try {
     await refresh();
@@ -501,6 +870,7 @@ elements.connectForm.addEventListener("submit", async (event) => {
     reconnectStream();
   } catch (error) {
     model.token = "";
+    model.csrfToken = "";
     elements.connectError.textContent =
       error.status === 401
         ? "Credential rejected. Copy the token field from the current local credential."
@@ -544,6 +914,46 @@ elements.timelineList.addEventListener("click", (event) => {
   const entry = event.target.closest("[data-timeline-event]");
   if (entry !== null) {
     void showEventDetail(entry.dataset.timelineEvent);
+  }
+});
+
+elements.sessionControls.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-session-action]");
+  if (button === null || button.disabled) return;
+  const session = model.sessions.find(
+    ({ sessionKey }) => sessionKey === model.openSessionKey,
+  );
+  if (session?.latestEventId === undefined) return;
+  const action = button.dataset.sessionAction;
+  if (action === "details") {
+    await showEventDetail(session.latestEventId);
+    return;
+  }
+  button.disabled = true;
+  elements.sessionControlStatus.textContent =
+    "Committing the exact session action…";
+  try {
+    const outcome = await mutationApi(
+      `/v1/web/sessions/${encodeURIComponent(session.sessionKey)}/actions`,
+      {
+        schema: "agent-relay-web-session-action.v1",
+        operationId: `web_session_${crypto.randomUUID()}`,
+        eventId: session.latestEventId,
+        action,
+      },
+    );
+    elements.sessionControlStatus.textContent = outcome.ok
+      ? action === "end"
+        ? "Relay lane ended. The harness process was not terminated."
+        : `${action} committed.`
+      : outcome.result.outcome === "blocked"
+        ? "Answer the pending request before ending this lane."
+        : "This control became stale or is unavailable.";
+    await refresh();
+  } catch {
+    elements.sessionControlStatus.textContent =
+      "Connection interrupted before the session authority replied.";
+    button.disabled = false;
   }
 });
 
@@ -592,6 +1002,13 @@ elements.exportDiagnostics.addEventListener("click", async () => {
 });
 
 function highlightAttention(event) {
+  if (
+    event.target.closest(
+      "form, button, input, textarea, select, label, fieldset",
+    ) !== null
+  ) {
+    return;
+  }
   const item = event.target.closest("[data-attention-session]");
   if (item === null) return;
   model.highlightedSession = item.dataset.attentionSession;
@@ -614,7 +1031,27 @@ function highlightAttention(event) {
 }
 
 elements.attentionList.addEventListener("click", highlightAttention);
+elements.attentionList.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-response-form]");
+  if (form === null) return;
+  event.preventDefault();
+  void submitResponse(form);
+});
+elements.attentionList.addEventListener("click", (event) => {
+  const quick = event.target.closest("[data-quick-continue]");
+  const form = quick?.closest("[data-response-form]");
+  if (form !== undefined && form !== null) {
+    void submitResponse(form, true);
+  }
+});
 elements.attentionList.addEventListener("keydown", (event) => {
+  if (
+    event.target.closest(
+      "form, button, input, textarea, select, label, fieldset",
+    ) !== null
+  ) {
+    return;
+  }
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
     highlightAttention(event);

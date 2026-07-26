@@ -13,6 +13,7 @@ import {
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
   sha256,
+  validateInteractionAnswer,
 } from "@agent-relay/protocol";
 import type {
   AgentAttentionEventV1,
@@ -146,6 +147,16 @@ export type CardActionExecutionResult =
       outcome: "claimed" | "succeeded" | "duplicate" | "stale";
       action: CardActionRecord;
     };
+
+export type BrowserSessionActionOutcome =
+  CardActionExecutionResult["outcome"] | "replay_conflict";
+
+export interface BrowserSessionActionResult {
+  outcome: BrowserSessionActionOutcome;
+  replayed: boolean;
+  action?: CardActionRecord;
+  reason?: string;
+}
 
 export interface ClaimSessionTopicInput {
   machineId: string;
@@ -486,6 +497,24 @@ export type BrowserResolutionOutcome =
   | "invalid_answer"
   | "unsupported_request"
   | "replay_conflict";
+
+export type BrowserRequestResponse =
+  | {
+      kind: "text";
+      text: string;
+    }
+  | {
+      kind: "option";
+      optionId: string;
+    }
+  | {
+      kind: "multi-select";
+      optionIds: string[];
+    }
+  | {
+      kind: "question-set";
+      answers: InteractionQuestionAnswer[];
+    };
 
 export interface BrowserResolutionResult {
   outcome: BrowserResolutionOutcome;
@@ -2733,6 +2762,53 @@ export class RelayStore {
     };
   }
 
+  public getLatestEventForSession(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): { event: AgentAttentionEventV1; status: DeliveryStatus } | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT event_id
+        FROM events
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+        ORDER BY
+          CAST(json_extract(payload_json, '$.sequence') AS INTEGER) DESC,
+          created_at DESC,
+          event_id DESC
+        LIMIT 1
+      `,
+      )
+      .get(input) as { event_id: string } | undefined;
+    return row === undefined ? undefined : this.getEvent(row.event_id);
+  }
+
+  public getDeliveryReceiptForEvent(
+    eventId: string,
+  ): { transportName: string; messageId: string } | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT transport_name, transport_message_id
+        FROM events
+        WHERE event_id = ?
+          AND transport_name IS NOT NULL
+          AND transport_message_id IS NOT NULL
+      `,
+      )
+      .get(eventId) as
+      { transport_name: string; transport_message_id: string } | undefined;
+    return row === undefined
+      ? undefined
+      : {
+          transportName: row.transport_name,
+          messageId: row.transport_message_id,
+        };
+  }
+
   public registerCardActions(
     eventId: string,
     actions: Array<{ token: string; kind: CardActionKind }>,
@@ -2873,6 +2949,7 @@ export class RelayStore {
     kind: CardActionKind;
     updateId: number;
     now: string;
+    resolvedBy?: "telegram" | "web";
   }): CardActionExecutionResult {
     assertIsoCutoff(input.now, "card action execution time");
     if (!Number.isSafeInteger(input.updateId) || input.updateId < 0) {
@@ -2950,7 +3027,7 @@ export class RelayStore {
         const resolution = this.resolveRequest({
           correlationId: pending.correlationId,
           answer: "Continue.",
-          resolvedBy: "telegram",
+          resolvedBy: input.resolvedBy ?? "telegram",
           now: input.now,
           expected: {
             machineId: pending.machineId,
@@ -2986,6 +3063,91 @@ export class RelayStore {
         }),
       };
     })();
+  }
+
+  public executeBrowserCardAction(input: {
+    operationId: string;
+    eventId: string;
+    token: string;
+    kind: Exclude<CardActionKind, "details">;
+    now: string;
+  }): BrowserSessionActionResult {
+    const replay = this.replayBrowserCardAction(input);
+    if (replay !== undefined) {
+      return replay;
+    }
+    const payloadHash = sha256(JSON.stringify([input.eventId, input.kind]));
+    return this.database.transaction((): BrowserSessionActionResult => {
+      const racedReplay = this.replayBrowserCardAction(input);
+      if (racedReplay !== undefined) {
+        return racedReplay;
+      }
+      const execution = this.executeCardAction({
+        token: input.token,
+        kind: input.kind,
+        updateId: Number.parseInt(sha256(input.operationId).slice(0, 12), 16),
+        now: input.now,
+        resolvedBy: "web",
+      });
+      this.database
+        .prepare(
+          `
+          INSERT INTO browser_commands (
+            operation_id, correlation_id, payload_hash, outcome, created_at
+          ) VALUES (?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          input.operationId,
+          input.eventId,
+          payloadHash,
+          execution.outcome,
+          input.now,
+        );
+      return { ...execution, replayed: false };
+    })();
+  }
+
+  public replayBrowserCardAction(input: {
+    operationId: string;
+    eventId: string;
+    token: string;
+    kind: Exclude<CardActionKind, "details">;
+  }): BrowserSessionActionResult | undefined {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(input.operationId)) {
+      throw new Error("browser operation id is malformed");
+    }
+    const payloadHash = sha256(JSON.stringify([input.eventId, input.kind]));
+    const prior = this.database
+      .prepare(
+        `
+          SELECT correlation_id, payload_hash, outcome
+          FROM browser_commands
+          WHERE operation_id = ?
+        `,
+      )
+      .get(input.operationId) as
+      | {
+          correlation_id: string;
+          payload_hash: string;
+          outcome: BrowserSessionActionOutcome;
+        }
+      | undefined;
+    if (prior === undefined) {
+      return undefined;
+    }
+    if (
+      prior.correlation_id !== input.eventId ||
+      prior.payload_hash !== payloadHash
+    ) {
+      return { outcome: "replay_conflict", replayed: true };
+    }
+    const action = this.getCardAction(input.token);
+    return {
+      outcome: prior.outcome,
+      replayed: true,
+      ...(action === undefined ? {} : { action }),
+    };
   }
 
   public finishCardAction(input: {
@@ -4537,19 +4699,15 @@ export class RelayStore {
   public resolveBrowserRequest(input: {
     operationId: string;
     correlationId: string;
-    answer: string;
+    response: BrowserRequestResponse;
     now: string;
   }): BrowserResolutionResult {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(input.operationId)) {
       throw new Error("browser operation id is malformed");
     }
     assertIsoCutoff(input.now, "browser resolution time");
-    const normalizedAnswer = input.answer.trim().slice(0, 4_000);
-    if (normalizedAnswer.length === 0) {
-      throw new Error("browser answer cannot be empty");
-    }
     const payloadHash = sha256(
-      JSON.stringify([input.correlationId, normalizedAnswer]),
+      JSON.stringify([input.correlationId, input.response]),
     );
     return this.database.transaction((): BrowserResolutionResult => {
       const prior = this.database
@@ -4587,22 +4745,13 @@ export class RelayStore {
       let resolutionRequest: PendingRequestRecord | undefined;
       if (request === undefined) {
         outcome = "not_found";
-      } else if (
-        request.requestKind === "multi-select" ||
-        request.requestKind === "question-set"
-      ) {
-        outcome = "unsupported_request";
-        resolutionRequest = request;
       } else {
-        const answer =
-          request.requestKind === "input" ||
-          request.requestKind === "continuation"
-            ? normalizedAnswer
-            : request.options.some(
-                  (option) => option.optionId === normalizedAnswer,
-                )
-              ? normalizedAnswer
-              : undefined;
+        const answer = this.browserAnswer(
+          request,
+          input.response,
+          input.operationId,
+          input.now,
+        );
         if (answer === undefined) {
           outcome = "invalid_answer";
           resolutionRequest = request;
@@ -4648,6 +4797,73 @@ export class RelayStore {
           : { request: resolutionRequest }),
       };
     })();
+  }
+
+  private browserAnswer(
+    request: PendingRequestRecord,
+    response: BrowserRequestResponse,
+    operationId: string,
+    now: string,
+  ): string | undefined {
+    if (
+      request.requestKind === "input" ||
+      request.requestKind === "continuation"
+    ) {
+      if (response.kind !== "text") {
+        return undefined;
+      }
+      const answer = response.text.replace(/\r\n?/g, "\n").trim();
+      return answer.length === 0 || answer.length > 4_000 ? undefined : answer;
+    }
+    if (
+      request.requestKind === "confirm" ||
+      request.requestKind === "select" ||
+      request.requestKind === "permission"
+    ) {
+      return response.kind === "option" &&
+        request.options.some((option) => option.optionId === response.optionId)
+        ? response.optionId
+        : undefined;
+    }
+    if (request.requestKind === "multi-select") {
+      if (response.kind !== "multi-select") {
+        return undefined;
+      }
+      const draft = this.getMultiSelectDraft(request.correlationId);
+      const selected = new Set(response.optionIds);
+      if (
+        draft === undefined ||
+        selected.size !== response.optionIds.length ||
+        selected.size < draft.minSelections ||
+        selected.size > draft.maxSelections ||
+        response.optionIds.some(
+          (optionId) =>
+            !request.options.some((option) => option.optionId === optionId),
+        )
+      ) {
+        return undefined;
+      }
+      const ordered = request.options
+        .filter((option) => selected.has(option.optionId))
+        .map((option) => option.optionId);
+      const answer = JSON.stringify(ordered);
+      return Buffer.byteLength(answer, "utf8") <= 4_000 ? answer : undefined;
+    }
+    if (response.kind !== "question-set") {
+      return undefined;
+    }
+    const interaction = this.questionSetInteraction(request);
+    if (interaction === undefined) {
+      return undefined;
+    }
+    const validation = validateInteractionAnswer(interaction, {
+      schema: "agent-interaction-answer.v1",
+      answerId: operationId,
+      requestId: request.correlationId,
+      submittedAt: now,
+      answers: response.answers,
+    });
+    return validation.ok ? JSON.stringify(validation.answer) : undefined;
   }
 
   public resolveOptionToken(

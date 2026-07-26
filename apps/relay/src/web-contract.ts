@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  InteractionQuestionAnswerSchema,
+  InteractionQuestionSchema,
+} from "@agent-relay/protocol";
+
 const opaqueId = z
   .string()
   .min(8)
@@ -8,8 +13,18 @@ const opaqueId = z
 const timestamp = z.iso.datetime({ offset: true });
 
 export const WebSupportedActionSchema = z.enum([
+  "continue",
   "respond-text",
   "choose-option",
+  "choose-multiple",
+  "answer-question-set",
+]);
+
+export const WebSessionActionSchema = z.enum([
+  "continue",
+  "details",
+  "mute",
+  "end",
 ]);
 
 export const WebOptionV1Schema = z
@@ -39,8 +54,42 @@ export const WebSessionSummaryV1Schema = z
     lastEventType: z.string().min(1).max(80).optional(),
     lastSeenAt: timestamp,
     attentionCount: z.number().int().nonnegative().max(10_000),
+    latestEventId: opaqueId.optional(),
+    supportedActions: z.array(WebSessionActionSchema).max(4),
   })
   .strict();
+
+const WebResponseFormV1Schema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("text"),
+      minLength: z.number().int().min(1).max(4_000),
+      maxLength: z.number().int().min(1).max(4_000),
+      multiline: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("single-select"),
+      options: z.array(WebOptionV1Schema).min(2).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("multi-select"),
+      options: z.array(WebOptionV1Schema).min(2).max(20),
+      minSelections: z.number().int().min(0).max(20),
+      maxSelections: z.number().int().min(1).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("question-set"),
+      title: z.string().min(1).max(120),
+      questions: z.array(InteractionQuestionSchema).min(1).max(10),
+    })
+    .strict(),
+]);
 
 export const WebAttentionItemV1Schema = z
   .object({
@@ -63,6 +112,7 @@ export const WebAttentionItemV1Schema = z
     expiresAt: timestamp,
     supportedActions: z.array(WebSupportedActionSchema).max(2),
     options: z.array(WebOptionV1Schema).max(20),
+    form: WebResponseFormV1Schema.optional(),
   })
   .strict();
 
@@ -102,6 +152,7 @@ export const WebEventDetailV1Schema = z
         expiresAt: timestamp,
         supportedActions: z.array(WebSupportedActionSchema).max(2),
         options: z.array(WebOptionV1Schema).max(20),
+        form: WebResponseFormV1Schema.optional(),
       })
       .strict()
       .optional(),
@@ -112,7 +163,42 @@ export const WebResolveRequestV1Schema = z
   .object({
     schema: z.literal("agent-relay-web-resolve.v1"),
     operationId: opaqueId,
-    answer: z.string().min(1).max(4_000),
+    sessionKey: z.string().length(24),
+    response: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("text"),
+          text: z.string().min(1).max(4_000),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("option"),
+          optionId: opaqueId,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("multi-select"),
+          optionIds: z.array(opaqueId).max(20),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("question-set"),
+          answers: z.array(InteractionQuestionAnswerSchema).min(1).max(10),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export const WebSessionActionV1Schema = z
+  .object({
+    schema: z.literal("agent-relay-web-session-action.v1"),
+    operationId: opaqueId,
+    eventId: opaqueId,
+    action: WebSessionActionSchema.exclude(["details"]),
   })
   .strict();
 
@@ -204,11 +290,13 @@ export const WebDiagnosticExportV1Schema = z
   .strict();
 
 export type WebSupportedAction = z.infer<typeof WebSupportedActionSchema>;
+export type WebSessionAction = z.infer<typeof WebSessionActionSchema>;
 export type WebOptionV1 = z.infer<typeof WebOptionV1Schema>;
 export type WebSessionSummaryV1 = z.infer<typeof WebSessionSummaryV1Schema>;
 export type WebAttentionItemV1 = z.infer<typeof WebAttentionItemV1Schema>;
 export type WebEventDetailV1 = z.infer<typeof WebEventDetailV1Schema>;
 export type WebResolveRequestV1 = z.infer<typeof WebResolveRequestV1Schema>;
+export type WebSessionActionV1 = z.infer<typeof WebSessionActionV1Schema>;
 export type WebChangeV1 = z.infer<typeof WebChangeV1Schema>;
 export type WebTimelineEntryV1 = z.infer<typeof WebTimelineEntryV1Schema>;
 export type WebEventRevealV1 = z.infer<typeof WebEventRevealV1Schema>;

@@ -33,24 +33,37 @@
             <p class="eyebrow">Private local connection</p>
             <h1>Bring every agent lane into focus.</h1>
             <p>
-              Paste the bearer token from
-              <code>~/.agent-relay/web-credential.json</code>. It stays in this
-              page's memory and is never written to browser storage.
+              Paste both fields from
+              <code>~/.agent-relay/web-credential.json</code>. They stay in this
+              page's memory and are never written to browser storage.
             </p>
           </div>
           <form class="connect-form" data-connect-form>
-            <label for="credential">Local bearer token</label>
             <div class="credential-row">
-              <input
-                id="credential"
-                name="credential"
-                type="password"
-                autocomplete="off"
-                spellcheck="false"
-                required
-                minlength="32"
-                placeholder="Paste token"
-              />
+              <div class="credential-fields">
+                <label for="credential">Local bearer token</label>
+                <input
+                  id="credential"
+                  name="credential"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  required
+                  minlength="32"
+                  placeholder="Paste token"
+                />
+                <label for="csrf-credential">Local CSRF token</label>
+                <input
+                  id="csrf-credential"
+                  name="csrfCredential"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  required
+                  minlength="32"
+                  placeholder="Paste csrfToken"
+                />
+              </div>
               <button type="submit">Connect</button>
             </div>
             <p class="form-error" data-connect-error role="alert"></p>
@@ -168,6 +181,7 @@
                 </div>
                 <span data-attention-count>0 open</span>
               </div>
+              <div class="resolution-list" data-resolution-list></div>
               <div class="attention-list" data-attention-list></div>
               <div class="empty-state compact" data-attention-empty>
                 <span aria-hidden="true">✓</span>
@@ -191,6 +205,27 @@
                   <p class="eyebrow">Session evidence</p>
                   <h2 id="timeline-title" data-timeline-title>Timeline</h2>
                   <p data-timeline-subtitle></p>
+                  <div
+                    class="session-controls"
+                    data-session-controls
+                    aria-label="Session controls"
+                  >
+                    <button type="button" data-session-action="continue">
+                      Continue
+                    </button>
+                    <button type="button" data-session-action="details">
+                      Details
+                    </button>
+                    <button type="button" data-session-action="mute">
+                      Mute
+                    </button>
+                    <button type="button" data-session-action="end">End</button>
+                  </div>
+                  <p
+                    class="session-control-status"
+                    data-session-control-status
+                    role="status"
+                  ></p>
                 </div>
                 <button
                   class="close-button"

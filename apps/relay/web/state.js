@@ -16,6 +16,49 @@ export function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+export function buildResponse(item, values) {
+  if (item.form?.kind === "text") {
+    return { kind: "text", text: String(values.value ?? "") };
+  }
+  if (item.form?.kind === "single-select") {
+    return { kind: "option", optionId: String(values.value ?? "") };
+  }
+  if (item.form?.kind === "multi-select") {
+    return {
+      kind: "multi-select",
+      optionIds: Array.isArray(values.value) ? values.value.map(String) : [],
+    };
+  }
+  if (item.form?.kind !== "question-set") {
+    return undefined;
+  }
+  return {
+    kind: "question-set",
+    answers: item.form.questions.map((question) => {
+      const value = values[question.questionId];
+      if (question.kind === "multi-select") {
+        return {
+          questionId: question.questionId,
+          kind: question.kind,
+          optionIds: Array.isArray(value) ? value.map(String) : [],
+        };
+      }
+      if (question.kind === "free-text") {
+        return {
+          questionId: question.questionId,
+          kind: question.kind,
+          text: String(value ?? ""),
+        };
+      }
+      return {
+        questionId: question.questionId,
+        kind: question.kind,
+        optionId: String(value ?? ""),
+      };
+    }),
+  };
+}
+
 export function reconcileSessions(sessions) {
   const byKey = new Map();
   for (const session of sessions) {

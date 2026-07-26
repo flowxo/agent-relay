@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildResponse,
   escapeHtml,
   filterSessions,
   mergeCursor,
@@ -164,5 +165,74 @@ describe("local session board state", () => {
     expect(escapeHtml('<script data-secret="x">&</script>')).toBe(
       "&lt;script data-secret=&quot;x&quot;&gt;&amp;&lt;/script&gt;",
     );
+  });
+
+  it("builds provider-neutral multi-select and ordered question-set answers", () => {
+    expect(
+      buildResponse(
+        attention({
+          form: {
+            kind: "multi-select",
+            options: [],
+            minSelections: 1,
+            maxSelections: 2,
+          },
+        }),
+        { value: ["option_two", "option_one"] },
+      ),
+    ).toEqual({
+      kind: "multi-select",
+      optionIds: ["option_two", "option_one"],
+    });
+
+    const questions = [
+      {
+        questionId: "question_confirm",
+        kind: "confirm",
+      },
+      {
+        questionId: "question_units",
+        kind: "multi-select",
+      },
+      {
+        questionId: "question_note",
+        kind: "free-text",
+      },
+    ];
+    expect(
+      buildResponse(
+        attention({
+          form: {
+            kind: "question-set",
+            title: "Release",
+            questions,
+          },
+        }),
+        {
+          question_confirm: "confirm_yes",
+          question_units: ["unit_core", "unit_ui"],
+          question_note: "Ship safely",
+        },
+      ),
+    ).toEqual({
+      kind: "question-set",
+      answers: [
+        {
+          questionId: "question_confirm",
+          kind: "confirm",
+          optionId: "confirm_yes",
+        },
+        {
+          questionId: "question_units",
+          kind: "multi-select",
+          optionIds: ["unit_core", "unit_ui"],
+        },
+        {
+          questionId: "question_note",
+          kind: "free-text",
+          text: "Ship safely",
+        },
+      ],
+    });
   });
 });

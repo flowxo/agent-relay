@@ -17,10 +17,15 @@ import type {
   SessionRecord,
   WebChangeRecord,
 } from "@agent-relay/core";
+import type {
+  AgentAttentionEventV1,
+  InteractionQuestion,
+} from "@agent-relay/protocol";
 import {
   NOOP_LOGGER,
   redactDiagnosticText,
   redactText,
+  renderDeliveryMessage,
 } from "@agent-relay/core";
 import type { TelegramReplyRouter } from "@agent-relay/core";
 import { z } from "zod";
@@ -32,6 +37,7 @@ import {
   WebEventDetailV1Schema,
   WebEventRevealV1Schema,
   WebResolveRequestV1Schema,
+  WebSessionActionV1Schema,
   WebSessionSummaryV1Schema,
   WebTimelineEntryV1Schema,
 } from "./web-contract.js";
@@ -44,6 +50,7 @@ import type {
   WebEventDetailV1,
   WebEventRevealV1,
   WebSessionSummaryV1,
+  WebSessionAction,
   WebSupportedAction,
   WebTimelineEntryV1,
 } from "./web-contract.js";
@@ -353,18 +360,34 @@ function sessionKey(input: {
   ).slice(0, 24);
 }
 
-function supportedActions(request: PendingRequestRecord): WebSupportedAction[] {
+function requestCanContinue(event: AgentAttentionEventV1): boolean {
+  return event.capabilities.inlineContinue || event.capabilities.lateResume;
+}
+
+function supportedActions(
+  request: PendingRequestRecord,
+  event: AgentAttentionEventV1,
+): WebSupportedAction[] {
+  if (
+    !requestCanContinue(event) ||
+    (request.requestKind === "permission" &&
+      !event.capabilities.permissionDecision)
+  ) {
+    return [];
+  }
   switch (request.requestKind) {
     case "input":
-    case "continuation":
       return ["respond-text"];
+    case "continuation":
+      return ["continue", "respond-text"];
     case "confirm":
     case "select":
     case "permission":
       return ["choose-option"];
     case "multi-select":
+      return ["choose-multiple"];
     case "question-set":
-      return [];
+      return ["answer-question-set"];
   }
 }
 
@@ -375,7 +398,123 @@ function webOptions(request: PendingRequestRecord) {
   }));
 }
 
+function webQuestion(question: InteractionQuestion): InteractionQuestion {
+  const prompt = redactText(question.prompt, 1_000);
+  if (question.kind === "confirm") {
+    return {
+      ...question,
+      prompt,
+      confirm: {
+        ...question.confirm,
+        label: redactText(question.confirm.label, 120),
+      },
+      decline: {
+        ...question.decline,
+        label: redactText(question.decline.label, 120),
+      },
+    };
+  }
+  if (question.kind === "single-select" || question.kind === "multi-select") {
+    return {
+      ...question,
+      prompt,
+      options: question.options.map((option) => ({
+        ...option,
+        label: redactText(option.label, 120),
+      })),
+    };
+  }
+  return { ...question, prompt };
+}
+
+function responseForm(
+  request: PendingRequestRecord,
+  event: AgentAttentionEventV1,
+) {
+  const actions = supportedActions(request, event);
+  if (actions.length === 0) {
+    return undefined;
+  }
+  if (
+    request.requestKind === "input" ||
+    request.requestKind === "continuation"
+  ) {
+    return {
+      kind: "text" as const,
+      minLength: 1,
+      maxLength: 4_000,
+      multiline: true,
+    };
+  }
+  if (
+    request.requestKind === "confirm" ||
+    request.requestKind === "select" ||
+    request.requestKind === "permission"
+  ) {
+    return { kind: "single-select" as const, options: webOptions(request) };
+  }
+  if (request.requestKind === "multi-select") {
+    const source = event.request;
+    if (
+      source?.kind !== "multi-select" ||
+      source.minSelections === undefined ||
+      source.maxSelections === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      kind: "multi-select" as const,
+      options: webOptions(request),
+      minSelections: source.minSelections,
+      maxSelections: source.maxSelections,
+    };
+  }
+  const interaction =
+    event.request?.kind === "question-set"
+      ? event.request.interaction
+      : undefined;
+  return interaction === undefined
+    ? undefined
+    : {
+        kind: "question-set" as const,
+        title: redactText(interaction.title, 120),
+        questions: interaction.questions.map(webQuestion),
+      };
+}
+
+function sessionActions(
+  service: RelayService,
+  session: SessionRecord,
+  laneState: SessionLaneState,
+  attentionCount: number,
+): { latestEventId?: string; supportedActions: WebSessionAction[] } {
+  const latest = service.store.getLatestEventForSession(session)?.event;
+  if (latest === undefined) {
+    return { supportedActions: [] };
+  }
+  const cardActions =
+    renderDeliveryMessage(latest, { forceDetails: true }).actions ?? [];
+  const pending = service.store.getPendingForEvent(latest.eventId);
+  const supported = new Set(cardActions.map(({ kind }) => kind));
+  const supportedActions: WebSessionAction[] = ["details"];
+  if (
+    supported.has("continue") &&
+    pending?.state === "open" &&
+    pending.requestKind === "continuation"
+  ) {
+    supportedActions.push("continue");
+  }
+  if (supported.has("mute") && laneState !== "muted" && laneState !== "ended") {
+    supportedActions.push("mute");
+  }
+  if (supported.has("end") && laneState !== "ended" && attentionCount === 0) {
+    supportedActions.push("end");
+  }
+  return { latestEventId: latest.eventId, supportedActions };
+}
+
 function toWebSession(
+  service: RelayService,
   session: SessionRecord,
   laneState: SessionLaneState,
   attentionCount: number,
@@ -384,6 +523,7 @@ function toWebSession(
   const readableSuffix = session.sessionId
     .slice(-8)
     .replace(/[^A-Za-z0-9]/g, "_");
+  const actions = sessionActions(service, session, laneState, attentionCount);
   return WebSessionSummaryV1Schema.parse({
     schema: "agent-relay-web-session.v1",
     sessionKey: key,
@@ -401,10 +541,18 @@ function toWebSession(
       : { lastEventType: session.lastEventType }),
     lastSeenAt: session.lastSeenAt,
     attentionCount,
+    ...actions,
   });
 }
 
-function toWebAttention(request: PendingRequestRecord): WebAttentionItemV1 {
+function toWebAttention(
+  service: RelayService,
+  request: PendingRequestRecord,
+): WebAttentionItemV1 {
+  const event = service.store.getEvent(request.eventId)?.event;
+  if (event === undefined) {
+    throw new Error(`pending request ${request.correlationId} lost its event`);
+  }
   return WebAttentionItemV1Schema.parse({
     schema: "agent-relay-web-attention.v1",
     requestId: request.correlationId,
@@ -415,8 +563,11 @@ function toWebAttention(request: PendingRequestRecord): WebAttentionItemV1 {
     state: "open",
     promptPreview: redactText(request.question, 240),
     expiresAt: request.expiresAt,
-    supportedActions: supportedActions(request),
+    supportedActions: supportedActions(request, event),
     options: webOptions(request),
+    ...(responseForm(request, event) === undefined
+      ? {}
+      : { form: responseForm(request, event) }),
   });
 }
 
@@ -536,7 +687,7 @@ export function createRelayHttpServer(
           sessions: service
             .listSessionsWithAttention(limit)
             .map(({ session, laneState, attentionCount }) =>
-              toWebSession(session, laneState, attentionCount),
+              toWebSession(service, session, laneState, attentionCount),
             ),
         });
         return;
@@ -548,7 +699,44 @@ export function createRelayHttpServer(
         sendJson(response, 200, {
           attention: service
             .listPendingRequests(limit)
-            .map((pending) => toWebAttention(pending)),
+            .map((pending) => toWebAttention(service, pending)),
+        });
+        return;
+      }
+      const webSessionActionMatch = url.pathname.match(
+        /^\/v1\/web\/sessions\/([^/]+)\/actions$/,
+      );
+      if (request.method === "POST" && webSessionActionMatch !== null) {
+        const key = decodeURIComponent(webSessionActionMatch[1] ?? "");
+        const command = WebSessionActionV1Schema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.executeBrowserSessionAction({
+          sessionKey: key,
+          operationId: command.operationId,
+          eventId: command.eventId,
+          action: command.action,
+        });
+        const surfaceSync =
+          await service.synchronizeBrowserSessionAction(result);
+        const status =
+          result.outcome === "succeeded"
+            ? 200
+            : result.outcome === "session_not_found" ||
+                result.outcome === "event_not_found" ||
+                result.outcome === "not_found"
+              ? 404
+              : result.outcome === "kind_mismatch"
+                ? 422
+                : 409;
+        const session = service.findSessionByWebKey(key);
+        sendJson(response, status, {
+          outcome: result.outcome,
+          replayed: result.replayed,
+          surfaceSync,
+          ...(session === undefined
+            ? {}
+            : { sessionState: service.store.getSessionLaneState(session) }),
         });
         return;
       }
@@ -631,8 +819,14 @@ export function createRelayHttpServer(
                   promptPreview: redactText(pending.question, 240),
                   expiresAt: pending.expiresAt,
                   supportedActions:
-                    pending.state === "open" ? supportedActions(pending) : [],
+                    pending.state === "open"
+                      ? supportedActions(pending, event)
+                      : [],
                   options: webOptions(pending),
+                  ...(pending.state !== "open" ||
+                  responseForm(pending, event) === undefined
+                    ? {}
+                    : { form: responseForm(pending, event) }),
                 },
               }),
         });
@@ -795,11 +989,23 @@ export function createRelayHttpServer(
         const command = WebResolveRequestV1Schema.parse(
           await readJson(request, maxBodyBytes),
         );
+        const pending = service.getRequest(correlationId);
+        if (
+          pending !== undefined &&
+          sessionKey(pending) !== command.sessionKey
+        ) {
+          throw new HttpRequestError(
+            409,
+            "web-request-session-mismatch",
+            "browser response belongs to a different session",
+          );
+        }
         const result = service.resolveBrowser({
           correlationId,
           operationId: command.operationId,
-          answer: command.answer,
+          response: command.response,
         });
+        const surfaceSync = await service.synchronizeBrowserResolution(result);
         const status =
           result.outcome === "answered"
             ? 200
@@ -812,9 +1018,15 @@ export function createRelayHttpServer(
         sendJson(response, status, {
           outcome: result.outcome,
           replayed: result.replayed,
+          surfaceSync,
           ...(result.request === undefined
             ? {}
-            : { requestState: result.request.state }),
+            : {
+                requestState: result.request.state,
+                ...(result.request.resolvedBy === undefined
+                  ? {}
+                  : { resolvedBy: result.request.resolvedBy }),
+              }),
         });
         return;
       }

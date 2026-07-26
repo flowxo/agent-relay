@@ -103,12 +103,15 @@ maps back to the current step's durable option token and remains bound to the
 exact request, delivered card, session, and topic. It updates the draft but does
 not bypass final Submit.
 
-`web-handoff` remains protocol vocabulary for the Phase 3 local companion, but
-the current Telegram and fake transports do not advertise it and the Phase 2
-negotiator rejects even a synthetic claim until the local web authority exists.
-A transport without a valid typed record, an assumed record, an incapable
-harness, a provider-limit violation, or an exhausted fallback list is
-dead-lettered with a durable diagnostic before any interactive card is sent.
+`web-handoff` is now implemented by the authenticated loopback companion, not by
+pretending the Telegram or fake notification transport gained a new presentation
+mode. Those transports still do not advertise it, and their delivery negotiator
+still rejects a synthetic transport claim. The local web read model
+independently projects the retained provider-neutral contract when the harness
+can continue. A notification transport without a valid typed record, an assumed
+record, an incapable harness, a provider-limit violation, or an exhausted
+fallback list is still dead-lettered with a durable diagnostic before any
+interactive card is sent.
 
 ## Relationship to Notifications contracts
 
@@ -264,6 +267,27 @@ bounded request-retention window (30 days by default), after which the parent,
 draft, and answer rows are deleted together. Telegram's retention of the
 operator's original chat message is outside Agent Relay's local retention
 control.
+
+## Local web structured responses
+
+The loopback companion projects the same stable questions and option IDs into
+free-text, single-select, bounded multi-select, and ordered mixed question-set
+forms. It does not mutate Telegram's durable wizard draft step by step. Instead,
+it keeps unfinished browser values only in page memory, then submits one typed
+terminal response. Standalone multi-select IDs are validated and reordered
+against the retained request. Ordered sets are wrapped in
+`agent-interaction-answer.v1` and passed through the shared compatibility
+validator before their canonical JSON is committed.
+
+Every submission carries a stable session key and durable operation ID.
+Cross-session forms, reordered or missing question answers, duplicate or unknown
+options, expired requests, and changed operation replays are rejected. The final
+transition is still `RelayStore.resolveRequest`, so simultaneous Telegram,
+terminal, and browser answers have one first-writer authority. Whichever surface
+loses receives the terminal state without receiving or repeating the winner's
+private answer. A browser winner removes controls from the interactive
+notification card; edit failures preserve the committed answer and create a
+sanitized durable diagnostic.
 
 ## Fixtures and compatibility
 

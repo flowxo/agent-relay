@@ -13,14 +13,18 @@ import { negotiateInteraction } from "./interaction-negotiation.js";
 import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
 import {
+  renderDeliveryText,
   renderDeliveryMessage,
   renderMultiSelectDeliveryMessage,
   renderQuestionSetDeliveryMessage,
 } from "./message.js";
+import { cardActionToken, type CardActionKind } from "./card-action.js";
 import { redactText } from "./redaction.js";
 import type {
   DiagnosticIngestResult,
+  BrowserRequestResponse,
   BrowserResolutionResult,
+  BrowserSessionActionResult,
   IngestResult,
   PendingRequestRecord,
   RelayStore,
@@ -72,6 +76,21 @@ export interface RetentionOptions {
   sessionDays?: number;
   limit?: number;
 }
+
+export type BrowserSurfaceSyncResult =
+  "updated" | "not-applicable" | "transport-unavailable" | "failed";
+
+export type BrowserSessionCommandResult =
+  | BrowserSessionActionResult
+  | {
+      outcome:
+        | "session_not_found"
+        | "event_not_found"
+        | "identity_mismatch"
+        | "stale_event"
+        | "unavailable";
+      replayed: false;
+    };
 
 function retentionDays(
   value: number | undefined,
@@ -338,7 +357,7 @@ export class RelayService {
   public resolveBrowser(input: {
     operationId: string;
     correlationId: string;
-    answer: string;
+    response: BrowserRequestResponse;
   }): BrowserResolutionResult {
     const result = this.store.resolveBrowserRequest({
       ...input,
@@ -356,6 +375,200 @@ export class RelayService {
       },
     });
     return result;
+  }
+
+  public executeBrowserSessionAction(input: {
+    operationId: string;
+    sessionKey: string;
+    eventId: string;
+    action: Exclude<CardActionKind, "details">;
+  }): BrowserSessionCommandResult {
+    const session = this.findSessionByWebKey(input.sessionKey);
+    if (session === undefined) {
+      return { outcome: "session_not_found", replayed: false };
+    }
+    const eventRecord = this.store.getEvent(input.eventId);
+    if (eventRecord === undefined) {
+      return { outcome: "event_not_found", replayed: false };
+    }
+    const event = eventRecord.event;
+    if (
+      event.machineId !== session.machineId ||
+      event.harness !== session.harness ||
+      event.sessionId !== session.sessionId
+    ) {
+      return { outcome: "identity_mismatch", replayed: false };
+    }
+    const token = cardActionToken(event.eventId, input.action);
+    const replay = this.store.replayBrowserCardAction({
+      operationId: input.operationId,
+      eventId: event.eventId,
+      token,
+      kind: input.action,
+    });
+    if (replay !== undefined) {
+      return replay;
+    }
+    if (
+      this.store.getLatestEventForSession(session)?.event.eventId !==
+      event.eventId
+    ) {
+      return { outcome: "stale_event", replayed: false };
+    }
+    const rendered = renderDeliveryMessage(event, {
+      now: this.now(),
+      forceDetails: true,
+    });
+    const action = rendered.actions?.find(
+      (candidate) => candidate.kind === input.action,
+    );
+    if (action === undefined) {
+      return { outcome: "unavailable", replayed: false };
+    }
+    this.store.registerCardActions(
+      event.eventId,
+      rendered.actions?.map(({ token, kind }) => ({ token, kind })) ?? [],
+      this.now().toISOString(),
+    );
+    const result = this.store.executeBrowserCardAction({
+      operationId: input.operationId,
+      eventId: event.eventId,
+      token,
+      kind: input.action,
+      now: this.now().toISOString(),
+    });
+    this.logger.log({
+      level: result.outcome === "succeeded" ? "info" : "warn",
+      code: `browser.session-action-${result.outcome}`,
+      message: `browser session action: ${result.outcome}`,
+      at: this.now().toISOString(),
+      details: {
+        operationId: input.operationId,
+        eventId: input.eventId,
+        action: input.action,
+        replayed: result.replayed,
+      },
+    });
+    return result;
+  }
+
+  public async synchronizeBrowserResolution(
+    result: BrowserResolutionResult,
+  ): Promise<BrowserSurfaceSyncResult> {
+    if (
+      result.outcome !== "answered" ||
+      result.replayed ||
+      result.request === undefined
+    ) {
+      return "not-applicable";
+    }
+    const messageId = result.request.transportMessageId;
+    const event = this.store.getEvent(result.request.eventId)?.event;
+    if (
+      messageId === undefined ||
+      event === undefined ||
+      !isInteractiveTransport(this.transport)
+    ) {
+      return "transport-unavailable";
+    }
+    const rendered = renderDeliveryMessage(event, {
+      now: this.now(),
+      resolutionState: "answered",
+    });
+    const selected = result.request.options.find(
+      (option) => option.optionId === result.request?.answer,
+    );
+    try {
+      await this.transport.editResolvedMessage(
+        messageId,
+        renderDeliveryText(
+          selected === undefined
+            ? rendered
+            : {
+                ...rendered,
+                text: `${rendered.text}\n\nSelected: ${selected.label}`,
+              },
+        ),
+      );
+      return "updated";
+    } catch (error) {
+      const transportError = asTransportError(error);
+      this.reportDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_web_resolution_sync_${sha256(
+          `${result.request.correlationId}\u001f${transportError.code}`,
+        ).slice(0, 36)}`,
+        recordedAt: this.now().toISOString(),
+        source: "daemon",
+        level: "warn",
+        code: "web.resolution-surface-sync-failed",
+        message:
+          "The browser answer committed, but the notification surface could not be updated",
+      });
+      return "failed";
+    }
+  }
+
+  public async synchronizeBrowserSessionAction(
+    result: BrowserSessionCommandResult,
+  ): Promise<BrowserSurfaceSyncResult> {
+    if (
+      result.outcome !== "succeeded" ||
+      result.replayed ||
+      result.action === undefined
+    ) {
+      return "not-applicable";
+    }
+    if (result.action.kind === "continue") {
+      const request = this.store.getPendingForEvent(result.action.eventId);
+      return request === undefined
+        ? "not-applicable"
+        : await this.synchronizeBrowserResolution({
+            outcome: "answered",
+            replayed: false,
+            request,
+          });
+    }
+    const receipt = this.store.getDeliveryReceiptForEvent(
+      result.action.eventId,
+    );
+    const event = this.store.getEvent(result.action.eventId)?.event;
+    if (
+      receipt === undefined ||
+      receipt.transportName !== this.transport.name ||
+      event === undefined ||
+      !isInteractiveTransport(this.transport)
+    ) {
+      return "transport-unavailable";
+    }
+    const note =
+      result.action.kind === "mute"
+        ? "routine notifications muted; questions and critical failures remain active"
+        : "relay lane ended; the harness process is unchanged";
+    try {
+      await this.transport.editResolvedMessage(
+        receipt.messageId,
+        `${renderDeliveryText(
+          renderDeliveryMessage(event, { now: this.now() }),
+        )}\n\nAgent Relay: ${note}.`,
+      );
+      return "updated";
+    } catch (error) {
+      const transportError = asTransportError(error);
+      this.reportDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_web_control_sync_${sha256(
+          `${result.action.token}\u001f${transportError.code}`,
+        ).slice(0, 36)}`,
+        recordedAt: this.now().toISOString(),
+        source: "daemon",
+        level: "warn",
+        code: "web.session-action-surface-sync-failed",
+        message:
+          "The browser session action committed, but the notification surface could not be updated",
+      });
+      return "failed";
+    }
   }
 
   public claimNextResume(input: {
