@@ -11,6 +11,7 @@ import { NOOP_LOGGER } from "./logger.js";
 import {
   renderDeliveryMessage,
   renderMultiSelectDeliveryMessage,
+  renderQuestionSetDeliveryMessage,
 } from "./message.js";
 import { redactText } from "./redaction.js";
 import type {
@@ -679,6 +680,10 @@ export class RelayService {
           pending?.requestKind === "multi-select"
             ? this.store.getMultiSelectDraft(pending.correlationId)
             : undefined;
+        const questionSetDraft =
+          pending?.requestKind === "question-set"
+            ? this.store.getQuestionSetDraft(pending.correlationId)
+            : undefined;
         if (
           pending?.requestKind === "multi-select" &&
           multiSelectDraft === undefined
@@ -687,23 +692,38 @@ export class RelayService {
             `multi-select draft ${pending.correlationId} disappeared`,
           );
         }
+        if (
+          pending?.requestKind === "question-set" &&
+          questionSetDraft === undefined
+        ) {
+          throw new Error(
+            `question-set draft ${pending.correlationId} disappeared`,
+          );
+        }
         const message =
-          pending === undefined || pending.options.length === 0
-            ? rendered
-            : multiSelectDraft !== undefined
+          pending !== undefined && questionSetDraft !== undefined
+            ? renderQuestionSetDeliveryMessage(
+                item.event,
+                pending,
+                questionSetDraft,
+                { now: this.now() },
+              )
+            : pending !== undefined && multiSelectDraft !== undefined
               ? renderMultiSelectDeliveryMessage(
                   item.event,
                   pending,
                   multiSelectDraft,
                   { now: this.now() },
                 )
-              : {
-                  ...rendered,
-                  choices: pending.options.map((option) => ({
-                    token: option.token,
-                    label: option.label,
-                  })),
-                };
+              : pending === undefined || pending.options.length === 0
+                ? rendered
+                : {
+                    ...rendered,
+                    choices: pending.options.map((option) => ({
+                      token: option.token,
+                      label: option.label,
+                    })),
+                  };
         const deliveryContext = await this.deliveryContext(item.event);
         deliveryTopicId = deliveryContext.topicId;
         const receipt = await this.transport.deliver(message, deliveryContext);

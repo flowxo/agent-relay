@@ -1,0 +1,33 @@
+{
+  "chat_id": "10001",
+  "text": "Codex · example\n\nWaiting\n\nQuestion 2 of 3: Which units should run?",
+  "disable_web_page_preview": true,
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "✓ Core",
+          "callback_data": "relay-w:u:decision_00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "text": "○ UI",
+          "callback_data": "relay-w:s:decision_00000000-0000-4000-8000-000000000002"
+        }
+      ],
+      [
+        {
+          "text": "Back",
+          "callback_data": "relay-w:b:wizard_back_00000000-0000-4000-8000-000000000003"
+        },
+        {
+          "text": "Next",
+          "callback_data": "relay-w:n:wizard_next_00000000-0000-4000-8000-000000000004"
+        },
+        {
+          "text": "Cancel",
+          "callback_data": "relay-w:c:wizard_cancel_00000000-0000-4000-8000-000000000006"
+        }
+      ]
+    ]
+  }
+}

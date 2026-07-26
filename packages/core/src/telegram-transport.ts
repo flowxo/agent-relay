@@ -10,6 +10,7 @@ import {
   TELEGRAM_INLINE_CHOICE_LIMIT,
 } from "./telegram-choice.js";
 import { multiSelectCallbackData } from "./telegram-multi-select.js";
+import { questionSetCallbackData } from "./telegram-question-set.js";
 import type {
   DeliveryContext,
   DeliveryMessage,
@@ -277,10 +278,69 @@ function inlineKeyboard(
             },
           ],
         ];
+  const questionSetButtons = (message.questionSet?.options ?? []).map(
+    (option) => ({
+      text: `${option.selected ? "✓" : "○"} ${option.label}`,
+      callback_data: questionSetCallbackData(
+        message.questionSet?.kind === "multi-select"
+          ? option.selected
+            ? "unselect"
+            : "select"
+          : "choose",
+        option.token,
+      ),
+    }),
+  );
+  const questionSetActions =
+    message.questionSet === undefined
+      ? []
+      : [
+          [
+            ...(message.questionSet.backToken === undefined
+              ? []
+              : [
+                  {
+                    text: "Back",
+                    callback_data: questionSetCallbackData(
+                      "back",
+                      message.questionSet.backToken,
+                    ),
+                  },
+                ]),
+            ...(message.questionSet.nextToken === undefined
+              ? [
+                  {
+                    text: "Submit",
+                    callback_data: questionSetCallbackData(
+                      "submit",
+                      message.questionSet.submitToken,
+                    ),
+                  },
+                ]
+              : [
+                  {
+                    text: "Next",
+                    callback_data: questionSetCallbackData(
+                      "next",
+                      message.questionSet.nextToken,
+                    ),
+                  },
+                ]),
+            {
+              text: "Cancel",
+              callback_data: questionSetCallbackData(
+                "cancel",
+                message.questionSet.cancelToken,
+              ),
+            },
+          ],
+        ];
   return [
     ...rowsOf(choiceButtons, 2),
     ...rowsOf(multiSelectButtons, 2),
     ...multiSelectActions,
+    ...rowsOf(questionSetButtons, 2),
+    ...questionSetActions,
     ...rowsOf(actionButtons, 2),
   ];
 }

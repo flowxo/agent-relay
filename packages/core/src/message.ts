@@ -1,8 +1,16 @@
-import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
+import type {
+  AgentAttentionEventV1,
+  InteractionQuestion,
+  InteractionQuestionAnswer,
+} from "@agent-relay/protocol";
 
 import { cardActionToken, type CardActionKind } from "./card-action.js";
 import { redactText } from "./redaction.js";
-import type { MultiSelectDraftRecord, PendingRequestRecord } from "./store.js";
+import type {
+  MultiSelectDraftRecord,
+  PendingRequestRecord,
+  QuestionSetDraftRecord,
+} from "./store.js";
 import { TELEGRAM_INLINE_CHOICE_LIMIT } from "./telegram-choice.js";
 import { sessionTopicMetadata } from "./topic.js";
 import type { DeliveryAction, DeliveryMessage } from "./transport.js";
@@ -220,8 +228,14 @@ export function renderDeliveryText(message: DeliveryMessage): string {
         )} selected · choose ${String(
           message.multiSelect.minSelections,
         )}–${String(message.multiSelect.maxSelections)}.`;
+  const questionSetSummary =
+    message.questionSet === undefined
+      ? ""
+      : `\n\nQuestion ${String(message.questionSet.position)} of ${String(
+          message.questionSet.total,
+        )}: ${oneLineUntrusted(message.questionSet.prompt)}`;
   return redactText(
-    `${message.title}\n\n${message.text}${numberedChoices}${multiSelectSummary}`,
+    `${message.title}\n\n${message.text}${numberedChoices}${multiSelectSummary}${questionSetSummary}`,
     TELEGRAM_MESSAGE_LIMIT,
   );
 }
@@ -269,6 +283,111 @@ export function renderMultiSelectResolutionMessage(
     text: `${rendered.text}\n\nSelected: ${
       labels.length === 0 ? "none" : labels.join(", ")
     }`,
+  };
+}
+
+function questionOptionIds(question: InteractionQuestion): string[] {
+  if (question.kind === "confirm") {
+    return [question.confirm.optionId, question.decline.optionId];
+  }
+  return question.kind === "single-select" || question.kind === "multi-select"
+    ? question.options.map((option) => option.optionId)
+    : [];
+}
+
+function selectedQuestionOptionIds(
+  answer: InteractionQuestionAnswer | undefined,
+): Set<string> {
+  if (answer === undefined || answer.kind === "free-text") {
+    return new Set();
+  }
+  return new Set(
+    answer.kind === "multi-select" ? answer.optionIds : [answer.optionId],
+  );
+}
+
+export function renderQuestionSetDeliveryMessage(
+  event: AgentAttentionEventV1,
+  request: PendingRequestRecord,
+  draft: QuestionSetDraftRecord,
+  options: AttentionCardOptions = {},
+): DeliveryMessage {
+  const question = draft.interaction.questions[draft.currentIndex];
+  if (question === undefined) {
+    throw new Error("question-set draft points outside its question order");
+  }
+  const optionIds = new Set(questionOptionIds(question));
+  const answer = draft.answers.find(
+    (candidate) => candidate.questionId === question.questionId,
+  );
+  const selected = selectedQuestionOptionIds(answer);
+  return {
+    ...renderDeliveryMessage(event, options),
+    questionSet: {
+      questionId: question.questionId,
+      kind: question.kind,
+      prompt: question.prompt,
+      position: draft.currentIndex + 1,
+      total: draft.interaction.questions.length,
+      options: request.options
+        .filter((option) => optionIds.has(option.optionId))
+        .map((option) => ({
+          token: option.token,
+          label: option.label,
+          selected: selected.has(option.optionId),
+        })),
+      ...(draft.backToken === undefined ? {} : { backToken: draft.backToken }),
+      ...(draft.nextToken === undefined ? {} : { nextToken: draft.nextToken }),
+      submitToken: draft.submitToken,
+      cancelToken: draft.cancelToken,
+    },
+  };
+}
+
+function questionAnswerSummary(
+  request: PendingRequestRecord,
+  answer: InteractionQuestionAnswer | undefined,
+): string {
+  if (answer === undefined) {
+    return "not answered";
+  }
+  if (answer.kind === "free-text") {
+    return oneLineUntrusted(answer.text);
+  }
+  const optionIds =
+    answer.kind === "multi-select" ? answer.optionIds : [answer.optionId];
+  const labels = optionIds.map(
+    (optionId) =>
+      request.options.find((option) => option.optionId === optionId)?.label ??
+      optionId,
+  );
+  return labels.length === 0
+    ? "none"
+    : labels.map((label) => oneLineUntrusted(label)).join(", ");
+}
+
+export function renderQuestionSetResolutionMessage(
+  event: AgentAttentionEventV1,
+  request: PendingRequestRecord,
+  draft: QuestionSetDraftRecord,
+  resolutionState: AttentionCardResolutionState,
+  now = new Date(),
+): DeliveryMessage {
+  const rendered = renderDeliveryMessage(event, {
+    now,
+    resolutionState,
+  });
+  const answers = draft.interaction.questions.map((question, index) => {
+    const answer = draft.answers.find(
+      (candidate) => candidate.questionId === question.questionId,
+    );
+    return `${String(index + 1)}. ${oneLineUntrusted(
+      question.prompt,
+    )}: ${questionAnswerSummary(request, answer)}`;
+  });
+  return {
+    ...rendered,
+    text: `${rendered.text}\n\n${answers.join("\n")}`,
   };
 }
 

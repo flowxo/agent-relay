@@ -817,6 +817,77 @@ describe("TelegramBotTransport", () => {
     );
   });
 
+  it("renders an ordered question-set step with review navigation", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, result: { message_id: 47, date: 0 } }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await transport.deliver(
+      {
+        ...message,
+        questionSet: {
+          questionId: "question_units_000001",
+          kind: "multi-select",
+          prompt: "Which units should run?",
+          position: 2,
+          total: 3,
+          options: [
+            {
+              token: "decision_00000000-0000-4000-8000-000000000001",
+              label: "Core",
+              selected: true,
+            },
+            {
+              token: "decision_00000000-0000-4000-8000-000000000002",
+              label: "UI",
+              selected: false,
+            },
+          ],
+          backToken: "wizard_back_00000000-0000-4000-8000-000000000003",
+          nextToken: "wizard_next_00000000-0000-4000-8000-000000000004",
+          submitToken: "wizard_submit_00000000-0000-4000-8000-000000000005",
+          cancelToken: "wizard_cancel_00000000-0000-4000-8000-000000000006",
+        },
+      },
+      { idempotencyKey: "evt_question_set_12345678" },
+    );
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      text: string;
+      reply_markup: {
+        inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+      };
+    };
+    expect(body.text).toContain("Question 2 of 3: Which units should run?");
+    expect(
+      body.reply_markup.inline_keyboard
+        .flat()
+        .every((button) => Buffer.byteLength(button.callback_data) <= 64),
+    ).toBe(true);
+    expect(JSON.stringify(body.reply_markup)).not.toContain(
+      "question_units_000001",
+    );
+    expect(body).toEqual(
+      JSON.parse(
+        readFileSync(
+          join(fixtures, "question-set-send-message.v10.2.json"),
+          "utf8",
+        ),
+      ),
+    );
+  });
+
   it("long-polls only supported reply updates and returns validated update ids", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

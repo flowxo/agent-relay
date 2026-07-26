@@ -172,6 +172,42 @@ parent request and draft. Retention deletes terminal drafts with their parent
 requests under the existing bounded maintenance limit and reports an
 `interactionDrafts` count so cleanup is observable.
 
+## Telegram ordered question sets
+
+A `question-set` request projects to one in-place Telegram wizard card. SQLite
+creates the complete ordered step ledger before delivery: stable question
+ordinals, one current index, per-step Back/Next tokens, request-level Submit and
+Cancel tokens, a revision, and answer rows keyed by stable question ID.
+
+Confirm and single-select steps use one-choice buttons. Multi-select steps use
+the same desired-state set/unset behavior as standalone drafts. **Next** is
+available only for the current non-final step and refuses to advance until that
+step has a valid answer. **Back** returns to the preceding step without dropping
+later draft answers, so an operator can review and revise earlier choices.
+Step-specific navigation tokens make a repeated old Next callback an explicit
+invalid transition instead of accidentally skipping another question.
+
+**Submit** is accepted only from the final step and only when every ordered
+answer validates against the original provider-neutral request. One SQLite
+transaction materializes any valid zero-selection answer, encodes the complete
+`agent-interaction-answer.v1` envelope, wins the existing first-writer request
+transition, and marks the wizard submitted before Telegram is acknowledged.
+Partial drafts never resolve the parent request.
+
+Cancel, expiry, terminal-first supersession, invalid transitions, selection
+limit failures, and missing answers are explicit outcomes. Terminal cards remove
+their controls but retain the ordered partial or final answer summary for
+diagnosis. Drafts resume at the exact question and revision after daemon
+restart; retention reports deleted parents and `questionSetDrafts` separately.
+Callback authorization binds every action to the operator, chat, transport,
+delivered message, session, and ready topic, so simultaneous wizards cannot
+cross-answer.
+
+Free-text questions are valid in the shared contract, but their Telegram capture
+mode is intentionally completed by FXO-1064. Until then the wizard identifies a
+free-text step as requiring text and refuses to advance or submit rather than
+silently discarding it.
+
 ## Fixtures and compatibility
 
 Sanitized fixtures live in `packages/protocol/fixtures/interactions`. They
@@ -179,3 +215,8 @@ contain a mixed ordered question set, its compatible answer, provider
 capabilities, and a privacy/evidence manifest. Tests parse those files at
 runtime and cover malformed, oversized, duplicate-ID, empty-option, stale, and
 incompatible variants. All fixture content and identifiers are synthetic.
+
+Sanitized Telegram Bot API 10.2 projections live in
+`packages/core/fixtures/telegram`, including single-choice, multi-select, and
+ordered question-set keyboards. Tokens, chat IDs, and content are synthetic;
+credentials are never part of a fixture.

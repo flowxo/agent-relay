@@ -180,6 +180,17 @@
   Restart, retry, stale keyboard, timeout, terminal-first and Telegram-first
   races, final selected-label rendering, and bounded observable retention are
   covered against the fake Telegram transport.
+- FXO-1063 is green locally. Ordered provider-neutral question sets now project
+  to one durable Telegram wizard card with step-specific Back/Next controls,
+  review and revision of prior answers, set-style multi-selects, final Submit,
+  and Cancel. Partial answers and the exact current step survive SQLite restart.
+  Submit validates and atomically commits one ordered
+  `agent-interaction-answer.v1` before callback acknowledgement; stale
+  navigation, incomplete steps, selection limits, expiry, terminal supersession,
+  duplicate submit, and cross-topic/session callbacks are explicit and tested.
+  Retention reports `questionSetDrafts`, and a sanitized Bot API 10.2 keyboard
+  fixture records the tested projection. Telegram free-text capture remains
+  deliberately blocked until FXO-1064.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -232,14 +243,17 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 185 tests across 27 test files, including the
-  SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
-  privacy, inline and late continuation, owned-child exit observation, stale
-  answer rejection, concurrent-session isolation, installation rollback,
+- The implementation gates pass all 194 tests across 29 test files, including
+  the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
+  fallback privacy, inline and late continuation, owned-child exit observation,
+  stale answer rejection, concurrent-session isolation, installation rollback,
   retention, log rotation, Telegram poll/webhook intake, and the activation
   canary. The check also validates formatting, lint, types, capability drift,
-  and compiled package exports. `pnpm audit --prod` reports no known
-  vulnerabilities.
+  and compiled package exports. The current dirty-worktree `pnpm check` reaches
+  only the formatter gate because five unrelated user-owned README/planning
+  drafts are not Prettier-clean; all story files pass formatting, and the exact
+  committed tree is verified separately in a clean worktree. `pnpm audit --prod`
+  reports no known vulnerabilities.
 
 ## Phase 1 reproduction
 
@@ -325,5 +339,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1063 ordered multi-question interaction sets as a durable,
-resumable wizard.
+Implement FXO-1064 explicit free-text capture and correlation for structured
+interaction steps.

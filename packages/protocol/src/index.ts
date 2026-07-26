@@ -4,6 +4,7 @@ import { basename } from "node:path";
 import { z } from "zod";
 
 export * from "./interaction.js";
+import { OperatorInteractionRequestV1Schema } from "./interaction.js";
 
 const boundedId = z
   .string()
@@ -116,6 +117,7 @@ export const AttentionRequestSchema = z
       "confirm",
       "select",
       "multi-select",
+      "question-set",
       "input",
       "permission",
       "continuation",
@@ -135,6 +137,7 @@ export const AttentionRequestSchema = z
       .optional(),
     minSelections: z.number().int().min(0).max(20).optional(),
     maxSelections: z.number().int().min(1).max(20).optional(),
+    interaction: OperatorInteractionRequestV1Schema.optional(),
     expiresAt: isoTimestamp,
   })
   .strict()
@@ -204,6 +207,36 @@ export const AttentionRequestSchema = z
         code: "custom",
         message: "selection bounds are only valid for multi-select requests",
         path: ["minSelections"],
+      });
+    }
+    if (request.kind === "question-set") {
+      if (request.interaction === undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "question-set requests require an interaction",
+          path: ["interaction"],
+        });
+      } else {
+        if (request.correlationId !== request.interaction.requestId) {
+          context.addIssue({
+            code: "custom",
+            message: "question-set request IDs must match",
+            path: ["interaction", "requestId"],
+          });
+        }
+        if (request.expiresAt !== request.interaction.expiresAt) {
+          context.addIssue({
+            code: "custom",
+            message: "question-set expiry must match its interaction",
+            path: ["interaction", "expiresAt"],
+          });
+        }
+      }
+    } else if (request.interaction !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "interaction is only valid for question-set requests",
+        path: ["interaction"],
       });
     }
   });

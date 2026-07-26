@@ -190,6 +190,7 @@ describe("durable retention controls", () => {
       requestsExpired: 0,
       pendingRequests: 0,
       interactionDrafts: 0,
+      questionSetDrafts: 0,
       resumeCommands: 0,
       events: 0,
       deliveryAttempts: 0,

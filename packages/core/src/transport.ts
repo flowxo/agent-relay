@@ -13,6 +13,19 @@ export interface DeliveryMultiSelect {
   cancelToken: string;
 }
 
+export interface DeliveryQuestionSet {
+  questionId: string;
+  kind: "confirm" | "single-select" | "multi-select" | "free-text";
+  prompt: string;
+  position: number;
+  total: number;
+  options: Array<DeliveryChoice & { selected: boolean }>;
+  backToken?: string;
+  nextToken?: string;
+  submitToken: string;
+  cancelToken: string;
+}
+
 export interface DeliveryAction {
   kind: CardActionKind;
   token: string;
@@ -26,6 +39,7 @@ export interface DeliveryMessage {
   correlationId?: string;
   choices?: DeliveryChoice[];
   multiSelect?: DeliveryMultiSelect;
+  questionSet?: DeliveryQuestionSet;
   actions?: DeliveryAction[];
 }
 

@@ -8,5 +8,6 @@ export * from "./service.js";
 export * from "./store.js";
 export * from "./telegram-transport.js";
 export * from "./telegram-multi-select.js";
+export * from "./telegram-question-set.js";
 export * from "./topic.js";
 export * from "./transport.js";

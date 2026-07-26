@@ -14,12 +14,15 @@ import {
   renderDeliveryText,
   renderMultiSelectDeliveryMessage,
   renderMultiSelectResolutionMessage,
+  renderQuestionSetDeliveryMessage,
+  renderQuestionSetResolutionMessage,
   type AttentionCardResolutionState,
 } from "./message.js";
 import type {
   MultiSelectDraftRecord,
   NumberedChoiceResolutionResult,
   PendingRequestRecord,
+  QuestionSetDraftRecord,
   RelayStore,
   ResolutionResult,
 } from "./store.js";
@@ -31,6 +34,10 @@ import {
   parseMultiSelectCallbackData,
   type ParsedMultiSelectCallback,
 } from "./telegram-multi-select.js";
+import {
+  parseQuestionSetCallbackData,
+  type ParsedQuestionSetCallback,
+} from "./telegram-question-set.js";
 import type { NotificationTransport } from "./transport.js";
 import {
   asTransportError,
@@ -874,6 +881,299 @@ export class TelegramReplyRouter {
     };
   }
 
+  private async editQuestionSetDraft(
+    messageId: string,
+    request: PendingRequestRecord,
+    draft: QuestionSetDraftRecord,
+  ): Promise<void> {
+    if (!isInteractiveTransport(this.transport)) {
+      return;
+    }
+    const event = this.store.getEvent(request.eventId)?.event;
+    if (event === undefined) {
+      return;
+    }
+    try {
+      await this.transport.editDeliveryMessage(
+        messageId,
+        renderQuestionSetDeliveryMessage(event, request, draft, {
+          now: this.now(),
+        }),
+      );
+    } catch (error) {
+      this.logger.log({
+        level: "warn",
+        code: "telegram.question-set-edit-failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Telegram question-set draft edit failed",
+        at: this.now().toISOString(),
+        details: { messageId },
+      });
+    }
+  }
+
+  private questionSetFinalState(
+    request: PendingRequestRecord,
+    draft: QuestionSetDraftRecord,
+  ): AttentionCardResolutionState {
+    if (draft.state === "submitted") {
+      return "answered";
+    }
+    if (draft.state === "superseded") {
+      return "superseded";
+    }
+    if (request.state === "answered") {
+      return "answered";
+    }
+    if (request.state === "cancelled" || draft.state === "cancelled") {
+      return "cancelled";
+    }
+    if (request.state === "expired" || draft.state === "expired") {
+      return "expired";
+    }
+    return "failed";
+  }
+
+  private async editQuestionSetFinal(
+    messageId: string,
+    request: PendingRequestRecord,
+    draft: QuestionSetDraftRecord,
+  ): Promise<void> {
+    if (!isInteractiveTransport(this.transport)) {
+      return;
+    }
+    const event = this.store.getEvent(request.eventId)?.event;
+    if (event === undefined) {
+      return;
+    }
+    try {
+      await this.transport.editResolvedMessage(
+        messageId,
+        renderDeliveryText(
+          renderQuestionSetResolutionMessage(
+            event,
+            request,
+            draft,
+            this.questionSetFinalState(request, draft),
+            this.now(),
+          ),
+        ),
+      );
+    } catch (error) {
+      this.logger.log({
+        level: "warn",
+        code: "telegram.question-set-final-edit-failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Telegram question-set final edit failed",
+        at: this.now().toISOString(),
+        details: { messageId },
+      });
+    }
+  }
+
+  private async questionSetCallbackContext(
+    callback: TelegramCallback,
+    request: PendingRequestRecord,
+    updateId: number,
+  ): Promise<{ messageId: string } | { rejection: ReplyRouteResult }> {
+    const messageId =
+      callback.message === undefined
+        ? undefined
+        : String(callback.message.message_id);
+    const receipt = this.store.getEventTransportReceipt(request.eventId);
+    if (
+      messageId === undefined ||
+      receipt === undefined ||
+      request.transportMessageId !== messageId ||
+      receipt.transportName !== this.transport.name ||
+      receipt.messageId !== messageId
+    ) {
+      return {
+        rejection: await this.rejectChoiceCallback(
+          callback,
+          updateId,
+          "telegram.question-set-session-mismatch",
+          "This interaction belongs to a different or stale session card",
+        ),
+      };
+    }
+    if (isTopicTransport(this.transport)) {
+      const topic = this.store.getSessionTopic({
+        machineId: request.machineId,
+        harness: request.harness,
+        sessionId: request.sessionId,
+        transportName: this.transport.name,
+        transportScope: this.transport.topicScope,
+      });
+      if (
+        topic?.provisioningStatus !== "ready" ||
+        topic.topicId === undefined ||
+        callback.message?.message_thread_id === undefined ||
+        String(callback.message.message_thread_id) !== topic.topicId
+      ) {
+        return {
+          rejection: await this.rejectChoiceCallback(
+            callback,
+            updateId,
+            "telegram.question-set-topic-mismatch",
+            "This interaction belongs to a different or stale topic",
+          ),
+        };
+      }
+    }
+    return { messageId };
+  }
+
+  private async handleQuestionSetCallback(
+    callback: TelegramCallback,
+    parsed: ParsedQuestionSetCallback,
+    updateId: number,
+    receivedAt: string,
+  ): Promise<ReplyRouteResult> {
+    const optionAction =
+      parsed.action === "choose" ||
+      parsed.action === "select" ||
+      parsed.action === "unselect";
+    const navigationAction = optionAction
+      ? undefined
+      : (parsed.action as "next" | "back" | "submit" | "cancel");
+    const entry =
+      navigationAction === undefined
+        ? undefined
+        : this.store.getQuestionSetDraftByActionToken(
+            parsed.token,
+            navigationAction,
+          );
+    const request = optionAction
+      ? this.store.getPendingForOptionToken(parsed.token)
+      : entry?.request;
+    const draft =
+      request === undefined
+        ? undefined
+        : this.store.getQuestionSetDraft(request.correlationId);
+    if (request?.requestKind !== "question-set" || draft === undefined) {
+      return await this.rejectChoiceCallback(
+        callback,
+        updateId,
+        "telegram.question-set-unknown",
+        "Stale or invalid interaction",
+      );
+    }
+    const context = await this.questionSetCallbackContext(
+      callback,
+      request,
+      updateId,
+    );
+    if ("rejection" in context) {
+      return context.rejection;
+    }
+    const result = this.store.mutateQuestionSet({
+      action: parsed.action,
+      token: parsed.token,
+      now: receivedAt,
+      expected: {
+        machineId: request.machineId,
+        harness: request.harness,
+        sessionId: request.sessionId,
+        ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+        transportMessageId: context.messageId,
+      },
+    });
+    if (
+      result.outcome === "not_found" ||
+      result.outcome === "identity_mismatch"
+    ) {
+      return await this.rejectChoiceCallback(
+        callback,
+        updateId,
+        "telegram.question-set-session-mismatch",
+        "This interaction belongs to a different or stale session card",
+      );
+    }
+    if (
+      result.outcome === "updated" ||
+      result.outcome === "unchanged" ||
+      result.outcome === "moved"
+    ) {
+      await this.acknowledge(
+        callback.id,
+        result.outcome === "unchanged"
+          ? "Already updated"
+          : result.outcome === "moved"
+            ? parsed.action === "back"
+              ? "Previous question"
+              : "Next question"
+            : parsed.action === "unselect"
+              ? "Removed"
+              : "Selected",
+      );
+      await this.editQuestionSetDraft(
+        context.messageId,
+        result.request,
+        result.draft,
+      );
+      return {
+        outcome:
+          result.outcome === "unchanged" ? "draft-unchanged" : "draft-updated",
+        updateId,
+      };
+    }
+    if (
+      result.outcome === "incomplete" ||
+      result.outcome === "selection_limit" ||
+      result.outcome === "invalid_transition" ||
+      result.outcome === "unsupported_question"
+    ) {
+      const currentQuestion =
+        result.draft.interaction.questions[result.draft.currentIndex];
+      const response =
+        result.outcome === "selection_limit" &&
+        currentQuestion?.kind === "multi-select"
+          ? `Choose no more than ${String(currentQuestion.maxSelections)}`
+          : result.outcome === "unsupported_question"
+            ? "This free-text question needs a text response"
+            : result.outcome === "invalid_transition"
+              ? "This button is no longer current"
+              : "Answer this question before continuing";
+      await this.acknowledge(callback.id, response);
+      await this.editQuestionSetDraft(
+        context.messageId,
+        result.request,
+        result.draft,
+      );
+      return { outcome: "draft-rejected", updateId };
+    }
+    await this.acknowledge(
+      callback.id,
+      {
+        answered: "Submitted",
+        cancelled: "Canceled",
+        duplicate: "Already handled",
+        expired: "Request expired",
+        stale: "This interaction is no longer active",
+        failed: "Request failed",
+      }[result.outcome],
+    );
+    await this.editQuestionSetFinal(
+      context.messageId,
+      result.request,
+      result.draft,
+    );
+    return {
+      outcome:
+        result.outcome === "duplicate"
+          ? "duplicate-answer"
+          : result.outcome === "stale"
+            ? "draft-rejected"
+            : result.outcome,
+      updateId,
+    };
+  }
+
   private async rejectCardCallback(
     callback: TelegramCallback,
     updateId: number,
@@ -1131,7 +1431,8 @@ export class TelegramReplyRouter {
         if (
           callback.data?.startsWith("relay-card:") === true ||
           callback.data?.startsWith("relay:") === true ||
-          callback.data?.startsWith("relay-m:") === true
+          callback.data?.startsWith("relay-m:") === true ||
+          callback.data?.startsWith("relay-w:") === true
         ) {
           this.diagnoseCardCallback(
             update.update_id,
@@ -1139,7 +1440,9 @@ export class TelegramReplyRouter {
               ? "telegram.card-action-unauthorized"
               : callback.data.startsWith("relay-m:")
                 ? "telegram.multi-select-unauthorized"
-                : "telegram.choice-unauthorized",
+                : callback.data.startsWith("relay-w:")
+                  ? "telegram.question-set-unauthorized"
+                  : "telegram.choice-unauthorized",
             "Unauthorized Telegram callback",
           );
         }
@@ -1173,6 +1476,22 @@ export class TelegramReplyRouter {
             : await this.handleMultiSelectCallback(
                 callback,
                 multiSelect,
+                update.update_id,
+                receivedAt,
+              );
+      } else if (callback.data?.startsWith("relay-w:") === true) {
+        const questionSet = parseQuestionSetCallbackData(callback.data);
+        route =
+          questionSet === undefined
+            ? await this.rejectChoiceCallback(
+                callback,
+                update.update_id,
+                "telegram.question-set-malformed",
+                "Stale or invalid interaction",
+              )
+            : await this.handleQuestionSetCallback(
+                callback,
+                questionSet,
                 update.update_id,
                 receivedAt,
               );

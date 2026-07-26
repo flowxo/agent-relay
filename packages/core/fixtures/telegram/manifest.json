@@ -25,6 +25,17 @@
         "decision and draft action tokens replaced",
         "bot token excluded because it is carried only in the URL"
       ]
+    },
+    {
+      "file": "question-set-send-message.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Sanitized Bot API 10.2 ordered interaction projection exercised against the fake HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "message, question, and option content replaced",
+        "decision and navigation tokens replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
     }
   ]
 }

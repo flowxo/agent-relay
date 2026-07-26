@@ -5,6 +5,8 @@ import Database from "better-sqlite3";
 
 import {
   AgentAttentionEventV1Schema,
+  encodeInteractionAnswer,
+  InteractionQuestionAnswerSchema,
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
@@ -14,6 +16,9 @@ import type {
   AgentAttentionEventV1,
   EventType,
   Harness,
+  InteractionQuestion,
+  InteractionQuestionAnswer,
+  OperatorInteractionRequestV1,
   RelayDiagnosticV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
@@ -192,6 +197,7 @@ export interface RetentionResult {
   requestsExpired: number;
   pendingRequests: number;
   interactionDrafts: number;
+  questionSetDrafts: number;
   resumeCommands: number;
   events: number;
   deliveryAttempts: number;
@@ -221,6 +227,7 @@ export interface PendingRequestRecord {
     | "confirm"
     | "select"
     | "multi-select"
+    | "question-set"
     | "input"
     | "permission"
     | "continuation";
@@ -303,6 +310,60 @@ export type MultiSelectSubmitResult =
       outcome: "not_found";
       request?: PendingRequestRecord;
       draft?: MultiSelectDraftRecord;
+    };
+
+export type QuestionSetDraftState =
+  | "pending"
+  | "drafting"
+  | "submitted"
+  | "cancelled"
+  | "expired"
+  | "superseded"
+  | "failed";
+
+export interface QuestionSetDraftRecord {
+  correlationId: string;
+  state: QuestionSetDraftState;
+  currentIndex: number;
+  revision: number;
+  submitToken: string;
+  cancelToken: string;
+  backToken?: string;
+  nextToken?: string;
+  interaction: OperatorInteractionRequestV1;
+  answers: InteractionQuestionAnswer[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type QuestionSetMutationResult =
+  | {
+      outcome: "updated" | "unchanged" | "moved" | "cancelled" | "answered";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome:
+        | "incomplete"
+        | "invalid_transition"
+        | "selection_limit"
+        | "duplicate"
+        | "expired"
+        | "stale"
+        | "failed"
+        | "unsupported_question";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: QuestionSetDraftRecord;
     };
 
 export type ResolutionOutcome =
@@ -511,6 +572,25 @@ interface MultiSelectDraftRow {
   updated_at: string;
 }
 
+interface QuestionSetDraftRow {
+  correlation_id: string;
+  state: QuestionSetDraftState;
+  current_index: number;
+  revision: number;
+  submit_token: string;
+  cancel_token: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface QuestionSetStepRow {
+  correlation_id: string;
+  question_id: string;
+  ordinal: number;
+  next_token: string | null;
+  back_token: string | null;
+}
+
 interface ResumeCommandRow {
   correlation_id: string;
   owner_id: string;
@@ -595,6 +675,15 @@ function collisionComparable(payloadJson: string): string {
           request: {
             ...event.request,
             expiresAt: "<retry-stable>",
+            ...(event.request.interaction === undefined
+              ? {}
+              : {
+                  interaction: {
+                    ...event.request.interaction,
+                    createdAt: "<retry-stable>",
+                    expiresAt: "<retry-stable>",
+                  },
+                }),
           },
         }),
   });
@@ -608,6 +697,23 @@ function defaultOptions(
   }
   if (request.kind === "select" || request.kind === "multi-select") {
     return request.options ?? [];
+  }
+  if (request.kind === "question-set") {
+    return (request.interaction?.questions ?? []).flatMap((question) => {
+      if (question.kind === "confirm") {
+        return [
+          { id: question.confirm.optionId, label: question.confirm.label },
+          { id: question.decline.optionId, label: question.decline.label },
+        ];
+      }
+      return question.kind === "single-select" ||
+        question.kind === "multi-select"
+        ? question.options.map((option) => ({
+            id: option.optionId,
+            label: option.label,
+          }))
+        : [];
+    });
   }
   if (request.kind === "confirm") {
     return [
@@ -846,6 +952,42 @@ export class RelayStore {
         PRIMARY KEY (correlation_id, option_id),
         FOREIGN KEY (correlation_id)
           REFERENCES interaction_drafts(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS question_set_drafts (
+        correlation_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        current_index INTEGER NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 0,
+        submit_token TEXT NOT NULL UNIQUE,
+        cancel_token TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (correlation_id)
+          REFERENCES pending_requests(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS question_set_steps (
+        correlation_id TEXT NOT NULL,
+        question_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        next_token TEXT UNIQUE,
+        back_token TEXT UNIQUE,
+        PRIMARY KEY (correlation_id, question_id),
+        UNIQUE (correlation_id, ordinal),
+        FOREIGN KEY (correlation_id)
+          REFERENCES question_set_drafts(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS question_set_answers (
+        correlation_id TEXT NOT NULL,
+        question_id TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (correlation_id, question_id),
+        FOREIGN KEY (correlation_id, question_id)
+          REFERENCES question_set_steps(correlation_id, question_id)
+          ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS telegram_updates (
@@ -1624,6 +1766,48 @@ export class RelayStore {
               event.occurredAt,
               event.occurredAt,
             );
+        }
+        if (event.request.kind === "question-set") {
+          const interaction = event.request.interaction;
+          if (interaction === undefined) {
+            throw new Error(
+              "validated question-set request lost its interaction",
+            );
+          }
+          this.database
+            .prepare(
+              `
+              INSERT INTO question_set_drafts (
+                correlation_id, state, current_index, revision,
+                submit_token, cancel_token, created_at, updated_at
+              ) VALUES (?, 'pending', 0, 0, ?, ?, ?, ?)
+            `,
+            )
+            .run(
+              event.request.correlationId,
+              `wizard_submit_${randomUUID()}`,
+              `wizard_cancel_${randomUUID()}`,
+              event.occurredAt,
+              event.occurredAt,
+            );
+          const insertStep = this.database.prepare(
+            `
+            INSERT INTO question_set_steps (
+              correlation_id, question_id, ordinal, next_token, back_token
+            ) VALUES (?, ?, ?, ?, ?)
+          `,
+          );
+          for (const [index, question] of interaction.questions.entries()) {
+            insertStep.run(
+              event.request.correlationId,
+              question.questionId,
+              index,
+              index === interaction.questions.length - 1
+                ? null
+                : `wizard_next_${randomUUID()}`,
+              index === 0 ? null : `wizard_back_${randomUUID()}`,
+            );
+          }
         }
       }
       return {
@@ -2536,6 +2720,20 @@ export class RelayStore {
           `,
           )
           .run(now, eventId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts
+            SET state = 'cancelled', updated_at = ?
+            WHERE state IN ('pending', 'drafting')
+              AND correlation_id IN (
+                SELECT correlation_id
+                FROM pending_requests
+                WHERE event_id = ?
+              )
+          `,
+          )
+          .run(now, eventId);
       }
       const delivered = this.markDeliveredWithinTransaction(
         eventId,
@@ -2759,7 +2957,7 @@ export class RelayStore {
         };
   }
 
-  private multiSelectExpectedMatches(
+  private pendingExpectedMatches(
     request: PendingRequestRecord,
     expected: {
       machineId: string;
@@ -2827,7 +3025,7 @@ export class RelayStore {
       if (currentDraft === undefined) {
         return { outcome: "not_found", request };
       }
-      if (!this.multiSelectExpectedMatches(request, input.expected)) {
+      if (!this.pendingExpectedMatches(request, input.expected)) {
         return {
           outcome: "identity_mismatch",
           request,
@@ -2968,7 +3166,7 @@ export class RelayStore {
         return { outcome: "not_found" };
       }
       const { request, draft } = entry;
-      if (!this.multiSelectExpectedMatches(request, input.expected)) {
+      if (!this.pendingExpectedMatches(request, input.expected)) {
         return { outcome: "identity_mismatch", request, draft };
       }
       if (request.state !== "open") {
@@ -3093,6 +3291,565 @@ export class RelayStore {
     })();
   }
 
+  private questionSetInteraction(
+    request: PendingRequestRecord,
+  ): OperatorInteractionRequestV1 | undefined {
+    const event = this.getEvent(request.eventId)?.event;
+    return event?.request?.kind === "question-set"
+      ? event.request.interaction
+      : undefined;
+  }
+
+  private questionSetDraftFromRow(
+    row: QuestionSetDraftRow,
+    interaction: OperatorInteractionRequestV1,
+  ): QuestionSetDraftRecord {
+    const step = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM question_set_steps
+        WHERE correlation_id = ? AND ordinal = ?
+      `,
+      )
+      .get(row.correlation_id, row.current_index) as
+      QuestionSetStepRow | undefined;
+    if (step === undefined) {
+      throw new Error("question-set draft points outside its question order");
+    }
+    const answerRows = this.database
+      .prepare(
+        `
+        SELECT answer.answer_json
+        FROM question_set_answers AS answer
+        JOIN question_set_steps AS step
+          ON step.correlation_id = answer.correlation_id
+          AND step.question_id = answer.question_id
+        WHERE answer.correlation_id = ?
+        ORDER BY step.ordinal
+      `,
+      )
+      .all(row.correlation_id) as Array<{ answer_json: string }>;
+    return {
+      correlationId: row.correlation_id,
+      state: row.state,
+      currentIndex: row.current_index,
+      revision: row.revision,
+      submitToken: row.submit_token,
+      cancelToken: row.cancel_token,
+      ...(step.back_token === null ? {} : { backToken: step.back_token }),
+      ...(step.next_token === null ? {} : { nextToken: step.next_token }),
+      interaction,
+      answers: answerRows.map((answer) =>
+        InteractionQuestionAnswerSchema.parse(
+          JSON.parse(answer.answer_json) as unknown,
+        ),
+      ),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getQuestionSetDraft(
+    correlationId: string,
+  ): QuestionSetDraftRecord | undefined {
+    const request = this.getPendingRequest(correlationId);
+    const interaction =
+      request === undefined ? undefined : this.questionSetInteraction(request);
+    if (interaction === undefined) {
+      return undefined;
+    }
+    const row = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM question_set_drafts
+        WHERE correlation_id = ?
+      `,
+      )
+      .get(correlationId) as QuestionSetDraftRow | undefined;
+    return row === undefined
+      ? undefined
+      : this.questionSetDraftFromRow(row, interaction);
+  }
+
+  public getQuestionSetDraftByActionToken(
+    token: string,
+    action: "next" | "back" | "submit" | "cancel",
+  ):
+    | {
+        request: PendingRequestRecord;
+        draft: QuestionSetDraftRecord;
+      }
+    | undefined {
+    const correlationId = this.questionSetCorrelationForToken(token, action);
+    if (correlationId === undefined) {
+      return undefined;
+    }
+    const request = this.getPendingRequest(correlationId);
+    const draft = this.getQuestionSetDraft(correlationId);
+    return request?.requestKind !== "question-set" || draft === undefined
+      ? undefined
+      : { request, draft };
+  }
+
+  private questionSetCorrelationForToken(
+    token: string,
+    action: "next" | "back" | "submit" | "cancel",
+  ): string | undefined {
+    if (action === "submit" || action === "cancel") {
+      const column = action === "submit" ? "submit_token" : "cancel_token";
+      const row = this.database
+        .prepare(
+          `
+          SELECT correlation_id
+          FROM question_set_drafts
+          WHERE ${column} = ?
+        `,
+        )
+        .get(token) as { correlation_id: string } | undefined;
+      return row?.correlation_id;
+    }
+    const column = action === "next" ? "next_token" : "back_token";
+    const row = this.database
+      .prepare(
+        `
+        SELECT correlation_id
+        FROM question_set_steps
+        WHERE ${column} = ?
+      `,
+      )
+      .get(token) as { correlation_id: string } | undefined;
+    return row?.correlation_id;
+  }
+
+  private questionSetOptionIds(question: InteractionQuestion): string[] {
+    if (question.kind === "confirm") {
+      return [question.confirm.optionId, question.decline.optionId];
+    }
+    return question.kind === "single-select" || question.kind === "multi-select"
+      ? question.options.map((option) => option.optionId)
+      : [];
+  }
+
+  private questionSetAnswer(
+    draft: QuestionSetDraftRecord,
+    question: InteractionQuestion,
+  ): InteractionQuestionAnswer | undefined {
+    return draft.answers.find(
+      (answer) => answer.questionId === question.questionId,
+    );
+  }
+
+  private completeQuestionSetAnswer(
+    draft: QuestionSetDraftRecord,
+    question: InteractionQuestion,
+  ): InteractionQuestionAnswer | undefined {
+    const answer = this.questionSetAnswer(draft, question);
+    if (question.kind === "multi-select") {
+      const optionIds = answer?.kind === "multi-select" ? answer.optionIds : [];
+      return optionIds.length >= question.minSelections &&
+        optionIds.length <= question.maxSelections
+        ? {
+            questionId: question.questionId,
+            kind: "multi-select",
+            optionIds,
+          }
+        : undefined;
+    }
+    return answer?.kind === question.kind ? answer : undefined;
+  }
+
+  private saveQuestionSetAnswer(
+    correlationId: string,
+    answer: InteractionQuestionAnswer,
+    now: string,
+  ): void {
+    this.database
+      .prepare(
+        `
+        INSERT INTO question_set_answers (
+          correlation_id, question_id, answer_json, updated_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(correlation_id, question_id) DO UPDATE SET
+          answer_json = excluded.answer_json,
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run(correlationId, answer.questionId, JSON.stringify(answer), now);
+  }
+
+  private synchronizeTerminalQuestionSet(
+    request: PendingRequestRecord,
+    now: string,
+  ): QuestionSetDraftRecord | undefined {
+    const stateByRequest: Record<
+      PendingRequestState,
+      QuestionSetDraftState | undefined
+    > = {
+      open: undefined,
+      answered: "superseded",
+      expired: "expired",
+      cancelled: "cancelled",
+      failed: "failed",
+    };
+    const state = stateByRequest[request.state];
+    if (state !== undefined) {
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts SET state = ?, updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(state, now, request.correlationId);
+    }
+    return this.getQuestionSetDraft(request.correlationId);
+  }
+
+  public mutateQuestionSet(input: {
+    action:
+      "choose" | "select" | "unselect" | "next" | "back" | "submit" | "cancel";
+    token: string;
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): QuestionSetMutationResult {
+    return this.database.transaction((): QuestionSetMutationResult => {
+      const optionAction =
+        input.action === "choose" ||
+        input.action === "select" ||
+        input.action === "unselect";
+      const optionRequest = optionAction
+        ? this.getPendingForOptionToken(input.token)
+        : undefined;
+      const correlationId = optionAction
+        ? optionRequest?.correlationId
+        : this.questionSetCorrelationForToken(
+            input.token,
+            input.action as "next" | "back" | "submit" | "cancel",
+          );
+      const request =
+        correlationId === undefined
+          ? undefined
+          : (optionRequest ?? this.getPendingRequest(correlationId));
+      if (request?.requestKind !== "question-set") {
+        return { outcome: "not_found" };
+      }
+      let draft = this.getQuestionSetDraft(request.correlationId);
+      if (draft === undefined) {
+        return { outcome: "not_found", request };
+      }
+      if (!this.pendingExpectedMatches(request, input.expected)) {
+        return { outcome: "identity_mismatch", request, draft };
+      }
+      if (request.state !== "open") {
+        draft =
+          this.synchronizeTerminalQuestionSet(request, input.now) ?? draft;
+        return {
+          outcome:
+            request.state === "answered" ||
+            (request.state === "cancelled" && input.action === "cancel")
+              ? "duplicate"
+              : request.state === "expired"
+                ? "expired"
+                : request.state === "failed"
+                  ? "failed"
+                  : "stale",
+          request,
+          draft,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+
+      const question = draft.interaction.questions[draft.currentIndex];
+      if (question === undefined) {
+        return { outcome: "invalid_transition", request, draft };
+      }
+      if (input.action === "cancel") {
+        if (input.token !== draft.cancelToken) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'cancelled', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              state = 'cancelled',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "cancelled",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "back") {
+        if (input.token !== draft.backToken || draft.currentIndex <= 0) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              current_index = current_index - 1,
+              state = 'drafting',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND current_index = ?
+          `,
+          )
+          .run(input.now, request.correlationId, draft.currentIndex);
+        return {
+          outcome: "moved",
+          request,
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "next") {
+        if (
+          input.token !== draft.nextToken ||
+          draft.currentIndex >= draft.interaction.questions.length - 1
+        ) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        const answer = this.completeQuestionSetAnswer(draft, question);
+        if (answer === undefined) {
+          return {
+            outcome:
+              question.kind === "free-text"
+                ? "unsupported_question"
+                : "incomplete",
+            request,
+            draft,
+          };
+        }
+        if (
+          question.kind === "multi-select" &&
+          this.questionSetAnswer(draft, question) === undefined
+        ) {
+          this.saveQuestionSetAnswer(request.correlationId, answer, input.now);
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              current_index = current_index + 1,
+              state = 'drafting',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND current_index = ?
+          `,
+          )
+          .run(input.now, request.correlationId, draft.currentIndex);
+        return {
+          outcome: "moved",
+          request,
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "submit") {
+        if (
+          input.token !== draft.submitToken ||
+          draft.currentIndex !== draft.interaction.questions.length - 1
+        ) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        const answers = draft.interaction.questions.map((item) =>
+          this.completeQuestionSetAnswer(draft, item),
+        );
+        if (answers.some((answer) => answer === undefined)) {
+          const unsupported = draft.interaction.questions.some(
+            (item, index) =>
+              answers[index] === undefined && item.kind === "free-text",
+          );
+          return {
+            outcome: unsupported ? "unsupported_question" : "incomplete",
+            request,
+            draft,
+          };
+        }
+        for (const [index, answer] of answers.entries()) {
+          const question = draft.interaction.questions[index]!;
+          if (
+            answer !== undefined &&
+            this.questionSetAnswer(draft, question) === undefined
+          ) {
+            this.saveQuestionSetAnswer(
+              request.correlationId,
+              answer,
+              input.now,
+            );
+          }
+        }
+        const answerEnvelope = {
+          schema: "agent-interaction-answer.v1" as const,
+          answerId: `interaction_answer_${randomUUID()}`,
+          requestId: draft.interaction.requestId,
+          submittedAt: input.now,
+          answers: answers as InteractionQuestionAnswer[],
+        };
+        const answer = encodeInteractionAnswer(
+          draft.interaction,
+          answerEnvelope,
+        );
+        const update = this.database
+          .prepare(
+            `
+            UPDATE pending_requests SET
+              state = 'answered',
+              resolved_by = 'telegram',
+              answer = ?,
+              resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(answer, input.now, request.correlationId);
+        if (update.changes !== 1) {
+          const raced = this.requirePending(request.correlationId);
+          return {
+            outcome: "duplicate",
+            request: raced,
+            draft:
+              this.synchronizeTerminalQuestionSet(raced, input.now) ??
+              this.getQuestionSetDraft(request.correlationId)!,
+          };
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              state = 'submitted',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "answered",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+
+      const option = request.options.find(
+        (candidate) => candidate.token === input.token,
+      );
+      if (option === undefined) {
+        return { outcome: "not_found", request, draft };
+      }
+      if (!this.questionSetOptionIds(question).includes(option.optionId)) {
+        return { outcome: "invalid_transition", request, draft };
+      }
+      let answer: InteractionQuestionAnswer;
+      if (input.action === "choose") {
+        if (question.kind !== "confirm" && question.kind !== "single-select") {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        answer = {
+          questionId: question.questionId,
+          kind: question.kind,
+          optionId: option.optionId,
+        };
+      } else {
+        if (question.kind !== "multi-select") {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        const current = this.questionSetAnswer(draft, question);
+        const optionIds =
+          current?.kind === "multi-select" ? [...current.optionIds] : [];
+        const alreadySelected = optionIds.includes(option.optionId);
+        const selected = input.action === "select";
+        if (alreadySelected === selected) {
+          return { outcome: "unchanged", request, draft };
+        }
+        if (selected) {
+          if (optionIds.length >= question.maxSelections) {
+            return { outcome: "selection_limit", request, draft };
+          }
+          optionIds.push(option.optionId);
+          const order = this.questionSetOptionIds(question);
+          optionIds.sort((left, right) => {
+            return order.indexOf(left) - order.indexOf(right);
+          });
+        } else {
+          optionIds.splice(optionIds.indexOf(option.optionId), 1);
+        }
+        answer = {
+          questionId: question.questionId,
+          kind: "multi-select",
+          optionIds,
+        };
+      }
+      const previous = this.questionSetAnswer(draft, question);
+      if (
+        previous !== undefined &&
+        JSON.stringify(previous) === JSON.stringify(answer)
+      ) {
+        return { outcome: "unchanged", request, draft };
+      }
+      this.saveQuestionSetAnswer(request.correlationId, answer, input.now);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts SET
+            state = 'drafting',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "updated",
+        request,
+        draft: this.getQuestionSetDraft(request.correlationId)!,
+      };
+    })();
+  }
+
   private requirePending(correlationId: string): PendingRequestRecord {
     const request = this.getPendingRequest(correlationId);
     if (request === undefined) {
@@ -3140,6 +3897,15 @@ export class RelayStore {
         this.database
           .prepare(
             `
+            UPDATE question_set_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, input.correlationId);
+        this.database
+          .prepare(
+            `
             UPDATE interaction_drafts
             SET state = 'expired', updated_at = ?
             WHERE correlation_id = ? AND state IN ('pending', 'drafting')
@@ -3173,6 +3939,15 @@ export class RelayStore {
         .prepare(
           `
           UPDATE interaction_drafts
+          SET state = 'superseded', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, input.correlationId);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
           SET state = 'superseded', updated_at = ?
           WHERE correlation_id = ? AND state IN ('pending', 'drafting')
         `,
@@ -3402,6 +4177,50 @@ export class RelayStore {
           sessionId: topic.session_id,
           now: input.now,
         });
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'expired', updated_at = @now
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE machine_id = @machineId
+                AND harness = @harness
+                AND session_id = @sessionId
+                AND state = 'expired'
+            )
+        `,
+        )
+        .run({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+        });
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
+          SET state = 'expired', updated_at = @now
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE machine_id = @machineId
+                AND harness = @harness
+                AND session_id = @sessionId
+                AND state = 'expired'
+            )
+        `,
+        )
+        .run({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+        });
 
       const candidates = this.database
         .prepare(
@@ -3510,6 +4329,15 @@ export class RelayStore {
         `,
         )
         .run(now, correlationId);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
+          SET state = 'cancelled', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(now, correlationId);
       return {
         outcome: "cancelled",
         request: this.requirePending(correlationId),
@@ -3533,6 +4361,20 @@ export class RelayStore {
         .prepare(
           `
           UPDATE interaction_drafts
+          SET state = 'expired', updated_at = ?
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE state = 'expired'
+            )
+        `,
+        )
+        .run(now);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
           SET state = 'expired', updated_at = ?
           WHERE state IN ('pending', 'drafting')
             AND correlation_id IN (
@@ -3912,6 +4754,7 @@ export class RelayStore {
         requestsExpired: 0,
         pendingRequests: 0,
         interactionDrafts: 0,
+        questionSetDrafts: 0,
         resumeCommands: 0,
         events: 0,
         deliveryAttempts: 0,
@@ -3953,12 +4796,18 @@ export class RelayStore {
       const deleteDraft = this.database.prepare(
         "DELETE FROM interaction_drafts WHERE correlation_id = ?",
       );
+      const deleteQuestionSetDraft = this.database.prepare(
+        "DELETE FROM question_set_drafts WHERE correlation_id = ?",
+      );
       const deleteRequest = this.database.prepare(
         "DELETE FROM pending_requests WHERE correlation_id = ?",
       );
       for (const row of requestRows) {
         result.resumeCommands += deleteResume.run(row.correlation_id).changes;
         result.interactionDrafts += deleteDraft.run(row.correlation_id).changes;
+        result.questionSetDrafts += deleteQuestionSetDraft.run(
+          row.correlation_id,
+        ).changes;
         deleteOptions.run(row.correlation_id);
         result.pendingRequests += deleteRequest.run(row.correlation_id).changes;
       }
