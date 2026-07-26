@@ -18,6 +18,7 @@ import { TelegramReplyRouter } from "./reply-router.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
 import { questionSetCallbackData } from "./telegram-question-set.js";
+import { TransportError } from "./transport.js";
 
 const baseTime = "2026-07-24T12:00:00.000Z";
 const temporaryDirectories: string[] = [];
@@ -151,6 +152,27 @@ class InspectingTelegramTransport extends FakeTelegramTransport {
     text: string,
   ): Promise<void> {
     this.beforeAcknowledgement?.(text);
+    await super.acknowledgeCallback(callbackId, text);
+  }
+}
+
+class FlakyAcknowledgementTransport extends InspectingTelegramTransport {
+  public acknowledgementAttempts = 0;
+  public acknowledgementFailures = 0;
+
+  public override async acknowledgeCallback(
+    callbackId: string,
+    text: string,
+  ): Promise<void> {
+    this.acknowledgementAttempts += 1;
+    if (this.acknowledgementFailures > 0) {
+      this.acknowledgementFailures -= 1;
+      throw new TransportError(
+        "synthetic callback acknowledgement timeout",
+        "fake-ack-timeout",
+        true,
+      );
+    }
     await super.acknowledgeCallback(callbackId, text);
   }
 }
@@ -315,6 +337,114 @@ describe("durable ordered Telegram question sets", () => {
         ?.presentationMode,
     ).toBe("buttons");
     testRuntime.store.close();
+  });
+
+  it("retries structured delivery and callback acknowledgement without losing a committed draft", async () => {
+    let now = new Date(baseTime);
+    const store = new RelayStore();
+    const transport = new FlakyAcknowledgementTransport();
+    transport.failNext(1, {
+      code: "fake-structured-timeout",
+      message: "synthetic structured delivery timeout",
+      retryable: true,
+    });
+    const service = new RelayService(store, transport, {
+      now: () => now,
+      retryPolicy: {
+        maxAttempts: 3,
+        baseDelayMs: 1_000,
+        maxDelayMs: 1_000,
+      },
+    });
+    const router = new TelegramReplyRouter(store, transport, {
+      operatorUserId: 7001,
+      chatId: 9001,
+      now: () => now,
+    });
+    const input = questionSetEvent(
+      "correlation_wizard_retry",
+      "session_wizard_retry",
+    );
+    service.ingest(input);
+
+    expect(await service.drain()).toMatchObject({
+      retrying: 1,
+      delivered: 0,
+    });
+    expect(transport.deliveries).toHaveLength(0);
+    expect(store.getQuestionSetDraft("correlation_wizard_retry")).toMatchObject(
+      {
+        state: "pending",
+        presentationMode: "buttons",
+        answers: [],
+      },
+    );
+
+    now = new Date("2026-07-24T12:00:01.000Z");
+    expect(await service.drain()).toMatchObject({
+      delivered: 1,
+      retrying: 0,
+    });
+    const delivery = transport.deliveries[0]!;
+    let controls = delivery.message.questionSet!;
+    transport.acknowledgementFailures = 1;
+    expect(
+      await router.handle(
+        callback(
+          delivery,
+          292,
+          questionSetCallbackData("choose", optionToken(controls, "Proceed")),
+        ),
+      ),
+    ).toEqual({ outcome: "draft-updated", updateId: 292 });
+    expect(transport.acknowledgementAttempts).toBe(2);
+    expect(
+      store.getQuestionSetDraft("correlation_wizard_retry")?.answers,
+    ).toEqual([
+      {
+        questionId: "question_confirm_0001",
+        kind: "confirm",
+        optionId: "confirm_proceed_0001",
+      },
+    ]);
+    expect(
+      store
+        .listDiagnostics()
+        .some(
+          (diagnostic) => diagnostic.code === "telegram.callback-ack-failed",
+        ),
+    ).toBe(false);
+
+    controls = currentControls({ store, transport, service, router })!;
+    transport.acknowledgementFailures = 2;
+    expect(
+      await router.handle(
+        callback(
+          delivery,
+          293,
+          questionSetCallbackData("choose", optionToken(controls, "Stop")),
+        ),
+      ),
+    ).toEqual({ outcome: "draft-updated", updateId: 293 });
+    expect(transport.acknowledgementAttempts).toBe(4);
+    expect(
+      store.getQuestionSetDraft("correlation_wizard_retry")?.answers,
+    ).toEqual([
+      {
+        questionId: "question_confirm_0001",
+        kind: "confirm",
+        optionId: "confirm_stop_000001",
+      },
+    ]);
+    expect(store.listDiagnostics()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "telegram.callback-ack-failed",
+          message: expect.stringContaining("fake-ack-timeout"),
+        }),
+      ]),
+    );
+    store.close();
   });
 
   it("navigates, reviews, edits, and submits one ordered answer atomically", async () => {

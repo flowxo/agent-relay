@@ -213,6 +213,17 @@
   and undeclared/unimplemented modes dead-letter visibly before transport
   delivery. Telegram Bot API 10.2 and the fake transport do not advertise local
   web handoff; that remains a Phase 3 assumption.
+- FXO-1066 is green locally. The Phase 2 safety matrix is mapped in
+  `docs/phase-2-safety-matrix.md` to protocol, store, transport, and fake
+  Telegram tests. A structured delivery timeout now proves durable retry without
+  losing the selected mode or draft. Callback acknowledgements retry immediately
+  within a bounded two-attempt budget after SQLite commits; a recovered retry is
+  logged, while exhaustion preserves the committed answer and emits a durable
+  diagnostic instead of being swallowed. The matrix covers every required
+  interaction kind, duplicate input, malformed/oversized payloads, partial
+  restart, timeout and stale states, Cancel, supersession, first-writer races,
+  same-topic ambiguity, cross-topic isolation, and unsupported capability
+  fallback without live credentials.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -265,7 +276,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 211 tests across 31 test files, including
+- The implementation gates pass all 212 tests across 31 test files, including
   the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
   fallback privacy, inline and late continuation, owned-child exit observation,
   stale answer rejection, concurrent-session isolation, installation rollback,
@@ -361,5 +372,6 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1065 a local web fallback for interactions that exceed Telegram's
-usable presentation limits.
+Implement FXO-1068, the authenticated localhost daemon API and ordered live
+event stream, while retaining the same runtime validation, SQLite first-writer
+authority, localhost-only default, and transcript-private boundaries.

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
 import { sha256 } from "@agent-relay/protocol";
@@ -129,6 +131,7 @@ export interface TelegramReplyRouterOptions {
   chatId: number;
   now?: () => Date;
   logger?: RelayLogger;
+  callbackAcknowledgementAttempts?: number;
 }
 
 function routeOutcome(
@@ -174,6 +177,7 @@ function cardResolutionState(
 export class TelegramReplyRouter {
   private readonly now: () => Date;
   private readonly logger: RelayLogger;
+  private readonly callbackAcknowledgementAttempts: number;
 
   public constructor(
     private readonly store: RelayStore,
@@ -182,6 +186,17 @@ export class TelegramReplyRouter {
   ) {
     this.now = options.now ?? (() => new Date());
     this.logger = options.logger ?? NOOP_LOGGER;
+    this.callbackAcknowledgementAttempts =
+      options.callbackAcknowledgementAttempts ?? 2;
+    if (
+      !Number.isSafeInteger(this.callbackAcknowledgementAttempts) ||
+      this.callbackAcknowledgementAttempts < 1 ||
+      this.callbackAcknowledgementAttempts > 5
+    ) {
+      throw new Error(
+        "callback acknowledgement attempts must be between 1 and 5",
+      );
+    }
   }
 
   private authorized(userId: number | undefined, chatId: number): boolean {
@@ -194,18 +209,57 @@ export class TelegramReplyRouter {
     if (!isInteractiveTransport(this.transport)) {
       return;
     }
-    try {
-      await this.transport.acknowledgeCallback(callbackId, text);
-    } catch (error) {
-      this.logger.log({
-        level: "warn",
-        code: "telegram.callback-ack-failed",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Telegram callback acknowledgment failed",
-        at: this.now().toISOString(),
-      });
+    for (
+      let attempt = 1;
+      attempt <= this.callbackAcknowledgementAttempts;
+      attempt += 1
+    ) {
+      try {
+        await this.transport.acknowledgeCallback(callbackId, text);
+        if (attempt > 1) {
+          this.logger.log({
+            level: "info",
+            code: "telegram.callback-ack-recovered",
+            message: "Telegram callback acknowledgement recovered",
+            at: this.now().toISOString(),
+            details: { attempt },
+          });
+        }
+        return;
+      } catch (error) {
+        const transportError = asTransportError(error);
+        const willRetry =
+          transportError.retryable &&
+          attempt < this.callbackAcknowledgementAttempts;
+        this.logger.log({
+          level: willRetry ? "warn" : "error",
+          code: willRetry
+            ? "telegram.callback-ack-retry"
+            : "telegram.callback-ack-failed",
+          message: transportError.message,
+          at: this.now().toISOString(),
+          details: {
+            attempt,
+            errorCode: transportError.code,
+            retryable: transportError.retryable,
+          },
+        });
+        if (willRetry) {
+          continue;
+        }
+        this.store.recordDiagnostic({
+          schema: "agent-relay-diagnostic.v1",
+          diagnosticId: `diag_callback_ack_${randomUUID()}`,
+          recordedAt: this.now().toISOString(),
+          source: "daemon",
+          level: "error",
+          code: "telegram.callback-ack-failed",
+          message: `Telegram callback acknowledgement failed after ${String(
+            attempt,
+          )} attempt${attempt === 1 ? "" : "s"}: ${transportError.code}`,
+        });
+        return;
+      }
     }
   }
 
