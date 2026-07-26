@@ -837,8 +837,10 @@ describe("TelegramBotTransport", () => {
       {
         ...message,
         questionSet: {
+          requestId: "request_release_12345678",
           questionId: "question_units_000001",
           kind: "multi-select",
+          requestTitle: "Release configuration",
           prompt: "Which units should run?",
           position: 2,
           total: 3,
@@ -869,6 +871,7 @@ describe("TelegramBotTransport", () => {
         inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
       };
     };
+    expect(body.text).toContain("Request: Release configuration · 12345678");
     expect(body.text).toContain("Question 2 of 3: Which units should run?");
     expect(
       body.reply_markup.inline_keyboard

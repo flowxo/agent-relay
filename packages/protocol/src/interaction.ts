@@ -689,6 +689,15 @@ export function validateInteractionAnswer(
             ),
           );
         }
+        if (!question.multiline && /[\r\n]/.test(item.text)) {
+          issues.push(
+            compatibilityIssue(
+              "text-multiline",
+              `answer.answers.${String(index)}.text`,
+              "free-text answer does not permit multiple lines",
+            ),
+          );
+        }
         break;
       }
     }

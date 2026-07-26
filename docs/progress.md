@@ -189,8 +189,18 @@
   navigation, incomplete steps, selection limits, expiry, terminal supersession,
   duplicate submit, and cross-topic/session callbacks are explicit and tested.
   Retention reports `questionSetDrafts`, and a sanitized Bot API 10.2 keyboard
-  fixture records the tested projection. Telegram free-text capture remains
-  deliberately blocked until FXO-1064.
+  fixture records the tested projection. Telegram free-text capture is supplied
+  by FXO-1064.
+- FXO-1064 is green locally. Active structured free-text steps show the request,
+  question order, prompt, bounds, multiline policy, and saved-draft state.
+  Ordinary topic text is accepted only for one compatible active request;
+  explicit card replies disambiguate simultaneous requests. SQLite-normalized
+  text survives restart and can be replaced without resolving the parent before
+  Submit. Empty, short, oversized, disallowed multiline, duplicate-update, late,
+  and out-of-order text paths are explicit and tested. Private content is absent
+  from diagnostics and Telegram card edits, final cards expose only a character
+  count, and durable draft/final text follows the documented bounded request
+  retention window.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -243,7 +253,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 194 tests across 29 test files, including
+- The implementation gates pass all 198 tests across 30 test files, including
   the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
   fallback privacy, inline and late continuation, owned-child exit observation,
   stale answer rejection, concurrent-session isolation, installation rollback,
@@ -339,5 +349,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1064 explicit free-text capture and correlation for structured
-interaction steps.
+Implement FXO-1065 a local web fallback for interactions that exceed Telegram's
+usable presentation limits.

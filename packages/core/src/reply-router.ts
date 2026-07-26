@@ -23,6 +23,7 @@ import type {
   NumberedChoiceResolutionResult,
   PendingRequestRecord,
   QuestionSetDraftRecord,
+  QuestionSetTextMutationResult,
   RelayStore,
   ResolutionResult,
 } from "./store.js";
@@ -301,7 +302,8 @@ export class TelegramReplyRouter {
   private async sendTopicGuidance(
     updateId: number,
     topicId: string,
-    kind: "none" | "ambiguous" | "incompatible" | "invalid-choice",
+    kind:
+      "none" | "ambiguous" | "incompatible" | "invalid-choice" | "invalid-text",
   ): Promise<void> {
     const guidance = {
       none: {
@@ -319,6 +321,10 @@ export class TelegramReplyRouter {
       "invalid-choice": {
         title: "Agent Relay · invalid option",
         text: "Reply with one number shown on the open choice card. The request is still waiting.",
+      },
+      "invalid-text": {
+        title: "Agent Relay · text not saved",
+        text: "The text does not meet the active question's length or single-line rules. The draft is unchanged; use the bounds shown on the request card.",
       },
     }[kind];
     const idempotencyKey = `guidance_${sha256(
@@ -396,6 +402,32 @@ export class TelegramReplyRouter {
         outcome: "ambiguous-request",
         updateId,
       };
+    }
+    if (correlation.outcome === "drafted") {
+      if (correlation.request.transportMessageId === undefined) {
+        this.diagnoseTextCorrelation(
+          updateId,
+          "telegram.question-set-text-undelivered",
+          "Structured text matched a request without a retained delivery receipt",
+          "error",
+        );
+        return { outcome: "uncorrelated", updateId };
+      }
+      return await this.finishQuestionSetText(
+        updateId,
+        topicId,
+        correlation.request.transportMessageId,
+        correlation.mutation,
+      );
+    }
+    if (correlation.outcome === "invalid_text") {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.topic-text-empty",
+        "Plain topic text was empty after normalization",
+      );
+      await this.sendTopicGuidance(updateId, topicId, "invalid-text");
+      return { outcome: "unsupported", updateId };
     }
 
     const resolution = correlation.resolution;
@@ -975,6 +1007,99 @@ export class TelegramReplyRouter {
     }
   }
 
+  private async finishQuestionSetText(
+    updateId: number,
+    topicId: string,
+    messageId: string,
+    result: QuestionSetTextMutationResult,
+  ): Promise<ReplyRouteResult> {
+    if (
+      result.outcome === "not_found" ||
+      result.outcome === "identity_mismatch"
+    ) {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.question-set-text-session-mismatch",
+        "Structured text did not match the retained request card and session",
+      );
+      return { outcome: "uncorrelated", updateId };
+    }
+    if (result.outcome === "updated" || result.outcome === "unchanged") {
+      await this.editQuestionSetDraft(messageId, result.request, result.draft);
+      this.diagnoseTextCorrelation(
+        updateId,
+        `telegram.question-set-text-${result.outcome}`,
+        `Structured text draft outcome: ${result.outcome}`,
+        "info",
+      );
+      return {
+        outcome:
+          result.outcome === "updated" ? "draft-updated" : "draft-unchanged",
+        updateId,
+      };
+    }
+    if (result.outcome === "invalid_text") {
+      this.diagnoseTextCorrelation(
+        updateId,
+        `telegram.question-set-text-${result.reason}`,
+        `Structured text was rejected by the active field contract: ${result.reason}`,
+      );
+      await this.sendTopicGuidance(updateId, topicId, "invalid-text");
+      return { outcome: "draft-rejected", updateId };
+    }
+    if (result.outcome === "invalid_transition") {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.question-set-text-out-of-order",
+        "Structured text arrived while the identified request was not on a free-text step",
+      );
+      await this.sendTopicGuidance(updateId, topicId, "incompatible");
+      return { outcome: "draft-rejected", updateId };
+    }
+    await this.editQuestionSetFinal(messageId, result.request, result.draft);
+    this.diagnoseTextCorrelation(
+      updateId,
+      `telegram.question-set-text-${result.outcome}`,
+      `Structured text reached a terminal request: ${result.outcome}`,
+    );
+    return {
+      outcome:
+        result.outcome === "duplicate"
+          ? "duplicate-answer"
+          : result.outcome === "stale"
+            ? "draft-rejected"
+            : result.outcome,
+      updateId,
+    };
+  }
+
+  private async handleExplicitQuestionSetText(
+    updateId: number,
+    topicId: string,
+    request: PendingRequestRecord,
+    messageId: string,
+    text: string,
+    receivedAt: string,
+  ): Promise<ReplyRouteResult> {
+    return await this.finishQuestionSetText(
+      updateId,
+      topicId,
+      messageId,
+      this.store.setQuestionSetText({
+        correlationId: request.correlationId,
+        text,
+        now: receivedAt,
+        expected: {
+          machineId: request.machineId,
+          harness: request.harness,
+          sessionId: request.sessionId,
+          ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+          transportMessageId: messageId,
+        },
+      }),
+    );
+  }
+
   private async questionSetCallbackContext(
     callback: TelegramCallback,
     request: PendingRequestRecord,
@@ -1524,10 +1649,7 @@ export class TelegramReplyRouter {
           "Rejected topic text from an unauthorized operator or chat",
         );
         route = { outcome: "unauthorized", updateId: update.update_id };
-      } else if (
-        message.text === undefined ||
-        message.text.trim().length === 0
-      ) {
+      } else if (message.text === undefined) {
         route = { outcome: "unsupported", updateId: update.update_id };
       } else if (isTopicTransport(this.transport)) {
         const topicId =
@@ -1615,6 +1737,15 @@ export class TelegramReplyRouter {
               updateId: update.update_id,
               resolution,
             };
+          } else if (request.requestKind === "question-set") {
+            route = await this.handleExplicitQuestionSetText(
+              update.update_id,
+              topicId,
+              request,
+              targetMessageId,
+              message.text,
+              receivedAt,
+            );
           } else if (
             request.requestKind !== "input" &&
             request.requestKind !== "continuation"
@@ -1666,6 +1797,8 @@ export class TelegramReplyRouter {
             this.transport.topicScope,
           );
         }
+      } else if (message.text.trim().length === 0) {
+        route = { outcome: "unsupported", updateId: update.update_id };
       } else if (message.reply_to_message === undefined) {
         route = { outcome: "unsupported", updateId: update.update_id };
       } else {

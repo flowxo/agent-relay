@@ -14,8 +14,10 @@ export interface DeliveryMultiSelect {
 }
 
 export interface DeliveryQuestionSet {
+  requestId: string;
   questionId: string;
   kind: "confirm" | "single-select" | "multi-select" | "free-text";
+  requestTitle: string;
   prompt: string;
   position: number;
   total: number;
@@ -24,6 +26,12 @@ export interface DeliveryQuestionSet {
   nextToken?: string;
   submitToken: string;
   cancelToken: string;
+  textInput?: {
+    minLength: number;
+    maxLength: number;
+    multiline: boolean;
+    hasDraft: boolean;
+  };
 }
 
 export interface DeliveryAction {

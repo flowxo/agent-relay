@@ -203,10 +203,34 @@ Callback authorization binds every action to the operator, chat, transport,
 delivered message, session, and ready topic, so simultaneous wizards cannot
 cross-answer.
 
-Free-text questions are valid in the shared contract, but their Telegram capture
-mode is intentionally completed by FXO-1064. Until then the wizard identifies a
-free-text step as requiring text and refuses to advance or submit rather than
-silently discarding it.
+## Telegram free-text capture
+
+An active free-text step visibly shows the interaction title, question ordinal,
+prompt, minimum and maximum length, multiline policy, and whether a draft is
+already saved. The operator can send ordinary text in the session topic when
+that topic has exactly one compatible active text request. If several text
+requests are open in the same topic, ordinary text is rejected as ambiguous and
+an explicit reply to the intended request card identifies it.
+
+Before persistence, carriage returns are normalized to line feeds and outer
+whitespace is trimmed. Empty text, text outside the declared bounds, or multiple
+lines for a single-line field are rejected without changing the draft. A second
+valid message on the same active field replaces the prior draft; the same
+normalized value is an idempotent no-op. Text received after the wizard moves to
+another kind of question is out of order and cannot change an earlier answer.
+Like button answers, text changes never resolve the parent request before final
+Submit.
+
+Private draft text is stored only in SQLite's `question_set_answers` row so it
+can survive restart and become part of the validated terminal response. It is
+not placed in callback data, diagnostics, daemon logs, or Telegram card edits;
+cards show only that text is saved and its character count after resolution.
+Submitted text also exists in the canonical pending-request answer used by the
+harness. Canceled, expired, superseded, and submitted records follow the same
+bounded request-retention window (30 days by default), after which the parent,
+draft, and answer rows are deleted together. Telegram's retention of the
+operator's original chat message is outside Agent Relay's local retention
+control.
 
 ## Fixtures and compatibility
 

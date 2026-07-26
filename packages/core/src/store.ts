@@ -366,6 +366,38 @@ export type QuestionSetMutationResult =
       draft?: QuestionSetDraftRecord;
     };
 
+export type QuestionSetTextRejectionReason =
+  "empty" | "too_short" | "too_long" | "multiline";
+
+export type QuestionSetTextMutationResult =
+  | {
+      outcome: "updated" | "unchanged";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "invalid_text";
+      reason: QuestionSetTextRejectionReason;
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome:
+        "invalid_transition" | "duplicate" | "expired" | "stale" | "failed";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: QuestionSetDraftRecord;
+    };
+
 export type ResolutionOutcome =
   | "answered"
   | "duplicate"
@@ -414,10 +446,21 @@ export type TopicTextCorrelationResult =
       eligibleCount: number;
     }
   | {
+      outcome: "invalid_text";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+    }
+  | {
       outcome: "resolved";
       eligibleCount: 1;
       request: PendingRequestRecord;
       resolution: NumberedChoiceResolutionResult;
+    }
+  | {
+      outcome: "drafted";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+      mutation: QuestionSetTextMutationResult;
     };
 
 export type ResumeCommandState =
@@ -3850,6 +3893,122 @@ export class RelayStore {
     })();
   }
 
+  public setQuestionSetText(input: {
+    correlationId: string;
+    text: string;
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): QuestionSetTextMutationResult {
+    return this.database.transaction((): QuestionSetTextMutationResult => {
+      const request = this.getPendingRequest(input.correlationId);
+      if (request?.requestKind !== "question-set") {
+        return { outcome: "not_found" };
+      }
+      let draft = this.getQuestionSetDraft(request.correlationId);
+      if (draft === undefined) {
+        return { outcome: "not_found", request };
+      }
+      if (!this.pendingExpectedMatches(request, input.expected)) {
+        return { outcome: "identity_mismatch", request, draft };
+      }
+      if (request.state !== "open") {
+        draft =
+          this.synchronizeTerminalQuestionSet(request, input.now) ?? draft;
+        return {
+          outcome:
+            request.state === "answered"
+              ? "duplicate"
+              : request.state === "expired"
+                ? "expired"
+                : request.state === "failed"
+                  ? "failed"
+                  : "stale",
+          request,
+          draft,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+
+      const question = draft.interaction.questions[draft.currentIndex];
+      if (question?.kind !== "free-text") {
+        return { outcome: "invalid_transition", request, draft };
+      }
+      const text = input.text.replace(/\r\n?/g, "\n").trim();
+      const reason: QuestionSetTextRejectionReason | undefined =
+        text.length === 0
+          ? "empty"
+          : text.length < question.minLength
+            ? "too_short"
+            : text.length > question.maxLength
+              ? "too_long"
+              : !question.multiline && text.includes("\n")
+                ? "multiline"
+                : undefined;
+      if (reason !== undefined) {
+        return { outcome: "invalid_text", reason, request, draft };
+      }
+      const answer: InteractionQuestionAnswer = {
+        questionId: question.questionId,
+        kind: "free-text",
+        text,
+      };
+      const previous = this.questionSetAnswer(draft, question);
+      if (
+        previous !== undefined &&
+        JSON.stringify(previous) === JSON.stringify(answer)
+      ) {
+        return { outcome: "unchanged", request, draft };
+      }
+      this.saveQuestionSetAnswer(request.correlationId, answer, input.now);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts SET
+            state = 'drafting',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "updated",
+        request,
+        draft: this.getQuestionSetDraft(request.correlationId)!,
+      };
+    })();
+  }
+
   private requirePending(correlationId: string): PendingRequestRecord {
     const request = this.getPendingRequest(correlationId);
     if (request === undefined) {
@@ -4232,6 +4391,7 @@ export class RelayStore {
             AND session_id = @sessionId
             AND state = 'open'
             AND expires_at > @now
+            AND transport_message_id IS NOT NULL
             AND (
               request_kind IN ('input', 'continuation')
               OR (
@@ -4243,6 +4403,22 @@ export class RelayStore {
                   WHERE pending_options.correlation_id =
                     pending_requests.correlation_id
                 ) > @numberedChoiceMinimumOptions
+              )
+              OR (
+                request_kind = 'question-set'
+                AND EXISTS (
+                  SELECT 1
+                  FROM question_set_drafts AS draft
+                  JOIN events
+                    ON events.event_id = pending_requests.event_id
+                  WHERE draft.correlation_id =
+                    pending_requests.correlation_id
+                    AND json_extract(
+                      events.payload_json,
+                      '$.request.interaction.questions[' ||
+                        draft.current_index || '].kind'
+                    ) = 'free-text'
+                )
               )
             )
           ORDER BY created_at, correlation_id
@@ -4268,6 +4444,39 @@ export class RelayStore {
       }
 
       const request = this.pendingFromRow(candidates[0]!);
+      if (request.requestKind === "question-set") {
+        if (request.transportMessageId === undefined) {
+          throw new Error(
+            "eligible question-set text request is not delivered",
+          );
+        }
+        return {
+          outcome: "drafted",
+          eligibleCount: 1,
+          request,
+          mutation: this.setQuestionSetText({
+            correlationId: request.correlationId,
+            text: input.answer,
+            now: input.now,
+            expected: {
+              machineId: request.machineId,
+              harness: request.harness,
+              sessionId: request.sessionId,
+              ...(request.turnId === undefined
+                ? {}
+                : { turnId: request.turnId }),
+              transportMessageId: request.transportMessageId,
+            },
+          }),
+        };
+      }
+      if (input.answer.trim().length === 0) {
+        return {
+          outcome: "invalid_text",
+          eligibleCount: 1,
+          request,
+        };
+      }
       return {
         outcome: "resolved",
         eligibleCount: 1,

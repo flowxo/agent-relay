@@ -19,6 +19,11 @@ export const TELEGRAM_MESSAGE_LIMIT = 4_096;
 const CARD_SUMMARY_LIMIT = 480;
 const TRUNCATION_MARKER = " …[truncated]";
 
+function shortOpaqueId(value: string): string {
+  const characters = [...value];
+  return characters.length <= 12 ? value : characters.slice(-8).join("");
+}
+
 export type AttentionCardResolutionState =
   "answered" | "cancelled" | "expired" | "superseded" | "failed";
 
@@ -231,9 +236,29 @@ export function renderDeliveryText(message: DeliveryMessage): string {
   const questionSetSummary =
     message.questionSet === undefined
       ? ""
-      : `\n\nQuestion ${String(message.questionSet.position)} of ${String(
+      : `\n\nRequest: ${oneLineUntrusted(
+          message.questionSet.requestTitle,
+        )} · ${oneLineUntrusted(
+          shortOpaqueId(message.questionSet.requestId),
+        )}\nQuestion ${String(message.questionSet.position)} of ${String(
           message.questionSet.total,
-        )}: ${oneLineUntrusted(message.questionSet.prompt)}`;
+        )}: ${oneLineUntrusted(message.questionSet.prompt)}${
+          message.questionSet.textInput === undefined
+            ? ""
+            : `\nSend ${String(
+                message.questionSet.textInput.minLength,
+              )}–${String(
+                message.questionSet.textInput.maxLength,
+              )} characters ${
+                message.questionSet.textInput.multiline
+                  ? "(multiple lines allowed)"
+                  : "(one line)"
+              } in this topic, or reply to this card.${
+                message.questionSet.textInput.hasDraft
+                  ? " A draft answer is saved; new text replaces it."
+                  : ""
+              }`
+        }`;
   return redactText(
     `${message.title}\n\n${message.text}${numberedChoices}${multiSelectSummary}${questionSetSummary}`,
     TELEGRAM_MESSAGE_LIMIT,
@@ -324,8 +349,10 @@ export function renderQuestionSetDeliveryMessage(
   return {
     ...renderDeliveryMessage(event, options),
     questionSet: {
+      requestId: draft.interaction.requestId,
       questionId: question.questionId,
       kind: question.kind,
+      requestTitle: draft.interaction.title,
       prompt: question.prompt,
       position: draft.currentIndex + 1,
       total: draft.interaction.questions.length,
@@ -340,6 +367,16 @@ export function renderQuestionSetDeliveryMessage(
       ...(draft.nextToken === undefined ? {} : { nextToken: draft.nextToken }),
       submitToken: draft.submitToken,
       cancelToken: draft.cancelToken,
+      ...(question.kind === "free-text"
+        ? {
+            textInput: {
+              minLength: question.minLength,
+              maxLength: question.maxLength,
+              multiline: question.multiline,
+              hasDraft: answer?.kind === "free-text",
+            },
+          }
+        : {}),
     },
   };
 }
@@ -352,7 +389,7 @@ function questionAnswerSummary(
     return "not answered";
   }
   if (answer.kind === "free-text") {
-    return oneLineUntrusted(answer.text);
+    return `text saved (${String(answer.text.length)} characters)`;
   }
   const optionIds =
     answer.kind === "multi-select" ? answer.optionIds : [answer.optionId];

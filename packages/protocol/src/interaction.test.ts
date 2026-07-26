@@ -257,6 +257,29 @@ describe("structured operator interaction contracts", () => {
       false,
     );
 
+    const singleLineRequest = structuredClone(requestFixture());
+    const singleLineQuestion = singleLineRequest.questions.find(
+      (question) => question.kind === "free-text",
+    );
+    if (singleLineQuestion?.kind === "free-text") {
+      singleLineQuestion.multiline = false;
+    }
+    const multilineAnswer = structuredClone(answerFixture());
+    const multilineText = multilineAnswer.answers.find(
+      (answer) => answer.kind === "free-text",
+    );
+    if (multilineText?.kind === "free-text") {
+      multilineText.text = "line one\nline two";
+    }
+    expect(
+      validateInteractionAnswer(singleLineRequest, multilineAnswer),
+    ).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "text-multiline" }),
+      ]),
+    });
+
     const oversizedEnvelope = structuredClone(answerFixture());
     const envelopeText = oversizedEnvelope.answers.find(
       (answer) => answer.kind === "free-text",
