@@ -1,6 +1,6 @@
 # Generated Harness Capability Matrix
 
-<!-- Generated from packages/harnesses/src/capabilities.ts. -->
+<!-- Generated from the runtime capability registry. -->
 
 | Harness | Surface    | Stop | Inline continue | Permission decision | Late resume | Active steer | Failure signal | Process exit proof | Notes                                                                    |
 | ------- | ---------- | ---- | --------------- | ------------------- | ----------- | ------------ | -------------- | ------------------ | ------------------------------------------------------------------------ |

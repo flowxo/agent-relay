@@ -1,0 +1,18 @@
+{
+  "schema": "agent-relay-package-content.v1",
+  "maxTarballBytes": 2000000,
+  "maxUnpackedBytes": 5000000,
+  "files": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "dist/cli.js",
+    "dist/web/app.js",
+    "dist/web/index.html",
+    "dist/web/state.js",
+    "dist/web/styles.css",
+    "dist/web/version.js",
+    "package.json"
+  ]
+}

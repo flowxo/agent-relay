@@ -53,6 +53,19 @@
   `pnpm check`. The full 305-test/contract/distribution gate, all three Chromium
   scenarios, production audit, and an isolated compiled fake-daemon canary all
   passed.
+- FXO-1144 establishes one standalone, private
+  `@flowxo/agent-relay@0.1.0-alpha.0` CLI artifact without publishing it.
+  Internal workspace code is bundled; exact `better-sqlite3@13.0.1` and
+  `zod@4.4.3` remain external runtime dependencies; no programmatic export or
+  declaration surface is claimed; and source maps are omitted after an explicit
+  disclosure review. `pnpm package:check`, now part of the full gate, matched
+  all 11 files to the allowlist, measured 100,883 packed and 474,271 unpacked
+  bytes, rejected source/workspace/private-path leakage, installed with scripts
+  disabled into an isolated prefix, explicitly rebuilt SQLite, and proved CLI
+  help, one clean fake delivery, five static web assets, and the authenticated
+  web API from an isolated home. The check caught and resolved Apple-silicon
+  Rosetta Node metadata before acceptance. Registry scope ownership, trusted
+  publishing, and actual publication remain owner-controlled gates.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -517,12 +530,13 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Prove the exact standalone publish artifact in FXO-1144: package identity and
-metadata, compiled runtime boundary, allowlisted file list and size budget,
-source-map policy, isolated install/help/fake canary, and absence of workspace
-or private-state leakage. Mock-backed AR2 work may proceed against the pinned
-`1.0.0-draft.1` artifacts, but production hosted dogfood must wait for AR1, AR2,
-and a central C0-09 go disposition.
+Prove the complete packed-artifact lifecycle in FXO-1145: install dry run,
+install, doctor, idempotent reconciliation, state-preserving upgrade,
+package/runtime/manifest mismatch diagnosis, unsafe schema-downgrade refusal,
+owned uninstall, unrelated-config preservation, and explicit retained-data
+handling. Mock-backed AR2 work may proceed against the pinned `1.0.0-draft.1`
+artifacts, but production hosted dogfood must wait for AR1, AR2, and a central
+C0-09 go disposition.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

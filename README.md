@@ -10,8 +10,8 @@ stop, fail, or need an answer; identify the exact session; respond through
 buttons, text, or the local web board; and continue only where the harness has
 an official continuation contract.
 
-> **Release status:** source-build prerelease preparation. No public npm package
-> or stable support claim exists yet.
+> **Release status:** an installable `0.1.0-alpha.0` package candidate is proven
+> locally, but no npm package or stable support claim exists yet.
 
 ## What it can prove
 
@@ -70,6 +70,30 @@ The canary must report a durable fake-Telegram delivery. Stop the daemon with
 Configure [direct Telegram](docs/telegram.md) only when private credentials are
 available.
 
+## Inspect the standalone package
+
+The one-package distribution candidate is `@flowxo/agent-relay`. The npm scope
+is still an owner-controlled publication gate; do not try to install it from the
+registry yet, and do not install the unrelated unscoped `agent-relay` package.
+
+Build and prove the exact local artifact:
+
+```sh
+pnpm package:check
+```
+
+That command packs the staged release directory, compares all 11 files to a
+reviewed allowlist, enforces compressed and unpacked size budgets, rejects
+workspace/source/private-path leakage, installs with lifecycle scripts disabled
+in an isolated prefix, explicitly rebuilds the approved SQLite native
+dependency, and proves CLI help, the fake canary, static web assets, and the
+authenticated local web API. It publishes nothing and removes its temporary
+artifact.
+
+See [package identity and artifact boundary](docs/packaging.md) for the exact
+contents, metadata, source-map decision, and a command that retains a local
+tarball for inspection.
+
 ## What runs and what changes
 
 The Node.js daemon binds to loopback, uses local SQLite as the source of truth,
@@ -101,6 +125,7 @@ runtime, public callback, or Flow XO credential. See the
 - [Local web companion](docs/web-companion.md)
 - [Troubleshooting and doctor](docs/troubleshooting.md)
 - [Compatibility and evidence policy](docs/compatibility.md)
+- [Package identity and artifact boundary](docs/packaging.md)
 - [Write a notification transport](docs/extending-transports.md)
 - [Write or update a harness adapter](docs/extending-harnesses.md)
 - [Optional hosted Notifications boundary](docs/hosted-notifications.md)

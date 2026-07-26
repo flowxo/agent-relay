@@ -178,7 +178,7 @@ export function harnessInteractionObservation(
     status: "proven",
     evidence: "event-contract",
     observedVersion: event.harnessVersion,
-    fixture: `packages/harnesses/fixtures/${event.harness}/stop.json`,
+    fixture: `harness-${event.harness}-stop-v1`,
     note: "The validated attention event records the adapter's continuation capability; exact surface evidence remains version-scoped.",
   });
 }

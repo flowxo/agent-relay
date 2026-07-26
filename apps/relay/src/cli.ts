@@ -30,6 +30,32 @@ import { loadOrCreateMachineId } from "./machine-id.js";
 import { runSupervisor } from "./supervisor.js";
 import { seedWebDemo } from "./web-demo.js";
 
+const USAGE = `Agent Relay
+
+Usage:
+  agent-relay <command> [options]
+
+Commands:
+  daemon             Start the local relay daemon
+  web-demo           Start a sanitized local web demo
+  hook <harness>     Accept one native harness hook payload on stdin
+  run <harness>      Supervise a harness CLI process
+  status             Show daemon and delivery status
+  drain              Deliver queued events
+  replay-fallback    Replay the hook fallback spool
+  maintain           Apply retention policy
+  install            Install or reconcile user-level harness hooks
+  uninstall          Remove only Agent Relay-owned hooks and launcher
+  doctor             Diagnose the local installation and compatibility
+  capabilities       Print the generated harness capability registry
+  canary             Prove the local fake-transport delivery loop
+  telegram-canary    Prove a configured direct-Telegram reply loop
+
+Run "agent-relay <command> --help" only where the command documents flags in
+the public guides. Agent Relay currently supports macOS on Apple silicon with
+Node.js 22 or newer.
+`;
+
 function environment(name: string): string | undefined {
   const value = process.env[name];
   return value === undefined || value.length === 0 ? undefined : value;
@@ -114,8 +140,12 @@ function installEntryPath(args: string[]): string {
   if (explicit !== undefined) {
     return resolve(explicit);
   }
-  const currentEntry = resolve(process.argv[1] ?? "apps/relay/dist/cli.js");
-  if (currentEntry.endsWith("/src/cli.ts")) {
+  const invokedEntry = process.argv[1];
+  if (invokedEntry === undefined) {
+    throw new Error("cannot determine the Agent Relay executable path");
+  }
+  const currentEntry = resolve(invokedEntry);
+  if (currentEntry.endsWith(".ts")) {
     return resolve(dirname(currentEntry), "..", "dist", "cli.js");
   }
   return currentEntry;
@@ -123,6 +153,15 @@ function installEntryPath(args: string[]): string {
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
+  if (
+    command === undefined ||
+    command === "help" ||
+    command === "--help" ||
+    command === "-h"
+  ) {
+    process.stdout.write(USAGE);
+    return;
+  }
   if (command === "daemon" || command === "web-demo") {
     const demo = command === "web-demo";
     const commandStateDir = demo ? join(stateDir, "web-demo") : stateDir;
@@ -522,13 +561,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  await mkdir(dirname(join(stateDir, "placeholder")), {
-    recursive: true,
-    mode: 0o700,
-  });
-  process.stderr.write(
-    "Usage: agent-relay daemon|web-demo|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary|telegram-canary\n",
-  );
+  process.stderr.write(`Unknown command: ${command}\n\n${USAGE}`);
   process.exitCode = 2;
 }
 

@@ -11,6 +11,7 @@ const focusedDocuments = [
   "docs/web-companion.md",
   "docs/troubleshooting.md",
   "docs/compatibility.md",
+  "docs/packaging.md",
   "docs/extending-transports.md",
   "docs/extending-harnesses.md",
   "docs/hosted-notifications.md",

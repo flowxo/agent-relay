@@ -1,17 +1,39 @@
 {
-  "name": "agent-relay",
-  "version": "0.1.0",
+  "name": "@flowxo/agent-relay",
+  "version": "0.1.0-alpha.0",
   "private": true,
   "description": "Local-first attention and control layer for concurrent coding agents",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flowxo/agent-relay.git"
+  },
+  "bugs": {
+    "url": "https://github.com/flowxo/agent-relay/issues"
+  },
+  "homepage": "https://github.com/flowxo/agent-relay#readme",
+  "keywords": [
+    "agent",
+    "codex",
+    "claude-code",
+    "cursor",
+    "telegram",
+    "developer-tools"
+  ],
   "packageManager": "pnpm@11.17.0",
   "engines": {
     "node": ">=22"
   },
+  "publishConfig": {
+    "directory": ".artifacts/package",
+    "linkDirectory": false,
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "pnpm -r build",
-    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:notifications && pnpm dist:check",
+    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:notifications && pnpm dist:check && pnpm package:check",
     "capabilities:check": "pnpm --filter @agent-relay/harnesses capabilities:check",
     "contracts:preinstall": "node contracts/scripts/verify-notifications.mjs",
     "contracts:notifications": "node --test contracts/test/*.node-test.mjs && pnpm --filter @agent-relay/notifications-transport contract:check && node contracts/scripts/write-notifications-result.mjs",
@@ -22,6 +44,9 @@
     "governance:check": "node scripts/check-governance.mjs",
     "lint": "eslint .",
     "notifications:contract:check": "pnpm contracts:notifications",
+    "package:build": "node scripts/build-package.mjs",
+    "package:check": "node scripts/check-package.mjs",
+    "prepack": "pnpm package:build",
     "relay": "pnpm --filter @agent-relay/relay dev",
     "test": "vitest run",
     "test:e2e": "pnpm build && playwright test",
@@ -33,11 +58,16 @@
     "@playwright/test": "1.62.0",
     "@types/node": "24.13.3",
     "ajv": "8.20.0",
+    "esbuild": "0.28.1",
     "eslint": "10.7.0",
     "prettier": "3.9.6",
     "tsx": "4.23.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.65.0",
     "vitest": "3.2.7"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.1",
+    "zod": "4.4.3"
   }
 }

@@ -143,7 +143,7 @@ export function renderCapabilityMatrix(): string {
   return [
     "# Generated Harness Capability Matrix",
     "",
-    "<!-- Generated from packages/harnesses/src/capabilities.ts. -->",
+    "<!-- Generated from the runtime capability registry. -->",
     "",
     tableLine(headers),
     tableLine(widths.map((width) => "-".repeat(width))),

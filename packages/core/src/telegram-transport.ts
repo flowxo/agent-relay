@@ -440,8 +440,7 @@ export class TelegramBotTransport
       status: "proven",
       evidence: "live-canary",
       observedVersion: "Telegram Bot API 10.2",
-      fixture:
-        "packages/core/fixtures/telegram/question-set-send-message.v10.2.json",
+      fixture: "telegram-question-set-send-message-v10.2",
       documentation: "https://core.telegram.org/bots/api",
       note: "Inline callbacks, topic-bound text, numbered replies, and message edits are implemented; local web handoff is intentionally not advertised.",
     });

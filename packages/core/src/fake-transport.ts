@@ -72,8 +72,7 @@ export class FakeTelegramTransport
       status: "proven",
       evidence: "fake",
       observedVersion: "fake-telegram.v1",
-      fixture:
-        "packages/protocol/fixtures/interactions/provider-capabilities.v1.json",
+      fixture: "protocol-interaction-capabilities-v1",
       note: "In-memory transport used to prove routing, retries, correlation, and interaction state without a bot token.",
     });
   }

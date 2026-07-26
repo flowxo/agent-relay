@@ -1,7 +1,7 @@
 # Install, upgrade, uninstall, and erase
 
-> **Current distribution:** source build while the first prerelease artifact is
-> being prepared
+> **Current distribution:** locally packable `0.1.0-alpha.0` candidate; not
+> published to npm
 >
 > **Verified target:** macOS on Apple silicon, Node.js 22, pnpm 11
 
@@ -25,9 +25,34 @@ vendored Notifications archives before the approved SQLite native build runs. No
 Telegram credential is needed.
 
 No public npm package exists yet. Do not install the unrelated unscoped
-`agent-relay` package from npm. The eventual package name and exact artifact
-commands will replace this source-build section only after package-scope and
-prerelease approval.
+`agent-relay` package from npm. The release candidate identity is
+`@flowxo/agent-relay`, but registry scope control and prerelease promotion
+remain explicit owner gates.
+
+## Build and inspect the local package candidate
+
+The repository quality gate includes an isolated package proof:
+
+```sh
+pnpm package:check
+```
+
+To retain the exact candidate tarball locally:
+
+```sh
+pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.0.tgz
+tar -tzf .artifacts/agent-relay-0.1.0-alpha.0.tgz
+```
+
+Packing runs only the repository's deterministic staging build. It does not
+publish or change harness configuration. The package remains marked `private`
+until scope ownership and prerelease promotion are approved.
+
+The automated proof installs the tarball with dependency lifecycle scripts
+disabled, explicitly rebuilds the reviewed SQLite native dependency, and runs
+CLI help, the fake delivery canary, and web asset/API checks from an isolated
+home and prefix. See [the packaging boundary](packaging.md) for the exact
+allowlist and budgets.
 
 ## Inspect and install hooks
 
@@ -88,7 +113,7 @@ Continue to [direct Telegram setup](telegram.md) only after this passes.
 
 ## Reconcile an upgrade
 
-For a new source commit:
+For a new source commit or local packed candidate:
 
 1. stop the daemon and supervised Agent Relay processes;
 2. install dependencies through the same scripts-disabled/preflight/rebuild

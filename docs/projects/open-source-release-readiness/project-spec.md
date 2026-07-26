@@ -1,6 +1,6 @@
 # Project specification: Open Source Release Readiness
 
-- **Status:** In progress; FXO-1141 release baseline complete
+- **Status:** In progress; FXO-1141 through FXO-1144 complete
 - **Product:** Agent Relay
 - **Initiative:**
   [Agent Relay — Open Source V1](https://linear.app/flowxo/initiative/agent-relay-open-source-v1-664f633c9408)
