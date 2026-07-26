@@ -271,6 +271,11 @@
   rather than presenting invented history, while the living API/onboarding guide
   maps event, request, diagnostic, and session retention to visible empty
   states.
+- The clean-commit verification gate exposed and now covers a fallback-spool
+  replay race: a completed worker may remove its processing segment after a
+  second worker's directory scan. A missing segment during stale-claim
+  inspection is treated as a successful concurrent handoff, while all other
+  filesystem errors remain visible.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching

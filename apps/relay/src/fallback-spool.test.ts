@@ -199,25 +199,45 @@ describe("fallback spool replay", () => {
   });
 
   it("isolates concurrent replay workers with atomic file claims", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agent-relay-fallback-"));
-    const spoolPath = join(directory, "fallback.ndjson");
-    await appendFallbackRecord(spoolPath, {
-      schema: "agent-relay-fallback.v1",
-      recordedAt: "2026-07-24T12:00:00.000Z",
-      kind: "event",
-      payload: event("evt_fallback_concurrent_12345678"),
-    });
-    const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport());
-    const [first, second] = await Promise.all([
-      replayFallbackSpool(spoolPath, serviceClient(service)),
-      replayFallbackSpool(spoolPath, serviceClient(service)),
-    ]);
+    const outcomes = await Promise.all(
+      Array.from({ length: 8 }, async (_, index) => {
+        const directory = await mkdtemp(
+          join(tmpdir(), "agent-relay-fallback-"),
+        );
+        const spoolPath = join(directory, "fallback.ndjson");
+        await appendFallbackRecord(spoolPath, {
+          schema: "agent-relay-fallback.v1",
+          recordedAt: "2026-07-24T12:00:00.000Z",
+          kind: "event",
+          payload: event(
+            `evt_fallback_concurrent_${String(index).padStart(8, "0")}`,
+          ),
+        });
+        const store = new RelayStore();
+        const service = new RelayService(store, new FakeTelegramTransport());
+        try {
+          const [first, second] = await Promise.all([
+            replayFallbackSpool(spoolPath, serviceClient(service)),
+            replayFallbackSpool(spoolPath, serviceClient(service)),
+          ]);
+          return {
+            filesClaimed: first.filesClaimed + second.filesClaimed,
+            events: first.events + second.events,
+            queued: store.status().events.queued,
+          };
+        } finally {
+          store.close();
+        }
+      }),
+    );
 
-    expect(first.filesClaimed + second.filesClaimed).toBe(1);
-    expect(first.events + second.events).toBe(1);
-    expect(store.status().events.queued).toBe(1);
-    store.close();
+    expect(outcomes).toEqual(
+      Array.from({ length: 8 }, () => ({
+        filesClaimed: 1,
+        events: 1,
+        queued: 1,
+      })),
+    );
   });
 
   it("automatically replays the offline spool when the daemon starts", async () => {

@@ -314,9 +314,15 @@ async function claimReplayFiles(
         continue;
       }
       if (entry.name.startsWith(`${spoolName}.processing-`)) {
-        const metadata = await stat(join(directory, entry.name));
-        if (now.getTime() - metadata.mtimeMs > options.processingStaleMs) {
-          candidates.push(entry.name);
+        try {
+          const metadata = await stat(join(directory, entry.name));
+          if (now.getTime() - metadata.mtimeMs > options.processingStaleMs) {
+            candidates.push(entry.name);
+          }
+        } catch (error) {
+          if (!isErrorCode(error, "ENOENT")) {
+            throw error;
+          }
         }
       }
     }
