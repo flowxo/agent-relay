@@ -260,7 +260,7 @@ export function renderDeliveryText(message: DeliveryMessage): string {
               }`
         }`;
   return redactText(
-    `${message.title}\n\n${message.text}${numberedChoices}${multiSelectSummary}${questionSetSummary}`,
+    `${message.title}\n\n${message.text}${multiSelectSummary}${questionSetSummary}${numberedChoices}`,
     TELEGRAM_MESSAGE_LIMIT,
   );
 }
@@ -346,23 +346,34 @@ export function renderQuestionSetDeliveryMessage(
     (candidate) => candidate.questionId === question.questionId,
   );
   const selected = selectedQuestionOptionIds(answer);
+  const presentationMode = draft.presentationMode ?? "buttons";
+  const questionOptions = request.options
+    .filter((option) => optionIds.has(option.optionId))
+    .map((option) => ({
+      token: option.token,
+      label: option.label,
+      selected: selected.has(option.optionId),
+    }));
   return {
     ...renderDeliveryMessage(event, options),
+    ...(presentationMode === "numbered-text"
+      ? {
+          choices: questionOptions.map((option) => ({
+            token: option.token,
+            label: `${option.selected ? "✓ " : ""}${option.label}`,
+          })),
+        }
+      : {}),
     questionSet: {
       requestId: draft.interaction.requestId,
       questionId: question.questionId,
       kind: question.kind,
+      presentationMode,
       requestTitle: draft.interaction.title,
       prompt: question.prompt,
       position: draft.currentIndex + 1,
       total: draft.interaction.questions.length,
-      options: request.options
-        .filter((option) => optionIds.has(option.optionId))
-        .map((option) => ({
-          token: option.token,
-          label: option.label,
-          selected: selected.has(option.optionId),
-        })),
+      options: questionOptions,
       ...(draft.backToken === undefined ? {} : { backToken: draft.backToken }),
       ...(draft.nextToken === undefined ? {} : { nextToken: draft.nextToken }),
       submitToken: draft.submitToken,

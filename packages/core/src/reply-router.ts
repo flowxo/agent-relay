@@ -23,6 +23,7 @@ import type {
   NumberedChoiceResolutionResult,
   PendingRequestRecord,
   QuestionSetDraftRecord,
+  QuestionSetNumberedChoiceMutationResult,
   QuestionSetTextMutationResult,
   RelayStore,
   ResolutionResult,
@@ -414,6 +415,23 @@ export class TelegramReplyRouter {
         return { outcome: "uncorrelated", updateId };
       }
       return await this.finishQuestionSetText(
+        updateId,
+        topicId,
+        correlation.request.transportMessageId,
+        correlation.mutation,
+      );
+    }
+    if (correlation.outcome === "choice_drafted") {
+      if (correlation.request.transportMessageId === undefined) {
+        this.diagnoseTextCorrelation(
+          updateId,
+          "telegram.question-set-choice-undelivered",
+          "Numbered structured choice matched a request without a retained delivery receipt",
+          "error",
+        );
+        return { outcome: "uncorrelated", updateId };
+      }
+      return await this.finishQuestionSetNumberedChoice(
         updateId,
         topicId,
         correlation.request.transportMessageId,
@@ -1073,6 +1091,73 @@ export class TelegramReplyRouter {
     };
   }
 
+  private async finishQuestionSetNumberedChoice(
+    updateId: number,
+    topicId: string,
+    messageId: string,
+    result: QuestionSetNumberedChoiceMutationResult,
+  ): Promise<ReplyRouteResult> {
+    if (result.outcome === "invalid_choice") {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.question-set-numbered-invalid-choice",
+        "Numbered structured choice did not identify an option on the current question",
+      );
+      await this.sendTopicGuidance(updateId, topicId, "invalid-choice");
+      return { outcome: "invalid-choice", updateId };
+    }
+    if (
+      result.outcome === "not_found" ||
+      result.outcome === "identity_mismatch"
+    ) {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.question-set-numbered-session-mismatch",
+        "Numbered structured choice did not match the retained request card and session",
+      );
+      return { outcome: "uncorrelated", updateId };
+    }
+    if (result.outcome === "updated" || result.outcome === "unchanged") {
+      await this.editQuestionSetDraft(messageId, result.request, result.draft);
+      this.diagnoseTextCorrelation(
+        updateId,
+        `telegram.question-set-numbered-${result.outcome}`,
+        `Numbered structured choice draft outcome: ${result.outcome}`,
+        "info",
+      );
+      return {
+        outcome:
+          result.outcome === "updated" ? "draft-updated" : "draft-unchanged",
+        updateId,
+      };
+    }
+    if (
+      result.outcome === "incomplete" ||
+      result.outcome === "invalid_transition" ||
+      result.outcome === "selection_limit" ||
+      result.outcome === "unsupported_question" ||
+      result.outcome === "moved"
+    ) {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.question-set-numbered-incompatible",
+        "Numbered structured choice was not valid for the current question",
+      );
+      await this.sendTopicGuidance(updateId, topicId, "incompatible");
+      return { outcome: "draft-rejected", updateId };
+    }
+    await this.editQuestionSetFinal(messageId, result.request, result.draft);
+    return {
+      outcome:
+        result.outcome === "duplicate"
+          ? "duplicate-answer"
+          : result.outcome === "stale"
+            ? "draft-rejected"
+            : result.outcome,
+      updateId,
+    };
+  }
+
   private async handleExplicitQuestionSetText(
     updateId: number,
     topicId: string,
@@ -1081,6 +1166,50 @@ export class TelegramReplyRouter {
     text: string,
     receivedAt: string,
   ): Promise<ReplyRouteResult> {
+    const draft = this.store.getQuestionSetDraft(request.correlationId);
+    const question = draft?.interaction.questions[draft.currentIndex];
+    if (
+      draft !== undefined &&
+      draft.presentationMode === "numbered-text" &&
+      (question?.kind === "confirm" || question?.kind === "single-select")
+    ) {
+      const optionIds =
+        question.kind === "confirm"
+          ? [question.confirm.optionId, question.decline.optionId]
+          : question.options.map((option) => option.optionId);
+      const normalized = text.trim();
+      const optionIndex = /^[1-9][0-9]*$/.test(normalized)
+        ? Number(normalized) - 1
+        : -1;
+      const optionId = optionIds[optionIndex];
+      const option =
+        optionId === undefined
+          ? undefined
+          : request.options.find(
+              (candidate) => candidate.optionId === optionId,
+            );
+      return await this.finishQuestionSetNumberedChoice(
+        updateId,
+        topicId,
+        messageId,
+        option === undefined
+          ? { outcome: "invalid_choice", request, draft }
+          : this.store.mutateQuestionSet({
+              action: "choose",
+              token: option.token,
+              now: receivedAt,
+              expected: {
+                machineId: request.machineId,
+                harness: request.harness,
+                sessionId: request.sessionId,
+                ...(request.turnId === undefined
+                  ? {}
+                  : { turnId: request.turnId }),
+                transportMessageId: messageId,
+              },
+            }),
+      );
+    }
     return await this.finishQuestionSetText(
       updateId,
       topicId,

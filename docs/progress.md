@@ -201,6 +201,18 @@
   from diagnostics and Telegram card edits, final cards expose only a character
   count, and durable draft/final text follows the documented bounded request
   retention window.
+- FXO-1065 is green locally. Runtime-validated provider observations record
+  proven versus assumed status, evidence class, observed version, sanitized
+  fixture, and official documentation. Every structured delivery now gates on
+  the event-scoped harness continuation contract and the transport's advertised
+  features, limits, and presentation modes. The request's ordered fallback is
+  deterministic and persisted with the draft: compact buttons, mixed topic-bound
+  direct text, or numbered confirm/single-select steps. Numbered structured
+  replies retain exact request/card/session/topic correlation and update only
+  the draft before Submit. Missing, malformed, assumed, or incapable providers
+  and undeclared/unimplemented modes dead-letter visibly before transport
+  delivery. Telegram Bot API 10.2 and the fake transport do not advertise local
+  web handoff; that remains a Phase 3 assumption.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -253,7 +265,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 198 tests across 30 test files, including
+- The implementation gates pass all 211 tests across 31 test files, including
   the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
   fallback privacy, inline and late continuation, owned-child exit observation,
   stale answer rejection, concurrent-session isolation, installation rollback,

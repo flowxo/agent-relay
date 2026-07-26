@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
@@ -12,6 +13,7 @@ import {
 
 import type { FakeDelivery } from "./fake-transport.js";
 import { FakeTelegramTransport } from "./fake-transport.js";
+import { renderDeliveryText } from "./message.js";
 import { TelegramReplyRouter } from "./reply-router.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
@@ -105,6 +107,42 @@ function questionSetEvent(
   };
 }
 
+function numberedQuestionSetEvent(): AgentAttentionEventV1 {
+  const base = questionSetEvent(
+    "correlation_wizard_numbered",
+    "session_wizard_numbered",
+  );
+  if (base.request?.interaction === undefined) {
+    throw new Error("test question set lost its interaction");
+  }
+  const interaction = {
+    ...base.request.interaction,
+    questions: [
+      {
+        questionId: "question_numbered_0001",
+        kind: "single-select" as const,
+        prompt: "Choose one of the compact numbered options",
+        options: Array.from({ length: 12 }, (_, index) => ({
+          optionId: `numbered_option_${String(index + 1).padStart(8, "0")}`,
+          label: `Numbered ${String(index + 1)}`,
+        })),
+      },
+    ],
+    fallback: {
+      preferredMode: "buttons" as const,
+      alternativeModes: ["numbered-text" as const],
+      whenUnavailable: "use-alternative" as const,
+    },
+  };
+  return {
+    ...base,
+    request: {
+      ...base.request,
+      interaction,
+    },
+  };
+}
+
 class InspectingTelegramTransport extends FakeTelegramTransport {
   public beforeAcknowledgement: ((text: string) => void) | undefined;
 
@@ -170,6 +208,115 @@ function optionToken(
 }
 
 describe("durable ordered Telegram question sets", () => {
+  it("falls back to a topic-correlated numbered draft and submits it", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "agent-relay-numbered-set-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "relay.sqlite");
+    const testRuntime = runtime(new RelayStore(databasePath));
+    const input = numberedQuestionSetEvent();
+    testRuntime.service.ingest(input);
+    await expect(testRuntime.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    const delivery = testRuntime.transport.deliveries[0]!;
+    expect(delivery.message.questionSet?.presentationMode).toBe(
+      "numbered-text",
+    );
+    expect(delivery.message.choices).toHaveLength(12);
+    expect(renderDeliveryText(delivery.message)).toContain("12. Numbered 12");
+    expect(
+      testRuntime.store.getQuestionSetDraft("correlation_wizard_numbered")
+        ?.presentationMode,
+    ).toBe("numbered-text");
+
+    expect(
+      await testRuntime.router.handle({
+        update_id: 290,
+        message: {
+          message_id: 8290,
+          message_thread_id: Number(delivery.context.topicId),
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "12",
+        },
+      }),
+    ).toEqual({ outcome: "draft-updated", updateId: 290 });
+    expect(
+      testRuntime.store.getQuestionSetDraft("correlation_wizard_numbered")
+        ?.answers,
+    ).toEqual([
+      {
+        questionId: "question_numbered_0001",
+        kind: "single-select",
+        optionId: "numbered_option_00000012",
+      },
+    ]);
+
+    const controls = currentControls(testRuntime)!;
+    expect(
+      await testRuntime.router.handle(
+        callback(
+          delivery,
+          291,
+          questionSetCallbackData("submit", controls.submitToken),
+        ),
+      ),
+    ).toEqual({ outcome: "answered", updateId: 291 });
+    expect(
+      testRuntime.store.getPendingRequest("correlation_wizard_numbered")?.state,
+    ).toBe("answered");
+    testRuntime.store.close();
+    const reopened = new RelayStore(databasePath);
+    expect(
+      reopened.getQuestionSetDraft("correlation_wizard_numbered"),
+    ).toMatchObject({
+      state: "submitted",
+      presentationMode: "numbered-text",
+      answers: [
+        {
+          questionId: "question_numbered_0001",
+          optionId: "numbered_option_00000012",
+        },
+      ],
+    });
+    reopened.close();
+  });
+
+  it("migrates pre-negotiation drafts before persisting a presentation mode", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "agent-relay-mode-migrate-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "relay.sqlite");
+    const legacy = new Database(databasePath);
+    legacy.exec(`
+      CREATE TABLE question_set_drafts (
+        correlation_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        current_index INTEGER NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 0,
+        submit_token TEXT NOT NULL UNIQUE,
+        cancel_token TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    legacy.close();
+
+    const testRuntime = runtime(new RelayStore(databasePath));
+    const input = questionSetEvent(
+      "correlation_wizard_migrated",
+      "session_wizard_migrated",
+    );
+    testRuntime.service.ingest(input);
+    await expect(testRuntime.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    expect(
+      testRuntime.store.getQuestionSetDraft("correlation_wizard_migrated")
+        ?.presentationMode,
+    ).toBe("buttons");
+    testRuntime.store.close();
+  });
+
   it("navigates, reviews, edits, and submits one ordered answer atomically", async () => {
     const testRuntime = runtime();
     const input = questionSetEvent(

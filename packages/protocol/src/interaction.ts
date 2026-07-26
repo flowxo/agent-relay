@@ -449,6 +449,40 @@ export const InteractionProviderCapabilitiesV1Schema = z
     );
   });
 
+export const InteractionCapabilityEvidenceSchema = z.enum([
+  "official-docs",
+  "official-docs+local-help",
+  "live-canary",
+  "event-contract",
+  "configured",
+  "fake",
+]);
+
+export const InteractionProviderObservationV1Schema = z
+  .object({
+    schema: z.literal("agent-interaction-provider-observation.v1"),
+    capabilities: InteractionProviderCapabilitiesV1Schema,
+    status: z.enum(["proven", "assumed"]),
+    evidence: InteractionCapabilityEvidenceSchema,
+    observedVersion: z.string().trim().min(1).max(120).optional(),
+    fixture: z.string().trim().min(1).max(240).optional(),
+    documentation: z.url().max(500).optional(),
+    note: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict()
+  .superRefine((observation, context) => {
+    if (
+      observation.capabilities.providerKind === "harness" &&
+      observation.observedVersion === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "harness observations require an observed version",
+        path: ["observedVersion"],
+      });
+    }
+  });
+
 export type InteractionLifecycleState = z.infer<
   typeof InteractionLifecycleStateSchema
 >;
@@ -475,6 +509,12 @@ export type InteractionLifecycleV1 = z.infer<
 >;
 export type InteractionProviderCapabilitiesV1 = z.infer<
   typeof InteractionProviderCapabilitiesV1Schema
+>;
+export type InteractionCapabilityEvidence = z.infer<
+  typeof InteractionCapabilityEvidenceSchema
+>;
+export type InteractionProviderObservationV1 = z.infer<
+  typeof InteractionProviderObservationV1Schema
 >;
 
 export interface InteractionContractIssue {

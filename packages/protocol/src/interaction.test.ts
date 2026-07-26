@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   InteractionLifecycleV1Schema,
   InteractionProviderCapabilitiesV1Schema,
+  InteractionProviderObservationV1Schema,
   OperatorInteractionAnswerV1Schema,
   OperatorInteractionRequestV1Schema,
   encodeInteractionAnswer,
@@ -378,11 +379,35 @@ describe("structured operator interaction contracts", () => {
       fixture("provider-capabilities.v1.json"),
     );
     expect(capabilities.features).toContain("ordered-question-set");
+    const observation = InteractionProviderObservationV1Schema.parse(
+      fixture("provider-observation-telegram.v1.json"),
+    );
+    expect(observation).toMatchObject({
+      status: "proven",
+      evidence: "live-canary",
+      observedVersion: "Telegram Bot API 10.2",
+      capabilities: {
+        presentationModes: ["buttons", "direct-text", "numbered-text"],
+      },
+    });
+    expect(observation.capabilities.presentationModes).not.toContain(
+      "web-handoff",
+    );
 
     expect(
       InteractionProviderCapabilitiesV1Schema.safeParse({
         ...capabilities,
         features: ["confirm", "confirm"],
+      }).success,
+    ).toBe(false);
+    expect(
+      InteractionProviderObservationV1Schema.safeParse({
+        ...observation,
+        capabilities: {
+          ...observation.capabilities,
+          providerKind: "harness",
+        },
+        observedVersion: undefined,
       }).success,
     ).toBe(false);
 

@@ -1,5 +1,6 @@
 export * from "./card-action.js";
 export * from "./fake-transport.js";
+export * from "./interaction-negotiation.js";
 export * from "./logger.js";
 export * from "./message.js";
 export * from "./redaction.js";

@@ -840,6 +840,7 @@ describe("TelegramBotTransport", () => {
           requestId: "request_release_12345678",
           questionId: "question_units_000001",
           kind: "multi-select",
+          presentationMode: "buttons",
           requestTitle: "Release configuration",
           prompt: "Which units should run?",
           position: 2,

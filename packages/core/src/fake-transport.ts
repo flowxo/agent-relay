@@ -9,6 +9,14 @@ import type {
   TopicReceipt,
 } from "./transport.js";
 import { TopicUnavailableError, TransportError } from "./transport.js";
+import {
+  InteractionProviderObservationV1Schema,
+  MAX_INTERACTION_OPTIONS,
+  MAX_INTERACTION_QUESTIONS,
+  MAX_INTERACTION_REQUEST_BYTES,
+  MAX_INTERACTION_TEXT_LENGTH,
+  type InteractionProviderObservationV1,
+} from "@agent-relay/protocol";
 
 export interface FakeDelivery {
   message: DeliveryMessage;
@@ -33,6 +41,42 @@ export class FakeTelegramTransport
 {
   public readonly name = "fake-telegram";
   public readonly topicScope = "fake:private-chat";
+
+  public observeInteractionCapabilities(
+    observedAt: string,
+  ): InteractionProviderObservationV1 {
+    return InteractionProviderObservationV1Schema.parse({
+      schema: "agent-interaction-provider-observation.v1",
+      capabilities: {
+        schema: "agent-interaction-capabilities.v1",
+        providerId: "transport_fake_telegram",
+        providerKind: "transport",
+        observedAt,
+        features: [
+          "confirm",
+          "single-select",
+          "multi-select",
+          "free-text",
+          "ordered-question-set",
+          "durable-drafts",
+          "message-updates",
+        ],
+        presentationModes: ["buttons", "direct-text", "numbered-text"],
+        limits: {
+          maxQuestions: MAX_INTERACTION_QUESTIONS,
+          maxOptionsPerQuestion: MAX_INTERACTION_OPTIONS,
+          maxTextLength: MAX_INTERACTION_TEXT_LENGTH,
+          maxPayloadBytes: MAX_INTERACTION_REQUEST_BYTES,
+        },
+      },
+      status: "proven",
+      evidence: "fake",
+      observedVersion: "fake-telegram.v1",
+      fixture:
+        "packages/protocol/fixtures/interactions/provider-capabilities.v1.json",
+      note: "In-memory transport used to prove routing, retries, correlation, and interaction state without a bot token.",
+    });
+  }
   public readonly attempts: Array<{
     eventId: string;
     outcome: "delivered" | "failed" | "deduplicated";

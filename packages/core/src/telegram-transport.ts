@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-import { sha256 } from "@agent-relay/protocol";
+import {
+  InteractionProviderObservationV1Schema,
+  MAX_INTERACTION_OPTIONS,
+  MAX_INTERACTION_QUESTIONS,
+  MAX_INTERACTION_REQUEST_BYTES,
+  MAX_INTERACTION_TEXT_LENGTH,
+  sha256,
+  type InteractionProviderObservationV1,
+} from "@agent-relay/protocol";
 
 import { cardActionCallbackData } from "./card-action.js";
 import { renderDeliveryText } from "./message.js";
@@ -278,19 +286,22 @@ function inlineKeyboard(
             },
           ],
         ];
-  const questionSetButtons = (message.questionSet?.options ?? []).map(
-    (option) => ({
-      text: `${option.selected ? "✓" : "○"} ${option.label}`,
-      callback_data: questionSetCallbackData(
-        message.questionSet?.kind === "multi-select"
-          ? option.selected
-            ? "unselect"
-            : "select"
-          : "choose",
-        option.token,
-      ),
-    }),
-  );
+  const questionSetButtons =
+    message.questionSet !== undefined &&
+    message.questionSet.presentationMode !== "numbered-text" &&
+    message.questionSet.kind !== "free-text"
+      ? message.questionSet.options.map((option) => ({
+          text: `${option.selected ? "✓" : "○"} ${option.label}`,
+          callback_data: questionSetCallbackData(
+            message.questionSet?.kind === "multi-select"
+              ? option.selected
+                ? "unselect"
+                : "select"
+              : "choose",
+            option.token,
+          ),
+        }))
+      : [];
   const questionSetActions =
     message.questionSet === undefined
       ? []
@@ -394,6 +405,43 @@ export class TelegramBotTransport
     )}`;
     this.fetchImplementation = options.fetch ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 8_000;
+  }
+
+  public observeInteractionCapabilities(
+    observedAt: string,
+  ): InteractionProviderObservationV1 {
+    return InteractionProviderObservationV1Schema.parse({
+      schema: "agent-interaction-provider-observation.v1",
+      capabilities: {
+        schema: "agent-interaction-capabilities.v1",
+        providerId: "transport_telegram_bot_api",
+        providerKind: "transport",
+        observedAt,
+        features: [
+          "confirm",
+          "single-select",
+          "multi-select",
+          "free-text",
+          "ordered-question-set",
+          "durable-drafts",
+          "message-updates",
+        ],
+        presentationModes: ["buttons", "direct-text", "numbered-text"],
+        limits: {
+          maxQuestions: MAX_INTERACTION_QUESTIONS,
+          maxOptionsPerQuestion: MAX_INTERACTION_OPTIONS,
+          maxTextLength: MAX_INTERACTION_TEXT_LENGTH,
+          maxPayloadBytes: MAX_INTERACTION_REQUEST_BYTES,
+        },
+      },
+      status: "proven",
+      evidence: "live-canary",
+      observedVersion: "Telegram Bot API 10.2",
+      fixture:
+        "packages/core/fixtures/telegram/question-set-send-message.v10.2.json",
+      documentation: "https://core.telegram.org/bots/api",
+      note: "Inline callbacks, topic-bound text, numbered replies, and message edits are implemented; local web handoff is intentionally not advertised.",
+    });
   }
 
   public async deliver(

@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import {
   AgentAttentionEventV1Schema,
   encodeInteractionAnswer,
+  InteractionPresentationModeSchema,
   InteractionQuestionAnswerSchema,
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
@@ -16,6 +17,7 @@ import type {
   AgentAttentionEventV1,
   EventType,
   Harness,
+  InteractionPresentationMode,
   InteractionQuestion,
   InteractionQuestionAnswer,
   OperatorInteractionRequestV1,
@@ -326,6 +328,7 @@ export interface QuestionSetDraftRecord {
   state: QuestionSetDraftState;
   currentIndex: number;
   revision: number;
+  presentationMode?: InteractionPresentationMode;
   submitToken: string;
   cancelToken: string;
   backToken?: string;
@@ -398,6 +401,14 @@ export type QuestionSetTextMutationResult =
       draft?: QuestionSetDraftRecord;
     };
 
+export type QuestionSetNumberedChoiceMutationResult =
+  | QuestionSetMutationResult
+  | {
+      outcome: "invalid_choice";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    };
+
 export type ResolutionOutcome =
   | "answered"
   | "duplicate"
@@ -461,6 +472,12 @@ export type TopicTextCorrelationResult =
       eligibleCount: 1;
       request: PendingRequestRecord;
       mutation: QuestionSetTextMutationResult;
+    }
+  | {
+      outcome: "choice_drafted";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+      mutation: QuestionSetNumberedChoiceMutationResult;
     };
 
 export type ResumeCommandState =
@@ -620,6 +637,7 @@ interface QuestionSetDraftRow {
   state: QuestionSetDraftState;
   current_index: number;
   revision: number;
+  presentation_mode: InteractionPresentationMode | null;
   submit_token: string;
   cancel_token: string;
   created_at: string;
@@ -1002,6 +1020,7 @@ export class RelayStore {
         state TEXT NOT NULL,
         current_index INTEGER NOT NULL DEFAULT 0,
         revision INTEGER NOT NULL DEFAULT 0,
+        presentation_mode TEXT,
         submit_token TEXT NOT NULL UNIQUE,
         cancel_token TEXT NOT NULL UNIQUE,
         created_at TEXT NOT NULL,
@@ -1100,6 +1119,16 @@ export class RelayStore {
           LIMIT 1
         )
       `);
+    }
+    const questionSetColumns = this.database
+      .prepare("PRAGMA table_info(question_set_drafts)")
+      .all() as Array<{ name: string }>;
+    if (
+      !questionSetColumns.some((column) => column.name === "presentation_mode")
+    ) {
+      this.database.exec(
+        "ALTER TABLE question_set_drafts ADD COLUMN presentation_mode TEXT",
+      );
     }
   }
 
@@ -3378,6 +3407,13 @@ export class RelayStore {
       state: row.state,
       currentIndex: row.current_index,
       revision: row.revision,
+      ...(row.presentation_mode === null
+        ? {}
+        : {
+            presentationMode: InteractionPresentationModeSchema.parse(
+              row.presentation_mode,
+            ),
+          }),
       submitToken: row.submit_token,
       cancelToken: row.cancel_token,
       ...(step.back_token === null ? {} : { backToken: step.back_token }),
@@ -3414,6 +3450,35 @@ export class RelayStore {
     return row === undefined
       ? undefined
       : this.questionSetDraftFromRow(row, interaction);
+  }
+
+  public setQuestionSetPresentationMode(
+    correlationId: string,
+    mode: InteractionPresentationMode,
+    now: string,
+  ): QuestionSetDraftRecord {
+    assertIsoCutoff(now, "question-set presentation time");
+    const presentationMode = InteractionPresentationModeSchema.parse(mode);
+    const changed = this.database
+      .prepare(
+        `
+        UPDATE question_set_drafts
+        SET presentation_mode = ?, updated_at = ?
+        WHERE correlation_id = ?
+          AND (presentation_mode IS NULL OR presentation_mode = ?)
+      `,
+      )
+      .run(presentationMode, now, correlationId, presentationMode).changes;
+    if (changed !== 1) {
+      throw new Error(
+        "question-set presentation mode changed after it was selected",
+      );
+    }
+    const draft = this.getQuestionSetDraft(correlationId);
+    if (draft === undefined) {
+      throw new Error("question-set draft disappeared while selecting a mode");
+    }
+    return draft;
   }
 
   public getQuestionSetDraftByActionToken(
@@ -4413,11 +4478,21 @@ export class RelayStore {
                     ON events.event_id = pending_requests.event_id
                   WHERE draft.correlation_id =
                     pending_requests.correlation_id
-                    AND json_extract(
-                      events.payload_json,
-                      '$.request.interaction.questions[' ||
-                        draft.current_index || '].kind'
-                    ) = 'free-text'
+                    AND (
+                      json_extract(
+                        events.payload_json,
+                        '$.request.interaction.questions[' ||
+                          draft.current_index || '].kind'
+                      ) = 'free-text'
+                      OR (
+                        draft.presentation_mode = 'numbered-text'
+                        AND json_extract(
+                          events.payload_json,
+                          '$.request.interaction.questions[' ||
+                            draft.current_index || '].kind'
+                        ) IN ('confirm', 'single-select')
+                      )
+                    )
                 )
               )
             )
@@ -4450,24 +4525,56 @@ export class RelayStore {
             "eligible question-set text request is not delivered",
           );
         }
+        const draft = this.getQuestionSetDraft(request.correlationId);
+        const question = draft?.interaction.questions[draft.currentIndex];
+        if (draft === undefined || question === undefined) {
+          throw new Error("eligible question-set draft is missing");
+        }
+        const expected = {
+          machineId: request.machineId,
+          harness: request.harness,
+          sessionId: request.sessionId,
+          ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+          transportMessageId: request.transportMessageId,
+        };
+        if (question.kind === "free-text") {
+          return {
+            outcome: "drafted",
+            eligibleCount: 1,
+            request,
+            mutation: this.setQuestionSetText({
+              correlationId: request.correlationId,
+              text: input.answer,
+              now: input.now,
+              expected,
+            }),
+          };
+        }
+        const optionIds = this.questionSetOptionIds(question);
+        const normalized = input.answer.trim();
+        const optionIndex = /^[1-9][0-9]*$/.test(normalized)
+          ? Number(normalized) - 1
+          : -1;
+        const optionId = optionIds[optionIndex];
+        const option =
+          optionId === undefined
+            ? undefined
+            : request.options.find(
+                (candidate) => candidate.optionId === optionId,
+              );
         return {
-          outcome: "drafted",
+          outcome: "choice_drafted",
           eligibleCount: 1,
           request,
-          mutation: this.setQuestionSetText({
-            correlationId: request.correlationId,
-            text: input.answer,
-            now: input.now,
-            expected: {
-              machineId: request.machineId,
-              harness: request.harness,
-              sessionId: request.sessionId,
-              ...(request.turnId === undefined
-                ? {}
-                : { turnId: request.turnId }),
-              transportMessageId: request.transportMessageId,
-            },
-          }),
+          mutation:
+            option === undefined
+              ? { outcome: "invalid_choice", request, draft }
+              : this.mutateQuestionSet({
+                  action: "choose",
+                  token: option.token,
+                  now: input.now,
+                  expected,
+                }),
         };
       }
       if (input.answer.trim().length === 0) {

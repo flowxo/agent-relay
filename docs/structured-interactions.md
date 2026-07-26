@@ -74,8 +74,41 @@ and harness evidence:
 
 Each request declares one preferred presentation plus an ordered, duplicate-free
 fallback list. `reject` permits no alternatives; `use-alternative` requires at
-least one. Later capability negotiation must choose from this declared order or
-reject explicitly. It may not silently present an unsupported interaction.
+least one.
+
+Before delivering a structured request, the relay now validates one
+`agent-interaction-provider-observation.v1` for the transport and derives a
+version-scoped harness observation from the validated attention event.
+Observations distinguish `proven` behavior from `assumed` behavior and record
+their evidence class, observed version, sanitized fixture, and official
+documentation where applicable. Assumed capability records cannot activate an
+interaction.
+
+Negotiation derives the required question features and bounds, verifies that the
+harness can accept a continuation (and a permission decision when applicable),
+then tries only the request's declared modes in order. The selected mode is
+persisted on the SQLite draft before transport delivery, so restart and
+subsequent message edits cannot change presentation silently. The implemented
+Telegram modes are:
+
+- `buttons` for compact confirm, single-select, and multi-select steps, with
+  topic-bound text on mixed free-text steps;
+- `direct-text` for sets containing free-text steps, with compact buttons for
+  companion choice steps; and
+- `numbered-text` for confirm/single-select sets, including ordered sets.
+
+An oversized single-select first rejects the compact button attempt, then may
+use numbered text only when that alternative was declared. The displayed number
+maps back to the current step's durable option token and remains bound to the
+exact request, delivered card, session, and topic. It updates the draft but does
+not bypass final Submit.
+
+`web-handoff` remains protocol vocabulary for the Phase 3 local companion, but
+the current Telegram and fake transports do not advertise it and the Phase 2
+negotiator rejects even a synthetic claim until the local web authority exists.
+A transport without a valid typed record, an assumed record, an incapable
+harness, a provider-limit violation, or an exhausted fallback list is
+dead-lettered with a durable diagnostic before any interactive card is sent.
 
 ## Relationship to Notifications contracts
 
@@ -236,9 +269,10 @@ control.
 
 Sanitized fixtures live in `packages/protocol/fixtures/interactions`. They
 contain a mixed ordered question set, its compatible answer, provider
-capabilities, and a privacy/evidence manifest. Tests parse those files at
-runtime and cover malformed, oversized, duplicate-ID, empty-option, stale, and
-incompatible variants. All fixture content and identifiers are synthetic.
+capabilities, a Telegram Bot API 10.2 observation, and a privacy/evidence
+manifest. Tests parse those files at runtime and cover malformed, oversized,
+duplicate-ID, empty-option, stale, and incompatible variants. All fixture
+content and identifiers are synthetic.
 
 Sanitized Telegram Bot API 10.2 projections live in
 `packages/core/fixtures/telegram`, including single-choice, multi-select, and

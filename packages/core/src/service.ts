@@ -4,8 +4,12 @@ import type {
   SessionHeartbeatV1,
   SessionRegistrationV1,
 } from "@agent-relay/protocol";
-import { sha256 } from "@agent-relay/protocol";
+import {
+  InteractionProviderObservationV1Schema,
+  sha256,
+} from "@agent-relay/protocol";
 
+import { negotiateInteraction } from "./interaction-negotiation.js";
 import type { RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
 import {
@@ -35,6 +39,7 @@ import type {
 } from "./transport.js";
 import {
   asTransportError,
+  isInteractionCapabilityTransport,
   isInteractiveTransport,
   isTopicTransport,
   TopicUnavailableError,
@@ -676,11 +681,59 @@ export class RelayService {
           );
         }
         const pending = this.store.getPendingForEvent(item.event.eventId);
+        if (
+          pending !== undefined &&
+          pending.requestKind !== "question-set" &&
+          !item.event.capabilities.inlineContinue &&
+          !item.event.capabilities.lateResume
+        ) {
+          const diagnosedAt = this.now().toISOString();
+          this.reportDiagnostic({
+            schema: "agent-relay-diagnostic.v1",
+            diagnosticId: `diag_interaction_harness_unsupported_${sha256(
+              item.event.eventId,
+            ).slice(0, 36)}`,
+            recordedAt: diagnosedAt,
+            source: "daemon",
+            level: "error",
+            code: "interaction.harness-continuation-unsupported",
+            message:
+              "Operator input was not delivered because the harness cannot continue this session",
+          });
+          throw new TransportError(
+            "operator input is unsupported because the harness cannot continue this session",
+            "interaction-harness-continuation-unsupported",
+            false,
+          );
+        }
+        if (
+          pending?.requestKind === "permission" &&
+          !item.event.capabilities.permissionDecision
+        ) {
+          const diagnosedAt = this.now().toISOString();
+          this.reportDiagnostic({
+            schema: "agent-relay-diagnostic.v1",
+            diagnosticId: `diag_interaction_permission_unsupported_${sha256(
+              item.event.eventId,
+            ).slice(0, 36)}`,
+            recordedAt: diagnosedAt,
+            source: "daemon",
+            level: "error",
+            code: "interaction.harness-permission-unsupported",
+            message:
+              "Permission controls were not delivered because the harness cannot apply the decision",
+          });
+          throw new TransportError(
+            "permission controls are unsupported for this harness session",
+            "interaction-harness-permission-unsupported",
+            false,
+          );
+        }
         const multiSelectDraft =
           pending?.requestKind === "multi-select"
             ? this.store.getMultiSelectDraft(pending.correlationId)
             : undefined;
-        const questionSetDraft =
+        let questionSetDraft =
           pending?.requestKind === "question-set"
             ? this.store.getQuestionSetDraft(pending.correlationId)
             : undefined;
@@ -699,6 +752,91 @@ export class RelayService {
           throw new Error(
             `question-set draft ${pending.correlationId} disappeared`,
           );
+        }
+        if (
+          pending?.requestKind === "question-set" &&
+          questionSetDraft !== undefined
+        ) {
+          const interaction = item.event.request?.interaction;
+          if (interaction === undefined) {
+            throw new TransportError(
+              "validated question-set request lost its interaction contract",
+              "interaction-contract-missing",
+              false,
+            );
+          }
+          const observedAt = this.now().toISOString();
+          const transportObservation = isInteractionCapabilityTransport(
+            this.transport,
+          )
+            ? InteractionProviderObservationV1Schema.safeParse(
+                this.transport.observeInteractionCapabilities(observedAt),
+              )
+            : undefined;
+          if (
+            transportObservation !== undefined &&
+            !transportObservation.success
+          ) {
+            this.reportDiagnostic({
+              schema: "agent-relay-diagnostic.v1",
+              diagnosticId: `diag_interaction_capability_invalid_${sha256(
+                item.event.eventId,
+              ).slice(0, 36)}`,
+              recordedAt: observedAt,
+              source: "daemon",
+              level: "error",
+              code: "interaction.capability-record-invalid",
+              message:
+                "Notification transport returned an invalid interaction capability record",
+            });
+            throw new TransportError(
+              "notification transport returned an invalid interaction capability record",
+              "interaction-capability-record-invalid",
+              false,
+            );
+          }
+          const negotiation = negotiateInteraction({
+            request: interaction,
+            event: item.event,
+            ...(transportObservation?.success === true
+              ? { transport: transportObservation.data }
+              : {}),
+          });
+          if (negotiation.outcome === "unsupported") {
+            this.reportDiagnostic({
+              schema: "agent-relay-diagnostic.v1",
+              diagnosticId: `diag_interaction_unsupported_${sha256(
+                `${item.event.eventId}\u001f${negotiation.code}`,
+              ).slice(0, 36)}`,
+              recordedAt: observedAt,
+              source: "daemon",
+              level: "error",
+              code: `interaction.${negotiation.code}`,
+              message: `Structured interaction was not delivered: ${negotiation.reason}`,
+            });
+            throw new TransportError(
+              `structured interaction is unsupported: ${negotiation.reason}`,
+              `interaction-${negotiation.code}`,
+              false,
+            );
+          }
+          questionSetDraft = this.store.setQuestionSetPresentationMode(
+            pending.correlationId,
+            negotiation.mode,
+            observedAt,
+          );
+          this.logger.log({
+            level: "info",
+            code: "interaction.mode-selected",
+            message: "structured interaction presentation mode selected",
+            at: observedAt,
+            details: {
+              eventId: item.event.eventId,
+              mode: negotiation.mode,
+              transportProviderId: negotiation.transportProviderId,
+              harnessProviderId: negotiation.harnessProviderId,
+            },
+          });
         }
         const message =
           pending !== undefined && questionSetDraft !== undefined

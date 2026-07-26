@@ -1,4 +1,8 @@
 import type { CardActionKind } from "./card-action.js";
+import type {
+  InteractionPresentationMode,
+  InteractionProviderObservationV1,
+} from "@agent-relay/protocol";
 
 export interface DeliveryChoice {
   token: string;
@@ -17,6 +21,7 @@ export interface DeliveryQuestionSet {
   requestId: string;
   questionId: string;
   kind: "confirm" | "single-select" | "multi-select" | "free-text";
+  presentationMode: InteractionPresentationMode;
   requestTitle: string;
   prompt: string;
   position: number;
@@ -82,6 +87,12 @@ export interface NotificationTransport {
   ): Promise<DeliveryReceipt>;
 }
 
+export interface InteractionCapabilityTransport extends NotificationTransport {
+  observeInteractionCapabilities(
+    observedAt: string,
+  ): InteractionProviderObservationV1;
+}
+
 export interface TopicNotificationTransport extends NotificationTransport {
   readonly topicScope: string;
   createTopic(
@@ -120,6 +131,15 @@ export function isInteractiveTransport(
     typeof transport.editDeliveryMessage === "function" &&
     "editResolvedMessage" in transport &&
     typeof transport.editResolvedMessage === "function"
+  );
+}
+
+export function isInteractionCapabilityTransport(
+  transport: NotificationTransport,
+): transport is InteractionCapabilityTransport {
+  return (
+    "observeInteractionCapabilities" in transport &&
+    typeof transport.observeInteractionCapabilities === "function"
   );
 }
 
