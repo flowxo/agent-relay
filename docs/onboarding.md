@@ -216,8 +216,16 @@ normally `~/.agent-relay/web-credential.json`. It must remain a regular
 mode-`0600` file. This credential is independent from Telegram and
 `AGENT_RELAY_DAEMON_TOKEN`; the daemon never prints its bearer or CSRF values.
 The local browser API is documented in [`local-web-api.md`](./local-web-api.md).
-It is available before a graphical UI, so its authenticated read models and
-resumable stream can be exercised with `curl` without a real bot token.
+Its authenticated read models and resumable stream can also be exercised with
+`curl` without a real bot token.
+
+Open `http://127.0.0.1:4317/ui/` for the compact session board. Copy only the
+`token` field from the private web credential into the connection form. The
+board keeps it in page memory, shows stable session identities, filters real
+running/waiting/crashed/stale/muted/ended lane states, and maintains a global
+expiry-ordered attention queue. Reloading deliberately requires the credential
+again. A disconnected, degraded, or stale board keeps those states visually
+distinct instead of presenting cached data as live.
 
 Starting after an offline period may replay previously spooled events. Stable
 event IDs keep replay idempotent, but events that were never delivered before

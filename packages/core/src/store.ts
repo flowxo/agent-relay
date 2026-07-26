@@ -1456,7 +1456,7 @@ export class RelayStore {
       });
   }
 
-  private sessionLaneState(input: {
+  public getSessionLaneState(input: {
     machineId: string;
     harness: Harness;
     sessionId: string;
@@ -1524,7 +1524,7 @@ export class RelayStore {
       ...(row.branch === null ? {} : { branch: row.branch }),
       shortSessionId: row.short_session_id,
       lifecycleState: row.lifecycle_state,
-      laneState: this.sessionLaneState({
+      laneState: this.getSessionLaneState({
         machineId: row.machine_id,
         harness: row.harness,
         sessionId: row.session_id,
@@ -3027,7 +3027,7 @@ export class RelayStore {
     if (
       event.type !== "session.ended" &&
       (control?.endedAt !== undefined ||
-        this.sessionLaneState(event) === "ended")
+        this.getSessionLaneState(event) === "ended")
     ) {
       return "ended";
     }

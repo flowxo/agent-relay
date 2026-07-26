@@ -241,6 +241,22 @@
   concurrent-session isolation, live/reconnected streams, credential
   permissions, and restart cursor durability. Structured browser drafts remain
   deliberately deferred to FXO-1070.
+- FXO-1067 is green locally. The daemon serves a no-dependency, responsive local
+  session board whose static shell contains no credential or relay data and is
+  locked down by same-origin Content Security Policy, frame denial, no-referrer,
+  and no-store headers. The bearer credential stays only in page memory.
+  Authenticated snapshots render a stable key and the same readable,
+  collision-resistant display identity as Telegram, plus harness, repository,
+  branch, real lane state, last activity, and exact attention counts. Required
+  state/repository/harness/search filters compose, while the global attention
+  queue is expiry ordered and retains repository, branch, harness, and session
+  identity. Deterministic reconciliation deduplicates sessions and requests,
+  ignores regressive cursors, and remains stable across sixty interleaved
+  sessions. The UI consumes the resumable authenticated stream through fetch,
+  coalesces refreshes, and distinguishes empty, disconnected, reconnecting,
+  credential-rotated, and heartbeat-stale states without presenting cached data
+  as live. Source and compiled distributions both carry the four fixed static
+  assets; no frontend runtime dependency was added.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -293,7 +309,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 228 tests across 33 test files, including
+- The implementation gates pass all 234 tests across 34 test files, including
   the SQLite-backed daemon, retries/dead letters, malformed ingress, hook
   fallback privacy, inline and late continuation, owned-child exit observation,
   stale answer rejection, concurrent-session isolation, installation rollback,
@@ -389,6 +405,5 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Implement FXO-1070's structured browser interaction workflow on top of the
-authenticated FXO-1068 API, retaining SQLite draft authority and the same
-Telegram/terminal/browser first-writer boundary.
+Implement FXO-1069's per-session timeline, bounded detail reveal, and sanitized
+diagnostic export on top of the authenticated local console.

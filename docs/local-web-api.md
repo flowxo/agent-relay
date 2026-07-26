@@ -9,6 +9,12 @@ not a second source of truth: browser answers use the same SQLite request state,
 runtime validation, expiry checks, and first-writer-wins transition as Telegram
 and terminal answers.
 
+The built-in session board is served at `http://127.0.0.1:4317/ui/`. Its static
+shell is public on loopback and contains no relay data or credential. Paste the
+generated bearer token into its connection form; the page retains it only in
+JavaScript memory, never browser storage. Authenticated API responses remain the
+only source of session and attention data.
+
 ## Credential
 
 Daemon startup creates `web-credential.json` beside `relay.sqlite` (normally
@@ -42,20 +48,26 @@ and bodies above the daemon limit. It never emits an
 
 All list limits default to 100 and are bounded from 1 through 500.
 
-| Method and route                           | Result                                                                  |
-| ------------------------------------------ | ----------------------------------------------------------------------- |
-| `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, state, attention count |
-| `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions          |
-| `GET /v1/web/events/:eventId`              | One bounded event/request detail                                        |
-| `GET /v1/web/changes?after=0&limit=100`    | Ordered durable changes and retained cursor bounds                      |
-| `GET /v1/web/stream?after=0`               | Ordered Server-Sent Events                                              |
-| `POST /v1/web/requests/:requestId/resolve` | Idempotent text or option-ID resolution                                 |
+| Method and route                           | Result                                                                       |
+| ------------------------------------------ | ---------------------------------------------------------------------------- |
+| `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, lane state, attention count |
+| `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions               |
+| `GET /v1/web/events/:eventId`              | One bounded event/request detail                                             |
+| `GET /v1/web/changes?after=0&limit=100`    | Ordered durable changes and retained cursor bounds                           |
+| `GET /v1/web/stream?after=0`               | Ordered Server-Sent Events                                                   |
+| `POST /v1/web/requests/:requestId/resolve` | Idempotent text or option-ID resolution                                      |
 
-Session summaries use a stable 24-character digest instead of returning the
-machine or harness session ID. Event detail omits `lastAssistantMessage`,
-working-directory hashes, process IDs and arguments, option callback tokens,
-stored answers, and structured draft content. Prompt, label, summary, and
-failure previews are secret-redacted and bounded.
+Session summaries use a stable 24-character key instead of returning the machine
+or harness session ID. Their display ID matches Telegram's readable
+eight-character session suffix plus a six-character collision digest, so the
+operator can correlate the same lane across surfaces. Event detail omits
+`lastAssistantMessage`, working-directory hashes, process IDs and arguments,
+option callback tokens, stored answers, and structured draft content. Prompt,
+label, summary, and failure previews are secret-redacted and bounded.
+
+Session `state` is the operator-facing lane state: `running`, `waiting`,
+`crashed`, `stale`, `muted`, or `ended`. `lifecycleState` retains the underlying
+harness lifecycle without asking the browser to infer controls or failures.
 
 The currently supported browser actions are:
 

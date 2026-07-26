@@ -23,11 +23,13 @@ export const WebSessionSummaryV1Schema = z
   .object({
     schema: z.literal("agent-relay-web-session.v1"),
     sessionKey: z.string().length(24),
+    displayId: z.string().regex(/^[A-Za-z0-9_]{8}-[a-f0-9]{6}$/),
     harness: z.enum(["codex", "claude", "cursor"]),
     surface: z.enum(["cli", "ide", "sdk", "app-server"]),
     repository: z.string().min(1).max(120),
     branch: z.string().min(1).max(240).optional(),
-    state: z.enum([
+    state: z.enum(["running", "waiting", "muted", "crashed", "ended", "stale"]),
+    lifecycleState: z.enum([
       "active",
       "waiting",
       "stopped",

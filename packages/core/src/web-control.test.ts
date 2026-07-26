@@ -103,6 +103,12 @@ describe("durable web control", () => {
         }),
       }),
     ]);
+    expect(service.listSessionsWithAttention(1)).toEqual([
+      expect.objectContaining({
+        laneState: "waiting",
+        attentionCount: 1,
+      }),
+    ]);
     const changes = store.listWebChanges(0, 100);
     expect(changes.length).toBeGreaterThanOrEqual(3);
     expect(changes.map(({ cursor }) => cursor)).toEqual(

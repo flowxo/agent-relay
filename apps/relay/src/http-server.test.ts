@@ -8,6 +8,7 @@ import {
   MemoryLogger,
   RelayService,
   RelayStore,
+  sessionTopicMetadata,
   TelegramReplyRouter,
 } from "@agent-relay/core";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
@@ -108,6 +109,41 @@ function webHeaders(
 }
 
 describe("relay HTTP daemon", () => {
+  it("serves the credential-free console shell with a locked-down policy", async () => {
+    const runtime = await setup(
+      "synthetic-daemon-secret",
+      undefined,
+      webCredential,
+    );
+    const page = await fetch(`${runtime.baseUrl}/ui/`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toContain("text/html");
+    expect(page.headers.get("content-security-policy")).toContain(
+      "default-src 'none'",
+    );
+    expect(page.headers.get("content-security-policy")).toContain(
+      "connect-src 'self'",
+    );
+    expect(page.headers.get("x-frame-options")).toBe("DENY");
+    expect(page.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    const html = await page.text();
+    expect(html).toContain("Agent Relay Console");
+    expect(html).toContain("data-attention-list");
+    expect(html).not.toContain(webCredential.token);
+    expect(html).not.toContain(webCredential.csrfToken);
+
+    const app = await fetch(`${runtime.baseUrl}/ui/app.js`);
+    expect(app.status).toBe(200);
+    expect(app.headers.get("content-type")).toContain("text/javascript");
+    expect(await app.text()).toContain("/v1/web/stream");
+    const head = await fetch(`${runtime.baseUrl}/ui/styles.css`, {
+      method: "HEAD",
+    });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    await runtime.close();
+  });
+
   it("ingests, deduplicates, drains, and reports status", async () => {
     const runtime = await setup();
     const input = event();
@@ -359,8 +395,18 @@ describe("relay HTTP daemon", () => {
     expect(detail.status).toBe(200);
     expect(changes.status).toBe(200);
 
+    const sessionsText = await sessions.text();
+    expect(JSON.parse(sessionsText)).toMatchObject({
+      sessions: [
+        {
+          displayId: sessionTopicMetadata(input).shortSessionId,
+          state: "waiting",
+          lifecycleState: "waiting",
+        },
+      ],
+    });
     const combined = [
-      await sessions.text(),
+      sessionsText,
       await attention.text(),
       await detail.text(),
       await changes.text(),

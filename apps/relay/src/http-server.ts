@@ -13,6 +13,7 @@ import type {
   PendingRequestRecord,
   RelayLogger,
   RelayService,
+  SessionLaneState,
   SessionRecord,
   WebChangeRecord,
 } from "@agent-relay/core";
@@ -27,6 +28,8 @@ import {
   WebResolveRequestV1Schema,
   WebSessionSummaryV1Schema,
 } from "./web-contract.js";
+import { loadWebAsset } from "./web-assets.js";
+import type { WebAssetName } from "./web-assets.js";
 import type {
   WebAttentionItemV1,
   WebChangeV1,
@@ -173,6 +176,40 @@ function sendJson(
     "cache-control": "no-store",
   });
   response.end(payload);
+}
+
+const WEB_CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "connect-src 'self'",
+  "img-src 'self' data:",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+async function sendWebAsset(
+  request: IncomingMessage,
+  response: ServerResponse,
+  name: WebAssetName,
+  contentType: string,
+): Promise<void> {
+  const payload = await loadWebAsset(name);
+  response.writeHead(200, {
+    "content-type": contentType,
+    "content-length": payload.byteLength,
+    "cache-control": "no-store",
+    "content-security-policy": WEB_CONTENT_SECURITY_POLICY,
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-resource-policy": "same-origin",
+    "permissions-policy":
+      "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+  });
+  response.end(request.method === "HEAD" ? undefined : payload);
 }
 
 function assertAuthorized(
@@ -328,19 +365,25 @@ function webOptions(request: PendingRequestRecord) {
 
 function toWebSession(
   session: SessionRecord,
+  laneState: SessionLaneState,
   attentionCount: number,
 ): WebSessionSummaryV1 {
   const key = sessionKey(session);
+  const readableSuffix = session.sessionId
+    .slice(-8)
+    .replace(/[^A-Za-z0-9]/g, "_");
   return WebSessionSummaryV1Schema.parse({
     schema: "agent-relay-web-session.v1",
     sessionKey: key,
+    displayId: `${readableSuffix}-${key.slice(0, 6)}`,
     harness: session.harness,
     surface: session.surface,
     repository: redactText(session.project.displayName, 120),
     ...(session.project.branch === undefined
       ? {}
       : { branch: redactText(session.project.branch, 240) }),
-    state: session.state,
+    state: laneState,
+    lifecycleState: session.state,
     ...(session.lastEventType === undefined
       ? {}
       : { lastEventType: session.lastEventType }),
@@ -416,16 +459,61 @@ export function createRelayHttpServer(
       const url = new URL(request.url ?? "/", "http://relay.local");
       const isWebRoute =
         url.pathname === "/v1/web" || url.pathname.startsWith("/v1/web/");
+      const isWebUiRoute =
+        url.pathname === "/" ||
+        url.pathname === "/ui" ||
+        url.pathname.startsWith("/ui/");
       const isTelegramWebhook =
         request.method === "POST" && url.pathname === "/v1/telegram/updates";
       if (isWebRoute) {
         const credential = assertWebAuthorized(request, options.webCredential);
         assertWebOrigin(request, credential, request.method === "POST");
       } else if (
-        !isTelegramWebhook ||
-        options.telegramWebhookSecret === undefined
+        !isWebUiRoute &&
+        (!isTelegramWebhook || options.telegramWebhookSecret === undefined)
       ) {
         assertAuthorized(request, options.token);
+      }
+
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        (url.pathname === "/" ||
+          url.pathname === "/ui" ||
+          url.pathname === "/ui/")
+      ) {
+        await sendWebAsset(
+          request,
+          response,
+          "index.html",
+          "text/html; charset=utf-8",
+        );
+        return;
+      }
+      const webAsset: { name: WebAssetName; contentType: string } | undefined =
+        url.pathname === "/ui/styles.css"
+          ? { name: "styles.css", contentType: "text/css; charset=utf-8" }
+          : url.pathname === "/ui/app.js"
+            ? {
+                name: "app.js",
+                contentType: "text/javascript; charset=utf-8",
+              }
+            : url.pathname === "/ui/state.js"
+              ? {
+                  name: "state.js",
+                  contentType: "text/javascript; charset=utf-8",
+                }
+              : undefined;
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        webAsset !== undefined
+      ) {
+        await sendWebAsset(
+          request,
+          response,
+          webAsset.name,
+          webAsset.contentType,
+        );
+        return;
       }
 
       if (request.method === "GET" && url.pathname === "/v1/web/sessions") {
@@ -435,8 +523,8 @@ export function createRelayHttpServer(
         sendJson(response, 200, {
           sessions: service
             .listSessionsWithAttention(limit)
-            .map(({ session, attentionCount }) =>
-              toWebSession(session, attentionCount),
+            .map(({ session, laneState, attentionCount }) =>
+              toWebSession(session, laneState, attentionCount),
             ),
         });
         return;

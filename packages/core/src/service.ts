@@ -283,6 +283,7 @@ export class RelayService {
     this.store.expireRequests(this.now().toISOString());
     return this.store.listSessions(limit).map((session) => ({
       session,
+      laneState: this.store.getSessionLaneState(session),
       attentionCount: this.store.countOpenRequests(session),
     }));
   }

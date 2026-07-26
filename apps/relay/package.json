@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
     "dev": "tsx --conditions=development src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
