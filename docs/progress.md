@@ -3,6 +3,10 @@
 ## Proven
 
 - Repository ownership branch is `codex/initial-mvp`.
+- Linear project `Agent Relay — Multi-Session Operator Experience` is marked
+  Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
+  App, and multi-operator stories remain explicit deferred backlog outside the
+  V1 acceptance boundary.
 - Local harness versions and CLI resume help were observed on 2026-07-24 and
   2026-07-25, then recorded in `docs/harness-evidence.md`.
 - Official stop, permission, failure, and resume contracts are represented as
@@ -456,6 +460,6 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Close the Phase 3 project after exact-commit verification, then prioritize any
-remaining product roadmap outside the completed multi-session operator
-experience epic.
+The current multi-session operator MVP is complete. Do not begin the deferred
+Phase 4 hosted, Mini App, or multi-operator work until product demand, privacy,
+threat-model, cost, and hosting evidence support an explicit go decision.
