@@ -121,6 +121,29 @@
   tests, the six-test isolated Notifications consumer, the 105,127-byte
   packed/491,406-byte unpacked artifact proof, the full packed lifecycle, all
   three Chromium scenarios, and a production audit with no known vulnerability.
+- FXO-1148 establishes a credential-free, least-privilege prerelease pipeline
+  without authorizing publication. A clean checkout now produces exactly four
+  reviewable files: the private `0.1.0-alpha.1` tarball, `SHA256SUMS`, an exact
+  source/reproducibility manifest, and an SPDX 2.3 SBOM covering all 11 packed
+  files plus the frozen three-package runtime dependency closure. The builder
+  packs twice from the same commit timestamp and rejects different SHA-256
+  digests; the verifier rejects changed artifacts, duplicate checksums,
+  duplicate SBOM records, inventory drift, and source-commit mismatch. CI and
+  prerelease actions are immutable-SHA pinned, install scripts remain disabled
+  until the approved native rebuild, and production audit/browser/package gates
+  are mandatory. Build and SBOM attestations have a separate minimal permission
+  job; any future npm OIDC job requires that successful provenance job, an exact
+  tag/workflow identity, a public canonical repository, manual input, and the
+  protected `npm-prerelease` environment. Checked-in publication approval and
+  registry action remain `false`/`blocked`, so neither the package nor the
+  workflow can contact npm. On clean implementation commit `a331ab5`, two
+  105,388-byte tarballs matched at SHA-256, the independent verifier reported
+  four SPDX packages and 11 files, and all bundle checksums passed. The full
+  local gate passed 41 Vitest files/311 tests, 15 release/secret-policy tests,
+  seven fixture tests, 17 contract and supply-chain tests, the six-test isolated
+  Notifications consumer, a 105,388-byte packed/492,013-byte unpacked artifact,
+  the complete lifecycle, all three Chromium scenarios, and a production audit
+  with no known vulnerability.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -479,7 +502,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 251 unit/integration tests across 35 test
+- The implementation gates pass all 311 unit/integration tests across 41 test
   files plus 3 Chromium end-to-end scenarios, including the SQLite-backed
   daemon, retries/dead letters, malformed ingress, hook fallback privacy, inline
   and late continuation, owned-child exit observation, stale answer rejection,
@@ -585,13 +608,12 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Build the least-privilege prerelease pipeline in FXO-1148: immutable release
-inputs, production audit, SBOM, checksums, provenance, protected prerelease
-publication, rollback/yank guidance, and credential-free workflow validation.
-FXO-1149 then owns the isolated clean-machine Node 22 and final package-content
-release evidence. Mock-backed AR2 work may proceed against the pinned
-`1.0.0-draft.1` artifacts, but production hosted dogfood must wait for AR1, AR2,
-and a central C0-09 go disposition.
+Execute FXO-1149's isolated clean-machine Node 22 acceptance matrix and capture
+the final package-content, install, canary, lifecycle, uninstall, privacy, and
+failure evidence without publishing or modifying the real operator home.
+Mock-backed AR2 work may proceed against the pinned `1.0.0-draft.1` artifacts,
+but production hosted dogfood must wait for AR1, AR2, and a central C0-09 go
+disposition.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,
