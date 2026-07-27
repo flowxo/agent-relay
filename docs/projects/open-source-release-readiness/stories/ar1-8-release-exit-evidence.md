@@ -1,8 +1,8 @@
 # AR1.8: Native minimum-runtime release exit
 
 - **Linear:** FXO-1149
-- **Status:** Implementation in progress
-- **Started:** 2026-07-26
+- **Status:** Implemented and locally verified
+- **Implemented:** 2026-07-26
 
 ## Outcome
 
@@ -30,6 +30,32 @@ safe ignored evidence record.
 - no credential forwarding, message content, private path, or real-home change;
   and
 - the non-implementer answers in `docs/release-readiness.md`.
+
+## Evidence
+
+The isolated matrix completed on macOS 26.5.2 using the hash-pinned official
+Node.js 22.23.1 native arm64 runtime and npm 10.9.8:
+
+- the four-file bundle verified against its exact clean `HEAD`, with 11 packed
+  files and four SPDX packages;
+- the tarball installed with scripts disabled into a quoted temporary prefix,
+  was a regular copied directory rather than a link, and exposed no package
+  symlink;
+- the reviewed SQLite lifecycle selected an arm64 prebuild and completed a real
+  in-memory query under native Node;
+- doctor was healthy with exact Codex and Cursor evidence, while newer Claude
+  Code remained an explicit `compatible-unverified` warning;
+- install dry-run, install, unchanged reinstall, one fake delivery with no
+  retry/dead letter, uninstall dry-run, and uninstall passed;
+- SQLite survived while the launcher, manifest, every owned hook, npm package,
+  and package executable were removed; and
+- the ignored mode-`0600` result contained no credential, message-content field,
+  private path, or real-home mutation.
+
+The enforced evaluator guide answers the five operational questions without
+source access or private maintainer memory. The full repository, packaged
+lifecycle, Chromium, audit, and contract gates remain separate mandatory
+evidence rather than being inferred from this canary.
 
 ## Unclaimed
 

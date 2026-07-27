@@ -174,7 +174,7 @@ export const HARNESS_COMPATIBILITY = CompatibilityRegistrySchema.parse({
     architecture: "arm64",
     minimumNodeMajor: 22,
     evidenceRecord: "docs/harness-evidence.md#evidence-boundary",
-    note: "Live harness paths were recorded on this target; clean-machine package proof remains the AR1 exit gate.",
+    note: "Native Node 22.23.1 clean-home package evidence is complete on this target; exact harness claims remain versioned snapshots.",
   },
   unsupportedRuntimeClaims: [
     "Windows",

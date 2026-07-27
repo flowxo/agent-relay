@@ -80,8 +80,7 @@ ordinary fixture system and retain their immutable contract-lock checks.
 
 ## Open boundary
 
-The contributor baseline records Node 22, while the current development machine
-ran this slice on Node 23.10.0. FXO-1149 owns the isolated clean-machine/minimum
-Node 22 proof. GitHub private vulnerability reporting still cannot be enabled
-and verified until the repository-public promotion step described in
-`SECURITY.md`.
+The contributor slice originally ran on Node 23.10.0; FXO-1149 later proved the
+exact artifact under native arm64 Node 22.23.1. GitHub private vulnerability
+reporting still cannot be enabled and verified until the repository-public
+promotion step described in `SECURITY.md`.

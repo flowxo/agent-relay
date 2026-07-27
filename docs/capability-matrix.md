@@ -13,9 +13,9 @@ Evidence rechecked: 2026-07-26.
 - `disabled`: The contract is understood, but Agent Relay intentionally keeps
   the capability off.
 
-Runtime validation target: macOS arm64, Node.js 22 or newer. Live harness paths
-were recorded on this target; clean-machine package proof remains the AR1 exit
-gate.
+Runtime validation target: macOS arm64, Node.js 22 or newer. Native Node 22.23.1
+clean-home package evidence is complete on this target; exact harness claims
+remain versioned snapshots.
 
 | Harness | Surface    | Exact verified version | Stop                  | Inline continue       | Permission decision   | Late resume           | Active steer          | Failure signal        | Native process exit | Evidence                                                                                                                                                                                  |
 | ------- | ---------- | ---------------------- | --------------------- | --------------------- | --------------------- | --------------------- | --------------------- | --------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -59,8 +59,8 @@ vulnerability.
 - The prior package is a deterministic sanitized fixture derived from the
   current code with the prior version identity; `0.1.0-alpha.0` was never
   published.
-- The current local proof runs on an Apple-silicon Mac using an x64 Node through
-  Rosetta. Minimum Node 22 clean evidence remains owned by FXO-1149.
+- This slice ran through Rosetta; FXO-1149 later proved the exact current
+  artifact under native arm64 Node 22.23.1 in a clean temporary home and prefix.
 - Automatic background service lifecycle remains excluded from AR1.
 - Package scope control and any registry publication remain explicit owner
   gates.

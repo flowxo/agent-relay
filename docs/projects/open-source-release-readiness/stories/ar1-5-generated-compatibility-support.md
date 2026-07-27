@@ -43,8 +43,8 @@ was made and the verified claim was not silently advanced.
 The generated artifact explicitly avoids Windows, Linux end-user runtime, Intel
 macOS, Cursor IDE late resume, native-hook crash proof, and Cursor permission
 automation claims. It records macOS arm64 and Node.js 22 as the validation
-target while leaving the clean-machine minimum-runtime package proof to the AR1
-exit gate.
+target. FXO-1149 subsequently completed the clean-home native Node.js 22.23.1
+package proof without widening those claims.
 
 The public bug form and SUPPORT policy now request only:
 
@@ -80,5 +80,5 @@ identifiers, and machine-specific paths.
 There are no invented incompatible-version entries: the fail path is implemented
 and tested with a synthetic record, while the curated production list remains
 empty until evidence proves a real incompatibility. Exact harness versions are
-snapshots, not ranges. FXO-1149 still owns the isolated clean-machine Node.js 22
-release proof.
+snapshots, not ranges. FXO-1149 completed the isolated native Node.js 22 release
+proof while preserving that exact-version policy.

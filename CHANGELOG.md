@@ -31,6 +31,9 @@ breaking changes and required operator action.
 - Immutable GitHub Action pins, separate build/SBOM attestation permissions,
   repository secret scanning, and a protected npm OIDC publication path that
   remains disabled pending owner approval.
+- A native Apple-silicon Node.js 22.23.1 release-exit gate that verifies the
+  exact bundle, installs without workspace links in a temporary home/prefix,
+  proves doctor and one fake delivery, and removes owned hooks and the package.
 
 ### Changed
 

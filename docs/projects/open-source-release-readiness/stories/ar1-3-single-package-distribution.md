@@ -48,9 +48,9 @@ Rosetta x64 Node on macOS; documentation still makes no Intel Mac support claim.
 
 - Flow XO npm scope ownership and trusted-publishing configuration are not yet
   proven. Publication remains blocked by policy, not architecture.
-- The local proof used Node 23.10.0. FXO-1149 owns clean evidence on the
-  documented minimum Node 22 runtime.
+- This slice's local proof used Node 23.10.0; FXO-1149 later completed the exact
+  artifact lifecycle under native arm64 Node 22.23.1.
 - Linux CI can prove deterministic contents, metadata, scans, and budgets, but
   correctly skips runtime installation because the package supports macOS.
-- FXO-1145 still needs full packed-artifact install, repeated reconciliation,
+- FXO-1145 later completed packed-artifact install, repeated reconciliation,
   upgrade, doctor, uninstall, state preservation, and unsafe-downgrade evidence.

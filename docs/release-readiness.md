@@ -110,6 +110,24 @@ This local proof can validate checksums and native execution, but it cannot
 create signed GitHub provenance. The separate tagged workflow must succeed
 before a release claims GitHub build/SBOM attestations.
 
+## Recorded local evidence
+
+The matrix completed on 2026-07-26 on macOS 26.5.2 with the official Node.js
+22.23.1 `darwin/arm64` runtime and its bundled npm 10.9.8. The exact private
+alpha artifact contained 11 files; its SPDX record contained the application
+plus three runtime packages.
+
+Doctor observed exact verified Codex `0.145.0` and Cursor `2026.07.23-e383d2b`
+records. Installed Claude Code `2.1.220` correctly remained
+`compatible-unverified` against the last live-proven `2.1.219` record rather
+than silently widening support.
+
+The clean-home install, native SQLite load/query, unchanged reinstall, healthy
+doctor, one delivered fake event with zero retries/dead letters, owned
+uninstall, retained SQLite, package removal, zero remaining owned hooks, and
+mode-`0600` path-free evidence record all passed. Publication and signed
+provenance were not attempted.
+
 ## How to diagnose
 
 Run these from the retained installed prefix:

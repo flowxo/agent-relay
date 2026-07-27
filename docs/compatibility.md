@@ -45,9 +45,10 @@ can identify the claim without including a transcript or machine path.
 The current release-readiness target is macOS on Apple silicon with Node.js 22.
 pnpm 11 is used for source development. Linux CI proves that repository checks
 can run in that CI environment; it does not establish Linux end-user harness
-operation. Node.js 24 CI likewise does not replace the Node.js 22 clean-machine
-release target. The completed live harness paths are evidence on the target; the
-isolated minimum-runtime package proof remains the AR1 exit gate.
+operation. Node.js 24 CI does not replace the native Node.js 22 release target.
+The isolated Node.js 22.23.1 package/install/doctor/fake-canary/uninstall proof
+is complete on that target; exact harness support remains tied to the separate
+versioned evidence records.
 
 There is no current Windows, Linux runtime, Intel macOS, native app,
 auto-service, Safari, or Firefox support claim.

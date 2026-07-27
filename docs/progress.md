@@ -144,6 +144,23 @@
   Notifications consumer, a 105,388-byte packed/492,013-byte unpacked artifact,
   the complete lifecycle, all three Chromium scenarios, and a production audit
   with no known vulnerability.
+- FXO-1149 completes the AR1 native minimum-runtime exit gate. The exact
+  clean-commit bundle was installed under the official hash-pinned and
+  code-signature-checked Node.js 22.23.1 `darwin/arm64` runtime with npm 10.9.8
+  on Apple-silicon macOS 26.5.2. A quoted temporary home and prefix received no
+  credential variables and no linked workspace package. The reviewed SQLite
+  lifecycle selected its arm64 prebuild and passed a real in-memory query.
+  Doctor was healthy: Codex `0.145.0` and Cursor `2026.07.23-e383d2b` matched
+  exact evidence, while Claude Code `2.1.220` remained an honest
+  `compatible-unverified` warning against `2.1.219`. Install dry-run, install,
+  unchanged reinstall, one fake delivery with zero retry/dead-letter, uninstall
+  dry-run, owned uninstall, retained SQLite, npm removal, and zero remaining
+  owned hooks passed. The ignored path-free evidence file was mode `0600` and
+  contained only safe versions, hashes, evidence IDs, counts, booleans, and
+  limitations. The enforced non-implementer guide answers what runs locally,
+  what leaves, what changes, how to diagnose, and how to remove the product, and
+  records the no-architecture-change AR2 handoff. No real home, credential, tag,
+  release, attestation, registry, or production service was changed.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -608,12 +625,12 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Execute FXO-1149's isolated clean-machine Node 22 acceptance matrix and capture
-the final package-content, install, canary, lifecycle, uninstall, privacy, and
-failure evidence without publishing or modifying the real operator home.
-Mock-backed AR2 work may proceed against the pinned `1.0.0-draft.1` artifacts,
-but production hosted dogfood must wait for AR1, AR2, and a central C0-09 go
-disposition.
+Run the final exact-HEAD repository/browser/audit/bundle/native-exit review,
+push the completed AR1 branch, observe its draft PR checks, and reconcile Linear
+project evidence. Mock-backed AR2 work may then proceed against the pinned
+`1.0.0-draft.1` artifacts, but production hosted dogfood must wait for AR1, AR2,
+and a central C0-09 go disposition. npm scope/publication and the monitored
+public security-contact path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,
