@@ -14,6 +14,11 @@ import { delimiter, resolve } from "node:path";
 import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
 
+import {
+  assertReleaseConfiguration,
+  stagedPackageIsPrivate,
+} from "./lib/release-policy.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const packageSnapshot = JSON.parse(
   await readFile(resolve(root, "packaging/package-files.json"), "utf8"),
@@ -21,6 +26,10 @@ const packageSnapshot = JSON.parse(
 const release = JSON.parse(
   await readFile(resolve(root, "packaging/release.json"), "utf8"),
 );
+const rootPackage = JSON.parse(
+  await readFile(resolve(root, "package.json"), "utf8"),
+);
+assertReleaseConfiguration(release, rootPackage);
 
 function sanitized(value, temporaryRoot) {
   return value.replaceAll(temporaryRoot, "<isolated-package-check>");
@@ -242,7 +251,7 @@ try {
     {
       name: release.name,
       version: release.version,
-      private: true,
+      private: stagedPackageIsPrivate(release),
       type: "module",
       bin: { "agent-relay": "./dist/cli.js" },
       os: release.os,

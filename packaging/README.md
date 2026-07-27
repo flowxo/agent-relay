@@ -6,7 +6,9 @@ Claude Code, and Cursor sessions. This package contains the supported
 library API.
 
 > This is the unpublished `0.1.0-alpha.1` candidate. The package remains marked
-> `private` until the Flow XO npm scope and prerelease are explicitly approved.
+> `private` while the checked-in owner publication approval is false. The Flow
+> XO npm scope, public repository, protected environment, trusted publisher, and
+> first prerelease still require explicit approval.
 
 ## Supported target
 

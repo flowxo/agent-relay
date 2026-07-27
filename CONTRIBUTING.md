@@ -74,11 +74,14 @@ artifact checks explicitly so their evidence is easy to review:
 ```sh
 pnpm package:check
 pnpm package:lifecycle:check
+pnpm release:policy:check
 pnpm audit --prod
 ```
 
 These commands publish nothing and require no npm, Telegram, GitHub, or hosted
-service credential.
+service credential. `pnpm release:bundle` additionally requires a clean checkout
+and produces a local four-file bundle without publishing it; follow the
+[prerelease guide](docs/releasing.md).
 
 ## Architecture boundaries
 

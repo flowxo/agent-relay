@@ -12,6 +12,7 @@ const focusedDocuments = [
   "docs/troubleshooting.md",
   "docs/compatibility.md",
   "docs/packaging.md",
+  "docs/releasing.md",
   "docs/fixtures.md",
   "docs/extending-transports.md",
   "docs/extending-harnesses.md",

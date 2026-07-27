@@ -25,6 +25,12 @@ breaking changes and required operator action.
   template.
 - A 64 KiB sanitized JSON fixture boundary with exact manifest inventories,
   provenance requirements, privacy scanning, and negative regression tests.
+- A clean-commit prerelease bundle with two-build reproducibility proof, SHA-256
+  checksums, an SPDX 2.3 file/runtime-dependency SBOM, and an exact source
+  manifest.
+- Immutable GitHub Action pins, separate build/SBOM attestation permissions,
+  repository secret scanning, and a protected npm OIDC publication path that
+  remains disabled pending owner approval.
 
 ### Changed
 

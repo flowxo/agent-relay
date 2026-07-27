@@ -2,6 +2,8 @@
   "schema": "agent-relay-release-candidate.v1",
   "name": "@flowxo/agent-relay",
   "version": "0.1.0-alpha.1",
+  "gitTag": "v0.1.0-alpha.1",
+  "distTag": "alpha",
   "priorFixtureVersion": "0.1.0-alpha.0",
   "node": ">=22",
   "os": ["darwin"],
@@ -9,5 +11,13 @@
   "dependencies": {
     "better-sqlite3": "13.0.1",
     "zod": "4.4.3"
+  },
+  "publication": {
+    "approved": false,
+    "registryAction": "blocked",
+    "registry": "https://registry.npmjs.org/",
+    "workflow": "prerelease.yml",
+    "environment": "npm-prerelease",
+    "requiresPublicRepository": true
   }
 }

@@ -12,7 +12,9 @@ The scoped name avoids the unrelated unscoped `agent-relay` package already on
 npm. Control of the Flow XO npm scope remains an explicit owner gate before any
 publication. Building, packing, or testing this candidate does not publish it.
 `packaging/release.json` is the reviewed identity/runtime metadata used by the
-staging and verification scripts.
+staging and verification scripts. Its separate publication approval remains
+false; the workspace root always stays private, while only a future explicitly
+approved release commit can make the staged artifact registry-eligible.
 
 ## Why one package
 
@@ -123,3 +125,7 @@ tar -tzf .artifacts/agent-relay-0.1.0-alpha.1.tgz
 
 `.artifacts/` is generated and gitignored. Never put credentials, activation
 files, databases, logs, or private transcripts into the staging directory.
+
+For the clean-commit, two-build release bundle with SHA-256 checksums, SPDX 2.3
+SBOM, signed GitHub attestation boundary, OIDC gates, and rollback procedure,
+follow the [prerelease guide](releasing.md).

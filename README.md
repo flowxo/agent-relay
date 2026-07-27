@@ -152,6 +152,7 @@ runtime, public callback, or Flow XO credential. See the
 - [Troubleshooting and doctor](docs/troubleshooting.md)
 - [Compatibility and evidence policy](docs/compatibility.md)
 - [Package identity and artifact boundary](docs/packaging.md)
+- [Prerelease build, attestation, and publication](docs/releasing.md)
 - [Safe fixtures and compatibility evidence](docs/fixtures.md)
 - [Write a notification transport](docs/extending-transports.md)
 - [Write or update a harness adapter](docs/extending-harnesses.md)

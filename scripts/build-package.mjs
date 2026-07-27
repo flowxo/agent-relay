@@ -11,6 +11,11 @@ import process from "node:process";
 
 import { build } from "esbuild";
 
+import {
+  assertReleaseConfiguration,
+  stagedPackageIsPrivate,
+} from "./lib/release-policy.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const stage = resolve(root, ".artifacts/package");
 const rootPackage = JSON.parse(
@@ -24,16 +29,7 @@ const releaseSource = await readFile(
   "utf8",
 );
 
-if (
-  release.schema !== "agent-relay-release-candidate.v1" ||
-  rootPackage.name !== release.name ||
-  rootPackage.version !== release.version ||
-  rootPackage.private !== true
-) {
-  throw new Error(
-    "root package identity must remain the approved private alpha candidate",
-  );
-}
+assertReleaseConfiguration(release, rootPackage);
 if (!releaseSource.includes(`const sourceVersion = "${release.version}";`)) {
   throw new Error("source-build version differs from packaging/release.json");
 }
@@ -94,7 +90,7 @@ for (const [source, destination] of [
 const packageManifest = {
   name: release.name,
   version: release.version,
-  private: true,
+  private: stagedPackageIsPrivate(release),
   description: rootPackage.description,
   license: rootPackage.license,
   type: "module",
