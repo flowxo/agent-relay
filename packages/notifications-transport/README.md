@@ -6,7 +6,8 @@ mapping and local authority. AR2.1 adds the bounded project administration
 client and mock-backed machine setup used by the CLI. AR2.2 wires explicit
 outbound daemon selection and a terminal configuration circuit. AR2.3 adds the
 bounded interaction source used by the durable local poll/claim/resolve/ack
-loop.
+loop. AR2.4 adds stable hosted failure policy plus the optional terminal
+presentation interface.
 
 ## Machine bootstrap
 
@@ -63,8 +64,13 @@ copied into Agent Relay.
   Authentication, scope, validation, unbound subscriber, terminal provider, and
   idempotency-conflict failures are terminal. A provider `outcome_unknown`
   diagnostic forbids a new automatic hosted send.
-- Unknown protocol responses use the existing bounded local retry policy and
-  stable redacted diagnostics. Contract/schema failures fail closed.
+- 401, 403, 404, 409, 429, 5xx, timeout, malformed/schema, and `outcome_unknown`
+  conditions map to stable retry, terminal-configuration, dead-letter/security,
+  quarantine, or operator-action categories. No category permits a new logical
+  identity.
+- Unknown 5xx protocol responses use the existing bounded local retry policy.
+  Malformed successful responses, redirects, and contract/schema failures fail
+  closed with stable redacted diagnostics.
 - Authentication, scope, binding, and pinned-contract configuration failures
   open an in-process terminal circuit. Later deliveries remain visible in local
   SQLite but make no repeated credential-bearing network call until restart
@@ -86,6 +92,22 @@ SQLite. It commits local resolution or safe quarantine first, then acknowledges
 Notifications with a deterministic idempotency key. A crash before
 acknowledgement repeats the event; recovery drains that acknowledgement before a
 new poll, and the already materialized resume command cannot be claimed twice.
+
+## Resolution presentation
+
+`NotificationsResolutionPresenter` is a bounded optional interface. The daemon
+claims its SQLite message-update job only after the corresponding hosted event
+is acknowledged. Retry uses `resolution_${sha256(hostedEventId)}` every time;
+update failure cannot call `resolveRequest`, create a message, or claim
+continuation.
+
+The exact pinned `@flowxo/notifications@1.0.0-draft.1` client has no
+resolved-message update method. `PinnedNotificationsResolutionPresenter`
+therefore reports `unsupported`, and the daemon marks that job terminally with
+`notifications-resolution-update-unsupported`. Tests inject a supported fake
+presenter to prove answered, duplicate, expired, cancelled, and unsupported
+projection plus retry/restart behavior without pretending cancellation is an
+edit API.
 
 Run the exact artifact and round-trip proof with:
 

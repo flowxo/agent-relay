@@ -119,4 +119,33 @@ describe("Notifications machine interaction source", () => {
       retryable: true,
     });
   });
+
+  it("stops poll and acknowledgement calls after local disconnect", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const source = new NotificationsMachineInteractionSource({
+      baseUrl: "https://notifications.example.test",
+      credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+      connectionGuard: async () => false,
+      fetch: fetchMock,
+    });
+    const signal = new AbortController().signal;
+    await expect(
+      source.poll({ limit: 1, waitSeconds: 0, signal }),
+    ).rejects.toMatchObject({
+      code: "notifications-connection-inactive",
+      retryable: false,
+    });
+    await expect(
+      source.acknowledge({
+        eventId: event.id,
+        cursor: event.cursor,
+        disposition: "processed",
+        signal,
+      }),
+    ).rejects.toMatchObject({
+      code: "notifications-connection-inactive",
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

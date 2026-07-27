@@ -73,6 +73,7 @@ export interface NotificationsReadiness {
   machineClientRef?: string;
   pendingRevocations: number;
   ready: boolean;
+  resolutionPresentation: "unsupported-in-pinned-contract";
 }
 
 export interface TransportReadinessReport {
@@ -333,6 +334,7 @@ async function notificationsReadiness(
         issueCodes: ["notifications-not-configured"],
         pendingRevocations: 0,
         ready: false,
+        resolutionPresentation: "unsupported-in-pinned-contract",
       };
     }
     const safe = safeNotificationsConnectionSummary(connection);
@@ -360,6 +362,7 @@ async function notificationsReadiness(
       machineClientRef: safe.machineClientRef,
       pendingRevocations: safe.pendingRevocations,
       ready,
+      resolutionPresentation: "unsupported-in-pinned-contract",
     };
   } catch {
     return {
@@ -371,6 +374,7 @@ async function notificationsReadiness(
       issueCodes: ["notifications-configuration-invalid"],
       pendingRevocations: 0,
       ready: false,
+      resolutionPresentation: "unsupported-in-pinned-contract",
     };
   }
 }

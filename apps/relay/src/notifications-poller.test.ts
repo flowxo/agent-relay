@@ -4,11 +4,14 @@ import {
   type HostedAcknowledgementDisposition,
 } from "@agent-relay/core";
 import { makeProjectRef, sha256 } from "@agent-relay/protocol";
+import { NotificationsDeliveryError } from "@agent-relay/notifications-transport";
 import type {
   AcknowledgeHostedEventInput,
   HostedInteractionEvent,
   NotificationsInteractionSource,
+  NotificationsResolutionPresenter,
   PollHostedEventsOptions,
+  ReflectNotificationsResolutionInput,
 } from "@agent-relay/notifications-transport";
 import { describe, expect, it, vi } from "vitest";
 
@@ -201,46 +204,59 @@ describe("NotificationsInteractionPoller", () => {
       (option) => option.optionId === "option_notifications_beta_12345678",
     )!.token;
     const controller = new AbortController();
-    const source = new OrderedSource(
-      [
-        {
-          ...hostedEvent(
-            store,
-            confirm,
-            "confirm",
-            { type: "confirm", value: true },
-            1,
-          ),
-          occurred_at: "2026-07-26T14:01:00-05:00",
-          expires_at: "2026-07-26T14:30:00-05:00",
-        },
-        hostedEvent(
+    const source = new OrderedSource([
+      {
+        ...hostedEvent(
           store,
-          select,
-          "select",
-          { type: "select", value: selectedToken },
-          2,
+          confirm,
+          "confirm",
+          { type: "confirm", value: true },
+          1,
         ),
-        hostedEvent(
-          store,
-          input,
-          "input",
-          { type: "input", value: "continue with bounded input" },
-          3,
-        ),
-      ],
-      () => controller.abort(),
-    );
+        occurred_at: "2026-07-26T14:01:00-05:00",
+        expires_at: "2026-07-26T14:30:00-05:00",
+      },
+      hostedEvent(
+        store,
+        select,
+        "select",
+        { type: "select", value: selectedToken },
+        2,
+      ),
+      hostedEvent(
+        store,
+        input,
+        "input",
+        { type: "input", value: "continue with bounded input" },
+        3,
+      ),
+    ]);
+    const reflected: ReflectNotificationsResolutionInput[] = [];
+    const presenter: NotificationsResolutionPresenter = {
+      capability: "supported",
+      reflect: async (reflection) => {
+        reflected.push(reflection);
+        return {
+          outcome: "updated",
+          operationId: reflection.operationId,
+          messageId: reflection.messageId,
+        };
+      },
+    };
 
     await new NotificationsInteractionPoller({
       store,
       source,
+      presenter,
       streamKey,
       machineId,
       bindingId,
       waitSeconds: 0,
       retryBaseMs: 1,
       retryMaxMs: 2,
+      sleep: async () => {
+        controller.abort();
+      },
     }).run(controller.signal);
 
     expect(
@@ -271,7 +287,36 @@ describe("NotificationsInteractionPoller", () => {
     expect(store.hostedPollStatus(streamKey)).toMatchObject({
       committedCursor: source.events[2]!.cursor,
       unacknowledgedEventCount: 0,
+      messageUpdates: {
+        pending: 0,
+        retry: 0,
+        updated: 3,
+        blocked: 0,
+      },
     });
+    expect(
+      reflected.map((reflection) => ({
+        operationId: reflection.operationId,
+        presentation: reflection.presentation,
+        resolutionSource: reflection.resolutionSource,
+      })),
+    ).toEqual([
+      {
+        operationId: `resolution_${sha256(source.events[0]!.id)}`,
+        presentation: "answered",
+        resolutionSource: "notifications",
+      },
+      {
+        operationId: `resolution_${sha256(source.events[1]!.id)}`,
+        presentation: "answered",
+        resolutionSource: "notifications",
+      },
+      {
+        operationId: `resolution_${sha256(source.events[2]!.id)}`,
+        presentation: "answered",
+        resolutionSource: "notifications",
+      },
+    ]);
     store.close();
   });
 
@@ -445,6 +490,237 @@ describe("NotificationsInteractionPoller", () => {
     store.close();
   });
 
+  it("requeues a connection-blocked acknowledgement only after explicit restart", async () => {
+    const store = new RelayStore();
+    const local = localEvent("reconnect_ack", "confirm");
+    deliver(store, local, "reconnect_ack", "confirm");
+    const hosted = hostedEvent(
+      store,
+      local,
+      "reconnect_ack",
+      { type: "confirm", value: true },
+      1,
+    );
+    const firstSource: NotificationsInteractionSource = {
+      poll: vi.fn().mockResolvedValue({
+        schema: "notifications.machine-events.v1",
+        events: [hosted],
+        committed_cursor: null,
+        server_time: "2026-07-26T19:05:00.000Z",
+      }),
+      acknowledge: vi
+        .fn()
+        .mockRejectedValue(
+          new NotificationsDeliveryError(
+            "Synthetic disconnected connection.",
+            "notifications-connection-inactive",
+            false,
+            "terminal",
+          ),
+        ),
+    };
+    await new NotificationsInteractionPoller({
+      store,
+      source: firstSource,
+      streamKey,
+      machineId,
+      bindingId,
+      waitSeconds: 0,
+      retryBaseMs: 1,
+      retryMaxMs: 1,
+    }).run(new AbortController().signal);
+    expect(store.getHostedAcknowledgementBarrier(streamKey)).toMatchObject({
+      state: "blocked",
+      attemptCount: 1,
+    });
+    expect(store.getPendingRequest(local.request!.correlationId)).toMatchObject(
+      {
+        state: "answered",
+        resolvedBy: "notifications",
+      },
+    );
+
+    const controller = new AbortController();
+    const acknowledgement = vi.fn(
+      async (input: AcknowledgeHostedEventInput) => {
+        controller.abort();
+        return {
+          event_id: input.eventId,
+          cursor: input.cursor,
+          disposition: input.disposition,
+          acknowledgement_status: "recorded" as const,
+          committed_cursor: input.cursor,
+          advanced: true,
+        };
+      },
+    );
+    const logger = new MemoryLogger();
+    await new NotificationsInteractionPoller({
+      store,
+      source: { poll: vi.fn(), acknowledge: acknowledgement },
+      streamKey,
+      machineId,
+      bindingId,
+      logger,
+      waitSeconds: 0,
+      retryBaseMs: 1,
+      retryMaxMs: 1,
+    }).run(controller.signal);
+    expect(acknowledgement).toHaveBeenCalledOnce();
+    expect(store.hostedPollStatus(streamKey)).toMatchObject({
+      committedCursor: hosted.cursor,
+      unacknowledgedEventCount: 0,
+    });
+    expect(store.getPendingRequest(local.request!.correlationId)).toMatchObject(
+      {
+        state: "answered",
+        resolvedBy: "notifications",
+      },
+    );
+    expect(logger.records).toContainEqual(
+      expect.objectContaining({
+        code: "notifications.work-recovered",
+        details: {
+          interrupted: 0,
+          requeuedAfterReconnect: 1,
+        },
+      }),
+    );
+    store.close();
+  });
+
+  it("retries presentation with one deterministic operation and never repeats local resolution", async () => {
+    const store = new RelayStore();
+    const local = localEvent("presentation_retry", "confirm");
+    deliver(store, local, "presentation_retry", "confirm");
+    const hosted = hostedEvent(
+      store,
+      local,
+      "presentation_retry",
+      { type: "confirm", value: true },
+      1,
+    );
+    const source = new OrderedSource([hosted]);
+    const controller = new AbortController();
+    let nowMs = Date.parse("2026-07-26T19:05:00.000Z");
+    let sleeps = 0;
+    const operations: string[] = [];
+    const presenter: NotificationsResolutionPresenter = {
+      capability: "supported",
+      reflect: async (reflection) => {
+        operations.push(reflection.operationId);
+        if (operations.length === 1) {
+          throw new NotificationsDeliveryError(
+            "Synthetic response loss.",
+            "notifications-transport-outcome-unknown",
+            true,
+            "retry_same_operation",
+          );
+        }
+        return {
+          outcome: "updated",
+          operationId: reflection.operationId,
+          messageId: reflection.messageId,
+        };
+      },
+    };
+
+    await new NotificationsInteractionPoller({
+      store,
+      source,
+      presenter,
+      streamKey,
+      machineId,
+      bindingId,
+      waitSeconds: 0,
+      retryBaseMs: 1,
+      retryMaxMs: 1,
+      now: () => new Date(nowMs),
+      sleep: async () => {
+        sleeps += 1;
+        nowMs += 1;
+        if (sleeps === 2) {
+          controller.abort();
+        }
+      },
+    }).run(controller.signal);
+
+    expect(operations).toEqual([
+      `resolution_${sha256(hosted.id)}`,
+      `resolution_${sha256(hosted.id)}`,
+    ]);
+    expect(store.getHostedMessageUpdate(streamKey, hosted.id)).toMatchObject({
+      state: "updated",
+      attemptCount: 2,
+    });
+    expect(store.getPendingRequest(local.request!.correlationId)).toMatchObject(
+      {
+        state: "answered",
+        answer: "yes_option",
+        resolvedBy: "notifications",
+      },
+    );
+    expect(source.acknowledgements).toHaveLength(1);
+    store.close();
+  });
+
+  it("blocks an explicit outcome-unknown presentation without inventing a new identity", async () => {
+    const store = new RelayStore();
+    const local = localEvent("presentation_unknown", "confirm");
+    deliver(store, local, "presentation_unknown", "confirm");
+    const hosted = hostedEvent(
+      store,
+      local,
+      "presentation_unknown",
+      { type: "confirm", value: true },
+      1,
+    );
+    const source = new OrderedSource([hosted]);
+    const controller = new AbortController();
+    const operations: string[] = [];
+    const presenter: NotificationsResolutionPresenter = {
+      capability: "supported",
+      reflect: async (reflection) => {
+        operations.push(reflection.operationId);
+        throw new NotificationsDeliveryError(
+          "Synthetic provider ambiguity.",
+          "notifications-provider-outcome-unknown",
+          false,
+          "outcome_unknown",
+        );
+      },
+    };
+    await new NotificationsInteractionPoller({
+      store,
+      source,
+      presenter,
+      streamKey,
+      machineId,
+      bindingId,
+      waitSeconds: 0,
+      retryBaseMs: 1,
+      retryMaxMs: 1,
+      sleep: async () => {
+        controller.abort();
+      },
+    }).run(controller.signal);
+
+    expect(operations).toEqual([`resolution_${sha256(hosted.id)}`]);
+    expect(store.getHostedMessageUpdate(streamKey, hosted.id)).toMatchObject({
+      state: "blocked",
+      attemptCount: 1,
+      lastErrorCode: "notifications-provider-outcome-unknown",
+    });
+    expect(store.getPendingRequest(local.request!.correlationId)).toMatchObject(
+      {
+        state: "answered",
+        resolvedBy: "notifications",
+      },
+    );
+    expect(source.acknowledgements).toHaveLength(1);
+    store.close();
+  });
+
   it("backs off transient poll failures and omits shutdown noise", async () => {
     const store = new RelayStore();
     const controller = new AbortController();
@@ -454,6 +730,12 @@ describe("NotificationsInteractionPoller", () => {
         .fn()
         .mockRejectedValueOnce(
           Object.assign(new Error("temporary poll failure"), {
+            code: "notifications-transport-unavailable",
+            retryable: true,
+          }),
+        )
+        .mockRejectedValueOnce(
+          Object.assign(new Error("repeated temporary poll failure"), {
             code: "notifications-transport-unavailable",
             retryable: true,
           }),
@@ -484,7 +766,7 @@ describe("NotificationsInteractionPoller", () => {
         sleeps.push(delayMs);
       },
     }).run(controller.signal);
-    expect(sleeps).toEqual([5]);
+    expect(sleeps).toEqual([5, 10]);
     expect(logger.records.map((record) => record.code)).toEqual([
       "notifications.poll-started",
       "notifications.poll-retry",

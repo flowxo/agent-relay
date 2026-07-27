@@ -17,11 +17,14 @@ describe("safe transport runtime status", () => {
     ["notifications-scope-forbidden", "authorization"],
     ["notifications-stream-identity-failure", "authorization"],
     ["notifications-subscriber-unbound", "configuration"],
+    ["notifications-connection-inactive", "configuration"],
     ["notifications-contract-invalid", "contract"],
+    ["notifications-protocol-malformed", "contract"],
     ["notifications-stream-order-invalid", "contract"],
     ["notifications-provider-outcome-unknown", "outcome-unknown"],
     ["notifications-provider-terminal", "terminal"],
     ["notifications-request-not-found", "terminal"],
+    ["notifications-resolution-update-unsupported", "terminal"],
     ["notifications-transport-unavailable", "transient"],
     ["notifications-future-additive-error", "transient"],
   ] as const)("classifies %s as %s", (code, expected) => {
@@ -87,9 +90,18 @@ describe("safe transport runtime status", () => {
           delivery: {
             lastSuccessfulSendAt: null,
             lastError: {
+              category: "terminal-configuration",
               classification: "authentication",
               code: "notifications-credential-invalid",
             },
+          },
+          presentation: {
+            capability: "not-selected",
+            blocked: 0,
+            pending: 0,
+            retrying: 0,
+            updated: 0,
+            lastError: null,
           },
           spool: {
             deadLetter: 1,

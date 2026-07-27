@@ -327,6 +327,8 @@ async function main(): Promise<void> {
       transportSelection.selected === "notifications"
         ? await loadOrCreateMachineId(join(commandStateDir, "machine-id"))
         : undefined;
+    const notificationsCredentialId =
+      notificationsConnection?.credential?.credentialId;
     const daemon = await startDaemon({
       databasePath,
       webEnabled,
@@ -357,6 +359,25 @@ async function main(): Promise<void> {
               machineClientId:
                 notificationsConnection.configuration.machineClientId,
               machineId: notificationsMachineId,
+              connectionGuard: async () => {
+                try {
+                  const current = await readNotificationsConnection(
+                    notificationsConnectionPaths(commandStateDir),
+                  );
+                  return (
+                    current?.configuration.status === "active" &&
+                    current.configuration.machineClientId ===
+                      notificationsConnection.configuration.machineClientId &&
+                    current.configuration.currentCredentialId ===
+                      notificationsConnection.configuration
+                        .currentCredentialId &&
+                    current.credential?.credentialId ===
+                      notificationsCredentialId
+                  );
+                } catch {
+                  return false;
+                }
+              },
             },
           }),
       telegramUpdateMode:

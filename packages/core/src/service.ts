@@ -10,7 +10,7 @@ import {
 } from "@agent-relay/protocol";
 
 import { negotiateInteraction } from "./interaction-negotiation.js";
-import type { RelayLogger } from "./logger.js";
+import type { LogRecord, RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
 import {
   renderDeliveryText,
@@ -66,6 +66,7 @@ export interface RelayServiceOptions {
   logger?: RelayLogger;
   now?: () => Date;
   coalescingWindowMs?: number;
+  transportFailureLogIntervalMs?: number;
 }
 
 export interface RetentionOptions {
@@ -128,6 +129,11 @@ export class RelayService {
   private readonly logger: RelayLogger;
   private readonly now: () => Date;
   private readonly coalescingWindowMs: number;
+  private readonly transportFailureLogIntervalMs: number;
+  private readonly transportFailureLogs = new Map<
+    string,
+    { loggedAt: number; suppressed: number }
+  >();
 
   public constructor(
     public readonly store: RelayStore,
@@ -138,6 +144,8 @@ export class RelayService {
     this.logger = options.logger ?? NOOP_LOGGER;
     this.now = options.now ?? (() => new Date());
     this.coalescingWindowMs = options.coalescingWindowMs ?? 60_000;
+    this.transportFailureLogIntervalMs =
+      options.transportFailureLogIntervalMs ?? 60_000;
     if (
       !Number.isSafeInteger(this.coalescingWindowMs) ||
       this.coalescingWindowMs < 0 ||
@@ -147,6 +155,54 @@ export class RelayService {
         "notification coalescing window must be between 0 and 3600000 ms",
       );
     }
+    if (
+      !Number.isSafeInteger(this.transportFailureLogIntervalMs) ||
+      this.transportFailureLogIntervalMs < 1_000 ||
+      this.transportFailureLogIntervalMs > 60 * 60_000
+    ) {
+      throw new Error(
+        "transport failure log interval must be between 1000 and 3600000 ms",
+      );
+    }
+  }
+
+  private logTransportFailure(record: LogRecord): void {
+    const errorCode =
+      record.details !== undefined &&
+      typeof record.details["errorCode"] === "string"
+        ? record.details["errorCode"]
+        : undefined;
+    if (
+      this.transport.name !== "notifications" ||
+      errorCode === undefined ||
+      !errorCode.startsWith("notifications-")
+    ) {
+      this.logger.log(record);
+      return;
+    }
+    const key = `${record.code}:${errorCode}`;
+    const at = Date.parse(record.at);
+    const prior = this.transportFailureLogs.get(key);
+    if (
+      prior !== undefined &&
+      Number.isFinite(at) &&
+      at - prior.loggedAt < this.transportFailureLogIntervalMs
+    ) {
+      prior.suppressed += 1;
+      return;
+    }
+    const suppressed = prior?.suppressed ?? 0;
+    this.transportFailureLogs.set(key, {
+      loggedAt: Number.isFinite(at) ? at : this.now().getTime(),
+      suppressed: 0,
+    });
+    this.logger.log({
+      ...record,
+      details: {
+        ...record.details,
+        ...(suppressed === 0 ? {} : { suppressedSinceLast: suppressed }),
+      },
+    });
   }
 
   public recover(): number {
@@ -1258,7 +1314,7 @@ export class RelayService {
         } else {
           result.deadLettered += 1;
         }
-        this.logger.log({
+        this.logTransportFailure({
           level: status === "retry" ? "warn" : "error",
           code:
             status === "retry"

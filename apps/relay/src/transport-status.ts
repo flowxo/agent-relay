@@ -1,6 +1,11 @@
 import type { RelayService } from "@agent-relay/core";
 import { sha256 } from "@agent-relay/protocol";
-import { NotificationsContractTransport } from "@agent-relay/notifications-transport";
+import {
+  notificationsFailurePolicy,
+  NotificationsContractTransport,
+  type NotificationsFailureCategory,
+  type NotificationsResolutionPresenter,
+} from "@agent-relay/notifications-transport";
 
 import type {
   AgentRelayTransport,
@@ -30,6 +35,7 @@ export interface DaemonTransportStatus {
       delivery: {
         lastError: {
           at: string;
+          category: NotificationsFailureCategory;
           classification: NotificationsErrorClassification;
           code: string;
         } | null;
@@ -39,12 +45,27 @@ export interface DaemonTransportStatus {
         committedCursorRef: string | null;
         lastError: {
           at: string;
+          category: NotificationsFailureCategory;
           classification: NotificationsErrorClassification;
           code: string;
         } | null;
         lastSuccessfulPollAt: string | null;
         state: "active" | "error" | "not-started";
         unacknowledgedEventCount: number;
+      };
+      presentation: {
+        capability:
+          NotificationsResolutionPresenter["capability"] | "not-selected";
+        blocked: number;
+        pending: number;
+        retrying: number;
+        updated: number;
+        lastError: {
+          at: string;
+          category: NotificationsFailureCategory;
+          classification: NotificationsErrorClassification;
+          code: string;
+        } | null;
       };
       spool: {
         deadLetter: number;
@@ -71,6 +92,7 @@ const AUTHORIZATION_ERRORS = new Set([
 ]);
 
 const CONFIGURATION_ERRORS = new Set([
+  "notifications-connection-inactive",
   "notifications-resource-not-found",
   "notifications-subscriber-unbound",
 ]);
@@ -86,6 +108,9 @@ const CONTRACT_ERRORS = new Set([
   "notifications-schema-integrity-failure",
   "notifications-stream-order-invalid",
   "notifications-unsafe-opaque-value",
+  "notifications-protocol-malformed",
+  "notifications-presentation-identity-mismatch",
+  "notifications-redirect-refused",
 ]);
 
 const OUTCOME_UNKNOWN_ERRORS = new Set([
@@ -98,6 +123,7 @@ const TERMINAL_ERRORS = new Set([
   "notifications-provider-terminal",
   "notifications-resource-expired",
   "notifications-request-not-found",
+  "notifications-resolution-update-unsupported",
 ]);
 
 export function classifyNotificationsErrorCode(
@@ -124,11 +150,28 @@ export function classifyNotificationsErrorCode(
   return "transient";
 }
 
+function failureCategoryForCode(code: string): NotificationsFailureCategory {
+  const classification = classifyNotificationsErrorCode(code);
+  return notificationsFailurePolicy({
+    code,
+    disposition:
+      code === "notifications-provider-outcome-unknown"
+        ? "outcome_unknown"
+        : classification === "transient"
+          ? "retry_same_operation"
+          : "terminal",
+    retryable:
+      classification === "transient" ||
+      code === "notifications-transport-outcome-unknown",
+  }).category;
+}
+
 export function buildDaemonTransportStatus(input: {
   readiness?: TransportReadinessReport;
   selection: ResolvedTransportSelection;
   service: RelayService;
   hostedStreamKey?: string;
+  hostedPresentationCapability?: NotificationsResolutionPresenter["capability"];
 }): DaemonTransportStatus {
   const storeStatus = input.service.store.status();
   const notificationsDelivery =
@@ -159,6 +202,9 @@ export function buildDaemonTransportStatus(input: {
               ? null
               : {
                   ...notificationsDelivery.lastError,
+                  category: failureCategoryForCode(
+                    notificationsDelivery.lastError.code,
+                  ),
                   classification: classifyNotificationsErrorCode(
                     notificationsDelivery.lastError.code,
                   ),
@@ -181,11 +227,37 @@ export function buildDaemonTransportStatus(input: {
               ? null
               : {
                   ...hostedPoll.lastError,
+                  category: failureCategoryForCode(hostedPoll.lastError.code),
                   classification: classifyNotificationsErrorCode(
                     hostedPoll.lastError.code,
                   ),
                 },
           unacknowledgedEventCount: hostedPoll?.unacknowledgedEventCount ?? 0,
+        },
+        presentation: {
+          capability:
+            input.hostedPresentationCapability ??
+            (input.hostedStreamKey === undefined
+              ? "not-selected"
+              : "unsupported"),
+          pending:
+            (hostedPoll?.messageUpdates.pending ?? 0) +
+            (hostedPoll?.messageUpdates.updating ?? 0),
+          retrying: hostedPoll?.messageUpdates.retry ?? 0,
+          updated: hostedPoll?.messageUpdates.updated ?? 0,
+          blocked: hostedPoll?.messageUpdates.blocked ?? 0,
+          lastError:
+            hostedPoll?.messageUpdates.lastError === undefined
+              ? null
+              : {
+                  ...hostedPoll.messageUpdates.lastError,
+                  category: failureCategoryForCode(
+                    hostedPoll.messageUpdates.lastError.code,
+                  ),
+                  classification: classifyNotificationsErrorCode(
+                    hostedPoll.messageUpdates.lastError.code,
+                  ),
+                },
         },
         spool: {
           pending: storeStatus.events.queued + storeStatus.events.delivering,

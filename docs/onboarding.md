@@ -393,8 +393,12 @@ subscriber, generate and store a narrow credential, send a synthetic canary,
 rotate, revoke, erase, and deliver normal attention events when `notifications`
 is selected. Selected hosted mode also long-polls confirm/select/input answers,
 commits them to the exact local request before provider acknowledgement, and
-recovers cursor/acknowledgement work after restart. Hosted terminal-message
-reflection remains the next AR2 slice.
+recovers cursor/acknowledgement work after restart. Terminal presentation is a
+separate durable worker; the pinned draft.1 contract reports that optional
+capability as unsupported because it has no resolution-update endpoint. Safe
+status still exposes its queue/block counts and failure category. Local
+disconnect or revocation stops new hosted calls, retains SQLite authority, and
+requires explicit reconnect/rotation plus daemon restart.
 
 Do not place a broad Notifications project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment

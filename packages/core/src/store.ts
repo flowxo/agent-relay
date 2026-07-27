@@ -287,11 +287,38 @@ export interface HostedAcknowledgementRecord {
   nextAttemptAt: string;
 }
 
+export type HostedPresentationOutcome =
+  "answered" | "duplicate" | "expired" | "cancelled" | "unsupported";
+
+export interface HostedMessageUpdateRecord {
+  streamKey: string;
+  eventId: string;
+  messageId: string;
+  interactionId: string;
+  outcome: HostedPresentationOutcome;
+  resolutionSource?: PendingRequestRecord["resolvedBy"];
+  reasonCode?: string;
+  state: "pending" | "updating" | "retry" | "updated" | "blocked";
+  attemptCount: number;
+  nextAttemptAt: string;
+  lastErrorCode?: string;
+}
+
+export interface HostedMessageUpdateSummary {
+  pending: number;
+  updating: number;
+  retry: number;
+  updated: number;
+  blocked: number;
+  lastError?: { at: string; code: string };
+}
+
 export interface HostedPollStatus {
   committedCursor?: string;
   lastSuccessfulPollAt?: string;
   lastError?: { at: string; code: string };
   unacknowledgedEventCount: number;
+  messageUpdates: HostedMessageUpdateSummary;
 }
 
 export interface DiagnosticIngestResult {
@@ -6869,6 +6896,201 @@ export class RelayStore {
     })();
   }
 
+  private hostedMessageUpdateFromRow(row: {
+    stream_key: string;
+    event_id: string;
+    message_id: string;
+    interaction_id: string;
+    outcome: HostedClaimOutcome;
+    reason_code: string | null;
+    resolved_by: PendingRequestRecord["resolvedBy"] | null;
+    state: HostedMessageUpdateRecord["state"];
+    attempt_count: number;
+    next_attempt_at: string;
+    last_error_code: string | null;
+  }): HostedMessageUpdateRecord {
+    const outcome: HostedPresentationOutcome =
+      row.outcome === "answered"
+        ? "answered"
+        : row.outcome === "duplicate"
+          ? "duplicate"
+          : row.reason_code === "locally_expired" ||
+              row.reason_code === "answer_after_expiry"
+            ? "expired"
+            : row.reason_code === "locally_cancelled"
+              ? "cancelled"
+              : "unsupported";
+    return {
+      streamKey: row.stream_key,
+      eventId: row.event_id,
+      messageId: row.message_id,
+      interactionId: row.interaction_id,
+      outcome,
+      ...(row.resolved_by === null
+        ? {}
+        : { resolutionSource: row.resolved_by }),
+      ...(row.reason_code === null ? {} : { reasonCode: row.reason_code }),
+      state: row.state,
+      attemptCount: row.attempt_count,
+      nextAttemptAt: row.next_attempt_at,
+      ...(row.last_error_code === null
+        ? {}
+        : { lastErrorCode: row.last_error_code }),
+    };
+  }
+
+  public getHostedMessageUpdate(
+    streamKey: string,
+    eventId: string,
+  ): HostedMessageUpdateRecord | undefined {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertHostedOpaque(eventId, "hosted event id");
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          message_update.stream_key, message_update.event_id,
+          message_update.message_id, message_update.interaction_id,
+          message_update.outcome, message_update.reason_code,
+          message_update.state, message_update.attempt_count,
+          message_update.next_attempt_at, message_update.last_error_code,
+          request.resolved_by
+        FROM hosted_message_updates AS message_update
+        JOIN hosted_event_claims AS claim
+          ON claim.stream_key = message_update.stream_key
+          AND claim.event_id = message_update.event_id
+        JOIN hosted_delivery_mappings AS delivery
+          ON delivery.stream_key = message_update.stream_key
+          AND delivery.message_id = claim.message_id
+        LEFT JOIN pending_requests AS request
+          ON request.event_id = delivery.event_id
+        WHERE message_update.stream_key = ?
+          AND message_update.event_id = ?
+      `,
+      )
+      .get(streamKey, eventId) as
+      | {
+          stream_key: string;
+          event_id: string;
+          message_id: string;
+          interaction_id: string;
+          outcome: HostedClaimOutcome;
+          reason_code: string | null;
+          resolved_by: PendingRequestRecord["resolvedBy"] | null;
+          state: HostedMessageUpdateRecord["state"];
+          attempt_count: number;
+          next_attempt_at: string;
+          last_error_code: string | null;
+        }
+      | undefined;
+    return row === undefined ? undefined : this.hostedMessageUpdateFromRow(row);
+  }
+
+  public claimHostedMessageUpdate(
+    streamKey: string,
+    now: string,
+  ): HostedMessageUpdateRecord | undefined {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertIsoCutoff(now, "hosted message update claim time");
+    return this.database.transaction(() => {
+      const row = this.database
+        .prepare(
+          `
+          SELECT message_update.event_id
+          FROM hosted_message_updates AS message_update
+          JOIN hosted_event_claims AS claim
+            ON claim.stream_key = message_update.stream_key
+            AND claim.event_id = message_update.event_id
+          JOIN hosted_event_acknowledgements AS acknowledgement
+            ON acknowledgement.stream_key = message_update.stream_key
+            AND acknowledgement.event_id = message_update.event_id
+          WHERE message_update.stream_key = ?
+            AND message_update.state IN ('pending', 'retry')
+            AND message_update.next_attempt_at <= ?
+            AND acknowledgement.state = 'acknowledged'
+          ORDER BY claim.claim_id
+          LIMIT 1
+        `,
+        )
+        .get(streamKey, now) as { event_id: string } | undefined;
+      if (row === undefined) {
+        return undefined;
+      }
+      const update = this.database
+        .prepare(
+          `
+          UPDATE hosted_message_updates SET
+            state = 'updating',
+            attempt_count = attempt_count + 1,
+            updated_at = ?
+          WHERE stream_key = ? AND event_id = ?
+            AND state IN ('pending', 'retry')
+        `,
+        )
+        .run(now, streamKey, row.event_id);
+      return update.changes === 1
+        ? this.getHostedMessageUpdate(streamKey, row.event_id)
+        : undefined;
+    })();
+  }
+
+  public markHostedMessageUpdateFailed(input: {
+    streamKey: string;
+    eventId: string;
+    errorCode: string;
+    retryAt: string;
+    retryable: boolean;
+    now: string;
+  }): void {
+    assertHostedOpaque(input.errorCode, "hosted message update error", 128);
+    assertIsoCutoff(input.retryAt, "hosted message update retry time");
+    assertIsoCutoff(input.now, "hosted message update failure time");
+    const state = input.retryable ? "retry" : "blocked";
+    const update = this.database
+      .prepare(
+        `
+        UPDATE hosted_message_updates SET
+          state = ?, next_attempt_at = ?, last_error_code = ?, updated_at = ?
+        WHERE stream_key = ? AND event_id = ? AND state = 'updating'
+      `,
+      )
+      .run(
+        state,
+        input.retryAt,
+        input.errorCode,
+        input.now,
+        input.streamKey,
+        input.eventId,
+      );
+    if (update.changes !== 1) {
+      throw new Error("hosted message update is not claimed");
+    }
+  }
+
+  public markHostedMessageUpdateSucceeded(input: {
+    streamKey: string;
+    eventId: string;
+    now: string;
+  }): void {
+    assertIsoCutoff(input.now, "hosted message update completion time");
+    const update = this.database
+      .prepare(
+        `
+        UPDATE hosted_message_updates SET
+          state = 'updated', last_error_code = NULL, updated_at = ?
+        WHERE stream_key = ? AND event_id = ? AND state = 'updating'
+      `,
+      )
+      .run(input.now, input.streamKey, input.eventId);
+    if (update.changes !== 1) {
+      throw new Error("hosted message update is not claimed");
+    }
+  }
+
   public recoverHostedInteractionWork(now: string): number {
     assertIsoCutoff(now, "hosted recovery time");
     return this.database.transaction(() => {
@@ -6896,6 +7118,56 @@ export class RelayStore {
         `,
         )
         .run(now, now).changes;
+      return acknowledgements + updates;
+    })();
+  }
+
+  public requeueBlockedHostedConnectionWork(input: {
+    streamKey: string;
+    errorCodes: readonly string[];
+    now: string;
+  }): number {
+    if (!/^[a-f0-9]{64}$/u.test(input.streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    if (input.errorCodes.length < 1 || input.errorCodes.length > 32) {
+      throw new Error(
+        "hosted reconnect error-code set must contain between 1 and 32 entries",
+      );
+    }
+    const errorCodes = [...new Set(input.errorCodes)];
+    for (const code of errorCodes) {
+      assertHostedOpaque(code, "hosted reconnect error", 128);
+    }
+    assertIsoCutoff(input.now, "hosted reconnect time");
+    const placeholders = errorCodes.map(() => "?").join(", ");
+    return this.database.transaction(() => {
+      const acknowledgements = this.database
+        .prepare(
+          `
+          UPDATE hosted_event_acknowledgements SET
+            state = 'retry',
+            next_attempt_at = ?,
+            updated_at = ?
+          WHERE stream_key = ?
+            AND state = 'blocked'
+            AND last_error_code IN (${placeholders})
+        `,
+        )
+        .run(input.now, input.now, input.streamKey, ...errorCodes).changes;
+      const updates = this.database
+        .prepare(
+          `
+          UPDATE hosted_message_updates SET
+            state = 'retry',
+            next_attempt_at = ?,
+            updated_at = ?
+          WHERE stream_key = ?
+            AND state = 'blocked'
+            AND last_error_code IN (${placeholders})
+        `,
+        )
+        .run(input.now, input.now, input.streamKey, ...errorCodes).changes;
       return acknowledgements + updates;
     })();
   }
@@ -7098,6 +7370,47 @@ export class RelayStore {
       `,
       )
       .get(streamKey) as { count: number };
+    const messageUpdateCounts = this.database
+      .prepare(
+        `
+        SELECT state AS key, COUNT(*) AS count
+        FROM hosted_message_updates
+        WHERE stream_key = ?
+        GROUP BY state
+      `,
+      )
+      .all(streamKey) as Array<{
+      key: HostedMessageUpdateRecord["state"];
+      count: number;
+    }>;
+    const messageUpdates: HostedMessageUpdateSummary = {
+      pending: 0,
+      updating: 0,
+      retry: 0,
+      updated: 0,
+      blocked: 0,
+    };
+    for (const row of messageUpdateCounts) {
+      messageUpdates[row.key] = row.count;
+    }
+    const lastMessageUpdateError = this.database
+      .prepare(
+        `
+        SELECT last_error_code, updated_at
+        FROM hosted_message_updates
+        WHERE stream_key = ? AND last_error_code IS NOT NULL
+        ORDER BY updated_at DESC, event_id DESC
+        LIMIT 1
+      `,
+      )
+      .get(streamKey) as
+      { last_error_code: string; updated_at: string } | undefined;
+    if (lastMessageUpdateError !== undefined) {
+      messageUpdates.lastError = {
+        at: lastMessageUpdateError.updated_at,
+        code: lastMessageUpdateError.last_error_code,
+      };
+    }
     return {
       ...(state?.committed_cursor == null
         ? {}
@@ -7114,6 +7427,7 @@ export class RelayStore {
             },
           }),
       unacknowledgedEventCount: count.count,
+      messageUpdates,
     };
   }
 

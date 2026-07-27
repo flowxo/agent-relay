@@ -1,6 +1,7 @@
 import {
   NOOP_LOGGER,
   type HostedAcknowledgementRecord,
+  type HostedMessageUpdateRecord,
   type RecordHostedClaimInput,
   type RelayLogger,
   type RelayStore,
@@ -8,15 +9,22 @@ import {
 import { sha256 } from "@agent-relay/protocol";
 import {
   notificationsMachineStreamKey,
+  notificationsFailurePolicy,
+  notificationsResolutionOperationId,
+  asNotificationsDeliveryError,
+  NotificationsDeliveryError,
+  PinnedNotificationsResolutionPresenter,
   validateHostedAnswer,
   type HostedAnswerValidation,
   type HostedInteractionEvent,
   type NotificationsInteractionSource,
+  type NotificationsResolutionPresenter,
 } from "@agent-relay/notifications-transport";
 
 export interface NotificationsPollerOptions {
   store: RelayStore;
   source: NotificationsInteractionSource;
+  presenter?: NotificationsResolutionPresenter;
   streamKey: string;
   machineId: string;
   bindingId: string;
@@ -26,6 +34,7 @@ export interface NotificationsPollerOptions {
   requestTimeoutMs?: number;
   retryBaseMs?: number;
   retryMaxMs?: number;
+  failureLogIntervalMs?: number;
   now?: () => Date;
   sleep?: (delayMs: number, signal: AbortSignal) => Promise<void>;
 }
@@ -81,6 +90,16 @@ function isRetryable(error: unknown): boolean {
   );
 }
 
+const RECONNECT_RECOVERABLE_ERROR_CODES = [
+  "notifications-authentication-required",
+  "notifications-connection-inactive",
+  "notifications-credential-invalid",
+  "notifications-environment-mismatch",
+  "notifications-resource-not-found",
+  "notifications-scope-forbidden",
+  "notifications-subscriber-unbound",
+] as const;
+
 async function abortableSleep(
   delayMs: number,
   signal: AbortSignal,
@@ -106,11 +125,17 @@ export class NotificationsInteractionPoller {
   private readonly requestTimeoutMs: number;
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
+  private readonly failureLogIntervalMs: number;
   private readonly now: () => Date;
   private readonly sleep: (
     delayMs: number,
     signal: AbortSignal,
   ) => Promise<void>;
+  private readonly presenter: NotificationsResolutionPresenter;
+  private readonly failureLogs = new Map<
+    string,
+    { loggedAt: number; suppressed: number }
+  >();
 
   public constructor(private readonly options: NotificationsPollerOptions) {
     this.logger = options.logger ?? NOOP_LOGGER;
@@ -120,8 +145,11 @@ export class NotificationsInteractionPoller {
       options.requestTimeoutMs ?? this.waitSeconds * 1_000 + 5_000;
     this.retryBaseMs = options.retryBaseMs ?? 1_000;
     this.retryMaxMs = options.retryMaxMs ?? 60_000;
+    this.failureLogIntervalMs = options.failureLogIntervalMs ?? 60_000;
     this.now = options.now ?? (() => new Date());
     this.sleep = options.sleep ?? abortableSleep;
+    this.presenter =
+      options.presenter ?? new PinnedNotificationsResolutionPresenter();
     if (
       !Number.isSafeInteger(this.waitSeconds) ||
       this.waitSeconds < 0 ||
@@ -143,13 +171,53 @@ export class NotificationsInteractionPoller {
       !Number.isSafeInteger(this.retryBaseMs) ||
       this.retryBaseMs < 1 ||
       !Number.isSafeInteger(this.retryMaxMs) ||
-      this.retryMaxMs < this.retryBaseMs
+      this.retryMaxMs < this.retryBaseMs ||
+      !Number.isSafeInteger(this.failureLogIntervalMs) ||
+      this.failureLogIntervalMs < 1_000 ||
+      this.failureLogIntervalMs > 60 * 60_000
     ) {
       throw new Error("Notifications poll timeout or retry bounds are invalid");
     }
     if (!/^[a-f0-9]{64}$/u.test(options.streamKey)) {
       throw new Error("Notifications stream key must be a SHA-256 digest");
     }
+  }
+
+  public presentationCapability(): NotificationsResolutionPresenter["capability"] {
+    return this.presenter.capability;
+  }
+
+  private logFailure(input: {
+    at: Date;
+    key: string;
+    level: "warn" | "error";
+    code: string;
+    message: string;
+    details: Record<string, unknown>;
+  }): void {
+    const prior = this.failureLogs.get(input.key);
+    if (
+      prior !== undefined &&
+      input.at.getTime() - prior.loggedAt < this.failureLogIntervalMs
+    ) {
+      prior.suppressed += 1;
+      return;
+    }
+    const suppressed = prior?.suppressed ?? 0;
+    this.failureLogs.set(input.key, {
+      loggedAt: input.at.getTime(),
+      suppressed: 0,
+    });
+    this.logger.log({
+      level: input.level,
+      code: input.code,
+      message: input.message,
+      at: input.at.toISOString(),
+      details: {
+        ...input.details,
+        ...(suppressed === 0 ? {} : { suppressedSinceLast: suppressed }),
+      },
+    });
   }
 
   private retryDelay(attempt: number): number {
@@ -285,7 +353,9 @@ export class NotificationsInteractionPoller {
           now.getTime() + this.retryDelay(work.attemptCount),
         ).toISOString(),
       });
-      this.logger.log({
+      this.logFailure({
+        at: now,
+        key: `ack:${errorCode(error)}`,
         level: "error",
         code: retryable
           ? "notifications.ack-retry"
@@ -293,7 +363,6 @@ export class NotificationsInteractionPoller {
         message: retryable
           ? "Notifications acknowledgement will retry from durable state"
           : "Notifications acknowledgement stopped on a terminal failure",
-        at: now.toISOString(),
         details: {
           eventRef: safeRef(work.eventId),
           errorCode: errorCode(error),
@@ -301,6 +370,118 @@ export class NotificationsInteractionPoller {
         },
       });
       return retryable ? "retry" : "stop";
+    }
+  }
+
+  private async reflectResolution(
+    work: HostedMessageUpdateRecord,
+    signal: AbortSignal,
+  ): Promise<"complete" | "retry" | "stop"> {
+    const operationId = notificationsResolutionOperationId(work.eventId);
+    try {
+      const result = await this.presenter.reflect({
+        operationId,
+        messageId: work.messageId,
+        interactionId: work.interactionId,
+        presentation: work.outcome,
+        ...(work.resolutionSource === undefined
+          ? {}
+          : { resolutionSource: work.resolutionSource }),
+        ...(work.reasonCode === undefined
+          ? {}
+          : { reasonCode: work.reasonCode }),
+        signal: this.boundedSignal(signal),
+      });
+      if (signal.aborted) {
+        return "stop";
+      }
+      const now = this.now();
+      if (result.outcome === "unsupported") {
+        this.options.store.markHostedMessageUpdateFailed({
+          streamKey: this.options.streamKey,
+          eventId: work.eventId,
+          errorCode: result.reasonCode,
+          retryable: false,
+          now: now.toISOString(),
+          retryAt: now.toISOString(),
+        });
+        this.logFailure({
+          at: now,
+          key: `presentation:${result.reasonCode}`,
+          level: "warn",
+          code: "notifications.presentation-unsupported",
+          message:
+            "The pinned Notifications contract cannot reflect terminal message presentation",
+          details: {
+            errorCode: result.reasonCode,
+            eventRef: safeRef(work.eventId),
+          },
+        });
+        return "complete";
+      }
+      if (
+        result.operationId !== operationId ||
+        result.messageId !== work.messageId
+      ) {
+        throw new NotificationsDeliveryError(
+          "Notifications presentation response changed durable identity",
+          "notifications-presentation-identity-mismatch",
+          false,
+          "terminal",
+        );
+      }
+      this.options.store.markHostedMessageUpdateSucceeded({
+        streamKey: this.options.streamKey,
+        eventId: work.eventId,
+        now: now.toISOString(),
+      });
+      this.logger.log({
+        level: "info",
+        code: "notifications.presentation-updated",
+        message: "Notifications terminal message presentation was updated",
+        at: now.toISOString(),
+        details: {
+          eventRef: safeRef(work.eventId),
+          presentation: work.outcome,
+        },
+      });
+      return "complete";
+    } catch (error) {
+      if (signal.aborted) {
+        return "stop";
+      }
+      const classified = asNotificationsDeliveryError(error);
+      const policy = notificationsFailurePolicy(classified);
+      const retryable = policy.retrySameOperation;
+      const now = this.now();
+      this.options.store.markHostedMessageUpdateFailed({
+        streamKey: this.options.streamKey,
+        eventId: work.eventId,
+        errorCode: classified.code,
+        retryable,
+        now: now.toISOString(),
+        retryAt: new Date(
+          now.getTime() + this.retryDelay(work.attemptCount),
+        ).toISOString(),
+      });
+      this.logFailure({
+        at: now,
+        key: `presentation:${classified.code}`,
+        level: "error",
+        code: retryable
+          ? "notifications.presentation-retry"
+          : "notifications.presentation-blocked",
+        message: retryable
+          ? "Notifications presentation update will retry with the same operation identity"
+          : "Notifications presentation update requires no automatic retry",
+        details: {
+          category: policy.category,
+          errorCode: classified.code,
+          eventRef: safeRef(work.eventId),
+          attempt: work.attemptCount,
+        },
+      });
+      return retryable ? "retry" : "complete";
     }
   }
 
@@ -318,8 +499,24 @@ export class NotificationsInteractionPoller {
   }
 
   public async run(signal: AbortSignal): Promise<void> {
-    this.options.store.recoverHostedInteractionWork(this.now().toISOString());
+    const startedAt = this.now().toISOString();
+    const recovered =
+      this.options.store.recoverHostedInteractionWork(startedAt);
+    const requeued = this.options.store.requeueBlockedHostedConnectionWork({
+      streamKey: this.options.streamKey,
+      errorCodes: RECONNECT_RECOVERABLE_ERROR_CODES,
+      now: startedAt,
+    });
     let failedPolls = 0;
+    if (recovered + requeued > 0) {
+      this.logger.log({
+        level: "info",
+        code: "notifications.work-recovered",
+        message: "Notifications durable interaction work was recovered",
+        at: startedAt,
+        details: { interrupted: recovered, requeuedAfterReconnect: requeued },
+      });
+    }
     this.logger.log({
       level: "info",
       code: "notifications.poll-started",
@@ -364,6 +561,17 @@ export class NotificationsInteractionPoller {
                 );
           await this.sleep(delayMs, signal);
           continue;
+        }
+
+        const messageUpdate = this.options.store.claimHostedMessageUpdate(
+          this.options.streamKey,
+          this.now().toISOString(),
+        );
+        if (messageUpdate !== undefined) {
+          const result = await this.reflectResolution(messageUpdate, signal);
+          if (result === "stop") {
+            break;
+          }
         }
 
         const pollState = this.options.store.hostedPollStatus(
@@ -440,7 +648,9 @@ export class NotificationsInteractionPoller {
             code,
             now.toISOString(),
           );
-          this.logger.log({
+          this.logFailure({
+            at: now,
+            key: `poll:${code}`,
             level: "error",
             code: retryable
               ? "notifications.poll-retry"
@@ -448,7 +658,6 @@ export class NotificationsInteractionPoller {
             message: retryable
               ? "Notifications interaction polling will retry"
               : "Notifications interaction polling stopped on a terminal failure",
-            at: now.toISOString(),
             details: {
               errorCode: code,
               retryDelayMs: retryable ? this.retryDelay(failedPolls + 1) : 0,

@@ -78,6 +78,28 @@
   schema-1-to-schema-2 packed lifecycle. The focused hosted matrix passed 9
   files/73 tests, all three Chromium scenarios passed, and `pnpm audit --prod`
   found no known vulnerability.
+- FXO-1153 makes hosted presentation a separate durable concern after local
+  authority and provider acknowledgement. A supported presenter projects
+  answered, duplicate, expired, cancelled, and unsupported states with one
+  deterministic SHA-256 operation identity; response loss retries only that
+  identity, and explicit provider ambiguity blocks without creating a second
+  message or decision. Interrupted update leases recover from SQLite, while
+  update failure cannot invoke resolution or continuation. The exact pinned
+  draft.1 client has no resolved-message update method, so the shipped presenter
+  records `notifications-resolution-update-unsupported` without HTTP or misusing
+  cancellation. Hosted failures now map to retry, terminal-configuration,
+  dead-letter/security, quarantine, or operator-action categories. Status/doctor
+  expose only capability, counts, safe codes, categories, and hashed references.
+  Repeated hosted failures are rate-limited in logs while every event/update
+  remains durable. A runtime connection guard stops new send/poll/ack calls
+  after disconnect, revocation, erase, or rotation; a running-daemon test proves
+  local decisions/mappings survive and explicit reconnect plus restart resumes
+  delivery. The focused matrix passed 10 files/93 tests. The final local gate
+  passed 50 Vitest files/395 tests, 17 contract-lock and supply-chain tests, the
+  six-test isolated Notifications consumer, the 190,583-byte
+  packed/1,220,612-byte unpacked artifact proof, and the complete packed
+  lifecycle. All three Chromium scenarios passed, and `pnpm audit --prod` found
+  no known vulnerability.
 - Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
   when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
   all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
@@ -702,11 +724,10 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Commit and close FXO-1152, then proceed directly to FXO-1153 hosted
-resolution-reflection and failure diagnosis. Production hosted dogfood must
-still wait for AR2 and a central C0-09 go disposition. npm scope/publication and
-the monitored public security-contact path remain owner-controlled promotion
-gates.
+Commit and close FXO-1153, then proceed directly to FXO-1154 shared transport
+behavior parity. Production hosted dogfood must still wait for AR2 and a central
+C0-09 go disposition. npm scope/publication and the monitored public
+security-contact path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

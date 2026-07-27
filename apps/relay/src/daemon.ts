@@ -15,7 +15,9 @@ import type { RetentionOptions, RetentionResult } from "@agent-relay/core";
 import {
   NotificationsContractTransport,
   NotificationsMachineInteractionSource,
+  PinnedNotificationsResolutionPresenter,
   type NotificationsContractTransportOptions,
+  type NotificationsResolutionPresenter,
 } from "@agent-relay/notifications-transport";
 
 import { createRelayHttpServer } from "./http-server.js";
@@ -37,6 +39,7 @@ import {
 export interface DaemonNotificationsOptions extends NotificationsContractTransportOptions {
   bindingId: string;
   machineId: string;
+  presenter?: NotificationsResolutionPresenter;
 }
 
 export interface DaemonOptions {
@@ -167,6 +170,11 @@ export async function startDaemon(
           notificationsRuntime.baseUrl,
           notificationsRuntime.machineClientId,
         );
+  const notificationsPresenter =
+    notificationsRuntime === undefined
+      ? undefined
+      : (notificationsRuntime.presenter ??
+        new PinnedNotificationsResolutionPresenter());
   if (
     telegramUpdateMode === "webhook" &&
     transport instanceof TelegramBotTransport &&
@@ -218,6 +226,11 @@ export async function startDaemon(
         service,
         selection: transportSelection,
         ...(hostedStreamKey === undefined ? {} : { hostedStreamKey }),
+        ...(notificationsPresenter === undefined
+          ? {}
+          : {
+              hostedPresentationCapability: notificationsPresenter.capability,
+            }),
         ...(options.transportReadiness === undefined
           ? {}
           : { readiness: options.transportReadiness }),
@@ -353,11 +366,17 @@ export async function startDaemon(
       source: new NotificationsMachineInteractionSource({
         baseUrl: notificationsRuntime.baseUrl,
         credential: notificationsRuntime.credential,
+        ...(notificationsRuntime.connectionGuard === undefined
+          ? {}
+          : { connectionGuard: notificationsRuntime.connectionGuard }),
         ...(notificationsRuntime.fetch === undefined
           ? {}
           : { fetch: notificationsRuntime.fetch }),
       }),
       streamKey: hostedStreamKey,
+      ...(notificationsPresenter === undefined
+        ? {}
+        : { presenter: notificationsPresenter }),
       machineId: notificationsRuntime.machineId,
       bindingId: notificationsRuntime.bindingId,
       logger,

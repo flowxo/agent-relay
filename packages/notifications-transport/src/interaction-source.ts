@@ -2,7 +2,10 @@ import { sha256 } from "@agent-relay/protocol";
 import { NotificationsClient } from "@flowxo/notifications";
 
 import { normalizeNotificationsBaseUrl } from "./bootstrap.js";
-import { asNotificationsDeliveryError } from "./errors.js";
+import {
+  asNotificationsDeliveryError,
+  NotificationsDeliveryError,
+} from "./errors.js";
 
 import type {
   InteractionEvent,
@@ -28,6 +31,7 @@ function noRedirectFetch(
 export interface NotificationsInteractionSourceOptions {
   baseUrl: string | URL;
   credential: string;
+  connectionGuard?: () => boolean | Promise<boolean>;
   fetch?: NotificationsFetch;
 }
 
@@ -55,6 +59,8 @@ export interface NotificationsInteractionSource {
 
 export class NotificationsMachineInteractionSource implements NotificationsInteractionSource {
   private readonly client: NotificationsClient;
+  private readonly connectionGuard:
+    (() => boolean | Promise<boolean>) | undefined;
 
   public constructor(options: NotificationsInteractionSourceOptions) {
     this.client = new NotificationsClient({
@@ -62,12 +68,25 @@ export class NotificationsMachineInteractionSource implements NotificationsInter
       credential: options.credential,
       fetch: noRedirectFetch(options.fetch),
     });
+    this.connectionGuard = options.connectionGuard;
+  }
+
+  private async assertConnectionActive(): Promise<void> {
+    if (this.connectionGuard !== undefined && !(await this.connectionGuard())) {
+      throw new NotificationsDeliveryError(
+        "The configured Notifications machine connection is inactive.",
+        "notifications-connection-inactive",
+        false,
+        "terminal",
+      );
+    }
   }
 
   public async poll(
     options: PollHostedEventsOptions,
   ): Promise<MachineEventPollResponse> {
     try {
+      await this.assertConnectionActive();
       return await this.client.pollMachineEvents({
         ...(options.after === undefined ? {} : { after: options.after }),
         limit: options.limit,
@@ -83,6 +102,7 @@ export class NotificationsMachineInteractionSource implements NotificationsInter
     input: AcknowledgeHostedEventInput,
   ): Promise<MachineEventAckResponse> {
     try {
+      await this.assertConnectionActive();
       return await this.client.acknowledgeMachineEvent(
         input.eventId,
         {

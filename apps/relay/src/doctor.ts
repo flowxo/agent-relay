@@ -221,6 +221,7 @@ export async function runDoctor(
           credentialPresent: notifications.credentialPresent,
           issueCodes: notifications.issueCodes,
           machineClientRef: notifications.machineClientRef ?? null,
+          resolutionPresentation: notifications.resolutionPresentation,
         }),
       });
     }

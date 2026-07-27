@@ -259,6 +259,31 @@ describe("Notifications contract transport", () => {
     });
   });
 
+  it("stops new hosted sends after the local connection becomes inactive", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const transport = new NotificationsContractTransport({
+      baseUrl: "https://notifications.example.test",
+      credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+      machineClientId: "machine_client_synthetic_001",
+      subscriberId: "agent_relay_operator",
+      connectionGuard: async () => false,
+      fetch: fetchMock,
+    });
+    const message = delivery();
+    await expect(
+      transport.deliver(message, { idempotencyKey: message.eventId }),
+    ).rejects.toMatchObject({
+      code: "notifications-connection-inactive",
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(transport.circuitState()).toEqual({
+      blocked: true,
+      errorCode: "notifications-connection-inactive",
+      suppressedDeliveries: 0,
+    });
+  });
+
   it("refuses remote HTTP and never follows a credential-bearing redirect", async () => {
     expect(
       () =>
@@ -285,7 +310,8 @@ describe("Notifications contract transport", () => {
     await expect(
       transport.deliver(message, { idempotencyKey: message.eventId }),
     ).rejects.toMatchObject({
-      code: "notifications-protocol-unclassified",
+      code: "notifications-redirect-refused",
+      retryable: false,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

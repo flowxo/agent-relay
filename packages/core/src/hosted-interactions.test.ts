@@ -205,6 +205,64 @@ describe("durable hosted interaction authority", () => {
     expect(store.claimHostedAcknowledgement(streamKey, handledAt)).toBe(
       undefined,
     );
+    const messageUpdate = store.claimHostedMessageUpdate(
+      streamKey,
+      "2026-07-26T18:02:02.000Z",
+    );
+    expect(messageUpdate).toMatchObject({
+      eventId: claim.eventId,
+      outcome: "answered",
+      resolutionSource: "notifications",
+      state: "updating",
+      attemptCount: 1,
+    });
+    store.close();
+    store = new RelayStore(databasePath);
+    expect(store.recoverHostedInteractionWork("2026-07-26T18:02:03.000Z")).toBe(
+      1,
+    );
+    expect(
+      store.claimHostedMessageUpdate(streamKey, "2026-07-26T18:02:03.000Z"),
+    ).toMatchObject({
+      eventId: claim.eventId,
+      state: "updating",
+      attemptCount: 2,
+    });
+    store.markHostedMessageUpdateFailed({
+      streamKey,
+      eventId: claim.eventId,
+      errorCode: "notifications-provider-retryable",
+      retryable: true,
+      retryAt: "2026-07-26T18:02:10.000Z",
+      now: "2026-07-26T18:02:03.000Z",
+    });
+    expect(
+      store.claimHostedMessageUpdate(streamKey, "2026-07-26T18:02:09.000Z"),
+    ).toBeUndefined();
+    expect(
+      store.claimHostedMessageUpdate(streamKey, "2026-07-26T18:02:10.000Z"),
+    ).toMatchObject({
+      eventId: claim.eventId,
+      state: "updating",
+      attemptCount: 3,
+    });
+    store.markHostedMessageUpdateSucceeded({
+      streamKey,
+      eventId: claim.eventId,
+      now: "2026-07-26T18:02:11.000Z",
+    });
+    expect(store.getPendingRequest(request.correlationId)).toMatchObject({
+      answer: "option_hosted_beta_12345678",
+      resolvedBy: "notifications",
+      state: "answered",
+    });
+    expect(store.hostedPollStatus(streamKey).messageUpdates).toEqual({
+      pending: 0,
+      updating: 0,
+      retry: 0,
+      updated: 1,
+      blocked: 0,
+    });
     store.close();
 
     const database = new Database(databasePath, { readonly: true });
@@ -214,7 +272,7 @@ describe("durable hosted interaction authority", () => {
           "SELECT state, outcome FROM hosted_message_updates WHERE event_id = ?",
         )
         .get(claim.eventId),
-    ).toEqual({ state: "pending", outcome: "answered" });
+    ).toEqual({ state: "updated", outcome: "answered" });
     expect(
       database
         .prepare(
@@ -285,6 +343,115 @@ describe("durable hosted interaction authority", () => {
     expect(store.hostedPollStatus(isolatedStream)).toMatchObject({
       unacknowledgedEventCount: 0,
     });
+    store.close();
+  });
+
+  it("projects terminal local outcomes and their resolution source without changing authority", () => {
+    const store = new RelayStore();
+    const duplicate = event("presentation_duplicate");
+    const expired = event("presentation_expired");
+    const cancelled = event("presentation_cancelled");
+    const unsupported = event("presentation_unsupported");
+    for (const [input, suffix] of [
+      [duplicate, "presentation_duplicate"],
+      [expired, "presentation_expired"],
+      [cancelled, "presentation_cancelled"],
+    ] as const) {
+      deliver(store, input, suffix);
+    }
+    expect(
+      store.resolveRequest({
+        correlationId: duplicate.request!.correlationId,
+        answer: "option_hosted_alpha_12345678",
+        resolvedBy: "terminal",
+        now: "2026-07-26T18:01:00.000Z",
+      }),
+    ).toMatchObject({ outcome: "answered" });
+    expect(
+      store.cancelRequest(
+        cancelled.request!.correlationId,
+        "2026-07-26T18:01:01.000Z",
+      ),
+    ).toMatchObject({ outcome: "cancelled" });
+    expect(store.expireRequests("2026-07-26T18:31:00.000Z")).toBe(1);
+    deliver(store, unsupported, "presentation_unsupported");
+
+    const claims = [
+      {
+        local: duplicate,
+        suffix: "presentation_duplicate",
+        validation: {
+          outcome: "duplicate" as const,
+          acknowledgement: "processed" as const,
+          reasonCode: "already_resolved",
+        },
+        presentation: "duplicate",
+        source: "terminal",
+      },
+      {
+        local: expired,
+        suffix: "presentation_expired",
+        validation: {
+          outcome: "terminal" as const,
+          acknowledgement: "processed" as const,
+          reasonCode: "locally_expired",
+        },
+        presentation: "expired",
+      },
+      {
+        local: cancelled,
+        suffix: "presentation_cancelled",
+        validation: {
+          outcome: "terminal" as const,
+          acknowledgement: "processed" as const,
+          reasonCode: "locally_cancelled",
+        },
+        presentation: "cancelled",
+      },
+      {
+        local: unsupported,
+        suffix: "presentation_unsupported",
+        validation: {
+          outcome: "quarantine" as const,
+          acknowledgement: "quarantined" as const,
+          reasonCode: "invalid_option",
+        },
+        presentation: "unsupported",
+      },
+    ] as const;
+    for (const [index, item] of claims.entries()) {
+      const hostedEventId = `event_hosted_${item.suffix}_12345678`;
+      store.recordHostedEventClaim({
+        streamKey,
+        eventId: hostedEventId,
+        cursor: `cursor_hosted_presentation_${String(index)}_12345678`,
+        payloadHash: sha256(`payload-${item.suffix}`),
+        messageId: `message_hosted_store_${item.suffix}_12345678`,
+        interactionId: `interaction_hosted_store_${item.suffix}_12345678`,
+        occurredAt: "2026-07-26T18:00:30.000Z",
+        handledAt,
+        validation: item.validation,
+      });
+      expect(
+        store.getHostedMessageUpdate(streamKey, hostedEventId),
+      ).toMatchObject({
+        outcome: item.presentation,
+        ...(!("source" in item) ? {} : { resolutionSource: item.source }),
+        state: "pending",
+      });
+    }
+    expect(
+      store.getPendingRequest(duplicate.request!.correlationId)?.state,
+    ).toBe("answered");
+    expect(store.getPendingRequest(expired.request!.correlationId)?.state).toBe(
+      "expired",
+    );
+    expect(
+      store.getPendingRequest(cancelled.request!.correlationId)?.state,
+    ).toBe("cancelled");
+    expect(
+      store.getPendingRequest(unsupported.request!.correlationId)?.state,
+    ).toBe("open");
     store.close();
   });
 

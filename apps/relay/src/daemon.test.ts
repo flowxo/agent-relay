@@ -346,6 +346,10 @@ describe("startDaemon Telegram update mode", () => {
       }),
     ).resolves.toMatchObject({ eventCreated: true, outcome: "authorized" });
 
+    const streamKey = notificationsStreamKey(
+      "https://notifications.mock.test",
+      "machine_client_synthetic_001",
+    );
     await vi.waitFor(
       () => {
         expect(
@@ -356,12 +360,16 @@ describe("startDaemon Telegram update mode", () => {
           resolvedBy: "notifications",
         });
         expect(mock.inspect().cursorCommits).toHaveLength(1);
+        expect(
+          daemon.service.store.hostedPollStatus(streamKey).messageUpdates,
+        ).toMatchObject({
+          blocked: 1,
+          pending: 0,
+          retry: 0,
+          updated: 0,
+        });
       },
       { timeout: 2_000 },
-    );
-    const streamKey = notificationsStreamKey(
-      "https://notifications.mock.test",
-      "machine_client_synthetic_001",
     );
     const rawCursor =
       daemon.service.store.hostedPollStatus(streamKey).committedCursor;
@@ -384,11 +392,197 @@ describe("startDaemon Telegram update mode", () => {
             state: "active",
             unacknowledgedEventCount: 0,
           },
+          presentation: {
+            capability: "unsupported",
+            blocked: 1,
+            pending: 0,
+            retrying: 0,
+            updated: 0,
+            lastError: {
+              category: "operator-action",
+              classification: "terminal",
+              code: "notifications-resolution-update-unsupported",
+            },
+          },
         },
       },
     });
-    expect(JSON.stringify(status)).not.toContain(rawCursor);
+    const serializedStatus = JSON.stringify(status);
+    expect(serializedStatus).not.toContain(rawCursor);
+    expect(serializedStatus).not.toContain(messageId);
+    expect(serializedStatus).not.toContain(correlationId);
+    expect(serializedStatus).not.toContain(beta.token);
+    expect(serializedStatus).not.toContain("binding_synthetic_relay");
+    expect(serializedStatus).not.toContain("machine_synthetic_a");
     await daemon.close();
+  });
+
+  it("stops hosted calls after disconnect, preserves local authority, and recovers after restart", async () => {
+    const databasePath = await temporaryDatabase();
+    const mock = createNotificationsContractMock();
+    let active = true;
+    const connectionGuard = async () => active;
+    const hostedFetch: typeof fetch = async (input, init) =>
+      await mock.fetch(new Request(input, init));
+    const notifications = {
+      baseUrl: "https://notifications.mock.test",
+      credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+      subscriberId: "agent_relay_operator",
+      notifierId: "default",
+      bindingId: "binding_synthetic_relay",
+      machineClientId: "machine_client_synthetic_001",
+      machineId: "machine_synthetic_a",
+      connectionGuard,
+      fetch: hostedFetch,
+    };
+    const daemon = await startDaemon({
+      databasePath,
+      port: 0,
+      selectedTransport: "notifications",
+      notifications,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    const correlationId = "request_daemon_disconnect_12345678";
+    const eventId = "event_daemon_disconnect_12345678";
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId,
+      occurredAt: "2026-07-25T17:45:00.000Z",
+      sequence: 1,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_disconnect_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_disconnect_12345678",
+      turnId: "turn_daemon_disconnect_12345678",
+      project: makeProjectRef("/workspace/daemon-disconnect"),
+      type: "input.required",
+      request: {
+        correlationId,
+        kind: "confirm",
+        question: "Confirm synthetic disconnect preservation.",
+        expiresAt: "2026-07-25T18:00:00.000Z",
+      },
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    const hostedMessageId = mock.inspect().messages[0]?.id;
+    if (hostedMessageId === undefined) {
+      throw new Error("disconnect fixture did not create a hosted message");
+    }
+    expect(
+      daemon.service.store.resolveRequest({
+        correlationId,
+        answer: "yes_option",
+        resolvedBy: "terminal",
+        now: "2026-07-25T17:46:00.000Z",
+      }),
+    ).toMatchObject({ outcome: "answered" });
+
+    active = false;
+    await vi.waitFor(() => {
+      expect(
+        daemon.service.store.hostedPollStatus(
+          notificationsStreamKey(
+            notifications.baseUrl,
+            notifications.machineClientId,
+          ),
+        ).lastError,
+      ).toMatchObject({ code: "notifications-connection-inactive" });
+    });
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "event_daemon_disconnected_delivery_12345678",
+      occurredAt: "2026-07-25T17:47:00.000Z",
+      sequence: 2,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_disconnect_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_disconnect_12345678",
+      project: makeProjectRef("/workspace/daemon-disconnect"),
+      type: "turn.stopped",
+      summary: "Retain this local event while disconnected.",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      deadLettered: 1,
+      delivered: 0,
+    });
+    expect(mock.inspect().messages).toHaveLength(1);
+    expect(daemon.service.store.getPendingRequest(correlationId)).toMatchObject(
+      {
+        state: "answered",
+        resolvedBy: "terminal",
+      },
+    );
+    expect(
+      daemon.service.store.getHostedDeliveryForMessage(
+        notificationsStreamKey(
+          notifications.baseUrl,
+          notifications.machineClientId,
+        ),
+        hostedMessageId,
+      ),
+    ).toMatchObject({ eventId });
+    await daemon.close();
+
+    active = true;
+    const restarted = await startDaemon({
+      databasePath,
+      port: 0,
+      selectedTransport: "notifications",
+      notifications,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    restarted.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "event_daemon_reconnected_delivery_12345678",
+      occurredAt: "2026-07-25T17:48:00.000Z",
+      sequence: 3,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_disconnect_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_disconnect_12345678",
+      project: makeProjectRef("/workspace/daemon-disconnect"),
+      type: "turn.stopped",
+      summary: "Deliver after explicit reconnect restart.",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(restarted.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    expect(mock.inspect().messages).toHaveLength(2);
+    expect(
+      restarted.service.store.getPendingRequest(correlationId),
+    ).toMatchObject({
+      state: "answered",
+      resolvedBy: "terminal",
+    });
+    await restarted.close();
   });
 
   it("starts long polling for a fully configured local Telegram adapter", async () => {

@@ -22,6 +22,7 @@ import type { NotificationsFetch } from "@flowxo/notifications";
 
 const CONFIGURATION_TERMINAL_CODES = new Set([
   "notifications-authentication-required",
+  "notifications-connection-inactive",
   "notifications-credential-invalid",
   "notifications-scope-forbidden",
   "notifications-environment-mismatch",
@@ -31,6 +32,8 @@ const CONFIGURATION_TERMINAL_CODES = new Set([
   "notifications-subscriber-unbound",
   "notifications-resource-not-found",
   "notifications-contract-invalid",
+  "notifications-protocol-malformed",
+  "notifications-redirect-refused",
 ]);
 
 function noRedirectFetch(
@@ -49,6 +52,7 @@ export interface NotificationsContractTransportOptions extends NotificationsMess
   baseUrl: string | URL;
   credential: string;
   machineClientId: string;
+  connectionGuard?: () => boolean | Promise<boolean>;
   fetch?: NotificationsFetch;
 }
 
@@ -85,6 +89,8 @@ export class NotificationsContractTransport implements NotificationTransport {
   private readonly client: NotificationsClient;
   private readonly target: NotificationsMessageTarget;
   private readonly streamKey: string;
+  private readonly connectionGuard:
+    (() => boolean | Promise<boolean>) | undefined;
   private blockedError: NotificationsDeliveryError | undefined;
   private suppressedDeliveries = 0;
   private readonly deliveryIdentities = new Map<
@@ -109,6 +115,7 @@ export class NotificationsContractTransport implements NotificationTransport {
         ? {}
         : { notifierId: options.notifierId }),
     };
+    this.connectionGuard = options.connectionGuard;
   }
 
   public circuitState(): NotificationsTransportCircuitState {
@@ -173,6 +180,17 @@ export class NotificationsContractTransport implements NotificationTransport {
       throw this.blockedError;
     }
     try {
+      if (
+        this.connectionGuard !== undefined &&
+        !(await this.connectionGuard())
+      ) {
+        throw new NotificationsDeliveryError(
+          "The configured Notifications machine connection is inactive.",
+          "notifications-connection-inactive",
+          false,
+          "terminal",
+        );
+      }
       const hosted = await this.client.createMessage(
         mapDeliveryMessageToNotifications(message, this.target),
         { idempotencyKey: message.eventId },

@@ -103,9 +103,13 @@ error classification.
 The Notifications adapter in `packages/notifications-transport` demonstrates a
 provider-neutral contract mapping, explicit daemon selection, safe readiness
 diagnosis, authenticated contract validation against pinned artifacts, and a
-durable poll/claim/resolve/ack loop. It does not claim a detached response
-signature that the C0 poll contract does not provide. See the
-[hosted boundary](hosted-notifications.md).
+durable poll/claim/resolve/ack loop. Its optional resolution presenter is
+separate from local authority and reuses one deterministic operation identity;
+the pinned draft.1 implementation reports unsupported because that exact client
+has no resolved-message update method. Its failure policy distinguishes retry,
+configuration, security, quarantine, and operator action without permitting a
+new identity. It does not claim a detached response signature that the C0 poll
+contract does not provide. See the [hosted boundary](hosted-notifications.md).
 
 ## Minimum tests
 

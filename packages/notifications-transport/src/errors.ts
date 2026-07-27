@@ -11,6 +11,19 @@ import { NotificationsMappingError } from "./mapping.js";
 export type NotificationsFailureDisposition =
   "retry_same_operation" | "terminal" | "outcome_unknown";
 
+export type NotificationsFailureCategory =
+  | "retry"
+  | "terminal-configuration"
+  | "dead-letter-security"
+  | "quarantine"
+  | "operator-action";
+
+export interface NotificationsFailurePolicy {
+  category: NotificationsFailureCategory;
+  retrySameOperation: boolean;
+  permitNewIdentity: false;
+}
+
 export class NotificationsDeliveryError extends TransportError {
   public override readonly name = "NotificationsDeliveryError";
   public readonly diagnosticId?: string;
@@ -40,6 +53,110 @@ export class NotificationsDeliveryError extends TransportError {
       this.retryAt = options.retryAt;
     }
   }
+}
+
+const CONFIGURATION_FAILURE_CODES = new Set([
+  "notifications-authentication-required",
+  "notifications-connection-inactive",
+  "notifications-credential-invalid",
+  "notifications-environment-mismatch",
+  "notifications-subscriber-unbound",
+]);
+
+const SECURITY_FAILURE_CODES = new Set([
+  "notifications-authentication-identity-mismatch",
+  "notifications-correlation-mismatch",
+  "notifications-idempotency-conflict",
+  "notifications-idempotency-identity-mismatch",
+  "notifications-idempotency-key-required",
+  "notifications-local-identity-mismatch",
+  "notifications-presentation-identity-mismatch",
+  "notifications-redirect-refused",
+  "notifications-scope-forbidden",
+  "notifications-stream-identity-failure",
+]);
+
+const QUARANTINE_FAILURE_CODES = new Set([
+  "notifications-contract-integrity-failure",
+  "notifications-contract-invalid",
+  "notifications-protocol-malformed",
+  "notifications-request-contract-invalid",
+  "notifications-request-invalid",
+  "notifications-schema-integrity-failure",
+  "notifications-stream-order-invalid",
+  "notifications-unsafe-opaque-value",
+]);
+
+const OPERATOR_ACTION_FAILURE_CODES = new Set([
+  "notifications-cancellation-too-late",
+  "notifications-provider-outcome-unknown",
+  "notifications-provider-terminal",
+  "notifications-resource-not-found",
+  "notifications-resource-expired",
+  "notifications-resolution-update-unsupported",
+  "notifications-transport-outcome-unknown-terminal",
+]);
+
+export function notificationsFailurePolicy(
+  error: Pick<
+    NotificationsDeliveryError,
+    "code" | "disposition" | "retryable" | "status"
+  >,
+): NotificationsFailurePolicy {
+  if (CONFIGURATION_FAILURE_CODES.has(error.code) || error.status === 401) {
+    return {
+      category: "terminal-configuration",
+      retrySameOperation: false,
+      permitNewIdentity: false,
+    };
+  }
+  if (
+    SECURITY_FAILURE_CODES.has(error.code) ||
+    error.status === 403 ||
+    error.status === 409 ||
+    (error.status !== undefined && error.status >= 300 && error.status < 400)
+  ) {
+    return {
+      category: "dead-letter-security",
+      retrySameOperation: false,
+      permitNewIdentity: false,
+    };
+  }
+  if (QUARANTINE_FAILURE_CODES.has(error.code)) {
+    return {
+      category: "quarantine",
+      retrySameOperation: false,
+      permitNewIdentity: false,
+    };
+  }
+  if (
+    OPERATOR_ACTION_FAILURE_CODES.has(error.code) ||
+    error.disposition === "outcome_unknown" ||
+    error.status === 404
+  ) {
+    return {
+      category: "operator-action",
+      retrySameOperation: false,
+      permitNewIdentity: false,
+    };
+  }
+  if (
+    error.retryable ||
+    error.status === 408 ||
+    error.status === 429 ||
+    (error.status !== undefined && error.status >= 500)
+  ) {
+    return {
+      category: "retry",
+      retrySameOperation: true,
+      permitNewIdentity: false,
+    };
+  }
+  return {
+    category: "operator-action",
+    retrySameOperation: false,
+    permitNewIdentity: false,
+  };
 }
 
 const SAFE_PROBLEM_MESSAGES = {
@@ -108,12 +225,33 @@ export function asNotificationsDeliveryError(
     );
   }
   if (error instanceof NotificationsProtocolError) {
+    const status = error.status;
+    if (status !== undefined && status >= 300 && status < 400) {
+      return new NotificationsDeliveryError(
+        "Notifications refused a credential-bearing redirect.",
+        "notifications-redirect-refused",
+        false,
+        "terminal",
+        { status },
+      );
+    }
+    if (status === undefined || (status >= 200 && status < 300)) {
+      return new NotificationsDeliveryError(
+        "Notifications returned a malformed response outside the pinned contract.",
+        "notifications-protocol-malformed",
+        false,
+        "terminal",
+        { ...(status === undefined ? {} : { status }) },
+      );
+    }
     return new NotificationsDeliveryError(
       "Notifications returned an unclassified protocol response.",
       "notifications-protocol-unclassified",
-      true,
-      "retry_same_operation",
-      { ...(error.status === undefined ? {} : { status: error.status }) },
+      status >= 500 || status === 408 || status === 429,
+      status >= 500 || status === 408 || status === 429
+        ? "retry_same_operation"
+        : "terminal",
+      { status },
     );
   }
   if (error instanceof NotificationsMappingError) {

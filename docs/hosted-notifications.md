@@ -11,7 +11,7 @@ Agent Relay account, Cloudflare runtime, public callback, or Flow XO credential.
 
 `packages/notifications-transport`,
 `agent-relay notifications connect|status|disconnect`, and
-`agent-relay transport` now implement the AR2.1–AR2.3 setup, explicit selection,
+`agent-relay transport` now implement the AR2.1–AR2.4 setup, explicit selection,
 and durable interaction boundary against exact pinned Notifications C0
 artifacts. They prove:
 
@@ -32,6 +32,12 @@ artifacts. They prove:
 - continuous bounded long polling selected only in hosted mode;
 - SQLite-first resolution followed by idempotent provider acknowledgement;
 - crash-before-ack replay without duplicate resume; and
+- separate durable terminal-presentation retry with one deterministic operation
+  identity;
+- stable retry/configuration/security/quarantine/operator-action failure
+  categories and rate-limited safe logs;
+- runtime disconnect/revocation guards that stop new send/poll/ack calls while
+  retaining local state; and
 - cross-machine stream, message, and administration denial.
 
 The daemon can now select `fake`, direct `telegram`, or `notifications`
@@ -42,10 +48,12 @@ Credential presence never selects a transport.
 
 There is no dual send or automatic failover.
 
-Switching retains SQLite and request state. Hosted message presentation
-reflection and release-ready C0 promotion are still pending. Until C0-09
-approves a release candidate, use the executable C0 mock—not a production
-account—as the integration source of truth.
+Switching retains SQLite and request state. The terminal-presentation worker is
+implemented, but the exact pinned draft.1 client does not expose a
+resolved-message update endpoint. Agent Relay records that optional capability
+as unsupported instead of misusing message cancellation. Release-ready C0
+promotion is still pending. Until C0-09 approves a release candidate, use the
+executable C0 mock—not a production account—as the integration source of truth.
 
 ## Mock-backed setup command
 
@@ -125,11 +133,12 @@ mode leaves the hosted connection and every local event/request intact.
 `agent-relay status` reports selected mode/source, safe readiness, last hosted
 send, local pending/retry/dead-letter counts, last successful poll, a hashed
 committed-cursor reference, unacknowledged local event count, and the last
-hosted error as a code plus classification. `not-started` means the selected
-daemon has not completed a poll; `active` means at least one response was
-validated; `error` retains a safe failure code. Raw sessions, prompts, answers,
-transcripts, credentials, full cursor values, and full provider identifiers are
-excluded from status and doctor.
+hosted error as a code plus classification/category. Presentation status adds
+only capability and pending/retry/updated/blocked counts. `not-started` means
+the selected daemon has not completed a poll; `active` means at least one
+response was validated; `error` retains a safe failure code. Raw sessions,
+prompts, answers, transcripts, credentials, full cursor values, and full
+provider identifiers are excluded from status and doctor.
 
 ## Hosted answer loop
 
@@ -152,6 +161,39 @@ The C0 endpoint authenticates the narrow credential and the pinned client
 validates the response schema. The C0 poll response does not carry a detached
 signature, so Agent Relay records contract-backed authentication/schema evidence
 rather than claiming cryptographic payload signing.
+
+## Terminal presentation and diagnosis
+
+Every durably handled hosted answer creates an independent message-update job.
+After provider acknowledgement, the daemon projects `answered`, `duplicate`,
+`expired`, `cancelled`, or `unsupported` plus the local resolution-source
+category into a bounded presenter. A retry always reuses
+`resolution_${sha256(hostedEventId)}`. It never sends a new message, re-runs the
+decision, or touches continuation authority.
+
+The executable draft.1 presenter returns `unsupported` without HTTP because the
+pinned client has no resolution-update method. The job becomes durably blocked
+with a safe capability code while polling and local authority continue. A future
+exact contract may implement the same interface; supported-fake tests already
+prove successful updates, transient retry, response-loss retry with the same
+identity, terminal ambiguity, and restart recovery.
+
+Hosted failures map to stable local categories:
+
+| Condition                            | Category and automatic behavior                    |
+| ------------------------------------ | -------------------------------------------------- |
+| 401 / inactive or revoked connection | terminal configuration; explicit reconnect/restart |
+| 403 / identity or scope mismatch     | dead-letter/security; no processing                |
+| 404 removed resource                 | operator action; inspect the retained mapping      |
+| 409 idempotency conflict / redirect  | dead-letter/security; never mint another identity  |
+| 429 / 5xx / timeout                  | bounded retry of the same operation                |
+| schema or malformed success body     | quarantine/fail closed                             |
+| explicit `outcome_unknown`           | operator action; no new hosted message or identity |
+
+The first repeated network/auth/config failure is logged with a safe code.
+Equivalent failures inside the bounded interval remain durable in SQLite but are
+aggregated in logs; a later emitted record includes the suppressed count. Empty
+polls and shutdown cancellation are not failures.
 
 ## Credential and disconnect lifecycle
 
@@ -226,6 +268,13 @@ Status exposes only the safe error code/classification and the number of
 suppressed hosted deliveries. Transient failures retain the existing bounded
 SQLite retry policy and stable event identity.
 
+The daemon also rechecks the private connection commit marker before every
+hosted send, poll, and acknowledgement. A local disconnect, revocation, erased
+configuration, or rotation stops new calls in the running process. Local events,
+decisions, hosted mappings, and safe errors remain in SQLite. Explicit
+reconnect/rotation followed by daemon restart builds a fresh client and resumes
+from durable state.
+
 A provider acknowledgement happens after the local result commits. A crash
 before acknowledgement can repeat the hosted answer, but the reopened SQLite
 state proves it is a duplicate and the resume command remains single-owner.
@@ -240,7 +289,6 @@ independent transport choices.
 Before production selection, remaining AR2 work must document and test:
 
 - provider retention and privacy terms;
-- hosted terminal-message reflection and update retry behavior;
 - deliberate switching without double delivery;
 - common fake/direct-Telegram/hosted parity; and
 - the packaged hosted lifecycle.

@@ -179,6 +179,7 @@ describe("doctor version and installation checks", () => {
           machineClientRef: "client_safe12",
           pendingRevocations: 0,
           ready: true,
+          resolutionPresentation: "unsupported-in-pinned-contract",
         },
         telegram: {
           configured: "delivery",
@@ -244,6 +245,7 @@ describe("doctor version and installation checks", () => {
           ],
           pendingRevocations: 0,
           ready: false,
+          resolutionPresentation: "unsupported-in-pinned-contract",
         },
         telegram: {
           configured: "none",
