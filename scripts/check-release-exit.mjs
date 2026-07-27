@@ -139,16 +139,16 @@ async function run(
       const result = {
         code,
         signal,
-        stdout: redact(stdout, privateValues),
-        stderr: redact(stderr, privateValues),
+        stdout,
+        stderr,
       };
       if (code === null || !expectedCodes.includes(code)) {
         reject(
           new Error(
             [
               `Release exit violation: ${basename(executable)} failed (${String(code ?? signal)})`,
-              result.stdout,
-              result.stderr,
+              redact(result.stdout, privateValues),
+              redact(result.stderr, privateValues),
             ]
               .filter((part) => part.length > 0)
               .join("\n"),
