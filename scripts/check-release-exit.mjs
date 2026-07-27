@@ -590,20 +590,14 @@ try {
       installedManifest.private === true,
     "installed package identity differs from the blocked candidate",
   );
-  const dependencyTree = parseJson(
-    (
-      await run(nativeNode, [npmCli, "ls", "--json", "--depth=0"], {
-        cwd: consumer,
-        env: environment,
-        privateValues,
-      })
-    ).stdout,
-    "isolated npm dependency tree",
+  const consumerManifest = parseJson(
+    await readFile(resolve(consumer, "package.json"), "utf8"),
+    "isolated consumer manifest",
   );
   assert(
-    dependencyTree.dependencies?.[release.name]?.version === release.version &&
-      dependencyTree.dependencies?.[release.name]?.link !== true,
-    "npm did not install the exact non-linked Agent Relay artifact",
+    typeof consumerManifest.dependencies?.[release.name] === "string" &&
+      consumerManifest.dependencies[release.name].endsWith(names.tarball),
+    "npm did not record the exact Agent Relay tarball",
   );
 
   const nativeAddon = resolve(
