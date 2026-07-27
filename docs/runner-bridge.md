@@ -2,8 +2,9 @@
 
 > **Audience:** contributors and integration evaluators
 >
-> **Status:** default-off development component; no native adapter or public
-> service connection is installed in EH-03
+> **Status:** default-off development component; the exact Codex app-server
+> adapter is verified, but ordinary daemon composition and a public service
+> connection remain unavailable
 
 The runner bridge is a separate outbound session-control component. It lets a
 future structured harness adapter exchange `runner.protocol/v1` frames with a
@@ -30,12 +31,24 @@ runner.protocol/v1 outbound connection
  native │     │ allowlisted methods
  events │     ▼
 StructuredHarnessDriver
+        ▲
+        │ exact typed port
+        ▼
+@agent-relay/codex-app-server-driver
+  owned stdio process · local material resolution · safe observations
 ```
 
 `StructuredHarnessDriver` exposes one method per supported command family. It
 has no generic executable, argv, shell, filesystem, environment, credential, or
-native-RPC method. Codex app-server is planned as the first implementation, but
-that adapter and its live evidence belong to a later story.
+native-RPC method. The exact `codex-cli 0.145.0` app-server implementation owns
+its child process and implements session start/resume, turn
+start/follow-up/steer/interrupt, and exact pending approval resolution.
+Project/artifact/diagnose and session-pause operations remain unsupported.
+
+Native notifications become content-free structured observations containing only
+opaque native references, lifecycle status, item/approval kind, timestamp, and
+safe code. Product event mapping and durable turn/approval correlation are a
+separate composition concern; the adapter never sends rendered attention cards.
 
 ## Default-off composition
 
@@ -58,10 +71,12 @@ agent-relay runner-bridge disable
 agent-relay runner-bridge erase --confirm
 ```
 
-EH-03 intentionally ships no native adapter. `enable` therefore records intent
-but reports `nativeAdapterRequired: true`; ordinary daemon startup then fails
-closed until a later adapter is installed. This command is for integration
-development, not current end-user onboarding.
+The verified native adapter package is not automatically composed from CLI
+configuration. `enable` records intent but still reports
+`nativeAdapterRequired: true`; ordinary daemon startup fails closed until the
+runner identity, project material resolver, transport, and durable adoption
+runtime are installed together at the composition root. This command is for
+integration development, not current end-user onboarding.
 
 ## Local state and privacy
 
@@ -91,6 +106,9 @@ Notifications state, hooks, logs, web credentials, or fallback records.
   product-managed binding, capability snapshot, exact scope, current revision,
   body schema, and expiry.
 - Durable command acceptance precedes the allowlisted driver call.
+- `session.start` is the sole operation permitted without an existing native
+  session reference. Its completed result must return one bounded opaque thread
+  reference, which is persisted exactly once before the effect is completed.
 - The idempotency key and canonical effect fingerprint identify one semantic
   effect. Changed reuse fails closed.
 - A crash, timeout, or unprovable native result becomes `outcome_unknown` and is

@@ -32,6 +32,7 @@ const capabilityDigest = sha256("bridge-capabilities");
 const identityFingerprint = `sha256:${"a".repeat(64)}`;
 const time = "2026-07-27T12:00:00.000Z";
 const capabilities = [
+  { name: "session.lifecycle", version: 1, support: "native" },
   { name: "turn.cancel", version: 1, support: "native" },
   { name: "runner.diagnose", version: 1, support: "native" },
 ] as const satisfies readonly CapabilityDescriptor[];
@@ -167,6 +168,39 @@ function cancelCommand(
   };
 }
 
+function sessionStartCommand(
+  sequence: number,
+  overrides: Partial<RunnerCommandFrame> = {},
+): RunnerCommandFrame {
+  return {
+    schema: "runner.protocol/command",
+    schema_version: 1,
+    message_id: `msg_session_start_${String(sequence)}` as MessageId,
+    idempotency_key: "cmd_session_start_fixture" as CommandId,
+    workspace_id: workspaceId,
+    runner_id: runnerId,
+    project_id: "prj_bridge_fixture" as RunnerCommandFrame["project_id"],
+    worktree_id: "wkt_bridge_fixture" as RunnerCommandFrame["worktree_id"],
+    session_id: "ses_created_fixture" as RunnerCommandFrame["session_id"],
+    aggregate_revision: 0,
+    capability_snapshot_digest: capabilityDigest,
+    sequence,
+    lane: "control",
+    sent_at: time as RunnerCommandFrame["sent_at"],
+    expires_at: "2026-07-27T12:05:00.000Z" as RunnerCommandFrame["expires_at"],
+    trace_id: `trc_session_start_${String(sequence)}` as TraceId,
+    payload: {
+      command: "session.start",
+      required_capability: "session.lifecycle",
+      body: {
+        schema: "runner.command/session.start",
+        schema_version: 1,
+      },
+    },
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   store = new RunnerBridgeStore(":memory:");
   transport = new InMemoryRunnerBridgeTransport();
@@ -205,6 +239,88 @@ beforeEach(() => {
 });
 
 describe("RunnerBridge", () => {
+  test("starts and stops the structured driver with bridge ownership", async () => {
+    await handshake();
+    expect(driver.starts).toBe(1);
+    await bridge.stop();
+    expect(driver.stops).toBe(1);
+    expect(transport.connected).toBe(false);
+  });
+
+  test("stops the structured driver when connection startup fails", async () => {
+    transport.failConnect = true;
+    await expect(bridge.start()).rejects.toThrow("fake connect failure");
+    expect(driver.starts).toBe(1);
+    expect(driver.stops).toBe(1);
+  });
+
+  test("persists exactly one native binding after session start", async () => {
+    store.close();
+    store = new RunnerBridgeStore(":memory:");
+    transport = new InMemoryRunnerBridgeTransport();
+    driver = new FakeStructuredHarnessDriver({ capabilities });
+    driver.setResult({
+      status: "completed",
+      resultDigest: sha256("native-session-created"),
+      nativeSessionReference: "native-created-session",
+    });
+    bridge = new RunnerBridge({
+      store,
+      transport,
+      identityProof: new FakeRunnerIdentityProof(),
+      driver,
+      clock,
+      configuration: {
+        workspaceId,
+        runnerId,
+        identityFingerprint,
+        revocationEpoch: 0,
+        capabilitySnapshotDigest: capabilityDigest,
+        capabilities,
+        authorizedProjectIds: new Set(["prj_bridge_fixture"]),
+      },
+    });
+    await handshake();
+    await transport.deliver(encode(sessionStartCommand(3)));
+    expect(driver.callsByCommand.get("session.start")).toBe(1);
+    expect(store.binding("ses_created_fixture")).toMatchObject({
+      nativeSessionReference: "native-created-session",
+      actuatorOwner: "product-managed",
+      aggregateRevision: 0,
+    });
+
+    await transport.deliver(
+      encode(
+        sessionStartCommand(4, {
+          message_id: "msg_session_start_duplicate" as MessageId,
+          trace_id: "trc_session_start_duplicate" as TraceId,
+        }),
+      ),
+    );
+    expect(driver.callsByCommand.get("session.start")).toBe(1);
+
+    await transport.deliver(
+      encode(
+        sessionStartCommand(5, {
+          message_id: "msg_session_start_changed" as MessageId,
+          idempotency_key: "cmd_session_start_changed" as CommandId,
+          trace_id: "trc_session_start_changed" as TraceId,
+        }),
+      ),
+    );
+    expect(driver.callsByCommand.get("session.start")).toBe(1);
+    expect(sentFrames()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          schema: "runner.protocol/nack",
+          payload: expect.objectContaining({
+            error: expect.objectContaining({ code: "invalid_binding" }),
+          }),
+        }),
+      ]),
+    );
+  });
+
   test("reconciles before executing and deduplicates one semantic effect", async () => {
     await handshake();
     await transport.deliver(encode(cancelCommand(3)));

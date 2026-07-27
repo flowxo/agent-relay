@@ -17,6 +17,7 @@ const requiredDocuments = [
 const packageManifests = [
   "package.json",
   "apps/relay/package.json",
+  "packages/codex-app-server-driver/package.json",
   "packages/core/package.json",
   "packages/harnesses/package.json",
   "packages/notifications-transport/package.json",

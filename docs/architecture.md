@@ -34,17 +34,17 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 
 ## Components
 
-| Component              | Responsibility                                                                      |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| Protocol               | Strict event, request, answer, command, session, and diagnostic contracts           |
-| Harness adapters       | Parse native payloads and emit only the native continuation JSON a harness supports |
-| Hook runner            | Read one bounded stdin payload, contact the daemon, or write a redacted fallback    |
-| Local daemon           | Own HTTP ingress, scheduling, transport delivery, reply routing, and retention      |
-| SQLite store           | Persist identity, events, attempts, requests, answers, topics, and resume ownership |
-| Notification transport | Deliver bounded cards; it cannot directly resume a harness                          |
-| Supervisor             | Own a CLI child, observe its exit, and execute an officially supported late resume  |
-| Web companion          | Present authenticated projections and submit typed decisions to the same store      |
-| Runner bridge          | Optional outbound session protocol, separate state, typed local harness actuation   |
+| Component              | Responsibility                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| Protocol               | Strict event, request, answer, command, session, and diagnostic contracts               |
+| Harness adapters       | Parse native payloads or implement one exact structured driver without channel coupling |
+| Hook runner            | Read one bounded stdin payload, contact the daemon, or write a redacted fallback        |
+| Local daemon           | Own HTTP ingress, scheduling, transport delivery, reply routing, and retention          |
+| SQLite store           | Persist identity, events, attempts, requests, answers, topics, and resume ownership     |
+| Notification transport | Deliver bounded cards; it cannot directly resume a harness                              |
+| Supervisor             | Own a CLI child, observe its exit, and execute an officially supported late resume      |
+| Web companion          | Present authenticated projections and submit typed decisions to the same store          |
+| Runner bridge          | Optional outbound session protocol, separate state, typed local harness actuation       |
 
 The packages remain ordinary Node.js/macOS code. A transport may call a hosted
 service, but protocol, hooks, SQLite, the installer, the daemon, and
@@ -55,6 +55,13 @@ default-off component. It owns a separate SQLite spool/effect ledger and a typed
 structured-harness port. It does not extend `NotificationTransport`, read the
 attention database, or route runner frames through Telegram, Notifications, or
 the web companion.
+
+The first implementation of that port is the exact-version Codex app-server
+driver. It owns a stdio child and exposes only typed lifecycle, turn, and
+approval operations plus content-free observations. Local project/path and turn
+material resolution remains outside the wire command. Durable adoption and
+product/native event correlation are composed later rather than embedded in the
+notification system.
 
 ## Evidence is deliberately separated
 

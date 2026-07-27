@@ -44,14 +44,14 @@ Exact versions are snapshots, not ranges.
 
 <!-- BEGIN GENERATED HARNESS SUPPORT -->
 
-| Harness / surface | Exact verified version  | Classification          | Important boundary                                                                            |
-| ----------------- | ----------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
-| Codex CLI         | `codex-cli 0.145.0`     | `verified`              | Stop and read-only late resume are live-proven; crash proof requires supervision.             |
-| Codex App Server  | —                       | `compatible-unverified` | The official structured contract is understood but is not the installed V1 user path.         |
-| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; StopFailure remains fixture-proven.           |
-| Claude Agent SDK  | —                       | `compatible-unverified` | The streaming SDK contract is understood but is not the installed V1 user path.               |
-| Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.  |
-| Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process. |
+| Harness / surface | Exact verified version  | Classification          | Important boundary                                                                                                             |
+| ----------------- | ----------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Codex CLI         | `codex-cli 0.145.0`     | `verified`              | Stop and read-only late resume are live-proven; crash proof requires supervision.                                              |
+| Codex App Server  | `codex-cli 0.145.0`     | `verified`              | The owned stdio driver is exact-version fixture and canary proven; durable adoption and reconnect correlation remain separate. |
+| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; StopFailure remains fixture-proven.                                            |
+| Claude Agent SDK  | —                       | `compatible-unverified` | The streaming SDK contract is understood but is not the installed V1 user path.                                                |
+| Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.                                   |
+| Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                  |
 
 <!-- END GENERATED HARNESS SUPPORT -->
 

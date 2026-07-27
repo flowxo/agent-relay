@@ -79,6 +79,21 @@ importers:
         specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
         version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
 
+  packages/codex-app-server-driver:
+    dependencies:
+      "@agent-relay/runner-bridge":
+        specifier: workspace:*
+        version: link:../runner-bridge
+      "@session/contracts":
+        specifier: file:../../vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
+        version: file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
+      "@session/protocol-runner":
+        specifier: file:../../vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz
+        version: file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/core:
     dependencies:
       "@agent-relay/protocol":

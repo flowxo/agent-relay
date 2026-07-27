@@ -1,0 +1,47 @@
+{
+  "schema": "agent-relay-codex-app-server-contract.v1",
+  "codexVersion": "codex-cli 0.145.0",
+  "transport": "stdio-jsonl",
+  "experimentalApi": true,
+  "generatedSchema": {
+    "command": "codex app-server generate-json-schema --experimental --out <generated-directory>",
+    "file": "codex_app_server_protocol.v2.schemas.json",
+    "rawByteLength": 584366,
+    "canonicalization": "recursive-key-sort+compact-json",
+    "canonicalByteLength": 326909,
+    "sha256": "1bc09dedc506075562d4d49b702ecab6d947dd5a8c2a9014a5cde592a0938efb"
+  },
+  "clientRequests": [
+    "initialize",
+    "thread/start",
+    "thread/resume",
+    "turn/start",
+    "turn/steer",
+    "turn/interrupt"
+  ],
+  "clientNotifications": ["initialized"],
+  "serverNotifications": [
+    "thread/started",
+    "turn/started",
+    "turn/completed",
+    "item/started",
+    "item/completed",
+    "error"
+  ],
+  "serverRequests": [
+    "item/commandExecution/requestApproval",
+    "item/fileChange/requestApproval"
+  ],
+  "unsupportedRunnerCommands": [
+    "artifact.describe",
+    "artifact.grant",
+    "artifact.revoke",
+    "project.inspect",
+    "project.register",
+    "project.revoke",
+    "runner.diagnose",
+    "session.pause"
+  ],
+  "generatedAt": "2026-07-27",
+  "content": "synthetic-only"
+}

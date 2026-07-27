@@ -15,6 +15,8 @@ import type {
   StructuredHarnessCommandContext,
   StructuredHarnessCommandResult,
   StructuredHarnessDriver,
+  StructuredHarnessObservation,
+  StructuredHarnessObserver,
 } from "./ports.js";
 
 export class FixedBridgeClock implements BridgeClock {
@@ -61,12 +63,16 @@ export class InMemoryRunnerBridgeTransport implements RunnerBridgeTransport {
       }
     | undefined;
   connected = false;
+  failConnect = false;
   failNextSend = false;
 
   connect(handlers: {
     readonly onFrame: (encodedFrame: string) => Promise<void>;
     readonly onDisconnect: (safeCode: string) => void;
   }): Promise<RunnerBridgeConnection> {
+    if (this.failConnect) {
+      return Promise.reject(new Error("fake connect failure"));
+    }
     this.#handlers = handlers;
     this.connected = true;
     return Promise.resolve({
@@ -102,6 +108,9 @@ export class FakeStructuredHarnessDriver implements StructuredHarnessDriver {
   readonly capabilities: readonly CapabilityDescriptor[];
   readonly calls: StructuredHarnessCommandContext[] = [];
   readonly callsByCommand = new Map<RunnerCommandName, number>();
+  readonly observers = new Set<StructuredHarnessObserver>();
+  starts = 0;
+  stops = 0;
   #result: StructuredHarnessCommandResult = {
     status: "completed",
     resultDigest: sha256("fake-driver:completed"),
@@ -114,6 +123,31 @@ export class FakeStructuredHarnessDriver implements StructuredHarnessDriver {
   }) {
     this.profileId = input.profileId ?? "hpf_fake_structured";
     this.capabilities = input.capabilities;
+  }
+
+  start(): Promise<void> {
+    this.starts += 1;
+    return Promise.resolve();
+  }
+
+  stop(): Promise<void> {
+    this.stops += 1;
+    return Promise.resolve();
+  }
+
+  subscribe(observer: StructuredHarnessObserver): () => void {
+    this.observers.add(observer);
+    return () => {
+      this.observers.delete(observer);
+    };
+  }
+
+  async emit(observation: StructuredHarnessObservation): Promise<void> {
+    await Promise.all(
+      [...this.observers].map(async (observer) => {
+        await observer(observation);
+      }),
+    );
   }
 
   setResult(result: StructuredHarnessCommandResult): void {

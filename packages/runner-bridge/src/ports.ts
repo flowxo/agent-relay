@@ -39,6 +39,8 @@ export interface StructuredHarnessCommandContext {
   readonly idempotencyKey: string;
   readonly effectFingerprint: Sha256Digest;
   readonly nativeSessionReference?: string;
+  readonly nativeTurnReference?: string;
+  readonly nativeApprovalReference?: string;
   readonly command: RunnerCommandFrame;
 }
 
@@ -46,6 +48,8 @@ export type StructuredHarnessCommandResult =
   | {
       readonly status: "completed";
       readonly resultDigest: Sha256Digest;
+      readonly nativeSessionReference?: string;
+      readonly nativeTurnReference?: string;
     }
   | {
       readonly status: "outcome_unknown";
@@ -53,9 +57,41 @@ export type StructuredHarnessCommandResult =
       readonly safeCode: string;
     };
 
+export type StructuredHarnessObservationKind =
+  | "session.started"
+  | "session.resumed"
+  | "turn.started"
+  | "turn.completed"
+  | "item.started"
+  | "item.completed"
+  | "approval.requested"
+  | "native.error"
+  | "process.exited";
+
+export interface StructuredHarnessObservation {
+  readonly kind: StructuredHarnessObservationKind;
+  readonly observedAt: IsoTimestamp;
+  readonly nativeSessionReference?: string;
+  readonly nativeTurnReference?: string;
+  readonly nativeItemReference?: string;
+  readonly nativeApprovalReference?: string;
+  readonly itemKind?: string;
+  readonly approvalKind?: string;
+  readonly status?: string;
+  readonly safeCode?: string;
+}
+
+export type StructuredHarnessObserver = (
+  observation: StructuredHarnessObservation,
+) => void | Promise<void>;
+
 export interface StructuredHarnessDriver {
   readonly profileId: string;
   readonly capabilities: readonly CapabilityDescriptor[];
+
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  subscribe(observer: StructuredHarnessObserver): () => void;
 
   resolveApproval(
     context: StructuredHarnessCommandContext,

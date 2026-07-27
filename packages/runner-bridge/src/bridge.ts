@@ -214,30 +214,44 @@ export class RunnerBridge {
       updatedAt: now,
     });
     this.#store.recoverInterruptedCommands(interruptedResultDigest, now);
-    this.#connection = await this.#transport.connect({
-      onFrame: async (encodedFrame) => {
-        await this.receive(encodedFrame);
-      },
-      onDisconnect: (safeCode) => {
-        if (this.lifecycleState() !== "revoked") {
-          this.#store.setLifecycle("disconnected", this.#clock.now(), safeCode);
-        }
-        this.#connection = undefined;
-        this.#sessionLease = undefined;
-      },
-    });
-    await this.#sendHello();
+    await this.#driver.start();
+    try {
+      this.#connection = await this.#transport.connect({
+        onFrame: async (encodedFrame) => {
+          await this.receive(encodedFrame);
+        },
+        onDisconnect: (safeCode) => {
+          if (this.lifecycleState() !== "revoked") {
+            this.#store.setLifecycle(
+              "disconnected",
+              this.#clock.now(),
+              safeCode,
+            );
+          }
+          this.#connection = undefined;
+          this.#sessionLease = undefined;
+        },
+      });
+      await this.#sendHello();
+    } catch (error) {
+      await this.#driver.stop().catch(() => undefined);
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
     const connection = this.#connection;
     this.#connection = undefined;
     this.#sessionLease = undefined;
-    if (connection) {
-      await connection.close();
-    }
-    if (this.lifecycleState() !== "revoked") {
-      this.#store.setLifecycle("configured", this.#clock.now());
+    try {
+      if (connection) {
+        await connection.close();
+      }
+    } finally {
+      await this.#driver.stop();
+      if (this.lifecycleState() !== "revoked") {
+        this.#store.setLifecycle("configured", this.#clock.now());
+      }
     }
   }
 
@@ -622,6 +636,17 @@ export class RunnerBridge {
       return safeFailure("invalid_binding", "Session scope is missing.");
     }
     const binding = this.#store.binding(command.session_id);
+    if (command.payload.command === "session.start") {
+      if (!binding) {
+        return undefined;
+      }
+      if (this.#store.command(command.idempotency_key) === undefined) {
+        return safeFailure(
+          "invalid_binding",
+          "Session already has a native binding.",
+        );
+      }
+    }
     if (
       !binding ||
       binding.actuatorOwner !== "product-managed" ||
@@ -690,18 +715,63 @@ export class RunnerBridge {
       command,
     };
     const result = await this.#invokeDriver(context);
+    let finalResult = result;
+    if (
+      command.payload.command === "session.start" &&
+      result.status === "completed"
+    ) {
+      const nativeSessionReference = result.nativeSessionReference;
+      if (
+        nativeSessionReference === undefined ||
+        nativeSessionReference.length < 1 ||
+        nativeSessionReference.length > 512
+      ) {
+        finalResult = {
+          status: "outcome_unknown",
+          resultDigest: result.resultDigest,
+          safeCode: "native_session_reference_missing",
+        };
+      } else {
+        try {
+          this.registerProductManagedBinding({
+            workspaceId: command.workspace_id,
+            runnerId: command.runner_id,
+            projectId: command.project_id!,
+            ...(command.worktree_id === undefined
+              ? {}
+              : { worktreeId: command.worktree_id }),
+            sessionId: command.session_id!,
+            harnessProfileId: this.#driver.profileId,
+            nativeSessionReference,
+            capabilitySnapshotDigest: command.capability_snapshot_digest,
+            actuatorOwner: "product-managed",
+            aggregateRevision: command.aggregate_revision!,
+            createdAt: this.#clock.now(),
+            updatedAt: this.#clock.now(),
+          });
+        } catch {
+          finalResult = {
+            status: "outcome_unknown",
+            resultDigest: result.resultDigest,
+            safeCode: "native_binding_commit_failed",
+          };
+        }
+      }
+    }
     this.#store.finishCommand(
       command.idempotency_key,
-      result.status,
-      result.resultDigest,
+      finalResult.status,
+      finalResult.resultDigest,
       this.#clock.now(),
-      result.status === "outcome_unknown" ? result.safeCode : undefined,
+      finalResult.status === "outcome_unknown"
+        ? finalResult.safeCode
+        : undefined,
     );
-    if (result.status === "outcome_unknown") {
+    if (finalResult.status === "outcome_unknown") {
       await this.#sendCommandEvent(
         "runner.event/command.outcome_unknown",
         command,
-        result.status,
+        finalResult.status,
       );
     }
   }
@@ -861,6 +931,7 @@ export class RunnerBridge {
     if (connection) {
       await connection.close();
     }
+    await this.#driver.stop();
   }
 
   async #sendAck(
