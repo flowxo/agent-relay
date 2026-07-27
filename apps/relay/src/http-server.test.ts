@@ -243,20 +243,17 @@ describe("relay HTTP daemon", () => {
       claimed: 1,
       delivered: 1,
     });
-    expect(await runtime.client.status()).toMatchObject({
+    const status = await runtime.client.status();
+    expect(status).toMatchObject({
       healthy: true,
       pendingDeliveryCount: 0,
       events: { delivered: 1 },
       topics: { ready: 1 },
-      sessionControlRecords: [],
-      topicRecords: [
-        expect.objectContaining({
-          sessionId: input.sessionId,
-          provisioningStatus: "ready",
-          topicId: "1000",
-        }),
-      ],
     });
+    expect(status).not.toHaveProperty("sessionRecords");
+    expect(status).not.toHaveProperty("topicRecords");
+    expect(status).not.toHaveProperty("sessionControlRecords");
+    expect(JSON.stringify(status)).not.toContain(input.sessionId);
     expect(runtime.transport.deliveries).toHaveLength(1);
     await runtime.close();
   });

@@ -12,11 +12,21 @@ import {
 } from "@agent-relay/core";
 import type { NotificationTransport, RelayLogger } from "@agent-relay/core";
 import type { RetentionOptions, RetentionResult } from "@agent-relay/core";
+import {
+  NotificationsContractTransport,
+  type NotificationsContractTransportOptions,
+} from "@agent-relay/notifications-transport";
 
 import { createRelayHttpServer } from "./http-server.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
 import type { FallbackReplayResult } from "./fallback-spool.js";
 import { TelegramUpdatePoller } from "./telegram-poller.js";
+import type {
+  AgentRelayTransport,
+  ResolvedTransportSelection,
+  TransportReadinessReport,
+} from "./transport-config.js";
+import { buildDaemonTransportStatus } from "./transport-status.js";
 import { loadOrCreateWebCredential } from "./web-credential.js";
 
 export interface DaemonOptions {
@@ -26,6 +36,9 @@ export interface DaemonOptions {
   host?: string;
   port?: number;
   token?: string;
+  selectedTransport?: AgentRelayTransport;
+  transportSelection?: ResolvedTransportSelection;
+  transportReadiness?: TransportReadinessReport;
   telegramToken?: string;
   telegramChatId?: string;
   telegramOperatorUserId?: number;
@@ -33,6 +46,7 @@ export interface DaemonOptions {
   telegramWebhookSecret?: string;
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
+  notifications?: NotificationsContractTransportOptions;
   coalescingWindowMs?: number;
   drainIntervalMs?: number;
   fallbackPath?: string;
@@ -52,26 +66,35 @@ export interface RunningDaemon {
 }
 
 function selectTransport(options: DaemonOptions): NotificationTransport {
-  const hasToken = options.telegramToken !== undefined;
-  const hasChat = options.telegramChatId !== undefined;
-  if (hasToken !== hasChat) {
-    throw new Error(
-      "both AGENT_RELAY_TELEGRAM_TOKEN and AGENT_RELAY_TELEGRAM_CHAT_ID are required",
-    );
+  const selected = options.selectedTransport ?? "fake";
+  switch (selected) {
+    case "fake":
+      return new FakeTelegramTransport();
+    case "telegram": {
+      if (
+        options.telegramToken === undefined ||
+        options.telegramChatId === undefined
+      ) {
+        throw new Error(
+          "selected Telegram transport requires AGENT_RELAY_TELEGRAM_TOKEN and AGENT_RELAY_TELEGRAM_CHAT_ID",
+        );
+      }
+      return new TelegramBotTransport({
+        token: options.telegramToken,
+        chatId: options.telegramChatId,
+        ...(options.telegramFetch === undefined
+          ? {}
+          : { fetch: options.telegramFetch }),
+      });
+    }
+    case "notifications":
+      if (options.notifications === undefined) {
+        throw new Error(
+          "selected Notifications transport requires an active narrow machine connection",
+        );
+      }
+      return new NotificationsContractTransport(options.notifications);
   }
-  if (
-    options.telegramToken !== undefined &&
-    options.telegramChatId !== undefined
-  ) {
-    return new TelegramBotTransport({
-      token: options.telegramToken,
-      chatId: options.telegramChatId,
-      ...(options.telegramFetch === undefined
-        ? {}
-        : { fetch: options.telegramFetch }),
-    });
-  }
-  return new FakeTelegramTransport();
 }
 
 export async function startDaemon(
@@ -93,6 +116,28 @@ export async function startDaemon(
       : await loadOrCreateWebCredential(webCredentialPath);
   const logger = options.logger ?? new JsonLineLogger();
   const transport = selectTransport(options);
+  const selectedTransport = options.selectedTransport ?? "fake";
+  const transportSelection =
+    options.transportSelection ??
+    ({
+      configured: options.selectedTransport !== undefined,
+      selected: selectedTransport,
+      source:
+        options.selectedTransport === undefined ? "default" : "command-line",
+    } satisfies ResolvedTransportSelection);
+  if (transportSelection.selected !== selectedTransport) {
+    throw new Error(
+      "resolved transport selection does not match the daemon transport",
+    );
+  }
+  if (
+    options.transportReadiness !== undefined &&
+    options.transportReadiness.selectedTransport !== selectedTransport
+  ) {
+    throw new Error(
+      "transport readiness does not match the daemon transport selection",
+    );
+  }
   if (
     telegramUpdateMode === "webhook" &&
     transport instanceof TelegramBotTransport &&
@@ -121,6 +166,7 @@ export async function startDaemon(
   });
   service.recover();
   const replyRouter =
+    transport instanceof NotificationsContractTransport ||
     options.telegramOperatorUserId === undefined ||
     options.telegramReplyChatId === undefined
       ? undefined
@@ -132,11 +178,20 @@ export async function startDaemon(
   const server = createRelayHttpServer(service, {
     ...(options.token === undefined ? {} : { token: options.token }),
     ...(replyRouter === undefined ? {} : { replyRouter }),
-    ...(options.telegramWebhookSecret === undefined
+    ...(options.telegramWebhookSecret === undefined ||
+    transport instanceof NotificationsContractTransport
       ? {}
       : { telegramWebhookSecret: options.telegramWebhookSecret }),
     webEnabled,
     ...(webCredential === undefined ? {} : { webCredential }),
+    statusDetails: () =>
+      buildDaemonTransportStatus({
+        service,
+        selection: transportSelection,
+        ...(options.transportReadiness === undefined
+          ? {}
+          : { readiness: options.transportReadiness }),
+      }),
     logger,
   });
 
@@ -310,6 +365,7 @@ export async function startDaemon(
       host: options.host ?? "127.0.0.1",
       port: options.port ?? 4317,
       transport: service.transport.name,
+      selectedTransport,
       telegramUpdateMode:
         transport instanceof TelegramBotTransport
           ? telegramUpdateMode

@@ -101,9 +101,10 @@ demonstrates topics, buttons, edits, polling/webhook correlation, and provider
 error classification.
 
 The Notifications adapter in `packages/notifications-transport` demonstrates a
-provider-neutral contract mapping and signed-answer validation against pinned
-artifacts. It is not yet wired as a production daemon transport; see the
-[hosted boundary](hosted-notifications.md).
+provider-neutral contract mapping, explicit daemon selection, safe readiness
+diagnosis, and signed-answer validation against pinned artifacts. Outbound
+delivery is wired; durable hosted answer polling remains a later AR2 slice. See
+the [hosted boundary](hosted-notifications.md).
 
 ## Minimum tests
 

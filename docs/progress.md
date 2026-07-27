@@ -31,7 +31,26 @@
   mismatch/preflight failures, cross-machine isolation, new-client and
   same-client rotation, cross-origin refusal, bounded retained cleanup state,
   local-commit cleanup, revocation, and retained-state erasure. Production
-  daemon selection and continuous hosted polling remain unclaimed.
+  daemon selection is now implemented by FXO-1151; continuous hosted polling
+  remains unclaimed.
+- FXO-1151 makes transport choice explicit and credential-independent. A strict
+  private `transport.json`, `AGENT_RELAY_TRANSPORT`, and daemon-only
+  `--transport` resolve with documented precedence across exactly `fake`,
+  `telegram`, and `notifications`; default remains fake. Daemon fixtures prove
+  that unselected Telegram credentials cause zero Telegram calls and that a
+  selected hosted adapter alone delivers through the pinned Notifications mock.
+  Switching retains the database and provider setup. Safe transport status and
+  doctor output report selection, Telegram readiness, hashed hosted readiness,
+  last send, local queue/retry/dead-letter counts, classified hosted error, and
+  a terminal circuit without secrets, provider identities, message content, or
+  raw session records. Hosted polling is truthfully reported as `not-started`
+  until FXO-1152. Authentication/scope/binding/contract configuration failures
+  suppress repeated remote calls while every affected local event remains
+  durably diagnosed; transient failures keep the stable event identity and
+  bounded SQLite retry policy. The final local gate passed `pnpm check`,
+  including 46 Vitest files/358 tests, contract/distribution/package/lifecycle
+  proof; the independent packed lifecycle rerun, all three Chromium scenarios,
+  and `pnpm audit --prod` with no known vulnerabilities also passed.
 - Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
   when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
   all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
@@ -656,10 +675,9 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Finish the FXO-1150 full repository/package/browser/audit gate and local commit,
-then proceed directly to FXO-1151 explicit fake/direct-Telegram/Notifications
-selection and readiness diagnosis. Production hosted dogfood must still wait for
-AR2 and a central C0-09 go disposition. npm scope/publication and the monitored
+Commit and close FXO-1151, then proceed directly to FXO-1152 durable hosted
+poll/claim/resolve/ack state. Production hosted dogfood must still wait for AR2
+and a central C0-09 go disposition. npm scope/publication and the monitored
 public security-contact path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator

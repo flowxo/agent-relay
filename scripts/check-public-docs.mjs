@@ -153,7 +153,8 @@ for (const pattern of [
   /not required for local SQLite/,
   /does not require a hosted/,
   /Cloudflare runtime/,
-  /not selected by the production daemon/,
+  /Credential presence never selects a transport/,
+  /no dual\s+send\s+or automatic failover/,
   /must not receive a raw hook payload/,
 ]) {
   requireText(

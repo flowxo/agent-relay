@@ -81,6 +81,11 @@ describe("RelayService durable delivery loop", () => {
     expect(await service.drain()).toMatchObject({ claimed: 0 });
     expect(transport.deliveries).toHaveLength(1);
     expect(store.status().events.delivered).toBe(1);
+    expect(
+      store.transportDeliverySummary("fake-telegram", "fake-"),
+    ).toMatchObject({
+      lastSuccessfulSendAt: expect.any(String),
+    });
     store.close();
   });
 
@@ -219,6 +224,12 @@ describe("RelayService durable delivery loop", () => {
     expect(
       logger.records.some((record) => record.code === "delivery.dead-lettered"),
     ).toBe(true);
+    expect(store.transportDeliverySummary("fake-telegram", "fake-")).toEqual({
+      lastError: {
+        at: expect.any(String),
+        code: "fake-bad-request",
+      },
+    });
     store.close();
   });
 

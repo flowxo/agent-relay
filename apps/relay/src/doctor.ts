@@ -17,6 +17,7 @@ import type { Harness } from "@agent-relay/protocol";
 import { inspectAgentRelayInstallation } from "./installer.js";
 import type { InstallationCheck } from "./installer.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
+import type { TransportReadinessReport } from "./transport-config.js";
 
 function requiredEvidenceValue(
   value: string | undefined,
@@ -83,6 +84,7 @@ export interface DoctorOptions {
   packageVersion?: string;
   runtimeEntryPath?: string;
   runtimeNodePath?: string;
+  transportReadiness?: TransportReadinessReport;
 }
 
 export interface HarnessVersionObservation {
@@ -174,6 +176,78 @@ export async function runDoctor(
   options: DoctorOptions = {},
 ): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
+  if (options.transportReadiness !== undefined) {
+    const readiness = options.transportReadiness;
+    checks.push({
+      name: "transport-selection",
+      ok: true,
+      level: "pass",
+      detail: `${readiness.selectedTransport} selected from ${readiness.selection.source} configuration`,
+    });
+
+    const selectedReadiness = readiness.transports[readiness.selectedTransport];
+    checks.push({
+      name: "selected-transport-readiness",
+      ok: selectedReadiness.ready,
+      level: selectedReadiness.ready ? "pass" : "fail",
+      detail: selectedReadiness.ready
+        ? `${readiness.selectedTransport} transport is ready`
+        : `${readiness.selectedTransport} transport is not ready${
+            "issueCodes" in selectedReadiness &&
+            selectedReadiness.issueCodes.length > 0
+              ? ` (${selectedReadiness.issueCodes.join(", ")})`
+              : ""
+          }`,
+    });
+
+    const notifications = readiness.transports.notifications;
+    if (
+      notifications.configured ||
+      readiness.selectedTransport === "notifications"
+    ) {
+      checks.push({
+        name: "notifications-transport",
+        ok: notifications.ready,
+        level: notifications.ready
+          ? "pass"
+          : readiness.selectedTransport === "notifications"
+            ? "fail"
+            : "warn",
+        detail: JSON.stringify({
+          apiOrigin: notifications.apiOrigin ?? null,
+          binding: notifications.binding,
+          contractVersion: notifications.contractVersion ?? null,
+          credentialPermissions: notifications.credentialPermissions,
+          credentialPresent: notifications.credentialPresent,
+          issueCodes: notifications.issueCodes,
+          machineClientRef: notifications.machineClientRef ?? null,
+        }),
+      });
+    }
+
+    const telegram = readiness.transports.telegram;
+    if (
+      telegram.configured !== "none" ||
+      readiness.selectedTransport === "telegram"
+    ) {
+      checks.push({
+        name: "telegram-transport",
+        ok: telegram.ready,
+        level: telegram.ready
+          ? "pass"
+          : readiness.selectedTransport === "telegram"
+            ? "fail"
+            : "warn",
+        detail: JSON.stringify({
+          configured: telegram.configured,
+          deliveryReady: telegram.deliveryReady,
+          issueCodes: telegram.issueCodes,
+          replyReady: telegram.replyReady,
+          updateMode: telegram.updateMode,
+        }),
+      });
+    }
+  }
   let store: RelayStore | undefined;
   try {
     store = new RelayStore(options.databasePath ?? ":memory:");

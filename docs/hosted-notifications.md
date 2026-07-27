@@ -9,9 +9,11 @@ Agent Relay account, Cloudflare runtime, public callback, or Flow XO credential.
 
 ## Current implementation state
 
-`packages/notifications-transport` and
-`agent-relay notifications connect|status|disconnect` now implement the AR2.1
-setup boundary against exact pinned Notifications C0 artifacts. They prove:
+`packages/notifications-transport`,
+`agent-relay notifications connect|status|disconnect`, and
+`agent-relay transport` now implement the AR2.1–AR2.2 setup, explicit outbound
+selection, and readiness boundary against exact pinned Notifications C0
+artifacts. They prove:
 
 - subscriber authorization without claiming success while it is pending;
 - local 32-byte secret and credential-ID generation;
@@ -29,12 +31,12 @@ setup boundary against exact pinned Notifications C0 artifacts. They prove:
 - crash-before-ack replay without duplicate resume; and
 - cross-machine stream, message, and administration denial.
 
-The adapter is not selected by the production daemon yet. Setup persists a
-narrow credential, but there is no continuous production poller, daemon
-transport selection, callback deployment, or release-ready C0 promotion. Those
-remain later AR2 work and centrally owned Notifications compatibility/security
-gates. Until C0-09 approves a release candidate, use the executable C0 mock—not
-a production account—as the integration source of truth.
+The daemon can now select `fake`, direct `telegram`, or outbound `notifications`
+explicitly. Credential presence never selects a transport, there is no dual send
+or automatic failover, and switching retains SQLite and request state. There is
+not yet a continuous hosted interaction poller, callback deployment, or
+release-ready C0 promotion. Until C0-09 approves a release candidate, use the
+executable C0 mock—not a production account—as the integration source of truth.
 
 ## Mock-backed setup command
 
@@ -89,6 +91,35 @@ Status reports only the API origin, contract/environment, hashed machine and
 canary references, credential presence, state, and pending-revocation count. It
 does not print the credential or full machine, project, subscriber, notifier,
 binding, message, or diagnostic identifiers.
+
+## Select the outbound transport
+
+Setup and selection are separate deliberate operations:
+
+```sh
+node apps/relay/dist/cli.js transport status
+node apps/relay/dist/cli.js transport select notifications
+node apps/relay/dist/cli.js daemon
+```
+
+The durable selection is a strict mode-`0600` `~/.agent-relay/transport.json`.
+`AGENT_RELAY_TRANSPORT` overrides it for one process environment, and
+`daemon --transport notifications` is the highest-precedence daemon-only
+override. Exact accepted values are `fake`, `telegram`, and `notifications`;
+unknown values fail closed.
+
+The daemon refuses a selected hosted mode unless the retained narrow
+configuration is active and its credential is present. It never reads or retains
+the broad project bootstrap credential for runtime delivery. Selecting another
+mode leaves the hosted connection and every local event/request intact.
+
+`agent-relay status` reports selected mode/source, safe readiness, last hosted
+send, local pending/retry/dead-letter counts, and the last hosted error as a
+code plus classification. Until FXO-1152 lands, hosted poll status is truthfully
+`not-started` with null last-poll/cursor values and zero claimed unacknowledged
+events; these fields are not evidence that inbound answers work. Raw sessions,
+prompts, answers, transcripts, credentials, and full provider identifiers are
+excluded from status and doctor.
 
 ## Credential and disconnect lifecycle
 
@@ -155,6 +186,14 @@ subscriber, known terminal provider, and idempotency-conflict failures do not
 retry as new messages. An ambiguous provider outcome forbids a fresh automatic
 send and remains visible for diagnosis.
 
+After an authentication, scope, binding, or pinned-contract configuration
+failure, the in-process adapter opens a terminal circuit. Later local events are
+still durably dead-lettered and counted, but no additional credential-bearing
+provider request is made until the operator fixes/reconnects and restarts.
+Status exposes only the safe error code/classification and the number of
+suppressed hosted deliveries. Transient failures retain the existing bounded
+SQLite retry policy and stable event identity.
+
 A provider acknowledgement happens after the local result commits. A crash
 before acknowledgement can repeat the hosted answer, but the reopened SQLite
 state proves it is a duplicate and the resume command remains single-owner.
@@ -168,11 +207,10 @@ independent transport choices.
 
 Before production selection, remaining AR2 work must document and test:
 
-- opt-in configuration and explicit disablement;
 - polling lifecycle, durable cursors, and local acknowledgement state;
 - provider retention and privacy terms;
 - retry/quarantine/reconciliation behavior;
-- local fallback without double delivery;
+- deliberate switching without double delivery;
 - fake executable contract testing; and
 - direct-Telegram parity for local authority and continuation.
 

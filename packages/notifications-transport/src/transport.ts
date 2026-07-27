@@ -1,6 +1,7 @@
 import { NotificationsClient } from "@flowxo/notifications";
 import { TransportError } from "@agent-relay/core/transport";
 
+import { normalizeNotificationsBaseUrl } from "./bootstrap.js";
 import {
   asNotificationsDeliveryError,
   NotificationsDeliveryError,
@@ -17,6 +18,31 @@ import type {
   NotificationTransport,
 } from "@agent-relay/core/transport";
 import type { NotificationsFetch } from "@flowxo/notifications";
+
+const CONFIGURATION_TERMINAL_CODES = new Set([
+  "notifications-authentication-required",
+  "notifications-credential-invalid",
+  "notifications-scope-forbidden",
+  "notifications-environment-mismatch",
+  "notifications-idempotency-conflict",
+  "notifications-idempotency-key-required",
+  "notifications-request-invalid",
+  "notifications-subscriber-unbound",
+  "notifications-resource-not-found",
+  "notifications-contract-invalid",
+]);
+
+function noRedirectFetch(
+  fetchImplementation: NotificationsFetch | undefined,
+): NotificationsFetch {
+  const runtimeFetch = fetchImplementation ?? globalThis.fetch;
+  if (typeof runtimeFetch !== "function") {
+    throw new TypeError("A Fetch-compatible implementation is required.");
+  }
+  const bound = runtimeFetch.bind(globalThis);
+  return async (input, init) =>
+    await bound(input, { ...init, redirect: "manual" });
+}
 
 export interface NotificationsContractTransportOptions extends NotificationsMessageTarget {
   baseUrl: string | URL;
@@ -45,26 +71,45 @@ export interface HostedDeliveryDiagnostic {
     | "expired";
 }
 
+export interface NotificationsTransportCircuitState {
+  blocked: boolean;
+  errorCode?: string;
+  suppressedDeliveries: number;
+}
+
 export class NotificationsContractTransport implements NotificationTransport {
   public readonly name = "notifications";
   private readonly client: NotificationsClient;
   private readonly target: NotificationsMessageTarget;
+  private blockedError: NotificationsDeliveryError | undefined;
+  private suppressedDeliveries = 0;
   private readonly deliveryIdentities = new Map<
     string,
     HostedDeliveryIdentity
   >();
 
   public constructor(options: NotificationsContractTransportOptions) {
+    const baseUrl = normalizeNotificationsBaseUrl(options.baseUrl);
     this.client = new NotificationsClient({
-      baseUrl: options.baseUrl,
+      baseUrl,
       credential: options.credential,
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+      fetch: noRedirectFetch(options.fetch),
     });
     this.target = {
       subscriberId: options.subscriberId,
       ...(options.notifierId === undefined
         ? {}
         : { notifierId: options.notifierId }),
+    };
+  }
+
+  public circuitState(): NotificationsTransportCircuitState {
+    return {
+      blocked: this.blockedError !== undefined,
+      suppressedDeliveries: this.suppressedDeliveries,
+      ...(this.blockedError === undefined
+        ? {}
+        : { errorCode: this.blockedError.code }),
     };
   }
 
@@ -115,6 +160,10 @@ export class NotificationsContractTransport implements NotificationTransport {
         false,
       );
     }
+    if (this.blockedError !== undefined) {
+      this.suppressedDeliveries += 1;
+      throw this.blockedError;
+    }
     try {
       const hosted = await this.client.createMessage(
         mapDeliveryMessageToNotifications(message, this.target),
@@ -144,7 +193,11 @@ export class NotificationsContractTransport implements NotificationTransport {
         messageId: hosted.id,
       };
     } catch (error) {
-      throw asNotificationsDeliveryError(error);
+      const classified = asNotificationsDeliveryError(error);
+      if (CONFIGURATION_TERMINAL_CODES.has(classified.code)) {
+        this.blockedError = classified;
+      }
+      throw classified;
     }
   }
 }

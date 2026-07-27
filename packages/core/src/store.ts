@@ -195,6 +195,14 @@ export interface StoreStatus {
   pendingDeliveryCount: number;
 }
 
+export interface TransportDeliverySummary {
+  lastError?: {
+    at: string;
+    code: string;
+  };
+  lastSuccessfulSendAt?: string;
+}
+
 export interface DiagnosticIngestResult {
   diagnosticId: string;
   inserted: boolean;
@@ -6319,6 +6327,56 @@ export class RelayStore {
       resumeCommands,
       diagnostics,
       pendingDeliveryCount: events.queued + events.retry + events.delivering,
+    };
+  }
+
+  public transportDeliverySummary(
+    transportName: string,
+    errorCodePrefix = `${transportName}-`,
+  ): TransportDeliverySummary {
+    if (
+      !/^[a-z][a-z0-9-]{0,63}$/u.test(transportName) ||
+      !/^[a-z][a-z0-9-]{0,119}$/u.test(errorCodePrefix)
+    ) {
+      throw new Error("transport delivery summary identity is invalid");
+    }
+    const delivered = this.database
+      .prepare(
+        `
+        SELECT MAX(delivered_at) AS delivered_at
+        FROM events
+        WHERE transport_name = ?
+          AND status = 'delivered'
+          AND delivered_at IS NOT NULL
+      `,
+      )
+      .get(transportName) as { delivered_at: string | null };
+    const failed = this.database
+      .prepare(
+        `
+        SELECT error_code, finished_at
+        FROM delivery_attempts
+        WHERE error_code LIKE ?
+          AND error_code IS NOT NULL
+          AND finished_at IS NOT NULL
+        ORDER BY finished_at DESC, id DESC
+        LIMIT 1
+      `,
+      )
+      .get(`${errorCodePrefix}%`) as
+      { error_code: string; finished_at: string } | undefined;
+    return {
+      ...(delivered.delivered_at === null
+        ? {}
+        : { lastSuccessfulSendAt: delivered.delivered_at }),
+      ...(failed === undefined
+        ? {}
+        : {
+            lastError: {
+              at: failed.finished_at,
+              code: failed.error_code,
+            },
+          }),
     };
   }
 }

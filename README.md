@@ -67,20 +67,16 @@ pnpm check
 pnpm build
 ```
 
-In one terminal, start the local daemon with Telegram credentials removed:
+In one terminal, start the local daemon with an explicit fake override:
 
 ```sh
-env -u AGENT_RELAY_TELEGRAM_TOKEN \
-  -u AGENT_RELAY_TELEGRAM_CHAT_ID \
-  node apps/relay/dist/cli.js daemon --no-web
+node apps/relay/dist/cli.js daemon --transport fake --no-web
 ```
 
 In a second terminal:
 
 ```sh
-env -u AGENT_RELAY_TELEGRAM_TOKEN \
-  -u AGENT_RELAY_TELEGRAM_CHAT_ID \
-  node apps/relay/dist/cli.js canary
+node apps/relay/dist/cli.js canary
 ```
 
 The canary must report a durable fake-Telegram delivery. Stop the daemon with
@@ -269,9 +265,11 @@ node apps/relay/dist/cli.js uninstall
 
 ## Local loop
 
-The daemon binds to loopback, uses SQLite as the source of truth, and selects
-the fake Telegram transport unless both the Telegram token and chat ID are
-present.
+The daemon binds to loopback, uses SQLite as the source of truth, and defaults
+to `fake`. Credentials never select a transport. Persist a choice with
+`agent-relay transport select <fake|telegram|notifications>`, set the
+`AGENT_RELAY_TRANSPORT` process override, or pass the daemon-only `--transport`
+override. No mode automatically sends or fails over to another.
 
 ```sh
 # Terminal 1
@@ -403,10 +401,15 @@ starts only after the owned process exits.
 ## Real Telegram adapter
 
 Copy the names from [`.env.example`](.env.example) into your secret manager or
-shell environment. Do not commit values. The daemon activates the Bot API
-adapter only when both `AGENT_RELAY_TELEGRAM_TOKEN` and
-`AGENT_RELAY_TELEGRAM_CHAT_ID` exist. Reply routing additionally requires the
-numeric `AGENT_RELAY_TELEGRAM_OPERATOR_ID`.
+shell environment. Do not commit values. Select `telegram` explicitly; token and
+chat credential presence only affects readiness and never activates the adapter.
+Reply routing additionally requires the numeric
+`AGENT_RELAY_TELEGRAM_OPERATOR_ID`.
+
+```sh
+node apps/relay/dist/cli.js transport select telegram
+node apps/relay/dist/cli.js transport status
+```
 
 The default `AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll` uses Bot API long polling,
 so a daemon bound to loopback can receive replies without a public HTTP
@@ -484,6 +487,8 @@ retry, replay, acknowledgement, isolation, and local-authority boundary. The
 mock-backed `agent-relay notifications` setup command additionally proves
 subscriber authorization, locally generated narrow credentials, secure
 persistence, a synthetic canary, rotation, revocation, and explicit erasure. The
-production daemon still does not select Notifications or continuously poll it.
-Cross-repository promotion to `1.0.0-rc.1` remains gated by
+daemon can now select its outbound Notifications adapter explicitly and reports
+safe readiness/runtime state. Continuous hosted answer polling is not yet
+implemented, so hosted sends work while phone answers do not yet return to local
+SQLite. Cross-repository promotion to `1.0.0-rc.1` remains gated by
 [C0-09](https://linear.app/flowxo/issue/FXO-1050).

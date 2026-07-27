@@ -3,8 +3,9 @@
 This private package is the production-promotable boundary between Agent Relay
 delivery semantics and the pinned FlowXO Notifications C0 API. C0-07 proves
 mapping and local authority. AR2.1 adds the bounded project administration
-client and mock-backed machine setup used by the CLI; it still does not wire a
-production poll loop, daemon selection, durable hosted cursor, or fallback.
+client and mock-backed machine setup used by the CLI. AR2.2 wires explicit
+outbound daemon selection and a terminal configuration circuit; it still does
+not wire the continuous interaction poll loop or durable hosted cursor.
 
 ## Machine bootstrap
 
@@ -63,6 +64,10 @@ copied into Agent Relay.
   diagnostic forbids a new automatic hosted send.
 - Unknown protocol responses use the existing bounded local retry policy and
   stable redacted diagnostics. Contract/schema failures fail closed.
+- Authentication, scope, binding, and pinned-contract configuration failures
+  open an in-process terminal circuit. Later deliveries remain visible in local
+  SQLite but make no repeated credential-bearing network call until restart
+  after corrective setup.
 
 ## Hosted answer authority
 

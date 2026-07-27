@@ -135,6 +135,7 @@ export interface RelayHttpServerOptions {
   token?: string;
   maxBodyBytes?: number;
   logger?: RelayLogger;
+  statusDetails?: () => object;
   replyRouter?: TelegramReplyRouter;
   telegramWebhookSecret?: string;
   webEnabled?: boolean;
@@ -1085,9 +1086,7 @@ export function createRelayHttpServer(
           transport: service.transport.name,
           webEnabled,
           ...service.store.status(),
-          sessionRecords: service.store.listSessions(),
-          topicRecords: service.store.listSessionTopics(),
-          sessionControlRecords: service.store.listSessionControls(),
+          ...(options.statusDetails?.() ?? {}),
         });
         return;
       }

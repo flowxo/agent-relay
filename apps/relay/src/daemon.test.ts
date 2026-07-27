@@ -2,6 +2,10 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import {
+  CONTRACT_MOCK_FIXTURE_CREDENTIALS,
+  createNotificationsContractMock,
+} from "@flowxo/notifications-contract-mock";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startDaemon } from "./daemon.js";
@@ -112,6 +116,158 @@ describe("startDaemon Telegram update mode", () => {
     await daemon.close();
   });
 
+  it("does not select or contact Telegram merely because credentials exist", async () => {
+    const telegramFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(
+        new Error("unselected Telegram must not be contacted"),
+      );
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "fake",
+      telegramToken: "123456:synthetic-token-value",
+      telegramChatId: "10001",
+      telegramFetch,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "evt_explicit_fake_transport_12345678",
+      occurredAt: "2026-07-26T21:00:00.000Z",
+      sequence: 1,
+      machineId: "machine_explicit_fake_12345678",
+      bridgeSessionId: "bridge_explicit_fake_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_explicit_fake_12345678",
+      project: {
+        displayName: "synthetic-explicit-fake",
+        cwdHash: `sha256:${"b".repeat(64)}`,
+      },
+      type: "turn.stopped",
+      summary: "Synthetic explicit fake delivery",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    expect(daemon.service.transport.name).toBe("fake-telegram");
+    expect(telegramFetch).not.toHaveBeenCalled();
+    await daemon.close();
+  });
+
+  it("delivers only through explicitly selected Notifications and reports safe runtime state", async () => {
+    const mock = createNotificationsContractMock();
+    const notificationsFetch = vi.fn<typeof fetch>(
+      async (input, init) => await mock.fetch(new Request(input, init)),
+    );
+    const telegramFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(
+        new Error("unselected Telegram must not be contacted"),
+      );
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "notifications",
+      notifications: {
+        baseUrl: "https://notifications.mock.test",
+        credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+        subscriberId: "agent_relay_operator",
+        notifierId: "default",
+        fetch: notificationsFetch,
+      },
+      telegramToken: "123456:synthetic-token-value",
+      telegramChatId: "10001",
+      telegramFetch,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "evt_explicit_notifications_12345678",
+      occurredAt: "2026-07-26T21:05:00.000Z",
+      sequence: 1,
+      machineId: "machine_explicit_notifications_12345678",
+      bridgeSessionId: "bridge_explicit_notifications_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_explicit_notifications_12345678",
+      project: {
+        displayName: "synthetic-explicit-notifications",
+        cwdHash: `sha256:${"c".repeat(64)}`,
+      },
+      type: "turn.stopped",
+      summary: "Synthetic explicit Notifications delivery",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+      retrying: 0,
+      deadLettered: 0,
+    });
+    expect(mock.inspect().messages).toHaveLength(1);
+    expect(notificationsFetch).toHaveBeenCalledOnce();
+    expect(telegramFetch).not.toHaveBeenCalled();
+
+    const address = daemon.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("daemon did not expose a TCP address");
+    }
+    const status = (await (
+      await fetch(`http://127.0.0.1:${address.port}/v1/status`)
+    ).json()) as Record<string, unknown>;
+    expect(status).toMatchObject({
+      selectedTransport: "notifications",
+      transport: "notifications",
+      transportRuntime: {
+        selection: {
+          configured: true,
+          selected: "notifications",
+          source: "command-line",
+        },
+        notifications: {
+          circuit: { blocked: false },
+          delivery: {
+            lastError: null,
+            lastSuccessfulSendAt: expect.any(String),
+          },
+          polling: {
+            committedCursor: null,
+            lastSuccessfulPollAt: null,
+            state: "not-started",
+            unacknowledgedEventCount: 0,
+          },
+          spool: {
+            deadLetter: 0,
+            pending: 0,
+            retrying: 0,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(status)).not.toContain(
+      CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+    );
+    await daemon.close();
+  });
+
   it("starts long polling for a fully configured local Telegram adapter", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -154,6 +310,7 @@ describe("startDaemon Telegram update mode", () => {
     const daemon = await startDaemon({
       databasePath: await temporaryDatabase(),
       port: 0,
+      selectedTransport: "telegram",
       telegramToken: "123456:synthetic-token-value",
       telegramChatId: "10001",
       telegramOperatorUserId: 10002,
@@ -208,6 +365,7 @@ describe("startDaemon Telegram update mode", () => {
     const daemon = await startDaemon({
       databasePath: await temporaryDatabase(),
       port: 0,
+      selectedTransport: "telegram",
       telegramToken: "123456:synthetic-token-value",
       telegramChatId: "10001",
       telegramOperatorUserId: 10002,
@@ -234,6 +392,7 @@ describe("startDaemon Telegram update mode", () => {
       startDaemon({
         databasePath: await temporaryDatabase(),
         port: 0,
+        selectedTransport: "telegram",
         telegramToken: "123456:synthetic-token-value",
         telegramChatId: "-10001",
         telegramOperatorUserId: 10002,
@@ -263,6 +422,7 @@ describe("startDaemon Telegram update mode", () => {
       startDaemon({
         databasePath: await temporaryDatabase(),
         port: 0,
+        selectedTransport: "telegram",
         telegramToken: "123456:synthetic-token-value",
         telegramChatId: "10001",
         telegramOperatorUserId: 10002,
