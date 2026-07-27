@@ -67,6 +67,10 @@ await build({
       "packages/notifications-transport/src/index.ts",
     ),
     "@agent-relay/protocol": resolve(root, "packages/protocol/src/index.ts"),
+    "@agent-relay/runner-bridge": resolve(
+      root,
+      "packages/runner-bridge/src/index.ts",
+    ),
   },
   logLevel: "warning",
 });

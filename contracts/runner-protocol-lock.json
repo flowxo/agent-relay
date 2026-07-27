@@ -1,0 +1,26 @@
+{
+  "schema": "agent-relay.runner-protocol-lock/v1",
+  "schema_version": 1,
+  "protocol_family": "runner.protocol/v1",
+  "compatibility_commitment": "internal-until-gate-5",
+  "source_repository": "flowxo/code-sidecar",
+  "source_commit": "bdf39c6d1684887dfd9b438332984fce5558acec",
+  "source_tree_state": "clean",
+  "release_eligible": true,
+  "fixture_file": "package/fixtures/runner-protocol-v1.json",
+  "fixture_count": 33,
+  "artifacts": [
+    {
+      "package": "@session/contracts",
+      "version": "0.0.0",
+      "file": "vendor/runner-protocol-v1/session-contracts-0.0.0.tgz",
+      "sha256": "aec934ce803730a1eb891efc6a1ef2ae75041528e8b782ccfa12e2402b1f2927"
+    },
+    {
+      "package": "@session/protocol-runner",
+      "version": "0.0.0",
+      "file": "vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz",
+      "sha256": "82127aa100d0ff6f607ffe9f01b7767549ac26fcd9ce1886eb0ebe7ac55e1bb8"
+    }
+  ]
+}

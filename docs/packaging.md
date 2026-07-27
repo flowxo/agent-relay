@@ -18,14 +18,20 @@ approved release commit can make the staged artifact registry-eligible.
 
 ## Why one package
 
-The TypeScript workspace keeps protocol, harness, core, and relay boundaries for
-development. Publishing those as separately versioned packages would expose
-internal APIs and workspace coordination without helping an operator.
+The TypeScript workspace keeps protocol, harness, core, runner-bridge, and relay
+boundaries for development. Publishing those as separately versioned packages
+would expose internal APIs and workspace coordination without helping an
+operator.
 
 The release build bundles all internal runtime TypeScript into one executable
 JavaScript file. Only `better-sqlite3` and `zod` remain runtime dependencies.
 The packed manifest contains no `workspace:*` links, development dependencies,
 lifecycle scripts, TypeScript source, or repository-relative imports.
+
+The experimental runner bridge CLI/status code is bundled, but the bridge is
+disabled by default and the candidate contains no native structured-harness
+adapter or remote service configuration. The vendored development protocol
+archives and contract lock are repository test inputs, not package contents.
 
 This alpha is deliberately CLI-only. It has no `exports` field and therefore no
 supported programmatic JavaScript API. Type declarations are not included

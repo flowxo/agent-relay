@@ -85,6 +85,11 @@ export interface DoctorOptions {
   runtimeEntryPath?: string;
   runtimeNodePath?: string;
   transportReadiness?: TransportReadinessReport;
+  runnerBridge?: {
+    readonly configured: boolean;
+    readonly enabled: boolean;
+    readonly adapterAvailable: boolean;
+  };
 }
 
 export interface HarnessVersionObservation {
@@ -176,6 +181,22 @@ export async function runDoctor(
   options: DoctorOptions = {},
 ): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
+  if (options.runnerBridge !== undefined) {
+    const runnerBridge = options.runnerBridge;
+    const ready = !runnerBridge.enabled || runnerBridge.adapterAvailable;
+    checks.push({
+      name: "runner-bridge",
+      ok: ready,
+      level: ready ? "pass" : "fail",
+      detail: runnerBridge.enabled
+        ? runnerBridge.adapterAvailable
+          ? "experimental runner bridge is explicitly enabled with an installed adapter"
+          : "experimental runner bridge is enabled but no structured harness adapter is installed"
+        : runnerBridge.configured
+          ? "experimental runner bridge is explicitly disabled"
+          : "experimental runner bridge is disabled by default",
+    });
+  }
   if (options.transportReadiness !== undefined) {
     const readiness = options.transportReadiness;
     checks.push({

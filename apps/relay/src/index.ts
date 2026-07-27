@@ -9,6 +9,8 @@ export * from "./installer.js";
 export * from "./machine-id.js";
 export * from "./notifications-command.js";
 export * from "./notifications-config.js";
+export * from "./runner-bridge-command.js";
+export * from "./runner-bridge-config.js";
 export * from "./supervisor.js";
 export * from "./telegram-poller.js";
 export * from "./transport-command.js";

@@ -26,6 +26,9 @@ stores:
   when the local web companion is enabled;
 - `install.json` and `bin/agent-relay`, which record and launch the owned
   user-level installation; and
+- optional experimental `runner-bridge.json` and `runner-bridge.sqlite`, which
+  retain bridge selection, runner authority, private product/native mappings,
+  queued protocol frames, cursors, and sanitized effect outcomes; and
 - the stable random local machine identifier used to separate sessions.
 
 Agent Relay does not intentionally store a harness's raw hook payload or full
@@ -33,6 +36,13 @@ transcript. It can store the bounded last assistant message, question, choice
 labels, failure summary, and operator answer needed to notify and continue a
 session. Those values can still contain private source or conversation content.
 Treat the state directory as sensitive.
+
+The experimental runner bridge is not a notification transport and does not send
+through Telegram or Notifications. When explicitly composed later, it initiates
+its own versioned outbound connection. Its status and doctor output exclude
+private native session references, proof material, leases, frame payloads,
+source, transcript, prompts, tool input/output, paths, environment, and
+credentials.
 
 The installer may create private timestamped backups next to changed harness
 configuration files. The default files are:
@@ -123,6 +133,11 @@ To erase local Agent Relay data:
 4. inspect and, if desired, remove exact `*.agent-relay-backup-*` files adjacent
    to the three harness configs; and
 5. remove any local secret file or secret-manager entry created for Agent Relay.
+
+To erase only experimental runner bridge state while retaining standalone
+attention data, stop the daemon, run `agent-relay runner-bridge disable`, then
+run `agent-relay runner-bridge erase --confirm`. This scoped command refuses
+while enabled and does not remove `relay.sqlite`.
 
 Delete corresponding Telegram messages/topics or provider data through that
 provider separately. Package-manager removal alone neither uninstalls hooks nor

@@ -18,6 +18,7 @@ const focusedDocuments = [
   "docs/extending-transports.md",
   "docs/extending-harnesses.md",
   "docs/hosted-notifications.md",
+  "docs/runner-bridge.md",
 ];
 
 const checkedDocuments = [
@@ -161,6 +162,25 @@ for (const pattern of [
     hosted,
     pattern,
     `hosted boundary is missing required statement: ${String(pattern)}`,
+  );
+}
+
+const runnerBridge = await text("docs/runner-bridge.md");
+for (const pattern of [
+  /default-off/,
+  /not a notification transport/i,
+  /StructuredHarnessDriver/,
+  /no generic executable/,
+  /runner-bridge\.sqlite/,
+  /outcome_unknown/,
+  /exact clean source commit/,
+  /release_eligible: true/,
+  /never erases `relay\.sqlite`/,
+]) {
+  requireText(
+    runnerBridge,
+    pattern,
+    `runner bridge guide is missing boundary: ${String(pattern)}`,
   );
 }
 

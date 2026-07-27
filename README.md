@@ -164,6 +164,7 @@ runtime, public callback, or Flow XO credential. See the
 - [Write a notification transport](docs/extending-transports.md)
 - [Write or update a harness adapter](docs/extending-harnesses.md)
 - [Optional hosted Notifications boundary](docs/hosted-notifications.md)
+- [Experimental outbound runner bridge](docs/runner-bridge.md)
 - [Living clean-checkout onboarding](docs/onboarding.md)
 
 Implementation history and deeper evidence remain available in the
@@ -210,6 +211,7 @@ pnpm rebuild
 pnpm check
 pnpm build
 pnpm contracts:notifications
+pnpm contracts:runner
 ```
 
 The checked-in compatibility matrix and the README/SUPPORT summaries are

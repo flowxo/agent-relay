@@ -6,6 +6,8 @@ settings:
 
 overrides:
   "@flowxo/notifications-contracts@1.0.0-draft.1": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz
+  "@session/contracts@0.0.0": file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
+  "@session/protocol-runner@0.0.0": file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz
 
 importers:
   .:
@@ -66,6 +68,9 @@ importers:
       "@agent-relay/protocol":
         specifier: workspace:*
         version: link:../../packages/protocol
+      "@agent-relay/runner-bridge":
+        specifier: workspace:*
+        version: link:../../packages/runner-bridge
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -126,6 +131,22 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/runner-bridge:
+    dependencies:
+      "@session/contracts":
+        specifier: file:../../vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
+        version: file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
+      "@session/protocol-runner":
+        specifier: file:../../vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz
+        version: file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz
+      better-sqlite3:
+        specifier: 13.0.1
+        version: 13.0.1
+    devDependencies:
+      "@types/better-sqlite3":
+        specifier: 7.6.13
+        version: 7.6.13
 
 packages:
   "@esbuild/aix-ppc64@0.28.1":
@@ -714,6 +735,22 @@ packages:
       }
     cpu: [x64]
     os: [win32]
+
+  "@session/contracts@file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz":
+    resolution:
+      {
+        integrity: sha512-gtI2M6TkJKkB3e2kDw7iMNMJuCaDDYksd/ZcxAbmIwhH8keDzsiHrXFNmHH/kQjAOZQbuRgTN+hQMpFByo86/w==,
+        tarball: file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz,
+      }
+    version: 0.0.0
+
+  "@session/protocol-runner@file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz":
+    resolution:
+      {
+        integrity: sha512-TfDUb+kvwtaC/qdhutEhiULt8MO6nKOjiwTBcfzQ1/Nzutkw2MFHYPTpGzjGEQviGqZfFsCuKRJkX45i0L0jPw==,
+        tarball: file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz,
+      }
+    version: 0.0.0
 
   "@types/better-sqlite3@7.6.13":
     resolution:
@@ -1945,6 +1982,13 @@ snapshots:
 
   "@rollup/rollup-win32-x64-msvc@4.62.2":
     optional: true
+
+  "@session/contracts@file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz":
+    {}
+
+  "@session/protocol-runner@file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz":
+    dependencies:
+      "@session/contracts": file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
 
   "@types/better-sqlite3@7.6.13":
     dependencies:

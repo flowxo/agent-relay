@@ -10,7 +10,8 @@ const runFile = promisify(execFile);
 const root = resolve(import.meta.dirname, "..");
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const maximumTextBytes = 4 * 1024 * 1024;
-const approvedBinary = /^vendor\/notifications-c0\/[^/]+\.tgz$/;
+const approvedBinary =
+  /^(?:vendor\/notifications-c0\/[^/]+\.tgz|vendor\/runner-protocol-v1\/session-(?:contracts|protocol-runner)-0\.0\.0\.tgz)$/;
 const approvedSyntheticUser = /^(?:operator|private|private-owner)$/;
 
 const secretPatterns = [

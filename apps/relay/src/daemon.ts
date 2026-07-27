@@ -42,6 +42,12 @@ export interface DaemonNotificationsOptions extends NotificationsContractTranspo
   presenter?: NotificationsResolutionPresenter;
 }
 
+export interface DaemonRunnerBridge {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  status(): object;
+}
+
 export interface DaemonOptions {
   databasePath: string;
   webEnabled?: boolean;
@@ -60,6 +66,8 @@ export interface DaemonOptions {
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
   notifications?: DaemonNotificationsOptions;
+  runnerBridgeEnabled?: boolean;
+  runnerBridge?: DaemonRunnerBridge;
   coalescingWindowMs?: number;
   drainIntervalMs?: number;
   fallbackPath?: string;
@@ -113,6 +121,14 @@ function selectTransport(options: DaemonOptions): NotificationTransport {
 export async function startDaemon(
   options: DaemonOptions,
 ): Promise<RunningDaemon> {
+  const runnerBridgeEnabled = options.runnerBridgeEnabled ?? false;
+  if (runnerBridgeEnabled !== (options.runnerBridge !== undefined)) {
+    throw new Error(
+      runnerBridgeEnabled
+        ? "runner bridge is enabled but no structured harness adapter is installed"
+        : "runner bridge runtime requires explicit enablement",
+    );
+  }
   const telegramUpdateMode = options.telegramUpdateMode ?? "poll";
   if (telegramUpdateMode !== "poll" && telegramUpdateMode !== "webhook") {
     throw new Error("Telegram update mode must be poll or webhook");
@@ -202,6 +218,14 @@ export async function startDaemon(
       : { coalescingWindowMs: options.coalescingWindowMs }),
   });
   service.recover();
+  if (options.runnerBridge !== undefined) {
+    try {
+      await options.runnerBridge.start();
+    } catch (error) {
+      store.close();
+      throw error;
+    }
+  }
   const replyRouter =
     transport instanceof NotificationsContractTransport ||
     options.telegramOperatorUserId === undefined ||
@@ -221,8 +245,8 @@ export async function startDaemon(
       : { telegramWebhookSecret: options.telegramWebhookSecret }),
     webEnabled,
     ...(webCredential === undefined ? {} : { webCredential }),
-    statusDetails: () =>
-      buildDaemonTransportStatus({
+    statusDetails: () => ({
+      ...buildDaemonTransportStatus({
         service,
         selection: transportSelection,
         ...(hostedStreamKey === undefined ? {} : { hostedStreamKey }),
@@ -235,6 +259,11 @@ export async function startDaemon(
           ? {}
           : { readiness: options.transportReadiness }),
       }),
+      runnerBridge: options.runnerBridge?.status() ?? {
+        enabled: false,
+        state: "disabled",
+      },
+    }),
     logger,
   });
 
@@ -299,6 +328,7 @@ export async function startDaemon(
   try {
     initialRetention = service.maintainRetention(options.retention);
   } catch (error) {
+    await options.runnerBridge?.stop().catch(() => undefined);
     store.close();
     throw error;
   }
@@ -312,6 +342,7 @@ export async function startDaemon(
       });
     });
   } catch (error) {
+    await options.runnerBridge?.stop().catch(() => undefined);
     store.close();
     throw error;
   }
@@ -483,6 +514,7 @@ export async function startDaemon(
     });
     closePromise = Promise.all([
       serverClosed,
+      options.runnerBridge?.stop() ?? Promise.resolve(),
       activeDrain ?? Promise.resolve(),
       activeFallbackReplay ?? Promise.resolve(),
       telegramPolling ?? Promise.resolve(),

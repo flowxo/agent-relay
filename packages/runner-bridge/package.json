@@ -1,0 +1,28 @@
+{
+  "name": "@agent-relay/runner-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "contract:check": "vitest run test/protocol-contract.test.ts --no-file-parallelism",
+    "contract:result": "node scripts/write-contract-result.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@session/contracts": "0.0.0",
+    "@session/protocol-runner": "0.0.0",
+    "better-sqlite3": "13.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13"
+  }
+}
