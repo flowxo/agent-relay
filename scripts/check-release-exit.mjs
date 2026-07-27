@@ -569,7 +569,10 @@ try {
     "Agent Relay was installed as a link instead of package contents",
   );
   const installedRealPath = await realpath(installedPackage);
-  const installedRelative = relative(consumer, installedRealPath);
+  const installedRelative = relative(
+    await realpath(consumer),
+    installedRealPath,
+  );
   assert(
     installedRelative.length > 0 &&
       installedRelative !== ".." &&
