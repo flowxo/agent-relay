@@ -12,6 +12,7 @@ const focusedDocuments = [
   "docs/troubleshooting.md",
   "docs/compatibility.md",
   "docs/packaging.md",
+  "docs/fixtures.md",
   "docs/extending-transports.md",
   "docs/extending-harnesses.md",
   "docs/hosted-notifications.md",
@@ -19,6 +20,7 @@ const focusedDocuments = [
 
 const checkedDocuments = [
   "README.md",
+  "CONTRIBUTING.md",
   ...focusedDocuments,
   "docs/onboarding.md",
   "PRIVACY.md",

@@ -1,0 +1,71 @@
+name: Notification transport proposal
+description: Propose or report work behind the bounded transport interface.
+title: "[Transport]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `docs/extending-transports.md` first. Transports deliver bounded presentations and candidate answers; SQLite retains request and resume authority.
+
+        Never paste tokens, `.env` files, SQLite or other private databases, raw logs/configs, callbacks, transcripts, source code, account identifiers, usernames, hostnames, repository identities, or machine-specific paths. Use synthetic payloads. Report vulnerabilities privately through the Security contact link.
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and API version
+      placeholder: Synthetic Provider API 1.0
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Operator outcome
+      description: Explain the notification and response path this enables.
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Proven provider capabilities and limits
+      description:
+        List only documented or observed features, payload limits, topic/thread
+        behavior, and unsupported shapes.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Authentication, correlation, and privacy boundary
+      description:
+        Explain inbound validation, local identity binding, default outbound
+        data, credentials, retention, and disablement.
+    validations:
+      required: true
+  - type: textarea
+    id: failures
+    attributes:
+      label: Failure and retry mapping
+      description:
+        Classify retryable, terminal, rate-limit, timeout, and ambiguous
+        outcomes.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Credential-free test plan
+      description:
+        Cover duplicates, retries, malformed/oversized data, stale and
+        cross-session answers, races, restart, privacy, and fake parity.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label:
+            I removed credentials, private databases, raw logs/configs,
+            callbacks, transcripts, identities, and machine-specific paths.
+          required: true
+        - label: This is not a vulnerability or sensitive security report.
+          required: true

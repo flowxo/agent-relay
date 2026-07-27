@@ -1,0 +1,74 @@
+name: Harness adapter proposal
+description: Propose or report a native harness event or continuation change.
+title: "[Harness]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `docs/extending-harnesses.md` first. Native hooks do not prove crashes, and continuation must use only the harness's official contract.
+
+        Never paste tokens, `.env` files, SQLite or other private databases, raw logs/configs, raw hook payloads, transcripts, source code, process arguments, account/session identifiers, usernames, hostnames, repository identities, or machine-specific paths. Use a synthetic fixture. Report vulnerabilities privately through the Security contact link.
+  - type: input
+    id: harness
+    attributes:
+      label: Harness, surface, and exact version
+      placeholder: Example CLI; 1.2.3
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Official contract and observation date
+      description:
+        Link primary documentation and identify the exact event or structured
+        API.
+    validations:
+      required: true
+  - type: textarea
+    id: event
+    attributes:
+      label: Normalized event and capability
+      description:
+        Explain deterministic identity, schema, failure behavior, and what
+        remains unsupported.
+    validations:
+      required: true
+  - type: textarea
+    id: continuation
+    attributes:
+      label: Continuation and authority boundary
+      description:
+        State the exact native output/API, recursion behavior, supervisor
+        ownership, sandbox/trust propagation, and fail-closed default.
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Synthetic fixture provenance
+      description:
+        Describe source/version/date/evidence metadata, sanitization, size, and
+        manifest update.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Credential-free test plan
+      description:
+        Cover malformed/oversized input, duplicates, timeout/stale answers,
+        concurrent isolation, exact native output, and authority non-widening.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label:
+            I removed credentials, private databases, raw logs/configs, hook
+            payloads, transcripts, process arguments, identities, and
+            machine-specific paths.
+          required: true
+        - label: This is not a vulnerability or sensitive security report.
+          required: true

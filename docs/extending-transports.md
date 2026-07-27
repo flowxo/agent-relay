@@ -3,6 +3,11 @@
 A transport delivers a bounded presentation. It does not own requests, decide
 answers, select sessions, execute commands, or resume a harness.
 
+Start with the repository [contribution workflow](../CONTRIBUTING.md) and
+[safe fixture guide](fixtures.md). A transport change uses the dedicated issue
+and pull-request paths so authentication, callback correlation, default outbound
+data, retention, and provider support claims receive the right review.
+
 Start in `packages/core/src/transport.ts`. The required interface is:
 
 ```ts
@@ -118,3 +123,16 @@ artifacts. It is not yet wired as a production daemon transport; see the
 Run `pnpm check`, `pnpm test:e2e` for changed operator surfaces, and the
 provider's isolated contract suite. Update the architecture, privacy, support,
 compatibility, progress, and changelog surfaces in the same change.
+
+For a normal transport change, begin with:
+
+```sh
+pnpm fixtures:check
+pnpm exec vitest run packages/core
+pnpm check
+```
+
+Then run `pnpm test:e2e` for changed operator flows and the provider-specific
+contract command. All repository checks must stay credential-free; use the fake
+transport or an executable mock for normal CI and reserve a bounded live canary
+for a separately recorded compatibility claim.

@@ -1,6 +1,7 @@
 {
   "recordedAt": "2026-07-25T12:00:00.000Z",
   "contractVersion": "agent-interaction.v1",
+  "source": "packages/protocol/src/interaction.ts",
   "evidence": "synthetic-compatibility-fixture",
   "privacy": "All identifiers, prompts, options, and answers are synthetic. No transcript, credential, provider callback, account identifier, or machine path is present.",
   "fixtures": [

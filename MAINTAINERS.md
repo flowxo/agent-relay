@@ -37,7 +37,9 @@ considered in the pull request:
 Ordinary documentation, sanitized fixtures, diagnostics, and provider adapters
 behind existing interfaces may use normal review after the relevant checks pass.
 A fixture is not acceptable evidence until its source/version is recorded and
-private values are removed.
+private values are removed. The [safe fixture policy](docs/fixtures.md) and
+exact manifest inventory apply to every ordinary JSON fixture; vendored contract
+artifacts remain governed by their immutable contract locks.
 
 When more than one maintainer is available, the author should not be the sole
 approver of a security-sensitive or release change. A repository owner may

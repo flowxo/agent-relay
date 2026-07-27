@@ -8,3 +8,6 @@ contact_links:
   - name: Read the support and privacy guidance
     url: https://github.com/flowxo/agent-relay/blob/main/SUPPORT.md
     about: Learn what is supported and how to prepare a sanitized report.
+  - name: Read the contribution guide
+    url: https://github.com/flowxo/agent-relay/blob/main/CONTRIBUTING.md
+    about: Set up a credential-free checkout and choose the bounded change path.

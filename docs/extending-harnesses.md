@@ -8,6 +8,11 @@ The adapter is not allowed to infer a crash, invent a session, widen execution
 authority, parse a private transcript as its primary contract, or run arbitrary
 shell text.
 
+Start with the repository [contribution workflow](../CONTRIBUTING.md) and
+[safe fixture guide](fixtures.md). A harness change uses the dedicated issue and
+pull-request paths because native output, execution authority, resume ownership,
+and support claims can each trigger explicit maintainer review.
+
 ## Source map
 
 | Area                                     | Responsibility                                     |
@@ -125,6 +130,20 @@ failure behavior are proven.
 Run the full repository checks and a fake transport canary. A new `verified`
 claim also needs a bounded live canary on the exact surface/version, with no
 private value retained.
+
+For a normal adapter change, the minimum local command sequence is:
+
+```sh
+pnpm fixtures:check
+pnpm exec vitest run packages/harnesses
+pnpm capabilities:check
+pnpm check
+```
+
+Run `pnpm capabilities:generate` first when the reviewed compatibility registry
+changed. Operator-facing behavior also requires `pnpm test:e2e`. These checks
+need no hosted credential; substitute sanitized fixtures and the fake transport
+for private accounts.
 
 ## Primary sources currently used
 

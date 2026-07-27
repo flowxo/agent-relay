@@ -20,6 +20,11 @@ breaking changes and required operator action.
   drift-checked README/SUPPORT summaries.
 - Doctor evidence IDs plus explicit `verified`, `compatible-unverified`, and
   known-incompatible version diagnosis.
+- A credential-free contribution workflow, dedicated compatibility/transport/
+  harness/docs/security-design issue forms, and a review-gated pull request
+  template.
+- A 64 KiB sanitized JSON fixture boundary with exact manifest inventories,
+  provenance requirements, privacy scanning, and negative regression tests.
 
 ### Changed
 

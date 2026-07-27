@@ -2,6 +2,9 @@
   "schema": "agent-relay-telegram-fixtures.v1",
   "capturedAt": "2026-07-25",
   "botApiVersion": "10.2",
+  "source": "https://core.telegram.org/bots/api",
+  "evidence": "sanitized-live-and-fake-transport-observation",
+  "privacy": "All request fixtures contain synthetic chat, message, event, decision, and action values. Credentials and private operator content are excluded.",
   "scope": "private chat with topics enabled",
   "fixtures": [
     {

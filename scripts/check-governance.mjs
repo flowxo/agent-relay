@@ -11,6 +11,7 @@ const requiredDocuments = [
   "SUPPORT.md",
   "CODE_OF_CONDUCT.md",
   "MAINTAINERS.md",
+  "CONTRIBUTING.md",
 ];
 
 const packageManifests = [
@@ -154,6 +155,99 @@ for (const pattern of [
     pattern,
     `bug template is missing required privacy guidance: ${String(pattern)}`,
   );
+}
+
+const contributionGuide = await text("CONTRIBUTING.md");
+for (const pattern of [
+  /Node\.js 22/,
+  /pnpm 11\.17\.0/,
+  /pnpm install --frozen-lockfile --ignore-scripts/,
+  /pnpm contracts:preinstall/,
+  /pnpm rebuild/,
+  /pnpm check/,
+  /pnpm test:e2e/,
+  /pnpm package:check/,
+  /architecture boundaries/i,
+  /pnpm fixtures:check/,
+  /explicit maintainer review/i,
+  /private security-advisory path/i,
+]) {
+  requireText(
+    contributionGuide,
+    pattern,
+    `CONTRIBUTING.md is missing required contributor guidance: ${String(pattern)}`,
+  );
+}
+
+const pullRequestTemplate = await text(".github/pull_request_template.md");
+for (const pattern of [
+  /Compatibility evidence or support claim/,
+  /Notification transport/,
+  /Harness adapter or native event/,
+  /Security-sensitive design change/,
+  /Protocol schema or hook continuation output/,
+  /Execution authority, sandbox\/trust propagation/,
+  /Installer path, config merge, rollback/,
+  /SQLite migration, or retention/,
+  /Transport authentication, callback validation/,
+  /Capability, operating-system, harness-version/,
+  /Package contents, dependency, provenance/,
+  /private\s+security-advisory path/,
+  /machine-specific paths/,
+]) {
+  requireText(
+    pullRequestTemplate,
+    pattern,
+    `pull request template is missing a required gate: ${String(pattern)}`,
+  );
+}
+
+const issueForms = [
+  {
+    path: ".github/ISSUE_TEMPLATE/compatibility.yml",
+    required: [/exact version/, /Evidence class/, /synthetic fixture/i],
+  },
+  {
+    path: ".github/ISSUE_TEMPLATE/transport.yml",
+    required: [
+      /SQLite retains request and resume authority/,
+      /Failure and retry/,
+    ],
+  },
+  {
+    path: ".github/ISSUE_TEMPLATE/harness.yml",
+    required: [
+      /Native hooks do not prove crashes/,
+      /Continuation and authority/,
+    ],
+  },
+  {
+    path: ".github/ISSUE_TEMPLATE/docs.yml",
+    required: [/Documentation improvement/, /Primary evidence/],
+  },
+  {
+    path: ".github/ISSUE_TEMPLATE/security-change.yml",
+    required: [/only for planned design work/, /explicit maintainer review/],
+  },
+];
+
+for (const issueForm of issueForms) {
+  const source = await text(issueForm.path);
+  for (const pattern of [
+    /Never paste/,
+    /private databases/,
+    /raw logs\/configs/,
+    /transcripts/,
+    /machine-specific paths/,
+    /vulnerabilit/i,
+    ...issueForm.required,
+  ]) {
+    requireText(
+      source,
+      pattern,
+      `${issueForm.path} is missing required intake guidance: ${String(pattern)}`,
+    );
+  }
 }
 
 const readme = await text("README.md");

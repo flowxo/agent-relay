@@ -100,6 +100,27 @@
   104,988-byte packed/491,088-byte unpacked artifact proof, the full packed
   lifecycle, all three Chromium scenarios, and a production audit with no known
   vulnerability.
+- FXO-1147 establishes the bounded public contribution path. Node 22 and exact
+  pnpm 11.17.0 setup, scripts-disabled frozen installation, focused checks, CI
+  parity, browser/package proof, architecture ownership, commit expectations,
+  security routing, and change-specific maintainer gates now live in
+  `CONTRIBUTING.md`. Dedicated public forms distinguish bugs, compatibility
+  evidence, transports, harness adapters, documentation, and planned
+  security-sensitive design while steering actual vulnerabilities to private
+  reporting and prohibiting credentials, databases, logs/configs, payloads,
+  transcripts, identities, and machine paths. The PR template makes protocol,
+  hook continuation, authority/resume, installer, redaction/web, migration/
+  retention, transport authentication/outbound data, support, and release gates
+  explicit. A new fixture policy plus `pnpm fixtures:check` enforces three exact
+  manifests, 12 sanitized JSON fixtures, source/version/date/evidence/privacy
+  metadata, a 64 KiB bound, regular-file/no-symlink rules, and common secret and
+  private-path patterns. Seven Node tests cover malformed JSON, oversize,
+  symlinks, non-JSON files, sensitive values, duplicate inventory, and missing
+  provenance. All six issue forms parse as YAML. The final local gate passed 41
+  Vitest files/311 tests, seven fixture tests, 17 contract and supply-chain
+  tests, the six-test isolated Notifications consumer, the 105,127-byte
+  packed/491,406-byte unpacked artifact proof, the full packed lifecycle, all
+  three Chromium scenarios, and a production audit with no known vulnerability.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -564,11 +585,13 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Add the bounded contributor workflow in FXO-1147: clean-checkout development
-setup, architecture and review gates, safe fixture guidance, issue/PR templates,
-and contributor-facing CI parity. Mock-backed AR2 work may proceed against the
-pinned `1.0.0-draft.1` artifacts, but production hosted dogfood must wait for
-AR1, AR2, and a central C0-09 go disposition.
+Build the least-privilege prerelease pipeline in FXO-1148: immutable release
+inputs, production audit, SBOM, checksums, provenance, protected prerelease
+publication, rollback/yank guidance, and credential-free workflow validation.
+FXO-1149 then owns the isolated clean-machine Node 22 and final package-content
+release evidence. Mock-backed AR2 work may proceed against the pinned
+`1.0.0-draft.1` artifacts, but production hosted dogfood must wait for AR1, AR2,
+and a central C0-09 go disposition.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

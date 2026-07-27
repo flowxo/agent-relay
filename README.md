@@ -152,6 +152,7 @@ runtime, public callback, or Flow XO credential. See the
 - [Troubleshooting and doctor](docs/troubleshooting.md)
 - [Compatibility and evidence policy](docs/compatibility.md)
 - [Package identity and artifact boundary](docs/packaging.md)
+- [Safe fixtures and compatibility evidence](docs/fixtures.md)
 - [Write a notification transport](docs/extending-transports.md)
 - [Write or update a harness adapter](docs/extending-harnesses.md)
 - [Optional hosted Notifications boundary](docs/hosted-notifications.md)
@@ -179,6 +180,8 @@ Before reporting or operating the software, read:
 - [PRIVACY.md](PRIVACY.md) for local files, outbound data, retention, and
   erasure;
 - [MAINTAINERS.md](MAINTAINERS.md) for review and release authority;
+- [CONTRIBUTING.md](CONTRIBUTING.md) for credential-free setup, architecture
+  boundaries, fixture safety, and CI parity;
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations; and
 - the [MIT license](LICENSE).
 
@@ -188,6 +191,9 @@ hostname, account identifier, or real working path in an issue or pull request.
 ## Development
 
 Requirements: Node.js 22 or newer and pnpm 11.
+
+The complete contributor path, including focused checks and change-specific
+review gates, is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
@@ -201,7 +207,9 @@ pnpm contracts:notifications
 The checked-in compatibility matrix and the README/SUPPORT summaries are
 generated from the runtime registry. Run `pnpm capabilities:generate` after an
 evidence change; `pnpm capabilities:check` fails on any drift. Sanitized harness
-fixtures and their provenance live under `packages/harnesses/fixtures`.
+fixtures and their provenance live under `packages/harnesses/fixtures`; the
+[fixture policy](docs/fixtures.md) and `pnpm fixtures:check` enforce the exact
+inventory, metadata, size, and common privacy boundaries.
 
 No bot token, transcript, credential, hostname, username, or raw working path is
 required for the contract test suite.
