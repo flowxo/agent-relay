@@ -18,6 +18,7 @@ Start with the credential-free local proof:
 ```sh
 agent-relay --help
 agent-relay --version
+agent-relay capabilities
 agent-relay daemon
 ```
 
@@ -30,7 +31,9 @@ agent-relay status
 
 The daemon should report the `fake-telegram` transport and the canary should
 report one durable delivery with no retry or dead letter. No hosted service or
-Telegram credential is required.
+Telegram credential is required. The capability record is safe to inspect and
+contains classifications, exact verified versions, and evidence IDs without
+transcripts or machine paths.
 
 Before changing user-level harness configuration, inspect the exact plan:
 

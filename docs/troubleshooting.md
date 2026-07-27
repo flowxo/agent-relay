@@ -16,18 +16,21 @@ If using a source build, replace `agent-relay` with
 
 `doctor` evaluates installation shape and compatibility. `status` reports
 durable work and failures. The fake canary proves the local loop independently
-of Telegram.
+of Telegram. `agent-relay capabilities` prints the safe generated record that
+doctor consumes; its evidence IDs and classifications can be included in a
+sanitized report.
 
-| Evidence                                | Interpretation                                                         |
-| --------------------------------------- | ---------------------------------------------------------------------- |
-| Doctor check `ok`                       | The exact local invariant passed                                       |
-| Doctor warning for harness version      | Binary exists, but the version is not currently verified               |
-| Doctor failure for binary/hook/manifest | Install or upgrade reconciliation is incomplete                        |
-| Event `queued` or `retry`               | Durable work remains and will be retried                               |
-| Event `dead_letter`                     | Terminal or exhausted delivery requires diagnosis                      |
-| Resume `claimed`                        | Ownership was committed; do not manually launch a duplicate            |
-| Resume `failed`                         | Exact late-resume execution failed and is retained                     |
-| Diagnostic count increasing             | A hook, transport, retention, browser, or supervisor path is reporting |
+| Evidence                               | Interpretation                                                         |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| Doctor check `ok`                      | The exact local invariant passed                                       |
+| Doctor `compatible-unverified` warning | Binary exists, but the exact version is not currently verified         |
+| Doctor `unsupported` version failure   | Binary is absent or its required contract is recorded as incompatible  |
+| Doctor failure for hook/manifest       | Install or upgrade reconciliation is incomplete                        |
+| Event `queued` or `retry`              | Durable work remains and will be retried                               |
+| Event `dead_letter`                    | Terminal or exhausted delivery requires diagnosis                      |
+| Resume `claimed`                       | Ownership was committed; do not manually launch a duplicate            |
+| Resume `failed`                        | Exact late-resume execution failed and is retained                     |
+| Diagnostic count increasing            | A hook, transport, retention, browser, or supervisor path is reporting |
 
 Logs are structured, redacted, private operational data. Inspect them locally:
 

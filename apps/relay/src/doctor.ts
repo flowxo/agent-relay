@@ -1,6 +1,12 @@
 import { spawnSync } from "node:child_process";
 
-import { HARNESS_CAPABILITIES } from "@agent-relay/harnesses";
+import {
+  classifyObservedHarnessVersion,
+  HARNESS_CAPABILITIES,
+  HARNESS_COMPATIBILITY,
+  VERIFIED_CLI_HARNESS_EVIDENCE,
+} from "@agent-relay/harnesses";
+import type { CompatibilityClassification } from "@agent-relay/harnesses";
 import {
   FakeTelegramTransport,
   RelayService,
@@ -12,16 +18,46 @@ import { inspectAgentRelayInstallation } from "./installer.js";
 import type { InstallationCheck } from "./installer.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
 
-export const TESTED_HARNESS_VERSIONS: Record<Harness, string> = {
-  codex: "codex-cli 0.145.0",
-  claude: "2.1.219 (Claude Code)",
-  cursor: "2026.07.23-e383d2b",
+function requiredEvidenceValue(
+  value: string | undefined,
+  label: string,
+): string {
+  if (value === undefined) {
+    throw new Error(`compatibility registry is missing ${label}`);
+  }
+  return value;
+}
+
+export const VERIFIED_HARNESS_VERSIONS: Record<Harness, string> = {
+  codex: requiredEvidenceValue(
+    VERIFIED_CLI_HARNESS_EVIDENCE.codex.verifiedVersion,
+    "Codex CLI verifiedVersion",
+  ),
+  claude: requiredEvidenceValue(
+    VERIFIED_CLI_HARNESS_EVIDENCE.claude.verifiedVersion,
+    "Claude CLI verifiedVersion",
+  ),
+  cursor: requiredEvidenceValue(
+    VERIFIED_CLI_HARNESS_EVIDENCE.cursor.verifiedVersion,
+    "Cursor CLI verifiedVersion",
+  ),
 };
 
+export const TESTED_HARNESS_VERSIONS = VERIFIED_HARNESS_VERSIONS;
+
 export const DEFAULT_HARNESS_EXECUTABLES: Record<Harness, string> = {
-  codex: "codex",
-  claude: "claude",
-  cursor: "cursor-agent",
+  codex: requiredEvidenceValue(
+    VERIFIED_CLI_HARNESS_EVIDENCE.codex.executable,
+    "Codex CLI executable",
+  ),
+  claude: requiredEvidenceValue(
+    VERIFIED_CLI_HARNESS_EVIDENCE.claude.executable,
+    "Claude CLI executable",
+  ),
+  cursor: requiredEvidenceValue(
+    VERIFIED_CLI_HARNESS_EVIDENCE.cursor.executable,
+    "Cursor CLI executable",
+  ),
 };
 
 export interface DoctorCheck {
@@ -30,7 +66,9 @@ export interface DoctorCheck {
   level: "pass" | "warn" | "fail";
   detail: string;
   observedVersion?: string;
-  testedVersion?: string;
+  verifiedVersion?: string;
+  classification?: CompatibilityClassification;
+  evidenceId?: string;
 }
 
 export interface DoctorReport {
@@ -52,7 +90,9 @@ export interface HarnessVersionObservation {
   executable: string;
   available: boolean;
   version?: string;
-  testedVersion: string;
+  verifiedVersion: string;
+  classification: CompatibilityClassification;
+  evidenceId: string;
   drifted: boolean;
   detail: string;
 }
@@ -63,18 +103,21 @@ export function observeHarnessVersions(
   return (["codex", "claude", "cursor"] as const).map((harness) => {
     const executable =
       executableOverrides[harness] ?? DEFAULT_HARNESS_EXECUTABLES[harness];
+    const evidence = VERIFIED_CLI_HARNESS_EVIDENCE[harness];
     const result = spawnSync(executable, ["--version"], {
       encoding: "utf8",
       timeout: 5_000,
       shell: false,
     });
-    const testedVersion = TESTED_HARNESS_VERSIONS[harness];
+    const verifiedVersion = VERIFIED_HARNESS_VERSIONS[harness];
     if (result.error !== undefined || result.status !== 0) {
       return {
         harness,
         executable,
         available: false,
-        testedVersion,
+        verifiedVersion,
+        classification: "unsupported",
+        evidenceId: evidence.evidence.id,
         drifted: false,
         detail:
           result.error?.message ??
@@ -84,19 +127,38 @@ export function observeHarnessVersions(
     }
     const output = result.stdout.trim() || result.stderr.trim();
     const version = output.split("\n")[0] ?? "";
-    const drifted = version !== testedVersion;
+    const classification = classifyObservedHarnessVersion(evidence, version);
+    const drifted = classification !== "verified";
     return {
       harness,
       executable,
       available: true,
       version,
-      testedVersion,
+      verifiedVersion,
+      classification,
+      evidenceId: evidence.evidence.id,
       drifted,
-      detail: drifted
-        ? `observed ${version}; contracts were last tested with ${testedVersion}`
-        : `observed tested version ${version}`,
+      detail:
+        classification === "unsupported"
+          ? `observed ${version}; this version is recorded as incompatible with required contracts`
+          : drifted
+            ? `observed ${version}; the exact verified version is ${verifiedVersion}`
+            : `observed verified version ${version}`,
     };
   });
+}
+
+export function harnessObservationLevel(
+  observation: Pick<HarnessVersionObservation, "available" | "classification">,
+): DoctorCheck["level"] {
+  if (
+    !observation.available ||
+    observation.classification === "unsupported" ||
+    observation.classification === "disabled"
+  ) {
+    return "fail";
+  }
+  return observation.classification === "verified" ? "pass" : "warn";
 }
 
 function installationDoctorCheck(check: InstallationCheck): DoctorCheck {
@@ -140,26 +202,25 @@ export async function runDoctor(
   }
 
   for (const observation of observeHarnessVersions(options.executables)) {
+    const level = harnessObservationLevel(observation);
     checks.push({
       name: observation.harness,
-      ok: observation.available,
-      level: !observation.available
-        ? "fail"
-        : observation.drifted
-          ? "warn"
-          : "pass",
+      ok: level !== "fail",
+      level,
       detail: observation.detail,
       ...(observation.version === undefined
         ? {}
         : { observedVersion: observation.version }),
-      testedVersion: observation.testedVersion,
+      verifiedVersion: observation.verifiedVersion,
+      classification: observation.classification,
+      evidenceId: observation.evidenceId,
     });
   }
   checks.push({
     name: "capability-matrix",
     ok: new Set(HARNESS_CAPABILITIES.map((entry) => entry.harness)).size === 3,
     level: "pass",
-    detail: `${HARNESS_CAPABILITIES.length} harness/surface capability records loaded`,
+    detail: `${HARNESS_COMPATIBILITY.schema}: ${HARNESS_CAPABILITIES.length} runtime-validated harness/surface records loaded; evidence rechecked ${HARNESS_COMPATIBILITY.evidenceRecheckedAt}`,
   });
 
   if (options.rootDir !== undefined) {

@@ -1,55 +1,44 @@
 # Compatibility and evidence policy
 
 Agent Relay treats compatibility as an evidence claim, not a permissive
-semantic-version range.
+semantic-version range. The runtime-validated `agent-relay-compatibility.v1`
+registry in `packages/harnesses/src/capabilities.ts` is the single source for
+exact CLI versions, surface and capability classifications, evidence IDs,
+runtime flags, doctor expectations, and generated public summaries.
 
 ## Classifications
 
-| Classification          | Meaning                                                                   |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `verified`              | Exact surface/version has current fixture plus bounded canary evidence    |
-| `compatible-unverified` | Contract parses or local help agrees, but no complete compatibility claim |
-| `unsupported`           | Required binary, surface, or capability is absent or known incompatible   |
-| `disabled`              | Code understands a contract, but the capability is intentionally off      |
+The generated [compatibility matrix](capability-matrix.md) defines and displays
+all four allowed classifications:
+
+- `verified`;
+- `compatible-unverified`;
+- `unsupported`; and
+- `disabled`.
 
 A single surface can have different classifications by capability. For example,
 Cursor IDE Stop parsing can be compatible while late CLI resume is unsupported
 and permission automation is disabled.
 
-The [generated capability matrix](capability-matrix.md) is authoritative for the
-protocol capabilities declared by code. A `Yes` means the adapter knows a
-documented contract; it does not by itself mean the exact installed harness is
-verified or that the installer enables the capability.
-
-The [harness evidence ledger](harness-evidence.md) records exact versions,
-official sources, local help observations, sanitized fixtures, and live
-canaries. `doctor` compares installed binaries and hooks with that evidence.
+The matrix is generated from the same registry used to emit protocol capability
+booleans. `verified` and `compatible-unverified` capabilities may be enabled;
+`unsupported` and `disabled` capabilities are always emitted as `false` and fail
+closed. The linked [harness evidence ledger](harness-evidence.md) retains the
+longer provenance and canary narrative, but it is not a second support table.
 
 ## Current verified user path
 
-Recorded on macOS arm64 with Node.js 22:
+The exact versions and limitations are generated in the
+[compatibility matrix](capability-matrix.md) and repeated in drift-checked
+README/SUPPORT summaries. They are evidence snapshots, not maximum or minimum
+harness-version promises.
 
-| Harness/surface | Exact verified version  | Proven path and limitation                                  |
-| --------------- | ----------------------- | ----------------------------------------------------------- |
-| Codex CLI       | `codex-cli 0.145.0`     | Stop, Telegram correlation, read-only late resume           |
-| Claude Code CLI | `2.1.219 (Claude Code)` | Stop, owned crash, Telegram correlation, `plan` late resume |
-| Cursor CLI      | `2026.07.23-e383d2b`    | Interactive Stop, Telegram correlation, trusted late resume |
-
-These are evidence snapshots, not maximum/minimum version promises. Run
-`doctor`; drift is a warning and the new version is `compatible-unverified`
-until its official contract/local behavior is rechecked and sanitized evidence
-is refreshed.
-
-Other declared surfaces have narrower status:
-
-- Codex App Server and Claude SDK capabilities come from official contracts and
-  are not wired as the current installed user path.
-- Cursor IDE late resume is `unsupported`.
-- Cursor permission automation is `disabled` until a current sanitized live
-  payload is captured.
-- Cursor CLI `--print` did not emit the initial Stop on the verified build; the
-  supported supervised initial leg is interactive.
-- Native hooks for every harness have no process-exit proof.
+Run `agent-relay doctor`. An exact registry match is `verified`; any other
+available version is `compatible-unverified` and produces a warning unless the
+registry records that exact version as incompatible, in which case doctor fails.
+A missing binary also fails. Each check returns a safe evidence ID so a report
+can identify the claim without including a transcript or machine path.
+`agent-relay capabilities` prints the same safe classified record.
 
 ## Platform and runtime support
 
@@ -57,7 +46,8 @@ The current release-readiness target is macOS on Apple silicon with Node.js 22.
 pnpm 11 is used for source development. Linux CI proves that repository checks
 can run in that CI environment; it does not establish Linux end-user harness
 operation. Node.js 24 CI likewise does not replace the Node.js 22 clean-machine
-release target.
+release target. The completed live harness paths are evidence on the target; the
+isolated minimum-runtime package proof remains the AR1 exit gate.
 
 There is no current Windows, Linux runtime, Intel macOS, native app,
 auto-service, Safari, or Firefox support claim.
@@ -95,18 +85,16 @@ defaults, or capability claims must:
 2. record exact observed local version/help behavior;
 3. add or update a sanitized fixture and provenance;
 4. cover success, malformed/unknown input, and safe fallback;
-5. update `HARNESS_CAPABILITIES`;
-6. regenerate the capability matrix;
+5. update the runtime-validated compatibility registry;
+6. run `pnpm capabilities:generate` and inspect the matrix plus both public
+   summaries;
 7. run the full repository and relevant canary checks; and
 8. update the evidence ledger and changelog.
 
 Never commit a real transcript, token, user identity, hostname, repository path,
-or raw working path as evidence.
-
-FXO-1146 will make these classifications and the supported-version summary a
-single generated artifact with a drift check. Until that slice lands, the code
-matrix plus evidence ledger are the two required sources and this document is
-the public interpretation layer.
+or raw working path as evidence. CI fails if the generated matrix, README
+summary, or SUPPORT summary differs from the registry, or if a linked fixture or
+evidence heading is missing.
 
 ## Primary harness sources
 
@@ -114,5 +102,6 @@ the public interpretation layer.
 - [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive)
 - [Codex App Server](https://developers.openai.com/codex/app-server)
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks)
+- [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
 - [Cursor hooks](https://cursor.com/docs/hooks)
 - [Cursor CLI usage](https://docs.cursor.com/en/cli/using)

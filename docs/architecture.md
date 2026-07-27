@@ -153,11 +153,13 @@ retention, and erasure, and [SECURITY.md](../SECURITY.md) for private reporting.
 
 ## Current source evidence
 
-The generated [capability matrix](capability-matrix.md) is derived from code.
-The [harness evidence ledger](harness-evidence.md) records official source
-links, local CLI help, sanitized fixtures, and bounded live canaries. Parsing a
-payload proves contract compatibility; it does not by itself prove a complete
-user workflow.
+The generated [capability matrix](capability-matrix.md), public summaries,
+doctor expectations, and runtime capability flags come from one
+runtime-validated registry. The linked
+[harness evidence ledger](harness-evidence.md) records official source links,
+local CLI help, sanitized fixtures, and bounded live canaries. Parsing a payload
+proves contract compatibility; it does not by itself prove a complete user
+workflow.
 
 The earlier [control-plane design](agent-attention-control-plane-design.md)
 explains the design exploration. Where it differs from this document, the

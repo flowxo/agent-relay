@@ -143,6 +143,10 @@ for (const pattern of [
   /raw logs/,
   /transcripts/,
   /machine-specific\s+paths/,
+  /Redacted doctor result/,
+  /Safe capability record/,
+  /Relevant diagnostic IDs/,
+  /exact version/,
   /This is not a vulnerability/,
 ]) {
   requireText(

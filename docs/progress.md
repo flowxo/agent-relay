@@ -82,6 +82,24 @@
   tests, the six-test isolated Notifications consumer, the 102,408-byte
   packed/479,554-byte unpacked artifact proof, all three Chromium scenarios, and
   a production audit with no known vulnerability.
+- FXO-1146 replaces the manual two-source support interpretation with one
+  runtime-validated `agent-relay-compatibility.v1` registry. It drives protocol
+  flags, exact doctor expectations/evidence IDs, safe `agent-relay capabilities`
+  output, the classified matrix, and identical generated README/SUPPORT
+  summaries. The generator validates fixture files and evidence anchors and
+  fails on drift. `verified`, `compatible-unverified`, `unsupported`, and
+  `disabled` are explicit per capability; Cursor permission automation is now
+  false at runtime. A non-model local check classified installed Claude Code
+  `2.1.220` as drift from live-proven `2.1.219` without advancing the claim;
+  Codex `0.145.0` and Cursor `2026.07.23-e383d2b` remained exact matches. The
+  public bug form requests redacted doctor classifications, the safe capability
+  record, evidence/diagnostic IDs, versions, environment, and a synthetic
+  reproduction while prohibiting databases, logs, transcripts, secrets, and
+  paths. The final local gate passed 41 Vitest files/311 tests, 17 contract and
+  supply-chain tests, the six-test isolated Notifications consumer, the
+  104,988-byte packed/491,088-byte unpacked artifact proof, the full packed
+  lifecycle, all three Chromium scenarios, and a production audit with no known
+  vulnerability.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -546,12 +564,11 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Consolidate compatibility and support into one generated, drift-checked evidence
-artifact in FXO-1146. The public summary must classify exact harness
-surface/version evidence without widening claims and doctor must consume the
-same source. Mock-backed AR2 work may proceed against the pinned `1.0.0-draft.1`
-artifacts, but production hosted dogfood must wait for AR1, AR2, and a central
-C0-09 go disposition.
+Add the bounded contributor workflow in FXO-1147: clean-checkout development
+setup, architecture and review gates, safe fixture guidance, issue/PR templates,
+and contributor-facing CI parity. Mock-backed AR2 work may proceed against the
+pinned `1.0.0-draft.1` artifacts, but production hosted dogfood must wait for
+AR1, AR2, and a central C0-09 go disposition.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

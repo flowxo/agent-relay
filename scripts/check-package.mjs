@@ -281,8 +281,8 @@ try {
     [/workspace:/, "workspace dependency"],
     [/@agent-relay\//, "private workspace package import"],
     [
-      /(?:apps\/relay|packages\/(?:core|harnesses|protocol))/,
-      "repository path",
+      /(?:apps\/relay|packages\/(?:core|protocol)|packages\/harnesses\/(?!fixtures\/))/,
+      "repository implementation path",
     ],
     [/\/Users\/[^/\s]+/, "machine-specific macOS path"],
     [/[A-Za-z]:\\Users\\[^\\\s]+/i, "machine-specific Windows path"],
@@ -341,6 +341,32 @@ try {
     });
     if (version.stdout.trim() !== release.version) {
       throw new Error("packed executable version differs from its manifest");
+    }
+    const compatibility = parseJsonOutput(
+      (
+        await run(binary, ["capabilities"], {
+          env: { ...process.env, HOME: isolatedHome },
+          temporaryRoot,
+        })
+      ).stdout,
+      "packed compatibility record",
+    );
+    if (
+      compatibility.schema !== "agent-relay-compatibility.v1" ||
+      !Array.isArray(compatibility.records) ||
+      compatibility.records.length !== 6 ||
+      compatibility.records.some(
+        (record) =>
+          typeof record.evidenceId !== "string" ||
+          record.evidenceId.length === 0,
+      ) ||
+      compatibility.records.find(
+        (record) => record.harness === "cursor" && record.surface === "cli",
+      )?.capabilities?.permissionDecision !== "disabled"
+    ) {
+      throw new Error(
+        "packed executable compatibility record is incomplete or unsafe",
+      );
     }
 
     const port = await freePort();

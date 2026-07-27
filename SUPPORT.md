@@ -13,9 +13,26 @@ installation are not currently supported claims.
 
 Harness support is exact and evidence-based. The generated
 [capability matrix](docs/capability-matrix.md) is authoritative for enabled
-Codex, Claude Code, and Cursor surfaces. Version drift is a doctor warning, not
-a compatibility claim. Cursor permission automation remains disabled pending a
-current sanitized live fixture.
+Codex, Claude Code, and Cursor surfaces. The same runtime-validated registry
+powers the summary below, `agent-relay capabilities`, and `doctor`. Version
+drift is `compatible-unverified` and a warning, not a compatibility claim; a
+version recorded as incompatible is a failure. Cursor permission automation
+remains disabled and false at runtime pending a current sanitized live fixture.
+
+### Generated harness support
+
+<!-- BEGIN GENERATED HARNESS SUPPORT -->
+
+| Harness / surface | Exact verified version  | Classification          | Important boundary                                                                            |
+| ----------------- | ----------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| Codex CLI         | `codex-cli 0.145.0`     | `verified`              | Stop and read-only late resume are live-proven; crash proof requires supervision.             |
+| Codex App Server  | —                       | `compatible-unverified` | The official structured contract is understood but is not the installed V1 user path.         |
+| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; StopFailure remains fixture-proven.           |
+| Claude Agent SDK  | —                       | `compatible-unverified` | The streaming SDK contract is understood but is not the installed V1 user path.               |
+| Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.  |
+| Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process. |
+
+<!-- END GENERATED HARNESS SUPPORT -->
 
 Direct Telegram and the fake transport are available without a hosted Flow XO
 account. The local web companion is optional and loopback-only. Flow XO
@@ -42,7 +59,10 @@ A useful public report contains only:
 - macOS version and architecture;
 - Node.js and pnpm versions;
 - harness name, surface, and version;
-- the relevant doctor check names and statuses, with private values removed;
+- redacted `doctor` check names, statuses, compatibility classifications, and
+  evidence IDs;
+- the safe `agent-relay capabilities` record;
+- relevant bounded diagnostic IDs, without raw log lines;
 - a minimal synthetic reproduction and expected/actual behavior; and
 - whether the fake transport reproduces the problem.
 

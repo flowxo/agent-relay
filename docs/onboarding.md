@@ -199,9 +199,10 @@ Review or trust newly installed hooks through each harness's supported UI. Codex
 exposes `/hooks`; Claude Code and Cursor expose their corresponding hook
 configuration views.
 
-`doctor` must report a healthy launcher, SQLite spool, capability matrix,
-expected hook counts, and installed harness versions. Version drift is a warning
-to recapture evidence before claiming compatibility.
+`doctor` must report a healthy launcher, SQLite spool, runtime-validated
+compatibility registry, expected hook counts, and installed harness versions.
+Version drift is a `compatible-unverified` warning to recapture evidence before
+claiming compatibility; a known-incompatible version fails.
 
 ## 5. Start the daemon
 

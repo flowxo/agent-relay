@@ -28,9 +28,37 @@ body:
   - type: input
     id: harness
     attributes:
-      label: Harness and surface
-      description: Include the harness version if relevant.
-      placeholder: Codex CLI, synthetic version
+      label: Harness, surface, and exact version
+      description: Copy only the version line; do not include a session or path.
+      placeholder: Codex CLI; codex-cli 0.145.0
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Redacted doctor result
+      description:
+        Include check names, pass/warn/fail states, compatibility
+        classifications, evidence IDs, and version strings only. Do not attach a
+        database, raw log, config, transcript, or path.
+      placeholder: Paste a manually redacted subset of agent-relay doctor JSON.
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Safe capability record
+      description:
+        Paste agent-relay capabilities output. It is designed to exclude machine
+        paths and transcripts; still review it before submission.
+    validations:
+      required: true
+  - type: input
+    id: diagnostic_ids
+    attributes:
+      label: Relevant diagnostic IDs
+      description: Include bounded IDs only, never their raw log lines.
+      placeholder: diag_synthetic_12345678, or none
     validations:
       required: true
   - type: textarea
@@ -56,8 +84,8 @@ body:
       options:
         - label:
             I reviewed this report and removed all credentials, private content,
-            account identifiers, machine identifiers, and machine-specific
-            paths.
+            databases, logs, transcripts, account identifiers, machine
+            identifiers, and machine-specific paths.
           required: true
         - label: This is not a vulnerability or sensitive security report.
           required: true

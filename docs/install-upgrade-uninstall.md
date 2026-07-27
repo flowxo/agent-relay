@@ -101,9 +101,17 @@ Do not disable hook trust globally. Claude Code and Cursor provide their own
 hook/configuration views.
 
 `doctor` checks the launcher, ownership manifest, hook counts, SQLite schema,
-capability data, installed harness binaries, and the exact locally verified
-versions. A missing executable or owned hook is a failure. Version drift is a
-warning that invalidates a compatibility claim until evidence is refreshed.
+installed harness binaries, exact verified versions, and the
+`agent-relay-compatibility.v1` registry. A missing executable or owned hook is a
+failure. An available version mismatch is a `compatible-unverified` warning; a
+version explicitly recorded as incompatible is a failure. Harness checks include
+safe evidence IDs.
+
+Inspect the transcript-free source record directly:
+
+```sh
+agent-relay capabilities
+```
 
 ## Start with the fake canary
 

@@ -159,6 +159,37 @@ for (const pattern of [
   );
 }
 
+const compatibility = await text("docs/compatibility.md");
+for (const pattern of [
+  /agent-relay-compatibility\.v1/,
+  /runtime-validated/,
+  /compatible-unverified/,
+  /records that exact version as incompatible|known-incompatible/,
+  /fail\s+closed/,
+  /capabilities:generate/,
+]) {
+  requireText(
+    compatibility,
+    pattern,
+    `compatibility policy is missing generated-evidence guidance: ${String(pattern)}`,
+  );
+}
+
+const support = await text("SUPPORT.md");
+for (const pattern of [
+  /agent-relay capabilities/,
+  /compatibility classifications/,
+  /evidence IDs/,
+  /diagnostic IDs/,
+  /without raw log lines/,
+]) {
+  requireText(
+    support,
+    pattern,
+    `SUPPORT.md is missing safe compatibility-report guidance: ${String(pattern)}`,
+  );
+}
+
 const combined = (
   await Promise.all(checkedDocuments.map(async (path) => await text(path)))
 ).join("\n");

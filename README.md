@@ -36,6 +36,25 @@ and the [generated capability matrix](docs/capability-matrix.md). Windows, Linux
 runtime operation, Intel macOS, automatic service installation, and Cursor IDE
 late resume are not current support claims.
 
+### Evidence-backed harness support
+
+This concise table and the detailed matrix are generated from the same
+runtime-validated registry that powers `agent-relay capabilities` and `doctor`.
+Exact versions are snapshots, not ranges.
+
+<!-- BEGIN GENERATED HARNESS SUPPORT -->
+
+| Harness / surface | Exact verified version  | Classification          | Important boundary                                                                            |
+| ----------------- | ----------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| Codex CLI         | `codex-cli 0.145.0`     | `verified`              | Stop and read-only late resume are live-proven; crash proof requires supervision.             |
+| Codex App Server  | —                       | `compatible-unverified` | The official structured contract is understood but is not the installed V1 user path.         |
+| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; StopFailure remains fixture-proven.           |
+| Claude Agent SDK  | —                       | `compatible-unverified` | The streaming SDK contract is understood but is not the installed V1 user path.               |
+| Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.  |
+| Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process. |
+
+<!-- END GENERATED HARNESS SUPPORT -->
+
 ## Try the complete local loop first
 
 No Telegram account or hosted service is needed for the first proof:
@@ -179,9 +198,10 @@ pnpm build
 pnpm contracts:notifications
 ```
 
-The checked-in capability matrix is generated from code and verified by
-`pnpm capabilities:check`. Sanitized harness fixtures and their provenance live
-under `packages/harnesses/fixtures`.
+The checked-in compatibility matrix and the README/SUPPORT summaries are
+generated from the runtime registry. Run `pnpm capabilities:generate` after an
+evidence change; `pnpm capabilities:check` fails on any drift. Sanitized harness
+fixtures and their provenance live under `packages/harnesses/fixtures`.
 
 No bot token, transcript, credential, hostname, username, or raw working path is
 required for the contract test suite.
@@ -224,8 +244,9 @@ vetted one-off non-interactive automation, Codex also documents
 resume when it was present on the initial invocation. Claude's `/hooks` browser
 and Cursor's trusted-workspace hook view provide corresponding runtime
 verification. `doctor` checks the files, exact-path launcher, installed harness
-binaries, tested versions, SQLite schema, and capability records. Version drift
-is a warning; a missing binary or hook is a failure.
+binaries, verified-version classifications, evidence IDs, SQLite schema, and
+capability records. Version drift is a `compatible-unverified` warning; a
+missing, known-incompatible, or misconfigured binary or hook is a failure.
 
 Safe uninstall removes only entries carrying Agent Relay's ownership marker and
 its launcher/manifest. It preserves user hooks, unrelated settings, SQLite,

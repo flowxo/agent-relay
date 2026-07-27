@@ -52,6 +52,10 @@ export type HarnessParseResult =
 export interface HarnessCapability {
   harness: Harness;
   surface: Surface;
+  classification: CompatibilityClassification;
+  verifiedVersion?: string;
+  evidenceId: string;
+  capabilityClassifications: CapabilityClassifications;
   deterministicStop: boolean;
   inlineContinue: boolean;
   permissionDecision: boolean;
@@ -61,6 +65,19 @@ export interface HarnessCapability {
   processExitObservation: boolean;
   evidence: "official-docs+local-help" | "official-docs";
   note: string;
+}
+
+export type CompatibilityClassification =
+  "verified" | "compatible-unverified" | "unsupported" | "disabled";
+
+export interface CapabilityClassifications {
+  deterministicStop: CompatibilityClassification;
+  inlineContinue: CompatibilityClassification;
+  permissionDecision: CompatibilityClassification;
+  lateResume: CompatibilityClassification;
+  activeSteer: CompatibilityClassification;
+  stopFailureSignal: CompatibilityClassification;
+  processExitObservation: CompatibilityClassification;
 }
 
 export interface HarnessContinuation {

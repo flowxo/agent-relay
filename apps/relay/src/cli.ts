@@ -11,7 +11,7 @@ import {
   JsonLineLogger,
   RotatingFileLogger,
 } from "@agent-relay/core";
-import { HARNESS_CAPABILITIES } from "@agent-relay/harnesses";
+import { PUBLIC_COMPATIBILITY_RECORD } from "@agent-relay/harnesses";
 import {
   HarnessSchema,
   SurfaceSchema,
@@ -445,7 +445,7 @@ async function main(): Promise<void> {
     const versions = Object.fromEntries(
       observed.map((item) => [
         item.harness,
-        item.version ?? `unavailable (tested ${item.testedVersion})`,
+        item.version ?? `unavailable (verified ${item.verifiedVersion})`,
       ]),
     );
     output(
@@ -507,7 +507,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "capabilities") {
-    output(HARNESS_CAPABILITIES);
+    output(PUBLIC_COMPATIBILITY_RECORD);
     return;
   }
   if (command === "canary") {

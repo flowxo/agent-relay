@@ -15,10 +15,17 @@ breaking changes and required operator action.
 - Explicit SQLite schema versioning, forward migration from the unversioned
   alpha fixture, and refusal to open a newer schema.
 - Symlinked owned-path refusal before installer mutation.
+- Runtime-validated `agent-relay-compatibility.v1` evidence registry, safe
+  `agent-relay capabilities` output, generated classified matrix, and
+  drift-checked README/SUPPORT summaries.
+- Doctor evidence IDs plus explicit `verified`, `compatible-unverified`, and
+  known-incompatible version diagnosis.
 
 ### Changed
 
 - Install manifests now record the public package version.
+- Cursor permission decisions now fail closed as `disabled` instead of being
+  advertised by a protocol flag while the installer intentionally omits them.
 - The release candidate version advances to `0.1.0-alpha.1`; it remains private
   and unpublished.
 

@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "capabilities:generate": "tsx scripts/check-capability-doc.ts --write",
     "capabilities:check": "tsx scripts/check-capability-doc.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

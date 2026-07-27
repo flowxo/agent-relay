@@ -1,5 +1,6 @@
 {
   "recordedAt": "2026-07-25T04:57:30.000Z",
+  "officialContractRecheckedAt": "2026-07-26",
   "privacy": "All payload fixtures are sanitized and contain synthetic identifiers, paths, and text.",
   "payloadEvidence": "official-example-sanitized",
   "localObservations": {
@@ -26,6 +27,15 @@
       ]
     }
   },
+  "unverifiedVersionObservations": {
+    "claude": {
+      "observedAt": "2026-07-26",
+      "version": "2.1.220 (Claude Code)",
+      "classification": "compatible-unverified",
+      "command": "claude --version",
+      "modelCanaryRun": false
+    }
+  },
   "transportObservations": {
     "telegram": {
       "apiVersion": "Bot API 10.2",
@@ -39,6 +49,7 @@
     "codexResume": "https://developers.openai.com/codex/noninteractive",
     "codexAppServer": "https://developers.openai.com/codex/app-server",
     "claudeHooks": "https://code.claude.com/docs/en/hooks",
+    "claudeSdk": "https://platform.claude.com/docs/en/agent-sdk/overview",
     "cursorHooks": "https://cursor.com/docs/hooks",
     "cursorResume": "https://docs.cursor.com/en/cli/using"
   }

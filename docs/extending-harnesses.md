@@ -10,16 +10,16 @@ shell text.
 
 ## Source map
 
-| Area                                     | Responsibility                                    |
-| ---------------------------------------- | ------------------------------------------------- |
-| `packages/harnesses/src/parsers.ts`      | Runtime-validate native payload and normalize it  |
-| `packages/harnesses/src/continuation.ts` | Render bounded native inline continuation JSON    |
-| `packages/harnesses/src/resume.ts`       | Build exact late-resume executable + argv         |
-| `packages/harnesses/src/capabilities.ts` | Declare evidence-backed surface capabilities      |
-| `packages/harnesses/fixtures/<harness>/` | Sanitized native payload fixtures and provenance  |
-| `apps/relay/src/installer.ts`            | Merge owned user-level hook entries               |
-| `apps/relay/src/hook-runner.ts`          | Bounded stdin, daemon/fallback, stdout discipline |
-| `apps/relay/src/supervisor.ts`           | Owned child exit and late-resume lifecycle        |
+| Area                                     | Responsibility                                     |
+| ---------------------------------------- | -------------------------------------------------- |
+| `packages/harnesses/src/parsers.ts`      | Runtime-validate native payload and normalize it   |
+| `packages/harnesses/src/continuation.ts` | Render bounded native inline continuation JSON     |
+| `packages/harnesses/src/resume.ts`       | Build exact late-resume executable + argv          |
+| `packages/harnesses/src/capabilities.ts` | Classify evidence-backed surfaces and capabilities |
+| `packages/harnesses/fixtures/<harness>/` | Sanitized native payload fixtures and provenance   |
+| `apps/relay/src/installer.ts`            | Merge owned user-level hook entries                |
+| `apps/relay/src/hook-runner.ts`          | Bounded stdin, daemon/fallback, stdout discipline  |
+| `apps/relay/src/supervisor.ts`           | Owned child exit and late-resume lifecycle         |
 
 Protocol types live in `packages/protocol`. Do not bypass their runtime schemas.
 
@@ -48,20 +48,25 @@ one-way working-directory hash; summaries and questions are bounded.
 
 ## Declare capabilities narrowly
 
-Each harness + surface entry declares deterministic Stop, inline continuation,
-permission decision, late resume, active steer, failure signal, and process-exit
-observation separately.
+Each runtime-validated harness + surface entry classifies deterministic Stop,
+inline continuation, permission decision, late resume, active steer, failure
+signal, and process-exit observation separately. Exact verified CLI versions,
+known-incompatible versions, safe evidence IDs, fixture paths, and evidence
+records live in that same registry so doctor and public claims cannot diverge.
 
 Official documentation alone can establish a contract shape, but a public
 `verified` claim needs the evidence ladder in
 [compatibility.md](compatibility.md). An unsupported or disabled capability must
 remain explicit.
 
-Native hooks always declare no process-exit proof. Only the owning supervisor
-can add validated `owned-child` evidence.
+`unsupported` and `disabled` both become false protocol flags. Native hooks
+always declare no process-exit proof. Only the owning supervisor can add
+validated `owned-child` evidence.
 
-Regenerate `docs/capability-matrix.md` through `pnpm capabilities:check`; the
-check fails on drift.
+Run `pnpm capabilities:generate` after a reviewed evidence change. It updates
+`docs/capability-matrix.md` plus the bounded README and SUPPORT summaries.
+`pnpm capabilities:check` validates those generated sections, fixture paths, and
+evidence anchors and fails on drift.
 
 ## Inline continuation
 
@@ -127,5 +132,6 @@ private value retained.
 - [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive)
 - [Codex App Server](https://developers.openai.com/codex/app-server)
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks)
+- [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
 - [Cursor hooks](https://cursor.com/docs/hooks)
 - [Cursor CLI usage](https://docs.cursor.com/en/cli/using)

@@ -34,6 +34,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:notifications && pnpm dist:check && pnpm package:check && pnpm package:lifecycle:check",
+    "capabilities:generate": "pnpm --filter @agent-relay/harnesses capabilities:generate",
     "capabilities:check": "pnpm --filter @agent-relay/harnesses capabilities:check",
     "contracts:preinstall": "node contracts/scripts/verify-notifications.mjs",
     "contracts:notifications": "node --test contracts/test/*.node-test.mjs && pnpm --filter @agent-relay/notifications-transport contract:check && node contracts/scripts/write-notifications-result.mjs",
