@@ -124,6 +124,10 @@ function notificationFingerprint(
   );
 }
 
+function safeLogRef(value: string): string {
+  return sha256(value).slice(0, 12);
+}
+
 export class RelayService {
   private readonly retryPolicy: RetryPolicy;
   private readonly logger: RelayLogger;
@@ -1237,9 +1241,11 @@ export class RelayService {
           message: "attention event delivered",
           at: this.now().toISOString(),
           details: {
-            eventId: item.event.eventId,
+            eventRef: safeLogRef(item.event.eventId),
             transport: receipt.transport,
-            messageId: receipt.messageId,
+            messageRef: safeLogRef(
+              `${receipt.transport}\u001f${receipt.messageId}`,
+            ),
           },
         });
       } catch (error) {

@@ -7,7 +7,8 @@ client and mock-backed machine setup used by the CLI. AR2.2 wires explicit
 outbound daemon selection and a terminal configuration circuit. AR2.3 adds the
 bounded interaction source used by the durable local poll/claim/resolve/ack
 loop. AR2.4 adds stable hosted failure policy plus the optional terminal
-presentation interface.
+presentation interface. AR2.5 proves shared transport behavior, and AR2.6 proves
+the installed public adapter from the packed release artifact.
 
 ## Machine bootstrap
 
@@ -119,6 +120,13 @@ Run the exact artifact and round-trip proof with:
 
 ```sh
 pnpm contracts:notifications
+pnpm package:hosted:check
 ```
 
-The previous `pnpm notifications:contract:check` spelling remains an alias.
+The previous `pnpm notifications:contract:check` spelling remains an alias. The
+first command proves the immutable consumer contract in isolation. The second
+installs the product tarball into a clean home, exercises setup, selection,
+confirm/select/input, crash-before-ack replay, explicit disconnect/erasure,
+retained SQLite authority, direct-Telegram parity, owned uninstall, and
+private-data exclusion. The contract mock remains verifier-only and is not
+bundled into the product.

@@ -11,9 +11,9 @@ Agent Relay account, Cloudflare runtime, public callback, or Flow XO credential.
 
 `packages/notifications-transport`,
 `agent-relay notifications connect|status|disconnect`, and
-`agent-relay transport` now implement the AR2.1–AR2.4 setup, explicit selection,
-and durable interaction boundary against exact pinned Notifications C0
-artifacts. They prove:
+`agent-relay transport` now implement the complete AR2.1–AR2.6 mock-backed
+setup, explicit selection, and durable interaction boundary against exact pinned
+Notifications C0 artifacts. They prove:
 
 - subscriber authorization without claiming success while it is pending;
 - local 32-byte secret and credential-ID generation;
@@ -38,7 +38,9 @@ artifacts. They prove:
   categories and rate-limited safe logs;
 - runtime disconnect/revocation guards that stop new send/poll/ack calls while
   retaining local state; and
-- cross-machine stream, message, and administration denial.
+- cross-machine stream, message, and administration denial;
+- one common fake/direct-Telegram/Notifications behavior matrix; and
+- a scripts-disabled clean-home proof from the packed release artifact.
 
 The daemon can now select `fake`, direct `telegram`, or `notifications`
 explicitly. Hosted mode runs outbound delivery plus the authenticated
@@ -306,11 +308,44 @@ does not move Agent Relay protocol, SQLite, hooks, installer, daemon, or
 supervisor into Cloudflare. Direct Telegram and fake/local operation remain
 independent transport choices.
 
-Before production selection, remaining AR2 work must document and test:
+## Packed artifact proof
 
-- provider retention and privacy terms;
-- deliberate switching without double delivery;
-- the packaged hosted lifecycle.
+From a preflighted checkout on the supported macOS runtime:
+
+```sh
+pnpm package:hosted:check
+```
+
+This command creates the exact release tarball, installs it with lifecycle
+scripts disabled into a clean home and prefix, explicitly rebuilds the approved
+SQLite native dependency, and rejects workspace or sibling runtime resolution.
+The installed public CLI then connects to the exact pinned executable mock,
+stores a narrow mode-`0600` credential separately from non-secret configuration,
+selects Notifications, and resolves confirm, select, and input requests.
+
+The proof kills the daemon after local commit but before one provider
+acknowledgement. Restart must replay that immutable acknowledgement, advance the
+provider cursor exactly once, and leave one local answer/resume outcome. It then
+proves safe presentation diagnosis, explicit hosted revoke/erasure, retained
+SQLite authority under a fake transport, the real direct-Telegram adapter
+against a synthetic Bot API, owned uninstall with retained state, and
+package-manager removal.
+
+The mock is a verifier-only dependency and is never bundled into the product.
+The command imports the exact versions, archive digests, and source commits from
+`contracts/contract-lock.json`; copied owner types, mutable references,
+workspace links, and sibling runtime dependencies fail existing gates. Its
+privacy sentinels prove that credentials, provider IDs, prompts, answers, hidden
+transcript text, machine paths, and executable values do not appear in the
+packed CLI or captured diagnostics. Unsupported operating systems explicitly
+skip only the native installed-runtime portion.
+
+This is the AR2 release handoff, not production-service dogfood. AR3 still owns:
+
+- provider retention/privacy-term confirmation for the production service;
+- real hosted subscriber authorization and digest verification;
+- live service delivery, polling, reply, disconnect, and recovery evidence; and
+- operational acceptance of deliberate switching.
 
 No hosted service may silently become required for installation, doctor, local
 canary, or uninstall.

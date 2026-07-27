@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
-import { makeProjectRef, makeStableEventId } from "@agent-relay/protocol";
+import {
+  makeProjectRef,
+  makeStableEventId,
+  sha256,
+} from "@agent-relay/protocol";
 
 import { FakeTelegramTransport } from "./fake-transport.js";
 import { MemoryLogger } from "./logger.js";
@@ -87,6 +91,42 @@ describe("RelayService durable delivery loop", () => {
     ).toMatchObject({
       lastSuccessfulSendAt: expect.any(String),
     });
+    store.close();
+  });
+
+  it("logs only hashed delivery identities", async () => {
+    const store = new RelayStore();
+    const logger = new MemoryLogger();
+    const providerMessageId = "message_private_provider_12345678";
+    const transport: NotificationTransport = {
+      name: "notifications",
+      deliver: async () => ({
+        transport: "notifications",
+        messageId: providerMessageId,
+      }),
+    };
+    const service = new RelayService(store, transport, { logger });
+    const input = event({
+      eventId: "event_private_delivery_12345678",
+      sessionId: "session_private_delivery_12345678",
+    });
+    service.ingest(input);
+
+    await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
+
+    const delivered = logger.records.find(
+      (record) => record.code === "delivery.succeeded",
+    );
+    expect(delivered?.details).toEqual({
+      eventRef: sha256(input.eventId).slice(0, 12),
+      transport: "notifications",
+      messageRef: sha256(`notifications\u001f${providerMessageId}`).slice(
+        0,
+        12,
+      ),
+    });
+    expect(JSON.stringify(delivered)).not.toContain(input.eventId);
+    expect(JSON.stringify(delivered)).not.toContain(providerMessageId);
     store.close();
   });
 

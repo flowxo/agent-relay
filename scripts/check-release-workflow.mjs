@@ -120,6 +120,7 @@ for (const command of [
   "contracts:notifications",
   "dist:check",
   "package:check",
+  "package:hosted:check",
   "package:lifecycle:check",
 ]) {
   requireText(

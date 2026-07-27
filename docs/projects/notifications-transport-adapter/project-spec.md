@@ -1,7 +1,7 @@
 # Project specification: FlowXO Notifications Transport Adapter
 
-- **Status:** In progress; AR2.1–AR2.5 complete locally; C0-09 gates production
-  promotion
+- **Status:** Complete locally against the pinned executable mock; C0-09 gates
+  production promotion and AR3 dogfood
 - **Product:** Agent Relay
 - **Initiative:**
   [Agent Relay — Open Source V1](https://linear.app/flowxo/initiative/agent-relay-open-source-v1-664f633c9408)
@@ -36,14 +36,17 @@ The executable boundary is no longer an assumption. C0-07 is complete in
 and repository-native gate in `100c250`; and the exact Agent Relay
 `1.0.0-draft.1` candidate through `76240c4` is green in
 [PR #2](https://github.com/flowxo/agent-relay/pull/2). That evidence covers
-provider-neutral mapping and mock-backed consumer behavior. AR2.1–AR2.5 now add
+provider-neutral mapping and mock-backed consumer behavior. AR2.1–AR2.6 now add
 private narrow-credential persistence, explicit daemon selection, durable hosted
 delivery identity, and the continuous poll/claim/resolve/ack loop against that
 executable mock plus optional presentation/failure diagnosis and common
-transport parity. Packaged proof and production dogfood remain. The centrally
-owned [C0-09 security review](https://linear.app/flowxo/issue/FXO-1050) still
-gates promotion to `1.0.0-rc.1` and production dogfood; mock-backed AR2 work may
-proceed independently.
+transport parity. A scripts-disabled clean-home install from the exact packed
+artifact proves setup, confirm/select/input, crash-before-ack replay,
+disconnect/erasure with retained local authority, and unchanged direct Telegram.
+The centrally owned
+[C0-09 security review](https://linear.app/flowxo/issue/FXO-1050) still gates
+promotion to `1.0.0-rc.1` and production dogfood; AR3 owns real-service
+evidence.
 
 ## 2. Outcome
 
@@ -706,8 +709,8 @@ interface without changing SQLite authority.
    status, doctor, disconnect guard, and error handling work.
 5. **Transport parity (complete)** — fake/direct/hosted core behavior passes one
    shared scenario matrix.
-6. **Packaged canary and handoff** — distribution evidence and AR3-ready
-   documentation pass.
+6. **Packaged canary and handoff (complete)** — distribution evidence and
+   AR3-ready documentation pass.
 
 ## 18. Story map
 

@@ -33,7 +33,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm fixtures:check && pnpm secrets:check && pnpm release:policy:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:notifications && pnpm dist:check && pnpm package:check && pnpm package:lifecycle:check",
+    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm fixtures:check && pnpm secrets:check && pnpm release:policy:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:notifications && pnpm dist:check && pnpm package:check && pnpm package:hosted:check && pnpm package:lifecycle:check",
     "capabilities:generate": "pnpm --filter @agent-relay/harnesses capabilities:generate",
     "capabilities:check": "pnpm --filter @agent-relay/harnesses capabilities:check",
     "contracts:preinstall": "node contracts/scripts/verify-notifications.mjs",
@@ -48,6 +48,7 @@
     "notifications:contract:check": "pnpm contracts:notifications",
     "package:build": "node scripts/build-package.mjs",
     "package:check": "node scripts/check-package.mjs",
+    "package:hosted:check": "node scripts/check-hosted-package.mjs",
     "package:lifecycle:check": "node scripts/check-package-lifecycle.mjs",
     "prepack": "pnpm package:build",
     "release:bundle": "node scripts/build-release.mjs",

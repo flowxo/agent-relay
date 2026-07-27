@@ -9,9 +9,10 @@
   `codex/ar2-notifications-adapter`. No package has been published.
 - Linear initiative `Agent Relay — Open Source V1` owns four ordered
   implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
-  all five milestones at 100%. AR2 is In Progress and may use executable mocks;
-  AR3 is blocked on AR2 and C0-09; AR4 follows dogfood evidence. Post-V1 hosted
-  fleet explorations remain separate.
+  all five milestones at 100%. AR2 is complete locally with FXO-1150 through
+  FXO-1155 green against executable mocks; AR3 remains blocked on C0-09 and owns
+  real-service dogfood. AR4 follows dogfood evidence. Post-V1 hosted fleet
+  explorations remain separate.
 - C0-07 (FXO-1048) and C0-08 (FXO-1049) are Done. Agent Relay pins and verifies
   the exact three Notifications `1.0.0-draft.1` artifacts, runs a
   scripts-disabled clean consumer install, and proves mapping, retry,
@@ -119,6 +120,31 @@
   consumer, the 190,951-byte packed/1,221,519-byte unpacked artifact proof, and
   the complete packed lifecycle. All three Chromium scenarios passed, and
   `pnpm audit --prod` found no known vulnerability.
+- FXO-1155 proves the complete mock-backed hosted lifecycle from the installed
+  `@flowxo/agent-relay@0.1.0-alpha.1` tarball in a clean home and prefix. The
+  public CLI connects to the exact pinned loopback mock, proves generated
+  narrow-bearer/digest correspondence and private configuration separation,
+  explicitly selects Notifications, resolves confirm/select/input, kills the
+  daemon after local commit but before acknowledgement, and proves restart
+  replays exactly one acknowledgement/cursor commit. Explicit revoke/erasure
+  leaves all local answers authoritative; fake readback, direct Telegram through
+  a synthetic Bot API, owned uninstall with SQLite retention, and package
+  removal all pass. The verifier rejects workspace/sibling runtime resolution
+  and scans provider content, CLI output, logs, status, and package source for
+  credentials, provider identities, prompt/answer text, transcript/path/
+  executable sentinels, and raw cursor/message IDs. That proof exposed raw
+  event/provider receipt IDs in successful-delivery logs; they are now replaced
+  by 12-hex SHA-256 references with a permanent regression test.
+  `pnpm package:hosted:check` emitted package digest
+  `e3a46c4cee9d676edd0a78ecc053693606971898177bd6f47decff56de6ea7e2` and exact
+  contract-lock digest
+  `922d26e4a4aa9ce8ed9ce1b6bf24a66b4454cc93d7d53303e210ef6f6e3ea214`. The final
+  `pnpm check` passed 51 Vitest files/409 tests, 17 contract-lock and
+  supply-chain tests, the six-test isolated Notifications consumer, the
+  192,227-byte packed/1,225,217-byte unpacked artifact, the hosted clean-home
+  proof, and the complete packed lifecycle. All three Chromium scenarios passed,
+  and `pnpm audit --prod` found no known vulnerability. AR2 is complete locally;
+  real hosted evidence remains AR3 and centrally gated by C0-09.
 - Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
   when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
   all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
@@ -743,10 +769,11 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Complete FXO-1155 packed hosted proof and the AR3-ready operational handoff.
-Production hosted dogfood must still wait for AR2 and a central C0-09 go
-disposition. npm scope/publication and the monitored public security-contact
-path remain owner-controlled promotion gates.
+Begin AR3 real-service dogfood only after the central C0-09 go disposition. That
+phase must confirm production retention/privacy terms, real subscriber
+activation and digest verification, live delivery/reply/recovery, and deliberate
+transport-switch operations. npm scope/publication and the monitored public
+security-contact path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

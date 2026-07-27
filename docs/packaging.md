@@ -79,6 +79,7 @@ From a scripts-disabled, preflighted checkout:
 ```sh
 pnpm package:build
 pnpm package:check
+pnpm package:hosted:check
 pnpm package:lifecycle:check
 ```
 
@@ -99,6 +100,41 @@ pnpm package:lifecycle:check
 The runtime portion runs on macOS; unsupported CI operating systems still prove
 the content, manifest, scan, and size boundary and report the runtime skip
 explicitly.
+
+The hosted check independently packs and installs that exact artifact into a
+clean temporary home/prefix with scripts disabled and no workspace or sibling
+runtime dependency. On macOS it then:
+
+1. proves the installed version and hosted CLI surface;
+2. connects through the public CLI to the exact pinned loopback Notifications
+   mock, while separately proving the generated narrow bearer matches the
+   registered digest;
+3. inspects private configuration/credential separation and mode-`0600` files;
+4. explicitly selects Notifications and starts the installed daemon;
+5. delivers and resolves confirm, single-select, and bounded input requests;
+6. kills the daemon after local select resolution but before provider
+   acknowledgement, then proves restart replays and commits exactly one
+   acknowledgement/cursor;
+7. proves the pinned presentation capability is reported as unsupported without
+   blocking local authority;
+8. revokes and erases hosted connection material while retaining SQLite answers;
+9. runs the installed direct-Telegram canary against a bounded synthetic Bot
+   API;
+10. proves uninstall removes owned files but retains local state; and
+11. scans the CLI and diagnostic output for bootstrap/narrow credentials,
+    provider identities, prompts, answers, transcript sentinels, paths, and
+    executable sentinels.
+
+The command emits one safe JSON proof containing the package version and tarball
+SHA-256, the immutable contract-lock SHA-256, interaction/replay results,
+direct-Telegram result, retention/uninstall result, and privacy-scan result. The
+tarball digest describes that invocation's exact source state and therefore
+changes when packed documentation or code changes. The contract lock pins three
+`1.0.0-draft.1` artifacts by package version, archive SHA-256, and source
+commit; mutable branches, copied contract types, and sibling checkouts are
+rejected by the existing contract and package gates. Unsupported operating
+systems report a runtime skip, while content and exact-contract gates remain
+mandatory.
 
 The lifecycle check derives a sanitized `0.1.0-alpha.0` prior-package fixture
 from the exact current artifact, installs it with scripts disabled, records a

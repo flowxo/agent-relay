@@ -95,16 +95,26 @@ Build and prove the exact local artifact:
 
 ```sh
 pnpm package:check
+pnpm package:hosted:check
 pnpm package:lifecycle:check
 ```
 
-That command packs the staged release directory, compares all 11 files to a
+The first command packs the staged release directory, compares all 11 files to a
 reviewed allowlist, enforces compressed and unpacked size budgets, rejects
 workspace/source/private-path leakage, installs with lifecycle scripts disabled
 in an isolated prefix, explicitly rebuilds the approved SQLite native
 dependency, and proves CLI help, the fake canary, static web assets, and the
 authenticated local web API. It publishes nothing and removes its temporary
 artifact.
+
+The hosted package check installs the same release candidate into a clean home,
+configures the exact pinned loopback Notifications mock through the public CLI,
+proves confirm/select/input, crash-before-ack replay, explicit disconnect and
+local state retention, then runs the real direct-Telegram adapter against a
+synthetic Bot API. It also scans the artifact and diagnostics for credential,
+provider identity, prompt, answer, transcript, path, and executable leakage. It
+requires no real bot token or hosted account and emits the package and immutable
+contract lock SHA-256 digests as reproducible evidence.
 
 The lifecycle check then generates the sanitized prior `0.1.0-alpha.0` fixture
 and proves dry run, install, doctor, retained answer/state, forward migration,
@@ -498,6 +508,7 @@ includes failure policy and presentation counts, and local disconnect/revocation
 stops new hosted calls without deleting state. A transport-neutral matrix now
 keeps fake, direct Telegram, and Notifications aligned on delivery identity,
 retry, confirm/select/input, expiry, duplicate/race authority, restart, and
-at-most-once resume. The final packed hosted handoff remains. Cross-repository
-promotion to `1.0.0-rc.1` remains gated by
-[C0-09](https://linear.app/flowxo/issue/FXO-1050).
+at-most-once resume. The clean-home packed artifact now proves that complete
+mock-backed hosted lifecycle plus an unchanged direct-Telegram canary. Real
+service dogfood belongs to AR3; cross-repository promotion to `1.0.0-rc.1`
+remains gated by [C0-09](https://linear.app/flowxo/issue/FXO-1050).

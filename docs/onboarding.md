@@ -400,6 +400,20 @@ status still exposes its queue/block counts and failure category. Local
 disconnect or revocation stops new hosted calls, retains SQLite authority, and
 requires explicit reconnect/rotation plus daemon restart.
 
+Maintainers can prove the complete installed boundary without a real hosted
+account or bot token:
+
+```sh
+pnpm package:hosted:check
+```
+
+The check installs the exact tarball into a clean home, configures the pinned
+loopback mock through the public CLI, resolves confirm/select/input, proves
+crash-before-ack replay, revocation/erasure with retained SQLite authority, and
+an unchanged direct-Telegram canary against a synthetic Bot API. It rejects
+workspace/sibling runtime dependencies and scans packed output and logs for
+private fixture values.
+
 Do not place a broad Notifications project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment
 injection, or hidden prompt. The local setup files are retained by uninstall;

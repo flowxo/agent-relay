@@ -37,6 +37,71 @@ Telegram credential is required. The capability record is safe to inspect and
 contains classifications, exact verified versions, and evidence IDs without
 transcripts or machine paths.
 
+## Choose one transport explicitly
+
+Agent Relay supports three exclusive transport choices: `fake`, direct
+`telegram`, and hosted `notifications`. Credentials affect readiness but never
+select a transport. There is no dual send or automatic failover.
+
+```sh
+agent-relay transport status
+agent-relay transport select fake
+agent-relay transport select telegram
+agent-relay transport select notifications
+```
+
+Restart the daemon after changing the durable selection. Switching transports
+retains the local SQLite spool, pending requests, answers, and continuation
+authority. To fall back during a provider incident, explicitly select `fake` or
+`telegram`; Agent Relay will not send an event to a second provider
+automatically.
+
+Direct Telegram remains independent of the hosted service. It uses the
+operator's own bot and the setup documented in the repository. Hosted
+Notifications setup accepts the broad project bootstrap credential only from
+stdin, environment injection, or a hidden prompt. It generates and retains a
+narrow machine credential in a separate private mode-`0600` file:
+
+```sh
+credential_command | agent-relay notifications connect \
+  --credential-stdin \
+  --base-url https://notifications.example.test \
+  --subscriber-id configured_subscriber \
+  --notifier-id default
+agent-relay notifications status
+agent-relay transport select notifications
+```
+
+The provider receives only a bounded attention card and, when applicable, one
+confirm, single-select, or free-text question with safe option labels and opaque
+values. Raw hooks, full transcripts, repository contents, tool input, executable
+commands, process arguments, absolute paths, machine credentials, and resume
+authority do not cross the transport boundary.
+
+Use `agent-relay status`, `agent-relay doctor`, and
+`agent-relay notifications status` for safe diagnosis. They expose stable codes,
+counts, capability state, and hashed references—not credentials, full provider
+identifiers, prompts, answers, transcripts, or raw session identities.
+
+Disconnect is local and reversible by default. For complete removal, first
+revoke the hosted machine credential with a newly supplied project credential,
+then explicitly erase its local narrow credential and configuration:
+
+```sh
+credential_command | agent-relay notifications disconnect \
+  --revoke \
+  --erase-credential \
+  --erase-configuration \
+  --credential-stdin
+```
+
+This operation and package uninstall retain SQLite state. After an interrupted
+daemon, restart with the same selected transport to recover durable delivery,
+poll, and acknowledgement work. After a disconnect or rotation, reconnect and
+restart explicitly. Production hosted use remains gated on the Notifications C0
+release decision and a later real-service dogfood phase; the current release
+proof uses the exact pinned executable mock.
+
 Before changing user-level harness configuration, inspect the exact plan:
 
 ```sh
