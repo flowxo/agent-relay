@@ -8,10 +8,11 @@
   Agent Relay C0 consumer/compatibility history in PR #2: `68b2fbf` → `100c250`
   → `fee4629` → `76240c4`. It is not yet integrated to `main` or published as a
   release.
-- Linear initiative `Agent Relay — Open Source V1` now owns four ordered
-  implementation projects. AR1 has started with FXO-1141; AR2 remains planned
-  and may use executable mocks; AR3 is blocked on AR1, AR2, and C0-09; AR4
-  follows dogfood evidence. Post-V1 hosted-fleet explorations remain separate.
+- Linear initiative `Agent Relay — Open Source V1` owns four ordered
+  implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
+  all five milestones at 100%; AR2 remains planned and may use executable mocks;
+  AR3 is blocked on AR2 and C0-09; AR4 follows dogfood evidence. Post-V1
+  hosted-fleet explorations remain separate.
 - C0-07 (FXO-1048) and C0-08 (FXO-1049) are Done. Agent Relay pins and verifies
   the exact three Notifications `1.0.0-draft.1` artifacts, runs a
   scripts-disabled clean consumer install, and proves mapping, retry,
@@ -161,6 +162,11 @@
   what leaves, what changes, how to diagnose, and how to remove the product, and
   records the no-architecture-change AR2 handoff. No real home, credential, tag,
   release, attestation, registry, or production service was changed.
+- AR1 closed in Linear on 2026-07-26 after all nine stories reached Done and all
+  five milestones reached 100%. Draft PR #4 was clean at implementation head
+  `345448e5a7293dacfe9c92d1400ec22c6351cd2e`; CI, packaged Chromium E2E, and
+  GitGuardian all passed. The parent `Agent Relay — Open Source V1` initiative
+  and its other projects were not changed during project reconciliation.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -625,12 +631,11 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Run the final exact-HEAD repository/browser/audit/bundle/native-exit review,
-push the completed AR1 branch, observe its draft PR checks, and reconcile Linear
-project evidence. Mock-backed AR2 work may then proceed against the pinned
-`1.0.0-draft.1` artifacts, but production hosted dogfood must wait for AR1, AR2,
-and a central C0-09 go disposition. npm scope/publication and the monitored
-public security-contact path remain owner-controlled promotion gates.
+Begin mock-backed AR2 work against the pinned `1.0.0-draft.1` artifacts and the
+standalone AR1 package boundary. Production hosted dogfood must still wait for
+AR2 and a central C0-09 go disposition. npm scope/publication and the monitored
+public security-contact path remain owner-controlled promotion gates; AR1 does
+not authorize those external actions.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,
