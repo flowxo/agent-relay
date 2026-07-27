@@ -7,6 +7,8 @@ export * from "./hook-runner.js";
 export * from "./http-server.js";
 export * from "./installer.js";
 export * from "./machine-id.js";
+export * from "./notifications-command.js";
+export * from "./notifications-config.js";
 export * from "./supervisor.js";
 export * from "./telegram-poller.js";
 export * from "./web-assets.js";

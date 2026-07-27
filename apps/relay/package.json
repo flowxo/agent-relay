@@ -23,7 +23,11 @@
   "dependencies": {
     "@agent-relay/core": "workspace:*",
     "@agent-relay/harnesses": "workspace:*",
+    "@agent-relay/notifications-transport": "workspace:*",
     "@agent-relay/protocol": "workspace:*",
     "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@flowxo/notifications-contract-mock": "file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz"
   }
 }

@@ -1,10 +1,29 @@
 # Agent Relay Notifications transport
 
-This private package is the production-promotable, test-constructed boundary
-between Agent Relay delivery semantics and the pinned FlowXO Notifications C0
-API. C0-07 proves the mapping and local authority; it does not wire a production
-poll loop, daemon configuration, credentials, cursor persistence, transport
-selection, or fallback.
+This private package is the production-promotable boundary between Agent Relay
+delivery semantics and the pinned FlowXO Notifications C0 API. C0-07 proves
+mapping and local authority. AR2.1 adds the bounded project administration
+client and mock-backed machine setup used by the CLI; it still does not wire a
+production poll loop, daemon selection, durable hosted cursor, or fallback.
+
+## Machine bootstrap
+
+`connectNotificationsMachine` normalizes a safe HTTPS or exact-loopback base
+URL, creates and observes a single-use subscriber authorization link, verifies
+the activated binding, creates one destination-bound machine client, generates
+the 32-byte secret locally, registers only its SHA-256 digest, polls with the
+narrow bearer, sends a fixed canary, and re-reads active machine metadata.
+
+The administration client rejects redirects, credentials embedded in URLs,
+non-contract media/status/body shapes, oversized bodies, and remote plain HTTP.
+High-level bootstrap and disconnect errors use stable redacted messages. A
+failure after credential registration attempts bounded credential/client
+revocation and reports whether cleanup remained incomplete.
+
+`disconnectNotificationsMachine` idempotently revokes the narrow credential and
+machine client using a project credential supplied only for that operation.
+Local storage and rotation orchestration remain in `apps/relay`; this package
+has no filesystem, SQLite, Telegram, daemon, or shell-command authority.
 
 ## Pinned consumer artifacts
 

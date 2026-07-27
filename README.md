@@ -480,7 +480,10 @@ process.
 
 The pinned Notifications `1.0.0-draft.1` consumer and compatibility gate are
 also green against the executable mock. They prove the provider-neutral mapping,
-retry, replay, acknowledgement, isolation, and local-authority boundary; they do
-not yet add production Notifications selection, hosted credential persistence,
-or continuous polling. Cross-repository promotion to `1.0.0-rc.1` remains gated
-by [C0-09](https://linear.app/flowxo/issue/FXO-1050).
+retry, replay, acknowledgement, isolation, and local-authority boundary. The
+mock-backed `agent-relay notifications` setup command additionally proves
+subscriber authorization, locally generated narrow credentials, secure
+persistence, a synthetic canary, rotation, revocation, and explicit erasure. The
+production daemon still does not select Notifications or continuously poll it.
+Cross-repository promotion to `1.0.0-rc.1` remains gated by
+[C0-09](https://linear.app/flowxo/issue/FXO-1050).

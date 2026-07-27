@@ -60,12 +60,19 @@ importers:
       "@agent-relay/harnesses":
         specifier: workspace:*
         version: link:../../packages/harnesses
+      "@agent-relay/notifications-transport":
+        specifier: workspace:*
+        version: link:../../packages/notifications-transport
       "@agent-relay/protocol":
         specifier: workspace:*
         version: link:../../packages/protocol
       zod:
         specifier: 4.4.3
         version: 4.4.3
+    devDependencies:
+      "@flowxo/notifications-contract-mock":
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
 
   packages/core:
     dependencies:

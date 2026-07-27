@@ -28,6 +28,10 @@ import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
+import {
+  NOTIFICATIONS_COMMAND_USAGE,
+  runNotificationsCommand,
+} from "./notifications-command.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
 import { runSupervisor } from "./supervisor.js";
 import { seedWebDemo } from "./web-demo.js";
@@ -53,6 +57,7 @@ Commands:
   capabilities       Print the generated harness capability registry
   canary             Prove the local fake-transport delivery loop
   telegram-canary    Prove a configured direct-Telegram reply loop
+  notifications      Connect, inspect, or disconnect hosted Notifications
 
 Run "agent-relay <command> --help" only where the command documents flags in
 the public guides. Agent Relay currently supports macOS on Apple silicon with
@@ -471,6 +476,29 @@ async function main(): Promise<void> {
         dryRun: args.includes("--dry-run"),
       }),
     );
+    return;
+  }
+
+  if (command === "notifications") {
+    const result = await runNotificationsCommand({
+      args,
+      environment: process.env,
+      stateDirectory: stateDir,
+      stdinIsTTY: process.stdin.isTTY,
+      writeDiagnostic: (diagnostic) => {
+        process.stderr.write(`${JSON.stringify(diagnostic)}\n`);
+      },
+    });
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      "help" in result &&
+      result.help === NOTIFICATIONS_COMMAND_USAGE
+    ) {
+      process.stdout.write(NOTIFICATIONS_COMMAND_USAGE);
+    } else {
+      output(result);
+    }
     return;
   }
 

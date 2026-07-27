@@ -2,22 +2,36 @@
 
 ## Proven
 
-- The authoritative Open Source V1 candidate line is
-  `codex/fxo-1141-release-baseline`. It preserves the completed multi-session
-  MVP from `codex/initial-mvp` at `a4a6b5b` and descends through the coherent
-  Agent Relay C0 consumer/compatibility history in PR #2: `68b2fbf` → `100c250`
-  → `fee4629` → `76240c4`. It is not yet integrated to `main` or published as a
-  release.
+- GitHub PR #5 integrated the completed multi-session root `codex/initial-mvp`
+  at `a4a6b5b` to `main` as merge commit `157006a`. The ordered C0,
+  release-baseline, and AR1 heads remain reviewable draft PRs #2, #3, and #4;
+  AR2 development starts from exact AR1 head `7624eb5` on
+  `codex/ar2-notifications-adapter`. No package has been published.
 - Linear initiative `Agent Relay — Open Source V1` owns four ordered
   implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
-  all five milestones at 100%; AR2 remains planned and may use executable mocks;
-  AR3 is blocked on AR2 and C0-09; AR4 follows dogfood evidence. Post-V1
-  hosted-fleet explorations remain separate.
+  all five milestones at 100%. AR2 is In Progress and may use executable mocks;
+  AR3 is blocked on AR2 and C0-09; AR4 follows dogfood evidence. Post-V1 hosted
+  fleet explorations remain separate.
 - C0-07 (FXO-1048) and C0-08 (FXO-1049) are Done. Agent Relay pins and verifies
   the exact three Notifications `1.0.0-draft.1` artifacts, runs a
   scripts-disabled clean consumer install, and proves mapping, retry,
   crash-before-ack replay, acknowledgement, quarantine, identity isolation,
   first-writer-wins local authority, and direct-Telegram parity.
+- FXO-1150 implements the mock-backed Notifications setup lifecycle. A bounded
+  administration client creates/reads/revokes machine clients and registers only
+  locally generated credential digests. `agent-relay notifications` connects
+  through a subscriber authorization link, proves exact binding/scope, zero-wait
+  polls the narrow stream, sends a fixed canary, writes strict private `0600`
+  configuration/credential files atomically, reports hashed safe status, rotates
+  after replacement smoke-test, retains failed old-client revocations, and
+  supports idempotent hosted revocation plus explicit local erasure.
+  Twenty-eight focused tests cover environment/stdin/prompt secret input,
+  positional rejection, pending authorization, HTTP/redirect/body bounds,
+  redaction, complete and incomplete provisional cleanup, symlink/permission/
+  mismatch/preflight failures, cross-machine isolation, new-client and
+  same-client rotation, cross-origin refusal, bounded retained cleanup state,
+  local-commit cleanup, revocation, and retained-state erasure. Production
+  daemon selection and continuous hosted polling remain unclaimed.
 - Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
   when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
   all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
@@ -628,14 +642,25 @@ also remain free of silent delivery, hook, or correlation failures.
   remains private. The policy and exact private-report URL are ready, but
   enabling and verifying the feature is a mandatory part of the later,
   explicitly approved public-promotion step. No security email was invented.
+- The pinned C0 mock authenticates readable machine tokens from startup
+  fixtures; registering a digest does not dynamically add that bearer to its
+  authentication map. FXO-1150 generates the real credential locally, supplies
+  it only to the mock's in-memory auth fixture, and separately asserts that HTTP
+  registration contains only the ID/digest. Real digest verification and human
+  subscription activation remain contract-backed assumptions until C0-09/AR3
+  production dogfood.
+- The private pinned Notifications client/contract artifacts declare no
+  distributable license metadata. They are bundled only into an unpublished
+  local candidate today. C0 release promotion must resolve the final artifact
+  license/notice boundary before public package publication.
 
 ## Next action
 
-Begin mock-backed AR2 work against the pinned `1.0.0-draft.1` artifacts and the
-standalone AR1 package boundary. Production hosted dogfood must still wait for
+Finish the FXO-1150 full repository/package/browser/audit gate and local commit,
+then proceed directly to FXO-1151 explicit fake/direct-Telegram/Notifications
+selection and readiness diagnosis. Production hosted dogfood must still wait for
 AR2 and a central C0-09 go disposition. npm scope/publication and the monitored
-public security-contact path remain owner-controlled promotion gates; AR1 does
-not authorize those external actions.
+public security-contact path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

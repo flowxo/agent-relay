@@ -368,6 +368,22 @@ metadata to ordinary topic text. When that metadata does not identify a retained
 request, Agent Relay still applies the exact-topic, exactly-one-open request
 rule. A known stale or cross-topic request remains rejected.
 
+### Optional hosted Notifications setup proof
+
+The optional hosted adapter now has a mock-backed setup lifecycle, documented in
+the [hosted Notifications guide](./hosted-notifications.md). It can authorize a
+subscriber, generate and store a narrow credential, send a synthetic canary,
+rotate, revoke, and erase that setup. It is not selected by the production
+daemon yet, so completing `agent-relay notifications connect` does not route
+normal Agent Relay events through the hosted service.
+
+Do not place a broad Notifications project credential in git or pass it as a
+positional argument. Supply it only through the command's stdin, environment
+injection, or hidden prompt. The local setup files are retained by uninstall;
+use `notifications disconnect --revoke` before explicit credential/configuration
+erasure. Until the central C0-09 promotion gate completes, perform this setup
+only against the executable loopback mock.
+
 ## 6. Prove the Telegram interaction loop
 
 In another terminal:

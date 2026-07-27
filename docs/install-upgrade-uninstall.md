@@ -173,7 +173,8 @@ node apps/relay/dist/cli.js uninstall
 The command removes only hook handlers carrying Agent Relay's ownership marker,
 the owned launcher, and the manifest. It preserves user hooks, unrelated
 settings, SQLite, fallback records, logs, web credentials, Telegram
-configuration, and installer backups.
+configuration, Notifications configuration/narrow credentials, and installer
+backups.
 
 Package-manager removal alone does not remove installed hooks because those
 hooks live in user configuration and point to the owned launcher.
@@ -197,8 +198,19 @@ Uninstall is intentionally non-destructive. To erase retained data:
    remove only the backups you no longer need; and
 6. remove the separate secret-manager entry or local activation file.
 
-Provider data is separate. Delete Telegram messages/topics or other provider
-records through that provider.
+Provider data is separate. Revoke a hosted Notifications machine client before
+local erasure:
+
+```sh
+credential_command | node apps/relay/dist/cli.js notifications disconnect \
+  --revoke \
+  --erase-credential \
+  --erase-configuration \
+  --credential-stdin
+```
+
+The project credential is bootstrap/revocation-only and is not retained. Delete
+Telegram messages/topics or other provider records through that provider.
 
 See [PRIVACY.md](../PRIVACY.md) before erasure and
 [troubleshooting](troubleshooting.md) when a dry run, rollback, or doctor check
