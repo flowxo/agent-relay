@@ -26,6 +26,14 @@
       ]
     }
   },
+  "transportObservations": {
+    "telegram": {
+      "apiVersion": "Bot API 10.2",
+      "officialContractRecheckedAt": "2026-07-25",
+      "livePrivateTopicActivationVerified": true,
+      "payloadFixtures": "sanitized-deterministic-http"
+    }
+  },
   "sources": {
     "codexHooks": "https://learn.chatgpt.com/docs/hooks",
     "codexResume": "https://developers.openai.com/codex/noninteractive",

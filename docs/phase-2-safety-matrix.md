@@ -1,0 +1,36 @@
+# Phase 2 structured interaction safety matrix
+
+This ledger maps the FXO-1066 acceptance matrix to deterministic local tests.
+Every Telegram flow below runs against `FakeTelegramTransport`; real bot
+credentials are not required. Protocol-only and sanitized HTTP projection tests
+are identified separately.
+
+| Required behavior                        | Deterministic evidence                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Single choice and compact buttons        | `reply-router.test.ts` proves opaque callbacks, duplicate updates, terminal-first and Telegram-first races, expiry, malformed tokens, authorization, and cross-session/topic rejection.                                                                                                  |
+| Oversized single choice                  | `reply-router.test.ts` proves correlated numbered fallback and invalid-number handling; `telegram-transport.test.ts` proves the no-button HTTP projection.                                                                                                                               |
+| Multi-select                             | `multi-select.test.ts` proves set-style idempotence, concurrent independent selections, bounds, atomic Submit, Cancel, restart, expiry, stale keyboards, and first-writer-wins.                                                                                                          |
+| Free text                                | `question-set-text.test.ts` proves capture, replacement, ambiguity, explicit-card correlation, empty/short/oversized/multiline rejection, duplicate messages, late text, restart, retention, and non-echo of private text.                                                               |
+| Mixed ordered sets                       | `question-set.test.ts` proves confirm, multi-select, and single-select navigation, review/edit, optional empty selection, atomic ordered Submit, duplicate Submit, restart, Cancel, expiry, supersession, and concurrent-session isolation.                                              |
+| Structured numbered fallback             | `question-set.test.ts` proves selection by topic text, durable mode/answer persistence across restart, and final Submit; the pre-negotiation SQLite schema migration is also exercised.                                                                                                  |
+| Duplicate callbacks and messages         | Durable Telegram update claims plus set-style mutations are covered by `reply-router.test.ts`, `multi-select.test.ts`, `question-set.test.ts`, and `question-set-text.test.ts`. Repeated updates and repeated semantic actions cannot produce a second terminal answer.                  |
+| Delivery retry                           | `question-set.test.ts` injects a retryable structured delivery timeout, verifies the draft and selected presentation survive, then delivers once at the durable retry deadline. General spool backoff/exhaustion remains covered by `service.test.ts`.                                   |
+| Callback acknowledgement retry           | `question-set.test.ts` fails the first acknowledgement, proves immediate bounded recovery after SQLite commit, then exhausts both retry attempts and requires a durable failure diagnostic while preserving the committed draft.                                                         |
+| Malformed and oversized payloads         | `interaction.test.ts` runtime-validates duplicate/unknown IDs, invalid bounds, malformed answers, unknown selections, private/provider fields, oversized requests, and bounded terminal answers. `interaction-negotiation.test.ts` rejects malformed capability records before delivery. |
+| Partial restart recovery                 | `multi-select.test.ts`, `question-set.test.ts`, and `question-set-text.test.ts` close and reopen file-backed SQLite with incomplete drafts and exact current-step state.                                                                                                                 |
+| Timeout, stale, cancel, supersede, races | `multi-select.test.ts`, `question-set.test.ts`, `reply-router.test.ts`, and `structured-interaction.test.ts` prove expiry with partial state, stale controls, explicit Cancel, terminal supersession, and one immutable first writer across database reopen.                             |
+| Multiple requests in one topic           | `question-set-text.test.ts` rejects ambiguous ordinary text and accepts only an explicit reply to the intended retained card.                                                                                                                                                            |
+| Concurrent requests in different topics  | `question-set.test.ts` and `reply-router.test.ts` prove exact message/session/topic isolation and reject cross-topic or cross-session input.                                                                                                                                             |
+| Unsupported transport/harness fallback   | `interaction-negotiation.test.ts` proves ordered fallback, request-level reject policy, provider limits, assumed/missing/malformed transport records, incapable harnesses, and the intentional absence of Phase 2 web handoff. No unsupported card is delivered.                         |
+| Telegram Bot API projection              | `telegram-transport.test.ts` validates synthetic Bot API 10.2 requests for buttons, numbered text, multi-select, ordered sets, callback acknowledgement, edits, timeouts, rate limits, and malformed responses. Sanitized shapes are retained under `packages/core/fixtures/telegram`.   |
+
+The authoritative full gate is:
+
+```sh
+corepack pnpm install --frozen-lockfile
+pnpm check
+pnpm audit --prod
+```
+
+`docs/progress.md` records the last exact test count and whether the committed
+tree passed these gates in isolation.

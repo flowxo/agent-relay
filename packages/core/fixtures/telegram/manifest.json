@@ -1,0 +1,41 @@
+{
+  "schema": "agent-relay-telegram-fixtures.v1",
+  "capturedAt": "2026-07-25",
+  "botApiVersion": "10.2",
+  "scope": "private chat with topics enabled",
+  "fixtures": [
+    {
+      "file": "single-choice-send-message.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Sanitized from the request shape exercised by the credentialed private-topic activation",
+      "sanitization": [
+        "chat ID replaced",
+        "message and event content replaced",
+        "decision and card tokens replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
+      "file": "multi-select-send-message.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Sanitized Bot API 10.2 projection exercised against the fake HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "message and option content replaced",
+        "decision and draft action tokens replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
+      "file": "question-set-send-message.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Sanitized Bot API 10.2 ordered interaction projection exercised against the fake HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "message, question, and option content replaced",
+        "decision and navigation tokens replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    }
+  ]
+}

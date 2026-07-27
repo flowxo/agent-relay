@@ -634,6 +634,14 @@ export async function runSupervisor(
     }
 
     const waitDeadline = Date.now() + resumeWaitMs;
+    let claimFailure:
+      | {
+          firstAt: string;
+          message: string;
+          attempts: number;
+          fallbackRecorded: boolean;
+        }
+      | undefined;
     for (;;) {
       let claim;
       try {
@@ -648,28 +656,76 @@ export async function runSupervisor(
           error instanceof Error
             ? error.message
             : "could not query late resume commands";
-        const fallbackRecorded = await recordFallback(
-          fallbackPath,
-          "diagnostic",
-          {
-            code: "resume-claim-failed",
+        if (claimFailure === undefined) {
+          const firstAt = new Date().toISOString();
+          const fallbackRecorded = await recordFallback(
+            fallbackPath,
+            "diagnostic",
+            {
+              code: "resume-claim-retrying",
+              message,
+              bridgeSessionId,
+            },
+            firstAt,
+          );
+          claimFailure = {
+            firstAt,
             message,
-            bridgeSessionId,
-          },
-          new Date().toISOString(),
-        );
-        return {
-          bridgeSessionId,
-          supervisorId,
-          exitCode: classified.terminalExitCode,
-          resumed,
-          classification: classified.evidence.classification,
-          diagnostic: {
-            code: "resume-claim-failed",
-            message,
+            attempts: 1,
             fallbackRecorded,
+          };
+          logger.log({
+            level: "warn",
+            code: "supervisor.resume-claim-retrying",
+            message,
+            at: firstAt,
+            details: { supervisorId, bridgeSessionId, attempts: 1 },
+          });
+        } else {
+          claimFailure.attempts += 1;
+          claimFailure.message = message;
+        }
+
+        const remaining = waitDeadline - Date.now();
+        if (remaining <= 0) {
+          return {
+            bridgeSessionId,
+            supervisorId,
+            exitCode: classified.terminalExitCode,
+            resumed,
+            classification: classified.evidence.classification,
+            diagnostic: {
+              code: "resume-claim-timeout",
+              message: `could not query late resume commands after ${String(
+                claimFailure.attempts,
+              )} attempts: ${claimFailure.message}`,
+              fallbackRecorded: claimFailure.fallbackRecorded,
+            },
+          };
+        }
+        const retryDelay = Math.min(
+          5_000,
+          pollIntervalMs *
+            2 ** Math.min(Math.max(claimFailure.attempts - 1, 0), 6),
+        );
+        await pause(Math.min(retryDelay, remaining));
+        continue;
+      }
+
+      if (claimFailure !== undefined) {
+        logger.log({
+          level: "info",
+          code: "supervisor.resume-claim-recovered",
+          message: "late resume polling recovered after a daemon outage",
+          at: new Date().toISOString(),
+          details: {
+            supervisorId,
+            bridgeSessionId,
+            attempts: claimFailure.attempts,
+            firstFailureAt: claimFailure.firstAt,
           },
-        };
+        });
+        claimFailure = undefined;
       }
 
       if (claim.outcome === "claimed") {

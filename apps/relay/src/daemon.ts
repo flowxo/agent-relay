@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import type { Server } from "node:http";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   FakeTelegramTransport,
@@ -17,9 +17,12 @@ import { createRelayHttpServer } from "./http-server.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
 import type { FallbackReplayResult } from "./fallback-spool.js";
 import { TelegramUpdatePoller } from "./telegram-poller.js";
+import { loadOrCreateWebCredential } from "./web-credential.js";
 
 export interface DaemonOptions {
   databasePath: string;
+  webEnabled?: boolean;
+  webCredentialPath?: string;
   host?: string;
   port?: number;
   token?: string;
@@ -30,6 +33,7 @@ export interface DaemonOptions {
   telegramWebhookSecret?: string;
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
+  coalescingWindowMs?: number;
   drainIntervalMs?: number;
   fallbackPath?: string;
   fallbackReplayIntervalMs?: number;
@@ -41,6 +45,7 @@ export interface DaemonOptions {
 export interface RunningDaemon {
   server: Server;
   service: RelayService;
+  webCredentialPath?: string;
   initialFallbackReplay?: FallbackReplayResult;
   initialRetention: RetentionResult;
   close(): Promise<void>;
@@ -77,6 +82,15 @@ export async function startDaemon(
     throw new Error("Telegram update mode must be poll or webhook");
   }
   await mkdir(dirname(options.databasePath), { recursive: true, mode: 0o700 });
+  const webEnabled = options.webEnabled ?? true;
+  const webCredentialPath = webEnabled
+    ? (options.webCredentialPath ??
+      join(dirname(options.databasePath), "web-credential.json"))
+    : undefined;
+  const webCredential =
+    webCredentialPath === undefined
+      ? undefined
+      : await loadOrCreateWebCredential(webCredentialPath);
   const logger = options.logger ?? new JsonLineLogger();
   const transport = selectTransport(options);
   if (
@@ -88,8 +102,23 @@ export async function startDaemon(
       "Telegram webhook mode requires AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
     );
   }
+  if (transport instanceof TelegramBotTransport) {
+    const report = await transport.verifySetup(telegramUpdateMode);
+    logger.log({
+      level: "info",
+      code: "telegram.preflight-succeeded",
+      message: "Telegram private-topic setup verified",
+      at: new Date().toISOString(),
+      details: { ...report },
+    });
+  }
   const store = new RelayStore(options.databasePath);
-  const service = new RelayService(store, transport, { logger });
+  const service = new RelayService(store, transport, {
+    logger,
+    ...(options.coalescingWindowMs === undefined
+      ? {}
+      : { coalescingWindowMs: options.coalescingWindowMs }),
+  });
   service.recover();
   const replyRouter =
     options.telegramOperatorUserId === undefined ||
@@ -106,6 +135,8 @@ export async function startDaemon(
     ...(options.telegramWebhookSecret === undefined
       ? {}
       : { telegramWebhookSecret: options.telegramWebhookSecret }),
+    webEnabled,
+    ...(webCredential === undefined ? {} : { webCredential }),
     logger,
   });
 
@@ -283,6 +314,7 @@ export async function startDaemon(
         transport instanceof TelegramBotTransport
           ? telegramUpdateMode
           : "disabled",
+      webEnabled,
     },
   });
 
@@ -305,6 +337,7 @@ export async function startDaemon(
           reject(error);
         }
       });
+      server.closeAllConnections();
     });
     closePromise = Promise.all([
       serverClosed,
@@ -320,6 +353,7 @@ export async function startDaemon(
   return {
     server,
     service,
+    ...(webCredentialPath === undefined ? {} : { webCredentialPath }),
     ...(initialFallbackReplay === undefined ? {} : { initialFallbackReplay }),
     initialRetention,
     close,

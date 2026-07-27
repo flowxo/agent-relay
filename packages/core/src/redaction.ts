@@ -20,6 +20,14 @@ export function redactText(value: string, limit = 4_000): string {
   return `${redacted.slice(0, Math.max(0, limit - 14))}…[truncated]`;
 }
 
+export function redactDiagnosticText(value: string, limit = 2_000): string {
+  const withoutSecrets = redactText(value, Math.max(limit * 2, 4_000));
+  const withoutPaths = withoutSecrets
+    .replace(/(^|[\s("'`=])(?:~\/|\/(?!\/))[^\s"'`),;]+/gm, "$1[REDACTED_PATH]")
+    .replace(/(^|[\s("'`=])[A-Za-z]:\\[^\s"'`),;]+/gm, "$1[REDACTED_PATH]");
+  return redactText(withoutPaths, limit);
+}
+
 export function redactValue(
   value: unknown,
   options: {

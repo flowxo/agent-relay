@@ -3,8 +3,20 @@ import type {
   DeliveryMessage,
   DeliveryReceipt,
   InteractiveNotificationTransport,
+  TopicCreation,
+  TopicCreationContext,
+  TopicNotificationTransport,
+  TopicReceipt,
 } from "./transport.js";
-import { TransportError } from "./transport.js";
+import { TopicUnavailableError, TransportError } from "./transport.js";
+import {
+  InteractionProviderObservationV1Schema,
+  MAX_INTERACTION_OPTIONS,
+  MAX_INTERACTION_QUESTIONS,
+  MAX_INTERACTION_REQUEST_BYTES,
+  MAX_INTERACTION_TEXT_LENGTH,
+  type InteractionProviderObservationV1,
+} from "@agent-relay/protocol";
 
 export interface FakeDelivery {
   message: DeliveryMessage;
@@ -18,21 +30,79 @@ interface PlannedFailure {
   retryable: boolean;
 }
 
-export class FakeTelegramTransport implements InteractiveNotificationTransport {
+export interface FakeTopic {
+  topic: TopicCreation;
+  context: TopicCreationContext;
+  receipt: TopicReceipt;
+}
+
+export class FakeTelegramTransport
+  implements InteractiveNotificationTransport, TopicNotificationTransport
+{
   public readonly name = "fake-telegram";
+  public readonly topicScope = "fake:private-chat";
+
+  public observeInteractionCapabilities(
+    observedAt: string,
+  ): InteractionProviderObservationV1 {
+    return InteractionProviderObservationV1Schema.parse({
+      schema: "agent-interaction-provider-observation.v1",
+      capabilities: {
+        schema: "agent-interaction-capabilities.v1",
+        providerId: "transport_fake_telegram",
+        providerKind: "transport",
+        observedAt,
+        features: [
+          "confirm",
+          "single-select",
+          "multi-select",
+          "free-text",
+          "ordered-question-set",
+          "durable-drafts",
+          "message-updates",
+        ],
+        presentationModes: ["buttons", "direct-text", "numbered-text"],
+        limits: {
+          maxQuestions: MAX_INTERACTION_QUESTIONS,
+          maxOptionsPerQuestion: MAX_INTERACTION_OPTIONS,
+          maxTextLength: MAX_INTERACTION_TEXT_LENGTH,
+          maxPayloadBytes: MAX_INTERACTION_REQUEST_BYTES,
+        },
+      },
+      status: "proven",
+      evidence: "fake",
+      observedVersion: "fake-telegram.v1",
+      fixture:
+        "packages/protocol/fixtures/interactions/provider-capabilities.v1.json",
+      note: "In-memory transport used to prove routing, retries, correlation, and interaction state without a bot token.",
+    });
+  }
   public readonly attempts: Array<{
     eventId: string;
     outcome: "delivered" | "failed" | "deduplicated";
+    topicId?: string;
+  }> = [];
+  public readonly topicAttempts: Array<{
+    idempotencyKey: string;
+    outcome: "created" | "failed" | "deduplicated";
   }> = [];
   private readonly deliveriesByKey = new Map<string, FakeDelivery>();
+  private readonly topicsByKey = new Map<string, FakeTopic>();
   private readonly failures: PlannedFailure[] = [];
+  private readonly topicFailures: PlannedFailure[] = [];
+  private readonly closedTopicIds = new Set<string>();
   private nextMessageId = 1;
+  private nextTopicId = 1_000;
   private online = true;
   public readonly callbackAcknowledgements: Array<{
     callbackId: string;
     text: string;
   }> = [];
   public readonly messageEdits: Array<{ messageId: string; text: string }> = [];
+  public readonly deliveryMessageEdits: Array<{
+    messageId: string;
+    message: DeliveryMessage;
+  }> = [];
 
   public setOnline(online: boolean): void {
     this.online = online;
@@ -51,8 +121,95 @@ export class FakeTelegramTransport implements InteractiveNotificationTransport {
     }
   }
 
+  public failNextTopicCreation(
+    count: number,
+    failure: PlannedFailure = {
+      code: "fake-topic-timeout",
+      message: "fake topic creation timed out",
+      retryable: true,
+    },
+  ): void {
+    for (let index = 0; index < count; index += 1) {
+      this.topicFailures.push(failure);
+    }
+  }
+
   public get deliveries(): readonly FakeDelivery[] {
     return [...this.deliveriesByKey.values()];
+  }
+
+  public get topics(): readonly FakeTopic[] {
+    return [...this.topicsByKey.values()];
+  }
+
+  public deleteTopic(topicId: string): boolean {
+    const entry = [...this.topicsByKey.entries()].find(
+      ([, topic]) => topic.receipt.topicId === topicId,
+    );
+    return entry === undefined ? false : this.topicsByKey.delete(entry[0]);
+  }
+
+  public closeTopic(topicId: string): boolean {
+    const entry = [...this.topicsByKey.entries()].find(
+      ([, topic]) => topic.receipt.topicId === topicId,
+    );
+    if (entry === undefined) {
+      return false;
+    }
+    this.closedTopicIds.add(topicId);
+    this.topicsByKey.delete(entry[0]);
+    return true;
+  }
+
+  public async createTopic(
+    topic: TopicCreation,
+    context: TopicCreationContext,
+  ): Promise<TopicReceipt> {
+    const existing = this.topicsByKey.get(context.idempotencyKey);
+    if (existing !== undefined) {
+      this.topicAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        outcome: "deduplicated",
+      });
+      return existing.receipt;
+    }
+    if (!this.online) {
+      this.topicAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        outcome: "failed",
+      });
+      throw new TransportError(
+        "fake Telegram is offline",
+        "fake-offline",
+        true,
+      );
+    }
+    const failure = this.topicFailures.shift();
+    if (failure !== undefined) {
+      this.topicAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        outcome: "failed",
+      });
+      throw new TransportError(
+        failure.message,
+        failure.code,
+        failure.retryable,
+      );
+    }
+    const receipt = {
+      transport: this.name,
+      topicId: String(this.nextTopicId++),
+    };
+    this.topicsByKey.set(context.idempotencyKey, {
+      topic,
+      context,
+      receipt,
+    });
+    this.topicAttempts.push({
+      idempotencyKey: context.idempotencyKey,
+      outcome: "created",
+    });
+    return receipt;
   }
 
   public async deliver(
@@ -64,11 +221,36 @@ export class FakeTelegramTransport implements InteractiveNotificationTransport {
       this.attempts.push({
         eventId: message.eventId,
         outcome: "deduplicated",
+        ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
       });
       return existing.receipt;
     }
+    if (
+      context.topicId !== undefined &&
+      ![...this.topicsByKey.values()].some(
+        (topic) => topic.receipt.topicId === context.topicId,
+      )
+    ) {
+      this.attempts.push({
+        eventId: message.eventId,
+        outcome: "failed",
+        topicId: context.topicId,
+      });
+      throw new TopicUnavailableError(
+        this.closedTopicIds.has(context.topicId)
+          ? "fake message thread is closed"
+          : "fake message thread not found",
+        this.closedTopicIds.has(context.topicId)
+          ? "fake-topic-closed"
+          : "fake-topic-unavailable",
+      );
+    }
     if (!this.online) {
-      this.attempts.push({ eventId: message.eventId, outcome: "failed" });
+      this.attempts.push({
+        eventId: message.eventId,
+        outcome: "failed",
+        ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
+      });
       throw new TransportError(
         "fake Telegram is offline",
         "fake-offline",
@@ -77,7 +259,11 @@ export class FakeTelegramTransport implements InteractiveNotificationTransport {
     }
     const failure = this.failures.shift();
     if (failure !== undefined) {
-      this.attempts.push({ eventId: message.eventId, outcome: "failed" });
+      this.attempts.push({
+        eventId: message.eventId,
+        outcome: "failed",
+        ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
+      });
       throw new TransportError(
         failure.message,
         failure.code,
@@ -93,7 +279,11 @@ export class FakeTelegramTransport implements InteractiveNotificationTransport {
       context,
       receipt,
     });
-    this.attempts.push({ eventId: message.eventId, outcome: "delivered" });
+    this.attempts.push({
+      eventId: message.eventId,
+      outcome: "delivered",
+      ...(context.topicId === undefined ? {} : { topicId: context.topicId }),
+    });
     return receipt;
   }
 
@@ -102,6 +292,28 @@ export class FakeTelegramTransport implements InteractiveNotificationTransport {
     text: string,
   ): Promise<void> {
     this.callbackAcknowledgements.push({ callbackId, text });
+  }
+
+  public async editDeliveryMessage(
+    messageId: string,
+    message: DeliveryMessage,
+  ): Promise<void> {
+    if (!this.online) {
+      throw new TransportError(
+        "fake Telegram is offline",
+        "fake-offline",
+        true,
+      );
+    }
+    const failure = this.failures.shift();
+    if (failure !== undefined) {
+      throw new TransportError(
+        failure.message,
+        failure.code,
+        failure.retryable,
+      );
+    }
+    this.deliveryMessageEdits.push({ messageId, message });
   }
 
   public async editResolvedMessage(

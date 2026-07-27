@@ -1,0 +1,29 @@
+{
+  "chat_id": "10001",
+  "text": "Codex · example\n\nWaiting\n\nSelection draft: 1 selected · choose 1–2.",
+  "disable_web_page_preview": true,
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "○ Unit one",
+          "callback_data": "relay-m:s:decision_00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "text": "✓ Unit two",
+          "callback_data": "relay-m:u:decision_00000000-0000-4000-8000-000000000002"
+        }
+      ],
+      [
+        {
+          "text": "Submit",
+          "callback_data": "relay-m:x:draft_submit_00000000-0000-4000-8000-000000000003"
+        },
+        {
+          "text": "Cancel",
+          "callback_data": "relay-m:c:draft_cancel_00000000-0000-4000-8000-000000000004"
+        }
+      ]
+    ]
+  }
+}

@@ -45,6 +45,9 @@ function event(
       permissionDecision: true,
     },
     ...(overrides.failure === undefined ? {} : { failure: overrides.failure }),
+    ...(overrides.lastAssistantMessage === undefined
+      ? {}
+      : { lastAssistantMessage: overrides.lastAssistantMessage }),
     ...(overrides.processExit === undefined
       ? {}
       : { processExit: overrides.processExit }),
@@ -104,6 +107,61 @@ describe("RelayService durable delivery loop", () => {
     expect(transport.deliveries[0]?.message.text).toContain(
       "Question: Which deployment should continue?",
     );
+    store.close();
+  });
+
+  it("keeps a long assistant message retrievable behind a compact Details action", async () => {
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport);
+    const finalSentence = "This final sentence must reach Telegram.";
+    const input = event({
+      eventId: "evt_complete_stop_message_12345678",
+      summary: "A shortened summary that must not win.",
+      lastAssistantMessage: `${"Detailed result. ".repeat(120)}${finalSentence}`,
+    });
+    service.ingest(input);
+
+    await service.drain();
+
+    const delivery = transport.deliveries[0]?.message;
+    const details = delivery?.actions?.find(
+      (action) => action.kind === "details",
+    );
+    expect(delivery?.text).not.toContain(finalSentence);
+    expect(delivery?.text).not.toContain(
+      "A shortened summary that must not win.",
+    );
+    expect(delivery?.text).toContain("…[truncated]");
+    expect(details).toBeDefined();
+    const registered =
+      details === undefined ? undefined : store.getCardAction(details.token);
+    expect(registered).toMatchObject({
+      eventId: input.eventId,
+      kind: "details",
+    });
+    expect(
+      registered === undefined
+        ? undefined
+        : store.getEvent(registered.eventId)?.event.lastAssistantMessage,
+    ).toContain(finalSentence);
+    store.close();
+  });
+
+  it("marks an assistant message that exceeds the delivery content bound", async () => {
+    const store = new RelayStore();
+    const transport = new FakeTelegramTransport();
+    const service = new RelayService(store, transport);
+    service.ingest(
+      event({
+        eventId: "evt_truncated_stop_message_12345678",
+        lastAssistantMessage: "x".repeat(4_000),
+      }),
+    );
+
+    await service.drain();
+
+    expect(transport.deliveries[0]?.message.text).toContain("…[truncated]");
     store.close();
   });
 

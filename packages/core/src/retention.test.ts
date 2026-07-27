@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
-import { makeProjectRef } from "@agent-relay/protocol";
+import { makeProjectRef, sha256 } from "@agent-relay/protocol";
 
 import { FakeTelegramTransport } from "./fake-transport.js";
 import { RelayService } from "./service.js";
@@ -118,6 +118,9 @@ describe("durable retention controls", () => {
         expected: false,
       },
     });
+    const exitedWebKey = sha256(
+      `${exited.machineId}\u001f${exited.harness}\u001f${exited.sessionId}`,
+    ).slice(0, 24);
     oldService.ingest(exited);
     await oldService.drain();
 
@@ -169,6 +172,7 @@ describe("durable retention controls", () => {
     expect(store.getEvent(exited.eventId)).toBeUndefined();
     expect(store.getEvent(stillOpen.eventId)).toBeDefined();
     expect(store.getEvent(recent.eventId)).toBeDefined();
+    expect(currentService.listSessionTimeline(exitedWebKey)).toBeUndefined();
     expect(store.getPendingRequest("correlation_retention_open")).toMatchObject(
       { state: "expired" },
     );
@@ -189,12 +193,16 @@ describe("durable retention controls", () => {
     ).toEqual({
       requestsExpired: 0,
       pendingRequests: 0,
+      interactionDrafts: 0,
+      questionSetDrafts: 0,
       resumeCommands: 0,
       events: 0,
       deliveryAttempts: 0,
       diagnostics: 0,
       telegramUpdates: 0,
       sessions: 0,
+      webChanges: 0,
+      browserCommands: 0,
     });
     store.close();
   });

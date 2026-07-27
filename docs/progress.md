@@ -3,6 +3,10 @@
 ## Proven
 
 - Repository ownership branch is `codex/initial-mvp`.
+- Linear project `Agent Relay — Multi-Session Operator Experience` is marked
+  Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
+  App, and multi-operator stories remain explicit deferred backlog outside the
+  V1 acceptance boundary.
 - Local harness versions and CLI resume help were observed on 2026-07-24 and
   2026-07-25, then recorded in `docs/harness-evidence.md`.
 - Official stop, permission, failure, and resume contracts are represented as
@@ -49,6 +53,262 @@
   update arrays, routes updates in order, advances offsets only after handling,
   retries diagnosed failures, and shuts down active polls cleanly. Webhook mode
   uses Telegram's secret independently of daemon bearer authentication.
+- FXO-1051 is green against the fake transport and the Telegram Bot API 10.2
+  contract. SQLite now owns one topic record per logical
+  machine/harness/session/transport scope. Topic creation is lazy, atomically
+  claimed before the transport call, retried through the owning event spool,
+  durably diagnosed, and reused after database reopen. The fake transport proves
+  repeated-event reuse, competing first deliveries, concurrent-session
+  isolation, restart persistence, retryable and terminal failures, and
+  path/secret-safe topic metadata. The real adapter fixtures prove
+  `createForumTopic` parsing and `message_thread_id` delivery; live
+  private-topic creation is not yet claimed.
+- FXO-1052 is green locally. Every event uses the persisted topic ID on every
+  delivery attempt. Retryable delivery failures preserve the mapping; duplicate,
+  delayed, out-of-order, and interleaved events remain isolated. A
+  transport-level missing-topic signal now invalidates only the stale mapping,
+  emits a durable `topic.reconciliation-required` diagnostic, retries the owning
+  event, and creates a replacement topic without falling back to the general
+  chat. Telegram's missing-thread response and the full recreation path are
+  covered by deterministic HTTP and fake-transport fixtures.
+- FXO-1054 is green locally. Telegram output is now a compact, plain-text card
+  containing sanitized session identity, event kind and age, a 480-character
+  summary, and context-specific Continue, Details, Mute, and End actions. Action
+  callback data is fixed, versioned, opaque, under Telegram's 64-byte boundary,
+  and durably mapped back to the full local event; model text cannot supply it.
+  Resolved requests are edited into answered, expired, superseded, or failed
+  card states without echoing private answer text. Snapshots cover all ten event
+  kinds plus all terminal states, and malformed/oversized rendering is bounded.
+  The durable action registration is consumed by FXO-1053.
+- FXO-1053 is green locally. Versioned card callbacks are runtime-validated
+  against the configured operator/chat, original delivery message, session, and
+  topic. SQLite commits first-writer-wins action state before Telegram
+  acknowledgement. Continue resolves only an eligible durable continuation;
+  Details posts once; Mute suppresses routine events but not questions or
+  critical failures; End is blocked by open questions and explicitly closes only
+  the relay lane. Duplicate taps never repeat an action. Malformed, unknown,
+  unauthorized, stale, cross-message/topic, blocked, and failed callbacks emit
+  useful responses and durable diagnostics.
+- FXO-1055 is green locally. Authorized plain text inside a persisted session
+  topic resolves only when exactly one open, unexpired free-text or continuation
+  request is eligible there. Zero candidates produce `reply not used` guidance;
+  multiple candidates require replying to the specific card; and button-only
+  requests cannot be answered by ordinary chatter. Explicit replies bind the
+  delivery message and the session topic. Cross-topic, unauthorized, stale,
+  duplicate, concurrent, and guidance-delivery-failure paths are deterministic.
+  Correlation diagnostics store the decision but never the rejected message
+  text. The behavior is fake-transport proven; a credentialed direct-topic-text
+  canary remains part of the Phase 1 live proof.
+- FXO-1056 is green locally. Topic names preserve sanitized
+  harness/repository/branch identity plus a readable session suffix and a
+  collision-resistant digest, even at Telegram's 128-character bound. Durable
+  topic status exposes running, waiting, muted, crashed, ended, and stale
+  without renaming on every event. Missing and closed-topic fixtures invalidate
+  only the stale mapping and create a replacement through the event retry spool.
+  Interrupted creation is recovered in bounded restart batches, including an
+  on-open migration/backfill for existing SQLite stores. Native session end and
+  the End button are terminal relay-lane tombstones: delayed events are
+  suppressed and delayed requests are canceled instead of resurrecting the lane.
+  The private Telegram adapter does not claim the supergroup-only
+  `closeForumTopic` contract.
+- FXO-1057 is green locally. A configurable, rolling coalescing window updates
+  one durable card only for exact-equivalent request-free stop/activity/start
+  noise, with a visible count and latest timestamp. Questions, crashes, stale
+  warnings, process/session events, and previously failed delivery attempts
+  bypass coalescing. Edit failure is durably diagnosed and retries as a separate
+  visible card. Mute/end suppression and every successful coalescing decision
+  emit transcript-free diagnostics. Details now page a maximum-size event,
+  expose the latest ten grouped events with the true count, and stop after eight
+  Telegram-safe pages while retaining complete evidence in SQLite.
+- FXO-1058 is green locally. Real-Telegram daemon startup now verifies
+  `getMe.has_topics_enabled`, private-chat scope, and update-mode/webhook
+  agreement before opening the service. Disabled topics and non-private chats
+  fail closed instead of pretending General provides session isolation. Invalid
+  tokens/chats, blocked bots, topic permission/mode failures, deleted/closed
+  topics, webhook mismatch, concurrent polling, and transient failures have
+  stable actionable codes. The living guide covers BotFather enablement, ID
+  discovery, private environment activation, preflight, verification, recovery,
+  and the explicit fake-only credential-free fallback.
+- FXO-1059's fake acceptance matrix is green. The SQLite-backed fake transport
+  suite proves two-session isolation, event and update deduplication, retry,
+  daemon lease/restart recovery, malformed callbacks, timeout, stale-answer
+  rejection, deleted-topic replacement without General fallback, and
+  supervisor-proven crash delivery. The evidence is spread across the focused
+  service, topic registry, card action, reply router, canary, and supervisor
+  tests so each failure boundary can be reproduced independently.
+- A credentialed Phase 1 Codex acceptance run on 2026-07-25 used the installed
+  `codex-cli 0.145.0` Stop hook and Telegram Bot API 10.2. It proved lazy
+  private topic creation, separate topics for concurrent supervised sessions,
+  compact cards, direct topic-text correlation, Continue-button correlation,
+  exact-session read-only resume, and durable SQLite answered/succeeded state
+  with exit code zero for both interaction paths. Identifiers, prompts, answers,
+  topic IDs, message IDs, credentials, and machine paths were not retained in
+  git.
+- The live Phase 1 run exposed two reliability defects before acceptance.
+  Telegram can attach reply metadata that does not identify a request to
+  ordinary topic text; the router now falls back only to the same topic's single
+  eligible request while retaining strict stale, ambiguous, cross-topic, and
+  button-only rejection. A daemon restart also caused a waiting supervisor to
+  abandon its claim loop; claim failures now emit one durable diagnostic, retry
+  with bounded backoff through the configured wait window, and log recovery.
+  Both defects have regression tests.
+- FXO-1060 is green locally. The provider-neutral
+  `agent-interaction-request.v1`, answer, lifecycle, and capability schemas
+  cover confirm, single-select, multi-select, free-text, and ordered question
+  sets with stable IDs and bounded payloads. Runtime compatibility validation
+  diagnoses duplicate/unknown IDs, empty options, invalid bounds, incompatible
+  kinds, missing/reordered answers, unknown selections, text limits, and expiry.
+  Canonical answers stay within the existing 4,000-byte durable continuation
+  boundary, and a SQLite close/reopen test proves the first valid terminal
+  answer remains authoritative. Sanitized fixtures and
+  `docs/structured-interactions.md` document the lifecycle, privacy boundary,
+  provider fallback vocabulary, and non-duplicating projection to the blocked
+  FXO-1048 Notifications contract consumer.
+- FXO-1062 is green locally. Single-choice requests with up to ten options use
+  opaque bounded Telegram callback tokens; callbacks are bound to the retained
+  request, delivered message, transport, session, topic, chat, and operator.
+  SQLite commits before callback acknowledgement, and resolved cards show the
+  selected label with their keyboards removed. Eleven through twenty options use
+  a correlated numbered-text fallback without truncation. Fake-transport tests
+  prove success, same-update and repeated-tap duplicates, expiry, malformed and
+  unknown tokens, wrong operator, wrong topic, cross-session rejection, invalid
+  numbers, and first-writer-wins behavior. The Telegram Bot API 10.2 request
+  shape is retained as a sanitized fixture; current official documentation
+  confirms the 64-byte callback-data boundary.
+- FXO-1061 is green locally. Single-question multi-select requests now create a
+  durable SQLite draft before delivery and render set/unset option buttons plus
+  Submit and Cancel. Desired-state callbacks are idempotent, independent
+  concurrent selections compose, selection bounds are enforced, and Submit
+  atomically commits the ordered option-ID array through the existing
+  first-writer authority before acknowledgement. Cancel leaves the answer null.
+  Restart, retry, stale keyboard, timeout, terminal-first and Telegram-first
+  races, final selected-label rendering, and bounded observable retention are
+  covered against the fake Telegram transport.
+- FXO-1063 is green locally. Ordered provider-neutral question sets now project
+  to one durable Telegram wizard card with step-specific Back/Next controls,
+  review and revision of prior answers, set-style multi-selects, final Submit,
+  and Cancel. Partial answers and the exact current step survive SQLite restart.
+  Submit validates and atomically commits one ordered
+  `agent-interaction-answer.v1` before callback acknowledgement; stale
+  navigation, incomplete steps, selection limits, expiry, terminal supersession,
+  duplicate submit, and cross-topic/session callbacks are explicit and tested.
+  Retention reports `questionSetDrafts`, and a sanitized Bot API 10.2 keyboard
+  fixture records the tested projection. Telegram free-text capture is supplied
+  by FXO-1064.
+- FXO-1064 is green locally. Active structured free-text steps show the request,
+  question order, prompt, bounds, multiline policy, and saved-draft state.
+  Ordinary topic text is accepted only for one compatible active request;
+  explicit card replies disambiguate simultaneous requests. SQLite-normalized
+  text survives restart and can be replaced without resolving the parent before
+  Submit. Empty, short, oversized, disallowed multiline, duplicate-update, late,
+  and out-of-order text paths are explicit and tested. Private content is absent
+  from diagnostics and Telegram card edits, final cards expose only a character
+  count, and durable draft/final text follows the documented bounded request
+  retention window.
+- FXO-1065 is green locally. Runtime-validated provider observations record
+  proven versus assumed status, evidence class, observed version, sanitized
+  fixture, and official documentation. Every structured delivery now gates on
+  the event-scoped harness continuation contract and the transport's advertised
+  features, limits, and presentation modes. The request's ordered fallback is
+  deterministic and persisted with the draft: compact buttons, mixed topic-bound
+  direct text, or numbered confirm/single-select steps. Numbered structured
+  replies retain exact request/card/session/topic correlation and update only
+  the draft before Submit. Missing, malformed, assumed, or incapable providers
+  and undeclared/unimplemented modes dead-letter visibly before transport
+  delivery. Telegram Bot API 10.2 and the fake transport do not advertise local
+  web handoff; that remains a Phase 3 assumption.
+- FXO-1066 is green locally. The Phase 2 safety matrix is mapped in
+  `docs/phase-2-safety-matrix.md` to protocol, store, transport, and fake
+  Telegram tests. A structured delivery timeout now proves durable retry without
+  losing the selected mode or draft. Callback acknowledgements retry immediately
+  within a bounded two-attempt budget after SQLite commits; a recovered retry is
+  logged, while exhaustion preserves the committed answer and emits a durable
+  diagnostic instead of being swallowed. The matrix covers every required
+  interaction kind, duplicate input, malformed/oversized payloads, partial
+  restart, timeout and stale states, Cancel, supersession, first-writer races,
+  same-topic ambiguity, cross-topic isolation, and unsupported capability
+  fallback without live credentials.
+- FXO-1068 is green locally. Daemon startup generates and reuses an independent
+  mode-`0600` local-web bearer/CSRF credential and fails closed on symlinks,
+  malformed content, or permissive file modes. Authenticated, bounded session,
+  attention, and event-detail read models omit assistant transcripts, working
+  paths, machine/session identifiers, callback tokens, stored answers, and
+  process arguments. SQLite triggers produce a monotonically ordered,
+  transcript-free change ledger; JSON cursor reads and SSE support replay by
+  query cursor or `Last-Event-ID`, live delivery after connection, and explicit
+  reset after retained-history gaps or database replacement. Browser mutations
+  require loopback, exact same-origin, CSRF, bounded runtime-validated bodies,
+  and an idempotency operation ID. They use the same expiry, identity, option,
+  and first-writer authority as Telegram and terminal answers. Tests cover
+  missing/wrong credentials, cross-origin requests, absent CSRF, oversized
+  bodies, replay conflict, expired answers, safe response projection,
+  concurrent-session isolation, live/reconnected streams, credential
+  permissions, and restart cursor durability.
+- FXO-1067 is green locally. The daemon serves a no-dependency, responsive local
+  session board whose static shell contains no credential or relay data and is
+  locked down by same-origin Content Security Policy, frame denial, no-referrer,
+  and no-store headers. The bearer credential stays only in page memory.
+  Authenticated snapshots render a stable key and the same readable,
+  collision-resistant display identity as Telegram, plus harness, repository,
+  branch, real lane state, last activity, and exact attention counts. Required
+  state/repository/harness/search filters compose, while the global attention
+  queue is expiry ordered and retains repository, branch, harness, and session
+  identity. Deterministic reconciliation deduplicates sessions and requests,
+  ignores regressive cursors, and remains stable across sixty interleaved
+  sessions. The UI consumes the resumable authenticated stream through fetch,
+  coalesces refreshes, and distinguishes empty, disconnected, reconnecting,
+  credential-rotated, and heartbeat-stale states without presenting cached data
+  as live. Source and compiled distributions both carry the four fixed static
+  assets; no frontend runtime dependency was added.
+- FXO-1069 is green locally. A bounded per-session timeline unions retained hook
+  events, delivery attempts and retries, request creation/resolution, Telegram
+  card actions, and harness continuation state without copying answers,
+  transcripts, error messages, process arguments, or draft content. Event and
+  request correlation IDs connect the full chain, and deterministic ordering is
+  stable at timestamp ties. Default detail remains transcript-free; a distinct
+  operator click calls the explicit reveal route for a secret-redacted
+  2,000-character assistant excerpt. The UI renders both paths as text rather
+  than markup. Diagnostic export returns at most 500 retained records and
+  re-applies current secret and machine-path redaction to legacy rows before
+  download. Retention tests prove pruned terminal sessions lose their timeline
+  rather than presenting invented history, while the living API/onboarding guide
+  maps event, request, diagnostic, and session retention to visible empty
+  states.
+- FXO-1070 is green locally. The local companion projects free-text,
+  single-select, bounded multi-select, and ordered mixed question-set forms from
+  the retained provider-neutral contracts. Browser submissions carry the stable
+  session key, use runtime-validated typed responses, canonicalize selection
+  order, validate `agent-interaction-answer.v1`, and resolve the same immutable
+  SQLite request row as Telegram and terminal answers. Page-memory-only drafts
+  survive live re-renders without entering browser storage. Request change
+  events remove stale controls and name the winning surface without returning
+  its private answer. Continue, Details, Mute, and End target an exact retained
+  event; unavailable actions stay disabled, End never claims to terminate the
+  harness, and session command operation IDs reject changed replays. Browser
+  wins update the Telegram card through the interactive transport; failed edits
+  preserve the committed action and create a durable sanitized diagnostic. Tests
+  cover typed contract projection, invalid/bounded answers, canonical
+  multi-selects, ordered question sets, Telegram-first races, operation replay
+  conflict, stale events, cross-session rejection, and losing-surface updates.
+- FXO-1071 is green locally. `web-demo` starts a separate fake-transport daemon
+  with four concurrent sanitized sessions and no external credential or
+  assistant transcript. The packaged console now negotiates an explicit API and
+  asset version; the compiled-output gate verifies all five assets and both
+  mutation schemas. A real headless Chromium suite proves page-memory draft
+  recovery through SSE reconnect and complete daemon restart, a stale browser
+  form after a Telegram-first answer, and a synchronized fake-Telegram/browser
+  race with one durable winner. `AGENT_RELAY_WEB_ENABLED=0` and
+  `daemon --no-web` create no web credential and return diagnosed 404s for all
+  UI/web routes while health, hook APIs, SQLite, and fake-Telegram delivery
+  continue. CI installs Chromium using Playwright's supported command and runs
+  the browser proof with one worker. The living onboarding/API guides cover
+  development and packaged startup, demo use, disablement, compatibility, and
+  security/privacy defaults.
+- The clean-commit verification gate exposed and now covers a fallback-spool
+  replay race: a completed worker may remove its processing segment after a
+  second worker's directory scan. A missing segment during stale-claim
+  inspection is treated as a successful concurrent handoff, while all other
+  filesystem errors remain visible.
 - A compiled-distribution canary in an isolated temporary home proved dry-run
   install, install, healthy doctor output against all three local harness
   versions, idempotent reinstall, and ownership-safe uninstall without touching
@@ -101,14 +361,68 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- `pnpm check` passes all 107 tests across 18 test files, including the
-  SQLite-backed daemon, retries/dead letters, malformed ingress, hook fallback
-  privacy, inline and late continuation, owned-child exit observation, stale
-  answer rejection, concurrent-session isolation, installation rollback,
-  retention, log rotation, Telegram poll/webhook intake, and the activation
-  canary. The check also validates formatting, lint, types, capability drift,
-  and compiled package exports. `pnpm audit --prod` reports no known
+- The implementation gates pass all 251 unit/integration tests across 35 test
+  files plus 3 Chromium end-to-end scenarios, including the SQLite-backed
+  daemon, retries/dead letters, malformed ingress, hook fallback privacy, inline
+  and late continuation, owned-child exit observation, stale answer rejection,
+  concurrent-session isolation, installation rollback, retention, log rotation,
+  Telegram poll/webhook intake, and the activation canary. The check also
+  validates formatting, lint, types, capability drift, compiled package exports,
+  static/API compatibility, web disablement, reconnect, stale forms, daemon
+  restart, and cross-surface races. The exact committed tree is verified
+  separately in a clean worktree. `pnpm audit --prod` reports no known
   vulnerabilities.
+
+## Phase 1 reproduction
+
+Run the deterministic acceptance matrix without credentials:
+
+```sh
+corepack pnpm install --frozen-lockfile
+pnpm check
+pnpm audit --prod
+```
+
+Run the credentialed boundary from a private, mode-`0600`, gitignored
+`.env.activation` prepared as described in `docs/onboarding.md`:
+
+```sh
+pnpm build
+set -a
+. ./.env.activation
+set +a
+
+node apps/relay/dist/cli.js doctor
+node apps/relay/dist/cli.js daemon
+```
+
+In a second terminal with the same environment, launch one bounded read-only
+Codex continuation and keep the process open:
+
+```sh
+~/.agent-relay/bin/agent-relay run codex \
+  --harness-version "$(codex --version)" \
+  --max-resumes 1 \
+  --resume-wait-ms 3600000 \
+  -- exec --sandbox read-only \
+  "Return a short sentinel and stop. If resumed, return the operator answer and stop."
+```
+
+In the new session topic, either tap **Continue** or type one direct answer
+while exactly one request is open. Confirm the resumed child exits zero, then
+inspect only state metadata:
+
+```sh
+sqlite3 "$HOME/.agent-relay/relay.sqlite" \
+  "SELECT request_kind,state,resolved_by,COUNT(*) FROM pending_requests GROUP BY request_kind,state,resolved_by;"
+sqlite3 "$HOME/.agent-relay/relay.sqlite" \
+  "SELECT state,exit_code,COUNT(*) FROM resume_commands GROUP BY state,exit_code;"
+```
+
+The live proof is valid only when the Telegram topic/card appears, the
+supervisor reports `resume.succeeded`, and SQLite shows a Telegram-resolved
+request plus a succeeded exit-zero resume. The daemon and supervisor logs must
+also remain free of silent delivery, hook, or correlation failures.
 
 ## Assumptions and open risks
 
@@ -120,12 +434,13 @@
   processes launched through `agent-relay run`; the protocol rejects a
   `process.exited` event without owned-child evidence.
 - Telegram's Bot API has no caller-supplied idempotency key. SQLite prevents
-  normal duplicates, but a process crash after Telegram accepts a message and
-  before the receipt commits remains an at-least-once duplicate window.
-- The real Telegram activation proves one private-chat send/reply path. Rate
-  limiting, network retries, webhook intake, and shutdown remain proven through
-  deterministic HTTP fixtures rather than induced failures against the live
-  account.
+  normal duplicate messages and concurrent topic creators, but a process crash
+  or ambiguous timeout after Telegram accepts a message or topic and before the
+  receipt commits remains an at-least-once duplicate window.
+- The real Telegram activation proves private-topic creation and direct
+  private-chat interaction on the tested account. Rate limiting, network
+  retries, webhook intake, and shutdown remain proven through deterministic HTTP
+  fixtures rather than induced failures against the live account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
@@ -139,10 +454,12 @@
 - Activation values remain only in a mode-`0600`, gitignored local environment
   file. Credential values, numeric account identifiers, private messages,
   harness session IDs, and machine-specific paths are not recorded in git.
+- Browser end-to-end coverage currently uses current Chromium with the fake
+  Telegram transport. Real Telegram activation remains proven separately, and
+  Safari/Firefox compatibility is not yet claimed.
 
 ## Next action
 
-The requested MVP milestones and all three authenticated CLI stop/resume
-canaries are complete. Before enabling Cursor permission automation, capture and
-sanitize its current live permission payload; until then, keep that hook
-disabled by default.
+The current multi-session operator MVP is complete. Do not begin the deferred
+Phase 4 hosted, Mini App, or multi-operator work until product demand, privacy,
+threat-model, cost, and hosting evidence support an explicit go decision.

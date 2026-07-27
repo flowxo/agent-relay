@@ -1,21 +1,39 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
 
 import {
   AgentAttentionEventV1Schema,
+  encodeInteractionAnswer,
+  InteractionPresentationModeSchema,
+  InteractionQuestionAnswerSchema,
+  ProjectRefSchema,
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
+  sha256,
+  validateInteractionAnswer,
 } from "@agent-relay/protocol";
 import type {
   AgentAttentionEventV1,
+  EventType,
   Harness,
+  InteractionPresentationMode,
+  InteractionQuestion,
+  InteractionQuestionAnswer,
+  OperatorInteractionRequestV1,
   RelayDiagnosticV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
   Surface,
 } from "@agent-relay/protocol";
+
+import {
+  CardActionKindSchema,
+  CardActionTokenSchema,
+  type CardActionKind,
+} from "./card-action.js";
 
 export type DeliveryStatus =
   "queued" | "retry" | "delivering" | "delivered" | "dead_letter";
@@ -50,14 +68,126 @@ export interface SessionRecord {
   surface: Surface;
   harnessVersion: string;
   sessionId: string;
+  project: AgentAttentionEventV1["project"];
   state: "active" | "waiting" | "stopped" | "suspected_stalled" | "exited";
+  lastEventType?: EventType;
   lastSeenAt: string;
   lastSequence: number;
 }
 
+export type SessionLaneState =
+  "running" | "waiting" | "muted" | "crashed" | "ended" | "stale";
+
+export type TopicProvisioningStatus =
+  "pending" | "creating" | "ready" | "retry" | "failed";
+
+export interface SessionTopicRecord {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+  transportName: string;
+  transportScope: string;
+  provider: Harness;
+  repository: string;
+  branch?: string;
+  shortSessionId: string;
+  lifecycleState: SessionRecord["state"];
+  laneState: SessionLaneState;
+  topicName: string;
+  topicId?: string;
+  provisioningStatus: TopicProvisioningStatus;
+  attemptCount: number;
+  nextAttemptAt: string;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CardActionRecord {
+  token: string;
+  eventId: string;
+  kind: CardActionKind;
+  createdAt: string;
+  state: "open" | "claimed" | "succeeded" | "failed";
+  updateId?: number;
+  claimedAt?: string;
+  finishedAt?: string;
+  outcome?: string;
+  errorMessage?: string;
+}
+
+export interface NotificationGroupRecord {
+  anchorEventId: string;
+  eventCount: number;
+  latestOccurredAt: string;
+  transportName: string;
+  transportMessageId: string;
+  topicId?: string;
+}
+
+export interface NotificationDetails {
+  events: AgentAttentionEventV1[];
+  totalCount: number;
+}
+
+export interface SessionControlRecord {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+  mutedAt?: string;
+  endedAt?: string;
+  updatedAt: string;
+}
+
+export type CardActionExecutionResult =
+  | { outcome: "not_found" | "kind_mismatch"; action?: CardActionRecord }
+  | { outcome: "blocked"; action: CardActionRecord; reason: string }
+  | {
+      outcome: "claimed" | "succeeded" | "duplicate" | "stale";
+      action: CardActionRecord;
+    };
+
+export type BrowserSessionActionOutcome =
+  CardActionExecutionResult["outcome"] | "replay_conflict";
+
+export interface BrowserSessionActionResult {
+  outcome: BrowserSessionActionOutcome;
+  replayed: boolean;
+  action?: CardActionRecord;
+  reason?: string;
+}
+
+export interface ClaimSessionTopicInput {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+  transportName: string;
+  transportScope: string;
+  provider: Harness;
+  repository: string;
+  branch?: string;
+  shortSessionId: string;
+  lifecycleState: SessionRecord["state"];
+  topicName: string;
+  now: string;
+}
+
+export type SessionTopicClaimResult =
+  | { outcome: "ready"; topic: SessionTopicRecord }
+  | {
+      outcome: "claimed";
+      topic: SessionTopicRecord;
+      attemptNumber: number;
+    }
+  | { outcome: "busy"; topic: SessionTopicRecord }
+  | { outcome: "deferred"; topic: SessionTopicRecord }
+  | { outcome: "failed"; topic: SessionTopicRecord };
+
 export interface StoreStatus {
   events: Record<DeliveryStatus, number>;
   sessions: Record<SessionRecord["state"], number>;
+  topics: Record<TopicProvisioningStatus, number>;
   resumeCommands: Record<ResumeCommandState, number>;
   diagnostics: Record<RelayDiagnosticV1["level"], number> & { total: number };
   pendingDeliveryCount: number;
@@ -75,18 +205,56 @@ export interface RetentionCutoffs {
   diagnosticBefore: string;
   telegramUpdateBefore: string;
   sessionBefore: string;
+  webChangeBefore: string;
+  browserCommandBefore: string;
   limit?: number;
 }
 
 export interface RetentionResult {
   requestsExpired: number;
   pendingRequests: number;
+  interactionDrafts: number;
+  questionSetDrafts: number;
   resumeCommands: number;
   events: number;
   deliveryAttempts: number;
   diagnostics: number;
   telegramUpdates: number;
   sessions: number;
+  webChanges: number;
+  browserCommands: number;
+}
+
+export type WebChangeKind =
+  "session" | "event" | "request" | "diagnostic" | "session-control";
+
+export interface WebChangeRecord {
+  cursor: number;
+  kind: WebChangeKind;
+  action: "insert" | "update" | "delete";
+  entityId: string;
+  sessionId?: string;
+  occurredAt: string;
+  payload: Record<string, unknown>;
+}
+
+export interface WebChangeBounds {
+  firstCursor?: number;
+  lastCursor?: number;
+}
+
+export type SessionTimelineKind =
+  "hook-event" | "delivery" | "request" | "operator-action" | "continuation";
+
+export interface SessionTimelineRecord {
+  id: string;
+  kind: SessionTimelineKind;
+  at: string;
+  status: string;
+  label: string;
+  eventId?: string;
+  correlationId?: string;
+  detailCode?: string;
 }
 
 export type PendingRequestState =
@@ -106,15 +274,189 @@ export interface PendingRequestRecord {
   sessionId: string;
   turnId?: string;
   state: PendingRequestState;
-  requestKind: "confirm" | "select" | "input" | "permission" | "continuation";
+  requestKind:
+    | "confirm"
+    | "select"
+    | "multi-select"
+    | "question-set"
+    | "input"
+    | "permission"
+    | "continuation";
   question: string;
   expiresAt: string;
-  resolvedBy?: "terminal" | "telegram";
+  resolvedBy?: "terminal" | "telegram" | "web";
   answer?: string;
   resolvedAt?: string;
   transportMessageId?: string;
   options: PendingOption[];
 }
+
+export type MultiSelectDraftState =
+  | "pending"
+  | "drafting"
+  | "submitted"
+  | "cancelled"
+  | "expired"
+  | "superseded"
+  | "failed";
+
+export interface MultiSelectDraftRecord {
+  correlationId: string;
+  state: MultiSelectDraftState;
+  minSelections: number;
+  maxSelections: number;
+  submitToken: string;
+  cancelToken: string;
+  revision: number;
+  selectedOptionIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MultiSelectDraftMutationResult =
+  | {
+      outcome: "updated" | "unchanged";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "selection_limit" | "stale" | "failed";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "expired";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: MultiSelectDraftRecord;
+    };
+
+export type MultiSelectSubmitResult =
+  | {
+      outcome: "answered" | "cancelled";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome:
+        "invalid_selection" | "duplicate" | "expired" | "stale" | "failed";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: MultiSelectDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: MultiSelectDraftRecord;
+    };
+
+export type QuestionSetDraftState =
+  | "pending"
+  | "drafting"
+  | "submitted"
+  | "cancelled"
+  | "expired"
+  | "superseded"
+  | "failed";
+
+export interface QuestionSetDraftRecord {
+  correlationId: string;
+  state: QuestionSetDraftState;
+  currentIndex: number;
+  revision: number;
+  presentationMode?: InteractionPresentationMode;
+  submitToken: string;
+  cancelToken: string;
+  backToken?: string;
+  nextToken?: string;
+  interaction: OperatorInteractionRequestV1;
+  answers: InteractionQuestionAnswer[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type QuestionSetMutationResult =
+  | {
+      outcome: "updated" | "unchanged" | "moved" | "cancelled" | "answered";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome:
+        | "incomplete"
+        | "invalid_transition"
+        | "selection_limit"
+        | "duplicate"
+        | "expired"
+        | "stale"
+        | "failed"
+        | "unsupported_question";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: QuestionSetDraftRecord;
+    };
+
+export type QuestionSetTextRejectionReason =
+  "empty" | "too_short" | "too_long" | "multiline";
+
+export type QuestionSetTextMutationResult =
+  | {
+      outcome: "updated" | "unchanged";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "invalid_text";
+      reason: QuestionSetTextRejectionReason;
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome:
+        "invalid_transition" | "duplicate" | "expired" | "stale" | "failed";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "identity_mismatch";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    }
+  | {
+      outcome: "not_found";
+      request?: PendingRequestRecord;
+      draft?: QuestionSetDraftRecord;
+    };
+
+export type QuestionSetNumberedChoiceMutationResult =
+  | QuestionSetMutationResult
+  | {
+      outcome: "invalid_choice";
+      request: PendingRequestRecord;
+      draft: QuestionSetDraftRecord;
+    };
 
 export type ResolutionOutcome =
   | "answered"
@@ -130,10 +472,17 @@ export interface ResolutionResult {
   request?: PendingRequestRecord;
 }
 
+export type NumberedChoiceResolutionResult =
+  | ResolutionResult
+  | {
+      outcome: "invalid_choice";
+      request: PendingRequestRecord;
+    };
+
 export interface ResolveRequestInput {
   correlationId: string;
   answer: string;
-  resolvedBy: "terminal" | "telegram";
+  resolvedBy: "terminal" | "telegram" | "web";
   now: string;
   expected?: {
     machineId: string;
@@ -142,6 +491,73 @@ export interface ResolveRequestInput {
     turnId?: string;
   };
 }
+
+export type BrowserResolutionOutcome =
+  | ResolutionOutcome
+  | "invalid_answer"
+  | "unsupported_request"
+  | "replay_conflict";
+
+export type BrowserRequestResponse =
+  | {
+      kind: "text";
+      text: string;
+    }
+  | {
+      kind: "option";
+      optionId: string;
+    }
+  | {
+      kind: "multi-select";
+      optionIds: string[];
+    }
+  | {
+      kind: "question-set";
+      answers: InteractionQuestionAnswer[];
+    };
+
+export interface BrowserResolutionResult {
+  outcome: BrowserResolutionOutcome;
+  replayed: boolean;
+  request?: PendingRequestRecord;
+}
+
+export type TopicTextCorrelationResult =
+  | {
+      outcome: "topic_not_found";
+      eligibleCount: 0;
+    }
+  | {
+      outcome: "no_eligible_request";
+      eligibleCount: 0;
+    }
+  | {
+      outcome: "ambiguous_request";
+      eligibleCount: number;
+    }
+  | {
+      outcome: "invalid_text";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+    }
+  | {
+      outcome: "resolved";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+      resolution: NumberedChoiceResolutionResult;
+    }
+  | {
+      outcome: "drafted";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+      mutation: QuestionSetTextMutationResult;
+    }
+  | {
+      outcome: "choice_drafted";
+      eligibleCount: 1;
+      request: PendingRequestRecord;
+      mutation: QuestionSetNumberedChoiceMutationResult;
+    };
 
 export type ResumeCommandState =
   "claimed" | "running" | "succeeded" | "failed" | "unsupported";
@@ -205,9 +621,55 @@ interface SessionRow {
   surface: Surface;
   harness_version: string;
   session_id: string;
+  project_json: string;
   state: SessionRecord["state"];
+  last_event_type: EventType | null;
   last_seen_at: string;
   last_sequence: number;
+}
+
+interface SessionTopicRow {
+  machine_id: string;
+  harness: Harness;
+  session_id: string;
+  transport_name: string;
+  transport_scope: string;
+  provider: Harness;
+  repository: string;
+  branch: string | null;
+  short_session_id: string;
+  lifecycle_state: SessionRecord["state"];
+  topic_name: string;
+  topic_id: string | null;
+  provisioning_status: TopicProvisioningStatus;
+  attempt_count: number;
+  next_attempt_at: string;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CardActionRow {
+  action_token: string;
+  event_id: string;
+  action_kind: CardActionKind;
+  created_at: string;
+  execution_state: "claimed" | "succeeded" | "failed" | null;
+  update_id: number | null;
+  claimed_at: string | null;
+  finished_at: string | null;
+  outcome: string | null;
+  error_message: string | null;
+}
+
+interface SessionControlRow {
+  machine_id: string;
+  harness: Harness;
+  session_id: string;
+  muted_at: string | null;
+  ended_at: string | null;
+  updated_at: string;
 }
 
 interface CountRow {
@@ -226,7 +688,7 @@ interface PendingRow {
   request_kind: PendingRequestRecord["requestKind"];
   question: string;
   expires_at: string;
-  resolved_by: "terminal" | "telegram" | null;
+  resolved_by: "terminal" | "telegram" | "web" | null;
   answer: string | null;
   resolved_at: string | null;
   transport_message_id: string | null;
@@ -236,6 +698,38 @@ interface PendingOptionRow {
   option_token: string;
   option_id: string;
   label: string;
+}
+
+interface MultiSelectDraftRow {
+  correlation_id: string;
+  state: MultiSelectDraftState;
+  min_selections: number;
+  max_selections: number;
+  submit_token: string;
+  cancel_token: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface QuestionSetDraftRow {
+  correlation_id: string;
+  state: QuestionSetDraftState;
+  current_index: number;
+  revision: number;
+  presentation_mode: InteractionPresentationMode | null;
+  submit_token: string;
+  cancel_token: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface QuestionSetStepRow {
+  correlation_id: string;
+  question_id: string;
+  ordinal: number;
+  next_token: string | null;
+  back_token: string | null;
 }
 
 interface ResumeCommandRow {
@@ -270,6 +764,27 @@ interface ResumeCandidateRow {
   state: PendingRequestState;
   expires_at: string;
   capabilities_json: string;
+}
+
+interface WebChangeRow {
+  change_id: number;
+  kind: WebChangeKind;
+  action: WebChangeRecord["action"];
+  entity_id: string;
+  session_id: string | null;
+  occurred_at: string;
+  payload_json: string;
+}
+
+interface SessionTimelineRow {
+  id: string;
+  kind: SessionTimelineKind;
+  at: string;
+  status: string;
+  label: string;
+  event_id: string | null;
+  correlation_id: string | null;
+  detail_code: string | null;
 }
 
 function stateForEvent(
@@ -322,6 +837,15 @@ function collisionComparable(payloadJson: string): string {
           request: {
             ...event.request,
             expiresAt: "<retry-stable>",
+            ...(event.request.interaction === undefined
+              ? {}
+              : {
+                  interaction: {
+                    ...event.request.interaction,
+                    createdAt: "<retry-stable>",
+                    expiresAt: "<retry-stable>",
+                  },
+                }),
           },
         }),
   });
@@ -333,8 +857,25 @@ function defaultOptions(
   if (request === undefined) {
     return [];
   }
-  if (request.kind === "select") {
+  if (request.kind === "select" || request.kind === "multi-select") {
     return request.options ?? [];
+  }
+  if (request.kind === "question-set") {
+    return (request.interaction?.questions ?? []).flatMap((question) => {
+      if (question.kind === "confirm") {
+        return [
+          { id: question.confirm.optionId, label: question.confirm.label },
+          { id: question.decline.optionId, label: question.decline.label },
+        ];
+      }
+      return question.kind === "single-select" ||
+        question.kind === "multi-select"
+        ? question.options.map((option) => ({
+            id: option.optionId,
+            label: option.label,
+          }))
+        : [];
+    });
   }
   if (request.kind === "confirm") {
     return [
@@ -378,11 +919,47 @@ export class RelayStore {
         project_json TEXT NOT NULL,
         capabilities_json TEXT NOT NULL,
         state TEXT NOT NULL,
+        last_event_type TEXT,
         last_seen_at TEXT NOT NULL,
         last_sequence INTEGER NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (machine_id, harness, session_id)
       );
+
+      CREATE TABLE IF NOT EXISTS session_topics (
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        transport_name TEXT NOT NULL,
+        transport_scope TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        branch TEXT,
+        short_session_id TEXT NOT NULL,
+        lifecycle_state TEXT NOT NULL,
+        topic_name TEXT NOT NULL,
+        topic_id TEXT,
+        provisioning_status TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        lease_started_at TEXT,
+        last_error_code TEXT,
+        last_error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (
+          machine_id, harness, session_id, transport_name, transport_scope
+        ),
+        UNIQUE (transport_name, transport_scope, topic_id),
+        FOREIGN KEY (machine_id, harness, session_id)
+          REFERENCES sessions(machine_id, harness, session_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS session_topics_status_idx
+        ON session_topics(
+          provisioning_status, next_attempt_at, updated_at
+        );
 
       CREATE TABLE IF NOT EXISTS events (
         event_id TEXT PRIMARY KEY,
@@ -408,6 +985,40 @@ export class RelayStore {
       CREATE INDEX IF NOT EXISTS events_due_idx
         ON events(status, next_attempt_at, created_at);
 
+      CREATE TABLE IF NOT EXISTS card_actions (
+        action_token TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        action_kind TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(event_id, action_kind),
+        FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS card_action_executions (
+        action_token TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        update_id INTEGER NOT NULL,
+        claimed_at TEXT NOT NULL,
+        finished_at TEXT,
+        outcome TEXT,
+        error_message TEXT,
+        FOREIGN KEY (action_token)
+          REFERENCES card_actions(action_token) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS session_controls (
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        muted_at TEXT,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (machine_id, harness, session_id),
+        FOREIGN KEY (machine_id, harness, session_id)
+          REFERENCES sessions(machine_id, harness, session_id)
+          ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS delivery_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id TEXT NOT NULL,
@@ -419,6 +1030,38 @@ export class RelayStore {
         error_message TEXT,
         UNIQUE(event_id, attempt_number),
         FOREIGN KEY (event_id) REFERENCES events(event_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS notification_groups (
+        anchor_event_id TEXT PRIMARY KEY,
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        event_count INTEGER NOT NULL,
+        latest_occurred_at TEXT NOT NULL,
+        transport_name TEXT NOT NULL,
+        transport_message_id TEXT NOT NULL,
+        topic_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (anchor_event_id) REFERENCES events(event_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS notification_groups_candidate_idx
+        ON notification_groups(
+          machine_id, harness, session_id, event_type, fingerprint, updated_at
+        );
+
+      CREATE TABLE IF NOT EXISTS notification_group_members (
+        event_id TEXT PRIMARY KEY,
+        anchor_event_id TEXT NOT NULL,
+        joined_at TEXT NOT NULL,
+        FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE,
+        FOREIGN KEY (anchor_event_id)
+          REFERENCES notification_groups(anchor_event_id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS pending_requests (
@@ -448,6 +1091,66 @@ export class RelayStore {
         UNIQUE(correlation_id, option_id),
         FOREIGN KEY (correlation_id)
           REFERENCES pending_requests(correlation_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS interaction_drafts (
+        correlation_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        min_selections INTEGER NOT NULL,
+        max_selections INTEGER NOT NULL,
+        submit_token TEXT NOT NULL UNIQUE,
+        cancel_token TEXT NOT NULL UNIQUE,
+        revision INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (correlation_id)
+          REFERENCES pending_requests(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS interaction_draft_options (
+        correlation_id TEXT NOT NULL,
+        option_id TEXT NOT NULL,
+        selected_at TEXT NOT NULL,
+        PRIMARY KEY (correlation_id, option_id),
+        FOREIGN KEY (correlation_id)
+          REFERENCES interaction_drafts(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS question_set_drafts (
+        correlation_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        current_index INTEGER NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 0,
+        presentation_mode TEXT,
+        submit_token TEXT NOT NULL UNIQUE,
+        cancel_token TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (correlation_id)
+          REFERENCES pending_requests(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS question_set_steps (
+        correlation_id TEXT NOT NULL,
+        question_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        next_token TEXT UNIQUE,
+        back_token TEXT UNIQUE,
+        PRIMARY KEY (correlation_id, question_id),
+        UNIQUE (correlation_id, ordinal),
+        FOREIGN KEY (correlation_id)
+          REFERENCES question_set_drafts(correlation_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS question_set_answers (
+        correlation_id TEXT NOT NULL,
+        question_id TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (correlation_id, question_id),
+        FOREIGN KEY (correlation_id, question_id)
+          REFERENCES question_set_steps(correlation_id, question_id)
+          ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS telegram_updates (
@@ -493,7 +1196,279 @@ export class RelayStore {
 
       CREATE INDEX IF NOT EXISTS diagnostics_recorded_idx
         ON diagnostics(recorded_at, diagnostic_id);
+
+      CREATE TABLE IF NOT EXISTS browser_commands (
+        operation_id TEXT PRIMARY KEY,
+        correlation_id TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS browser_commands_created_idx
+        ON browser_commands(created_at, operation_id);
+
+      CREATE TABLE IF NOT EXISTS web_changes (
+        change_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        session_id TEXT,
+        occurred_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS web_changes_cursor_idx
+        ON web_changes(change_id);
+
+      CREATE TRIGGER IF NOT EXISTS web_sessions_insert
+      AFTER INSERT ON sessions
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session', 'insert',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'harness', NEW.harness,
+            'surface', NEW.surface,
+            'state', NEW.state,
+            'lastSeenAt', NEW.last_seen_at,
+            'lastSequence', NEW.last_sequence
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_sessions_update
+      AFTER UPDATE ON sessions
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session', 'update',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'harness', NEW.harness,
+            'surface', NEW.surface,
+            'state', NEW.state,
+            'lastEventType', NEW.last_event_type,
+            'lastSeenAt', NEW.last_seen_at,
+            'lastSequence', NEW.last_sequence
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_sessions_delete
+      AFTER DELETE ON sessions
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session', 'delete',
+          OLD.machine_id || ':' || OLD.harness || ':' || OLD.session_id,
+          OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('harness', OLD.harness)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_events_insert
+      AFTER INSERT ON events
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'event', 'insert', NEW.event_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('type', NEW.type, 'status', NEW.status)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_events_update
+      AFTER UPDATE ON events
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'event', 'update', NEW.event_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('type', NEW.type, 'status', NEW.status)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_events_delete
+      AFTER DELETE ON events
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'event', 'delete', OLD.event_id, OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('type', OLD.type, 'status', OLD.status)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_requests_insert
+      AFTER INSERT ON pending_requests
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'request', 'insert', NEW.correlation_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'eventId', NEW.event_id,
+            'requestKind', NEW.request_kind,
+            'state', NEW.state,
+            'expiresAt', NEW.expires_at
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_requests_update
+      AFTER UPDATE ON pending_requests
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'request', 'update', NEW.correlation_id, NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'eventId', NEW.event_id,
+            'requestKind', NEW.request_kind,
+            'state', NEW.state,
+            'expiresAt', NEW.expires_at,
+            'resolvedBy', NEW.resolved_by
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_requests_delete
+      AFTER DELETE ON pending_requests
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'request', 'delete', OLD.correlation_id, OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'eventId', OLD.event_id,
+            'requestKind', OLD.request_kind,
+            'state', OLD.state
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_diagnostics_insert
+      AFTER INSERT ON diagnostics
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, occurred_at, payload_json
+        ) VALUES (
+          'diagnostic', 'insert', NEW.diagnostic_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('level', NEW.level, 'code', NEW.code)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_diagnostics_delete
+      AFTER DELETE ON diagnostics
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, occurred_at, payload_json
+        ) VALUES (
+          'diagnostic', 'delete', OLD.diagnostic_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object('level', OLD.level, 'code', OLD.code)
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_controls_insert
+      AFTER INSERT ON session_controls
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session-control', 'insert',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'muted', NEW.muted_at IS NOT NULL,
+            'ended', NEW.ended_at IS NOT NULL
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_controls_update
+      AFTER UPDATE ON session_controls
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session-control', 'update',
+          NEW.machine_id || ':' || NEW.harness || ':' || NEW.session_id,
+          NEW.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object(
+            'muted', NEW.muted_at IS NOT NULL,
+            'ended', NEW.ended_at IS NOT NULL
+          )
+        );
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS web_controls_delete
+      AFTER DELETE ON session_controls
+      BEGIN
+        INSERT INTO web_changes (
+          kind, action, entity_id, session_id, occurred_at, payload_json
+        ) VALUES (
+          'session-control', 'delete',
+          OLD.machine_id || ':' || OLD.harness || ':' || OLD.session_id,
+          OLD.session_id,
+          strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+          json_object()
+        );
+      END;
     `);
+    const sessionColumns = this.database
+      .prepare("PRAGMA table_info(sessions)")
+      .all() as Array<{ name: string }>;
+    if (!sessionColumns.some((column) => column.name === "last_event_type")) {
+      this.database.exec(
+        "ALTER TABLE sessions ADD COLUMN last_event_type TEXT",
+      );
+      this.database.exec(`
+        UPDATE sessions
+        SET last_event_type = (
+          SELECT events.type
+          FROM events
+          WHERE events.machine_id = sessions.machine_id
+            AND events.harness = sessions.harness
+            AND events.session_id = sessions.session_id
+          ORDER BY
+            CAST(json_extract(events.payload_json, '$.sequence') AS INTEGER)
+              DESC,
+            events.created_at DESC,
+            events.event_id DESC
+          LIMIT 1
+        )
+      `);
+    }
+    const questionSetColumns = this.database
+      .prepare("PRAGMA table_info(question_set_drafts)")
+      .all() as Array<{ name: string }>;
+    if (
+      !questionSetColumns.some((column) => column.name === "presentation_mode")
+    ) {
+      this.database.exec(
+        "ALTER TABLE question_set_drafts ADD COLUMN presentation_mode TEXT",
+      );
+    }
   }
 
   public close(): void {
@@ -533,6 +1508,508 @@ export class RelayStore {
         projectJson: JSON.stringify(session.project),
         capabilitiesJson: JSON.stringify(session.capabilities),
       });
+  }
+
+  public getSessionLaneState(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): SessionLaneState {
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          sessions.state,
+          sessions.last_event_type,
+          controls.muted_at,
+          controls.ended_at
+        FROM sessions
+        LEFT JOIN session_controls AS controls
+          ON controls.machine_id = sessions.machine_id
+          AND controls.harness = sessions.harness
+          AND controls.session_id = sessions.session_id
+        WHERE sessions.machine_id = @machineId
+          AND sessions.harness = @harness
+          AND sessions.session_id = @sessionId
+      `,
+      )
+      .get(input) as
+      | {
+          state: SessionRecord["state"];
+          last_event_type: EventType | null;
+          muted_at: string | null;
+          ended_at: string | null;
+        }
+      | undefined;
+    if (row === undefined) {
+      throw new Error("session topic references an unknown session");
+    }
+    if (row.ended_at !== null || row.last_event_type === "session.ended") {
+      return "ended";
+    }
+    if (
+      row.state === "stopped" ||
+      row.last_event_type === "turn.failed" ||
+      row.last_event_type === "process.exited"
+    ) {
+      return "crashed";
+    }
+    if (
+      row.state === "suspected_stalled" ||
+      row.last_event_type === "process.stale"
+    ) {
+      return "stale";
+    }
+    if (row.muted_at !== null) {
+      return "muted";
+    }
+    return row.state === "waiting" ? "waiting" : "running";
+  }
+
+  private topicFromRow(row: SessionTopicRow): SessionTopicRecord {
+    return {
+      machineId: row.machine_id,
+      harness: row.harness,
+      sessionId: row.session_id,
+      transportName: row.transport_name,
+      transportScope: row.transport_scope,
+      provider: row.provider,
+      repository: row.repository,
+      ...(row.branch === null ? {} : { branch: row.branch }),
+      shortSessionId: row.short_session_id,
+      lifecycleState: row.lifecycle_state,
+      laneState: this.getSessionLaneState({
+        machineId: row.machine_id,
+        harness: row.harness,
+        sessionId: row.session_id,
+      }),
+      topicName: row.topic_name,
+      ...(row.topic_id === null ? {} : { topicId: row.topic_id }),
+      provisioningStatus: row.provisioning_status,
+      attemptCount: row.attempt_count,
+      nextAttemptAt: row.next_attempt_at,
+      ...(row.last_error_code === null
+        ? {}
+        : { lastErrorCode: row.last_error_code }),
+      ...(row.last_error_message === null
+        ? {}
+        : { lastErrorMessage: row.last_error_message }),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private getSessionTopicRow(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+  }): SessionTopicRow | undefined {
+    return this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, harness, session_id, transport_name, transport_scope,
+          provider, repository, branch, short_session_id, lifecycle_state,
+          topic_name, topic_id, provisioning_status, attempt_count,
+          next_attempt_at, last_error_code, last_error_message, created_at,
+          updated_at
+        FROM session_topics
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+      `,
+      )
+      .get(input) as SessionTopicRow | undefined;
+  }
+
+  public claimSessionTopic(
+    input: ClaimSessionTopicInput,
+  ): SessionTopicClaimResult {
+    assertIsoCutoff(input.now, "topic claim time");
+    if (
+      input.transportName.trim().length === 0 ||
+      input.transportScope.trim().length === 0
+    ) {
+      throw new Error("topic transport identity is required");
+    }
+    if (
+      input.repository.length < 1 ||
+      input.repository.length > 120 ||
+      input.topicName.length < 1 ||
+      [...input.topicName].length > 128
+    ) {
+      throw new Error("topic metadata is outside supported bounds");
+    }
+    return this.database.transaction((): SessionTopicClaimResult => {
+      const session = this.database
+        .prepare(
+          `
+          SELECT state
+          FROM sessions
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+        `,
+        )
+        .get(input) as { state: SessionRecord["state"] } | undefined;
+      if (session === undefined) {
+        throw new Error("cannot claim a topic for an unknown session");
+      }
+      const metadata = { ...input, lifecycleState: session.state };
+      this.database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO session_topics (
+            machine_id, harness, session_id, transport_name, transport_scope,
+            provider, repository, branch, short_session_id, lifecycle_state,
+            topic_name, provisioning_status, next_attempt_at, created_at,
+            updated_at
+          ) VALUES (
+            @machineId, @harness, @sessionId, @transportName, @transportScope,
+            @provider, @repository, @branch, @shortSessionId, @lifecycleState,
+            @topicName, 'pending', @now, @now, @now
+          )
+        `,
+        )
+        .run({
+          ...metadata,
+          branch: input.branch ?? null,
+        });
+      this.database
+        .prepare(
+          `
+          UPDATE session_topics SET
+            provider = @provider,
+            repository = @repository,
+            branch = @branch,
+            short_session_id = @shortSessionId,
+            lifecycle_state = @lifecycleState,
+            topic_name = CASE
+              WHEN provisioning_status = 'ready' THEN topic_name
+              ELSE @topicName
+            END,
+            updated_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+        `,
+        )
+        .run({
+          ...metadata,
+          branch: input.branch ?? null,
+        });
+      const currentRow = this.getSessionTopicRow(input);
+      if (currentRow === undefined) {
+        throw new Error("session topic disappeared during claim");
+      }
+      const current = this.topicFromRow(currentRow);
+      if (current.provisioningStatus === "ready") {
+        if (current.topicId === undefined) {
+          throw new Error("ready session topic is missing its topic id");
+        }
+        return { outcome: "ready", topic: current };
+      }
+      if (current.provisioningStatus === "creating") {
+        return { outcome: "busy", topic: current };
+      }
+      if (current.provisioningStatus === "failed") {
+        return { outcome: "failed", topic: current };
+      }
+      if (
+        current.provisioningStatus === "retry" &&
+        current.nextAttemptAt > input.now
+      ) {
+        return { outcome: "deferred", topic: current };
+      }
+      const update = this.database
+        .prepare(
+          `
+          UPDATE session_topics SET
+            provisioning_status = 'creating',
+            attempt_count = attempt_count + 1,
+            lease_started_at = @now,
+            last_error_code = NULL,
+            last_error_message = NULL,
+            updated_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND provisioning_status IN ('pending', 'retry')
+            AND next_attempt_at <= @now
+        `,
+        )
+        .run(input);
+      if (update.changes !== 1) {
+        const raced = this.getSessionTopicRow(input);
+        if (raced === undefined) {
+          throw new Error("session topic disappeared after claim race");
+        }
+        return { outcome: "busy", topic: this.topicFromRow(raced) };
+      }
+      const claimedRow = this.getSessionTopicRow(input);
+      if (claimedRow === undefined) {
+        throw new Error("claimed session topic disappeared");
+      }
+      const claimed = this.topicFromRow(claimedRow);
+      return {
+        outcome: "claimed",
+        topic: claimed,
+        attemptNumber: claimed.attemptCount,
+      };
+    })();
+  }
+
+  public markSessionTopicReady(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+    attemptNumber: number;
+    topicId: string;
+    now: string;
+  }): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic ready time");
+    if (input.topicId.trim().length === 0 || input.topicId.length > 128) {
+      throw new Error("topic id is outside supported bounds");
+    }
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          topic_id = @topicId,
+          provisioning_status = 'ready',
+          lease_started_at = NULL,
+          last_error_code = NULL,
+          last_error_message = NULL,
+          updated_at = @now
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND provisioning_status = 'creating'
+          AND attempt_count = @attemptNumber
+      `,
+      )
+      .run(input).changes;
+    if (changes !== 1) {
+      throw new Error("cannot complete an unclaimed session topic");
+    }
+    const row = this.getSessionTopicRow(input);
+    if (row === undefined) {
+      throw new Error("ready session topic disappeared");
+    }
+    return this.topicFromRow(row);
+  }
+
+  public markSessionTopicFailed(
+    input: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      transportName: string;
+      transportScope: string;
+      attemptNumber: number;
+      errorCode: string;
+      errorMessage: string;
+      retryable: boolean;
+      now: string;
+    },
+    policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  ): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic failure time");
+    const exhausted = input.attemptNumber >= policy.maxAttempts;
+    const provisioningStatus: TopicProvisioningStatus =
+      input.retryable && !exhausted ? "retry" : "failed";
+    const nextAttemptAt = new Date(
+      Date.parse(input.now) + retryDelay(policy, input.attemptNumber),
+    ).toISOString();
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          provisioning_status = @provisioningStatus,
+          next_attempt_at = @nextAttemptAt,
+          lease_started_at = NULL,
+          last_error_code = @errorCode,
+          last_error_message = @errorMessage,
+          updated_at = @now
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND provisioning_status = 'creating'
+          AND attempt_count = @attemptNumber
+      `,
+      )
+      .run({
+        ...input,
+        provisioningStatus,
+        nextAttemptAt,
+        errorMessage: input.errorMessage.slice(0, 2_000),
+      }).changes;
+    if (changes !== 1) {
+      throw new Error("cannot fail an unclaimed session topic");
+    }
+    const row = this.getSessionTopicRow(input);
+    if (row === undefined) {
+      throw new Error("failed session topic disappeared");
+    }
+    return this.topicFromRow(row);
+  }
+
+  public reconcileUnavailableSessionTopic(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+    errorCode: string;
+    errorMessage: string;
+    now: string;
+  }): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic reconciliation time");
+    return this.database.transaction(() => {
+      const currentRow = this.getSessionTopicRow(input);
+      if (currentRow === undefined) {
+        throw new Error("cannot reconcile an unknown session topic");
+      }
+      const current = this.topicFromRow(currentRow);
+      if (
+        current.provisioningStatus !== "ready" ||
+        current.topicId !== input.topicId
+      ) {
+        return current;
+      }
+      const changes = this.database
+        .prepare(
+          `
+          UPDATE session_topics SET
+            topic_id = NULL,
+            provisioning_status = 'retry',
+            next_attempt_at = @now,
+            lease_started_at = NULL,
+            last_error_code = @errorCode,
+            last_error_message = @errorMessage,
+            updated_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND provisioning_status = 'ready'
+            AND topic_id = @topicId
+        `,
+        )
+        .run({
+          ...input,
+          errorMessage: input.errorMessage.slice(0, 2_000),
+        }).changes;
+      if (changes !== 1) {
+        const raced = this.getSessionTopicRow(input);
+        if (raced === undefined) {
+          throw new Error("session topic disappeared during reconciliation");
+        }
+        return this.topicFromRow(raced);
+      }
+      const reconciled = this.getSessionTopicRow(input);
+      if (reconciled === undefined) {
+        throw new Error("reconciled session topic disappeared");
+      }
+      return this.topicFromRow(reconciled);
+    })();
+  }
+
+  public recoverInterruptedTopics(now: string, limit = 500): number {
+    assertIsoCutoff(now, "topic recovery time");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 5_000) {
+      throw new Error("topic recovery limit must be between 1 and 5000");
+    }
+    return this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          provisioning_status = 'retry',
+          next_attempt_at = ?,
+          lease_started_at = NULL,
+          last_error_code = 'topic-creation-interrupted',
+          last_error_message = 'daemon stopped during topic creation',
+          updated_at = ?
+        WHERE rowid IN (
+          SELECT rowid
+          FROM session_topics
+          WHERE provisioning_status = 'creating'
+          ORDER BY updated_at, rowid
+          LIMIT ?
+        )
+      `,
+      )
+      .run(now, now, limit).changes;
+  }
+
+  public getSessionTopic(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+  }): SessionTopicRecord | undefined {
+    const row = this.getSessionTopicRow(input);
+    return row === undefined ? undefined : this.topicFromRow(row);
+  }
+
+  public getSessionTopicByTopicId(input: {
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+  }): SessionTopicRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, harness, session_id, transport_name, transport_scope,
+          provider, repository, branch, short_session_id, lifecycle_state,
+          topic_name, topic_id, provisioning_status, attempt_count,
+          next_attempt_at, last_error_code, last_error_message, created_at,
+          updated_at
+        FROM session_topics
+        WHERE transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND topic_id = @topicId
+          AND provisioning_status = 'ready'
+      `,
+      )
+      .get(input) as SessionTopicRow | undefined;
+    return row === undefined ? undefined : this.topicFromRow(row);
+  }
+
+  public listSessionTopics(): SessionTopicRecord[] {
+    const rows = this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, harness, session_id, transport_name, transport_scope,
+          provider, repository, branch, short_session_id, lifecycle_state,
+          topic_name, topic_id, provisioning_status, attempt_count,
+          next_attempt_at, last_error_code, last_error_message, created_at,
+          updated_at
+        FROM session_topics
+        ORDER BY updated_at DESC, machine_id, harness, session_id
+      `,
+      )
+      .all() as SessionTopicRow[];
+    return rows.map((row) => this.topicFromRow(row));
   }
 
   public heartbeat(heartbeatInput: SessionHeartbeatV1): boolean {
@@ -582,6 +2059,10 @@ export class RelayStore {
               WHEN @sequence >= last_sequence THEN @state
               ELSE state
             END,
+            last_event_type = CASE
+              WHEN @sequence >= last_sequence THEN @type
+              ELSE last_event_type
+            END,
             last_sequence = MAX(last_sequence, @sequence),
             last_seen_at = MAX(last_seen_at, @occurredAt),
             updated_at = @occurredAt
@@ -591,6 +2072,9 @@ export class RelayStore {
         `,
         )
         .run({ ...event, state });
+      if (event.type === "session.ended") {
+        this.upsertSessionControl(event, "ended_at", event.occurredAt);
+      }
 
       const payloadJson = JSON.stringify(event);
       const result = this.database
@@ -668,6 +2152,74 @@ export class RelayStore {
             option.label,
           );
         }
+        if (event.request.kind === "multi-select") {
+          if (
+            event.request.minSelections === undefined ||
+            event.request.maxSelections === undefined
+          ) {
+            throw new Error("validated multi-select request lost its bounds");
+          }
+          this.database
+            .prepare(
+              `
+              INSERT INTO interaction_drafts (
+                correlation_id, state, min_selections, max_selections,
+                submit_token, cancel_token, revision, created_at, updated_at
+              ) VALUES (?, 'pending', ?, ?, ?, ?, 0, ?, ?)
+            `,
+            )
+            .run(
+              event.request.correlationId,
+              event.request.minSelections,
+              event.request.maxSelections,
+              `draft_submit_${randomUUID()}`,
+              `draft_cancel_${randomUUID()}`,
+              event.occurredAt,
+              event.occurredAt,
+            );
+        }
+        if (event.request.kind === "question-set") {
+          const interaction = event.request.interaction;
+          if (interaction === undefined) {
+            throw new Error(
+              "validated question-set request lost its interaction",
+            );
+          }
+          this.database
+            .prepare(
+              `
+              INSERT INTO question_set_drafts (
+                correlation_id, state, current_index, revision,
+                submit_token, cancel_token, created_at, updated_at
+              ) VALUES (?, 'pending', 0, 0, ?, ?, ?, ?)
+            `,
+            )
+            .run(
+              event.request.correlationId,
+              `wizard_submit_${randomUUID()}`,
+              `wizard_cancel_${randomUUID()}`,
+              event.occurredAt,
+              event.occurredAt,
+            );
+          const insertStep = this.database.prepare(
+            `
+            INSERT INTO question_set_steps (
+              correlation_id, question_id, ordinal, next_token, back_token
+            ) VALUES (?, ?, ?, ?, ?)
+          `,
+          );
+          for (const [index, question] of interaction.questions.entries()) {
+            insertStep.run(
+              event.request.correlationId,
+              question.questionId,
+              index,
+              index === interaction.questions.length - 1
+                ? null
+                : `wizard_next_${randomUUID()}`,
+              index === 0 ? null : `wizard_back_${randomUUID()}`,
+            );
+          }
+        }
       }
       return {
         eventId: event.eventId,
@@ -733,17 +2285,16 @@ export class RelayStore {
     })();
   }
 
-  public markDelivered(
+  private markDeliveredWithinTransaction(
     eventId: string,
     attemptNumber: number,
     transportName: string,
     messageId: string,
     now: string,
-  ): void {
-    const result = this.database.transaction(() => {
-      const update = this.database
-        .prepare(
-          `
+  ): number {
+    const update = this.database
+      .prepare(
+        `
           UPDATE events SET
             status = 'delivered',
             transport_name = ?,
@@ -754,31 +2305,336 @@ export class RelayStore {
             last_error_message = NULL
           WHERE event_id = ? AND status = 'delivering'
         `,
-        )
-        .run(transportName, messageId, now, eventId);
-      this.database
-        .prepare(
-          `
+      )
+      .run(transportName, messageId, now, eventId);
+    this.database
+      .prepare(
+        `
           UPDATE delivery_attempts SET
             status = 'delivered',
             finished_at = ?
           WHERE event_id = ? AND attempt_number = ?
         `,
-        )
-        .run(now, eventId, attemptNumber);
-      this.database
-        .prepare(
-          `
+      )
+      .run(now, eventId, attemptNumber);
+    this.database
+      .prepare(
+        `
           UPDATE pending_requests SET transport_message_id = ?
           WHERE event_id = ?
         `,
-        )
-        .run(messageId, eventId);
-      return update.changes;
-    })();
+      )
+      .run(messageId, eventId);
+    return update.changes;
+  }
+
+  public markDelivered(
+    eventId: string,
+    attemptNumber: number,
+    transportName: string,
+    messageId: string,
+    now: string,
+  ): void {
+    const result = this.database.transaction(() =>
+      this.markDeliveredWithinTransaction(
+        eventId,
+        attemptNumber,
+        transportName,
+        messageId,
+        now,
+      ),
+    )();
     if (result !== 1) {
       throw new Error(`cannot mark non-delivering event ${eventId} delivered`);
     }
+  }
+
+  public findNotificationCoalescingTarget(input: {
+    event: AgentAttentionEventV1;
+    fingerprint: string;
+    windowMs: number;
+    now: string;
+  }): NotificationGroupRecord | undefined {
+    assertIsoCutoff(input.now, "notification coalescing time");
+    if (
+      !Number.isSafeInteger(input.windowMs) ||
+      input.windowMs < 1 ||
+      input.windowMs > 3_600_000
+    ) {
+      throw new Error(
+        "notification coalescing window must be between 1 and 3600000 ms",
+      );
+    }
+    if (!/^[a-f0-9]{64}$/.test(input.fingerprint)) {
+      throw new Error("notification coalescing fingerprint is invalid");
+    }
+    const cutoff = new Date(
+      Date.parse(input.now) - input.windowMs,
+    ).toISOString();
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          anchor_event_id, event_count, latest_occurred_at, transport_name,
+          transport_message_id, topic_id
+        FROM notification_groups
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND event_type = @type
+          AND fingerprint = @fingerprint
+          AND updated_at >= @cutoff
+          AND NOT EXISTS (
+            SELECT 1
+            FROM card_actions
+            JOIN card_action_executions
+              ON card_action_executions.action_token =
+                card_actions.action_token
+            WHERE card_actions.event_id =
+              notification_groups.anchor_event_id
+              AND card_actions.action_kind = 'details'
+          )
+        ORDER BY updated_at DESC, anchor_event_id DESC
+        LIMIT 1
+      `,
+      )
+      .get({
+        ...input.event,
+        fingerprint: input.fingerprint,
+        cutoff,
+      }) as
+      | {
+          anchor_event_id: string;
+          event_count: number;
+          latest_occurred_at: string;
+          transport_name: string;
+          transport_message_id: string;
+          topic_id: string | null;
+        }
+      | undefined;
+    return row === undefined
+      ? undefined
+      : {
+          anchorEventId: row.anchor_event_id,
+          eventCount: row.event_count,
+          latestOccurredAt: row.latest_occurred_at,
+          transportName: row.transport_name,
+          transportMessageId: row.transport_message_id,
+          ...(row.topic_id === null ? {} : { topicId: row.topic_id }),
+        };
+  }
+
+  public markNotificationAnchorDelivered(input: {
+    event: AgentAttentionEventV1;
+    attemptNumber: number;
+    fingerprint: string;
+    transportName: string;
+    messageId: string;
+    topicId?: string;
+    now: string;
+  }): void {
+    assertIsoCutoff(input.now, "notification anchor delivery time");
+    const changed = this.database.transaction(() => {
+      const delivered = this.markDeliveredWithinTransaction(
+        input.event.eventId,
+        input.attemptNumber,
+        input.transportName,
+        input.messageId,
+        input.now,
+      );
+      if (delivered !== 1) {
+        return delivered;
+      }
+      this.database
+        .prepare(
+          `
+          INSERT INTO notification_groups (
+            anchor_event_id, machine_id, harness, session_id, event_type,
+            fingerprint, event_count, latest_occurred_at, transport_name,
+            transport_message_id, topic_id, created_at, updated_at
+          ) VALUES (
+            @eventId, @machineId, @harness, @sessionId, @type, @fingerprint,
+            1, @occurredAt, @transportName, @messageId, @topicId, @now, @now
+          )
+        `,
+        )
+        .run({
+          ...input.event,
+          fingerprint: input.fingerprint,
+          transportName: input.transportName,
+          messageId: input.messageId,
+          topicId: input.topicId ?? null,
+          now: input.now,
+        });
+      this.database
+        .prepare(
+          `
+          INSERT INTO notification_group_members (
+            event_id, anchor_event_id, joined_at
+          ) VALUES (?, ?, ?)
+        `,
+        )
+        .run(input.event.eventId, input.event.eventId, input.now);
+      return delivered;
+    })();
+    if (changed !== 1) {
+      throw new Error(
+        `cannot mark non-delivering event ${input.event.eventId} delivered`,
+      );
+    }
+  }
+
+  public markNotificationCoalesced(input: {
+    event: AgentAttentionEventV1;
+    attemptNumber: number;
+    anchorEventId: string;
+    expectedEventCount: number;
+    now: string;
+  }): NotificationGroupRecord {
+    assertIsoCutoff(input.now, "notification coalescing completion time");
+    return this.database.transaction(() => {
+      const group = this.database
+        .prepare(
+          `
+          SELECT
+            event_count, latest_occurred_at, transport_name,
+            transport_message_id, topic_id
+          FROM notification_groups
+          WHERE anchor_event_id = ?
+        `,
+        )
+        .get(input.anchorEventId) as
+        | {
+            event_count: number;
+            latest_occurred_at: string;
+            transport_name: string;
+            transport_message_id: string;
+            topic_id: string | null;
+          }
+        | undefined;
+      if (group === undefined) {
+        throw new Error("notification coalescing anchor disappeared");
+      }
+      if (group.event_count !== input.expectedEventCount) {
+        throw new Error("notification coalescing anchor changed concurrently");
+      }
+      const joined = this.database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO notification_group_members (
+            event_id, anchor_event_id, joined_at
+          ) VALUES (?, ?, ?)
+        `,
+        )
+        .run(input.event.eventId, input.anchorEventId, input.now).changes;
+      if (joined !== 1) {
+        throw new Error("notification event was already coalesced");
+      }
+      const latestOccurredAt =
+        input.event.occurredAt > group.latest_occurred_at
+          ? input.event.occurredAt
+          : group.latest_occurred_at;
+      const updated = this.database
+        .prepare(
+          `
+          UPDATE notification_groups SET
+            event_count = event_count + 1,
+            latest_occurred_at = ?,
+            updated_at = ?
+          WHERE anchor_event_id = ? AND event_count = ?
+        `,
+        )
+        .run(
+          latestOccurredAt,
+          input.now,
+          input.anchorEventId,
+          input.expectedEventCount,
+        ).changes;
+      if (updated !== 1) {
+        throw new Error("notification coalescing anchor changed concurrently");
+      }
+      const delivered = this.markDeliveredWithinTransaction(
+        input.event.eventId,
+        input.attemptNumber,
+        group.transport_name,
+        group.transport_message_id,
+        input.now,
+      );
+      if (delivered !== 1) {
+        throw new Error(
+          `cannot mark non-delivering event ${input.event.eventId} delivered`,
+        );
+      }
+      this.recordDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_coalesced_${sha256(input.event.eventId).slice(0, 40)}`,
+        recordedAt: input.now,
+        source: "daemon",
+        level: "info",
+        code: "notification.coalesced",
+        message:
+          "equivalent routine event coalesced into an existing session card",
+      });
+      return {
+        anchorEventId: input.anchorEventId,
+        eventCount: input.expectedEventCount + 1,
+        latestOccurredAt,
+        transportName: group.transport_name,
+        transportMessageId: group.transport_message_id,
+        ...(group.topic_id === null ? {} : { topicId: group.topic_id }),
+      };
+    })();
+  }
+
+  public notificationDetails(eventId: string, limit = 10): NotificationDetails {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+      throw new Error("notification detail limit must be between 1 and 50");
+    }
+    const group = this.database
+      .prepare(
+        `
+        SELECT groups.anchor_event_id, groups.event_count
+        FROM notification_groups AS groups
+        JOIN notification_group_members AS members
+          ON members.anchor_event_id = groups.anchor_event_id
+        WHERE members.event_id = ?
+      `,
+      )
+      .get(eventId) as
+      { anchor_event_id: string; event_count: number } | undefined;
+    if (group === undefined) {
+      const event = this.getEvent(eventId)?.event;
+      return {
+        events: event === undefined ? [] : [event],
+        totalCount: event === undefined ? 0 : 1,
+      };
+    }
+    const rows = this.database
+      .prepare(
+        `
+        SELECT events.payload_json
+        FROM notification_group_members AS members
+        JOIN events ON events.event_id = members.event_id
+        WHERE members.anchor_event_id = ?
+        ORDER BY
+          CAST(json_extract(events.payload_json, '$.sequence') AS INTEGER)
+            DESC,
+          events.created_at DESC,
+          events.event_id DESC
+        LIMIT ?
+      `,
+      )
+      .all(group.anchor_event_id, limit) as Array<{ payload_json: string }>;
+    return {
+      events: rows
+        .map((row) =>
+          AgentAttentionEventV1Schema.parse(
+            JSON.parse(row.payload_json) as unknown,
+          ),
+        )
+        .reverse(),
+      totalCount: group.event_count,
+    };
   }
 
   public markDeliveryFailed(
@@ -906,6 +2762,573 @@ export class RelayStore {
     };
   }
 
+  public getLatestEventForSession(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): { event: AgentAttentionEventV1; status: DeliveryStatus } | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT event_id
+        FROM events
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+        ORDER BY
+          CAST(json_extract(payload_json, '$.sequence') AS INTEGER) DESC,
+          created_at DESC,
+          event_id DESC
+        LIMIT 1
+      `,
+      )
+      .get(input) as { event_id: string } | undefined;
+    return row === undefined ? undefined : this.getEvent(row.event_id);
+  }
+
+  public getDeliveryReceiptForEvent(
+    eventId: string,
+  ): { transportName: string; messageId: string } | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT transport_name, transport_message_id
+        FROM events
+        WHERE event_id = ?
+          AND transport_name IS NOT NULL
+          AND transport_message_id IS NOT NULL
+      `,
+      )
+      .get(eventId) as
+      { transport_name: string; transport_message_id: string } | undefined;
+    return row === undefined
+      ? undefined
+      : {
+          transportName: row.transport_name,
+          messageId: row.transport_message_id,
+        };
+  }
+
+  public registerCardActions(
+    eventId: string,
+    actions: Array<{ token: string; kind: CardActionKind }>,
+    now: string,
+  ): CardActionRecord[] {
+    assertIsoCutoff(now, "card action registration time");
+    return this.database.transaction(() => {
+      for (const action of actions) {
+        const token = CardActionTokenSchema.parse(action.token);
+        const kind = CardActionKindSchema.parse(action.kind);
+        this.database
+          .prepare(
+            `
+            INSERT OR IGNORE INTO card_actions (
+              action_token, event_id, action_kind, created_at
+            ) VALUES (?, ?, ?, ?)
+          `,
+          )
+          .run(token, eventId, kind, now);
+        const existing = this.getCardAction(token);
+        if (
+          existing === undefined ||
+          existing.eventId !== eventId ||
+          existing.kind !== kind
+        ) {
+          throw new Error(`card action token collision for ${token}`);
+        }
+      }
+      return actions.map((action) => {
+        const registered = this.getCardAction(action.token);
+        if (registered === undefined) {
+          throw new Error(`card action ${action.token} disappeared`);
+        }
+        return registered;
+      });
+    })();
+  }
+
+  public getCardAction(token: string): CardActionRecord | undefined {
+    const parsed = CardActionTokenSchema.safeParse(token);
+    if (!parsed.success) {
+      return undefined;
+    }
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          actions.action_token,
+          actions.event_id,
+          actions.action_kind,
+          actions.created_at,
+          executions.state AS execution_state,
+          executions.update_id,
+          executions.claimed_at,
+          executions.finished_at,
+          executions.outcome,
+          executions.error_message
+        FROM card_actions AS actions
+        LEFT JOIN card_action_executions AS executions
+          ON executions.action_token = actions.action_token
+        WHERE actions.action_token = ?
+      `,
+      )
+      .get(parsed.data) as CardActionRow | undefined;
+    return row === undefined
+      ? undefined
+      : {
+          token: row.action_token,
+          eventId: row.event_id,
+          kind: row.action_kind,
+          createdAt: row.created_at,
+          state: row.execution_state ?? "open",
+          ...(row.update_id === null ? {} : { updateId: row.update_id }),
+          ...(row.claimed_at === null ? {} : { claimedAt: row.claimed_at }),
+          ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
+          ...(row.outcome === null ? {} : { outcome: row.outcome }),
+          ...(row.error_message === null
+            ? {}
+            : { errorMessage: row.error_message }),
+        };
+  }
+
+  private finishCardActionExecution(input: {
+    token: string;
+    state: "succeeded" | "failed";
+    outcome: string;
+    now: string;
+    errorMessage?: string;
+  }): CardActionRecord {
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE card_action_executions SET
+          state = @state,
+          finished_at = @now,
+          outcome = @outcome,
+          error_message = @errorMessage
+        WHERE action_token = @token AND state = 'claimed'
+      `,
+      )
+      .run({
+        ...input,
+        errorMessage: input.errorMessage?.slice(0, 2_000) ?? null,
+      }).changes;
+    if (changes !== 1) {
+      throw new Error(`card action ${input.token} is not claimed`);
+    }
+    const action = this.getCardAction(input.token);
+    if (action === undefined) {
+      throw new Error(`card action ${input.token} disappeared`);
+    }
+    return action;
+  }
+
+  private upsertSessionControl(
+    event: AgentAttentionEventV1,
+    field: "muted_at" | "ended_at",
+    now: string,
+  ): void {
+    this.database
+      .prepare(
+        `
+        INSERT INTO session_controls (
+          machine_id, harness, session_id, ${field}, updated_at
+        ) VALUES (
+          @machineId, @harness, @sessionId, @now, @now
+        )
+        ON CONFLICT(machine_id, harness, session_id) DO UPDATE SET
+          ${field} = excluded.${field},
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run({ ...event, now });
+  }
+
+  public executeCardAction(input: {
+    token: string;
+    kind: CardActionKind;
+    updateId: number;
+    now: string;
+    resolvedBy?: "telegram" | "web";
+  }): CardActionExecutionResult {
+    assertIsoCutoff(input.now, "card action execution time");
+    if (!Number.isSafeInteger(input.updateId) || input.updateId < 0) {
+      throw new Error("card action update id must be a non-negative integer");
+    }
+    return this.database.transaction((): CardActionExecutionResult => {
+      const action = this.getCardAction(input.token);
+      if (action === undefined) {
+        return { outcome: "not_found" };
+      }
+      if (action.kind !== input.kind) {
+        return { outcome: "kind_mismatch", action };
+      }
+      if (action.state !== "open") {
+        return { outcome: "duplicate", action };
+      }
+      const eventRecord = this.getEvent(action.eventId);
+      if (eventRecord === undefined) {
+        return { outcome: "not_found", action };
+      }
+      this.expireRequests(input.now);
+      const pending = this.getPendingForEvent(action.eventId);
+      if (
+        input.kind === "end" &&
+        pending !== undefined &&
+        pending.state === "open"
+      ) {
+        return {
+          outcome: "blocked",
+          action,
+          reason: "answer the pending question before ending this relay lane",
+        };
+      }
+      const claimed = this.database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO card_action_executions (
+            action_token, state, update_id, claimed_at
+          ) VALUES (?, 'claimed', ?, ?)
+        `,
+        )
+        .run(input.token, input.updateId, input.now).changes;
+      if (claimed !== 1) {
+        const raced = this.getCardAction(input.token);
+        if (raced === undefined) {
+          return { outcome: "not_found" };
+        }
+        return { outcome: "duplicate", action: raced };
+      }
+      if (input.kind === "details") {
+        const current = this.getCardAction(input.token);
+        if (current === undefined) {
+          throw new Error(`claimed card action ${input.token} disappeared`);
+        }
+        return { outcome: "claimed", action: current };
+      }
+      if (input.kind === "continue") {
+        if (
+          pending?.requestKind !== "continuation" ||
+          (!eventRecord.event.capabilities.inlineContinue &&
+            !eventRecord.event.capabilities.lateResume)
+        ) {
+          return {
+            outcome: "stale",
+            action: this.finishCardActionExecution({
+              token: input.token,
+              state: "failed",
+              outcome: "continuation-unavailable",
+              now: input.now,
+              errorMessage:
+                "event no longer has a supported continuation request",
+            }),
+          };
+        }
+        const resolution = this.resolveRequest({
+          correlationId: pending.correlationId,
+          answer: "Continue.",
+          resolvedBy: input.resolvedBy ?? "telegram",
+          now: input.now,
+          expected: {
+            machineId: pending.machineId,
+            harness: pending.harness,
+            sessionId: pending.sessionId,
+            ...(pending.turnId === undefined ? {} : { turnId: pending.turnId }),
+          },
+        });
+        if (resolution.outcome !== "answered") {
+          return {
+            outcome: "stale",
+            action: this.finishCardActionExecution({
+              token: input.token,
+              state: "failed",
+              outcome: `continuation-${resolution.outcome}`,
+              now: input.now,
+              errorMessage: "continuation request is no longer actionable",
+            }),
+          };
+        }
+      } else if (input.kind === "mute") {
+        this.upsertSessionControl(eventRecord.event, "muted_at", input.now);
+      } else {
+        this.upsertSessionControl(eventRecord.event, "ended_at", input.now);
+      }
+      return {
+        outcome: "succeeded",
+        action: this.finishCardActionExecution({
+          token: input.token,
+          state: "succeeded",
+          outcome: input.kind,
+          now: input.now,
+        }),
+      };
+    })();
+  }
+
+  public executeBrowserCardAction(input: {
+    operationId: string;
+    eventId: string;
+    token: string;
+    kind: Exclude<CardActionKind, "details">;
+    now: string;
+  }): BrowserSessionActionResult {
+    const replay = this.replayBrowserCardAction(input);
+    if (replay !== undefined) {
+      return replay;
+    }
+    const payloadHash = sha256(JSON.stringify([input.eventId, input.kind]));
+    return this.database.transaction((): BrowserSessionActionResult => {
+      const racedReplay = this.replayBrowserCardAction(input);
+      if (racedReplay !== undefined) {
+        return racedReplay;
+      }
+      const execution = this.executeCardAction({
+        token: input.token,
+        kind: input.kind,
+        updateId: Number.parseInt(sha256(input.operationId).slice(0, 12), 16),
+        now: input.now,
+        resolvedBy: "web",
+      });
+      this.database
+        .prepare(
+          `
+          INSERT INTO browser_commands (
+            operation_id, correlation_id, payload_hash, outcome, created_at
+          ) VALUES (?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          input.operationId,
+          input.eventId,
+          payloadHash,
+          execution.outcome,
+          input.now,
+        );
+      return { ...execution, replayed: false };
+    })();
+  }
+
+  public replayBrowserCardAction(input: {
+    operationId: string;
+    eventId: string;
+    token: string;
+    kind: Exclude<CardActionKind, "details">;
+  }): BrowserSessionActionResult | undefined {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(input.operationId)) {
+      throw new Error("browser operation id is malformed");
+    }
+    const payloadHash = sha256(JSON.stringify([input.eventId, input.kind]));
+    const prior = this.database
+      .prepare(
+        `
+          SELECT correlation_id, payload_hash, outcome
+          FROM browser_commands
+          WHERE operation_id = ?
+        `,
+      )
+      .get(input.operationId) as
+      | {
+          correlation_id: string;
+          payload_hash: string;
+          outcome: BrowserSessionActionOutcome;
+        }
+      | undefined;
+    if (prior === undefined) {
+      return undefined;
+    }
+    if (
+      prior.correlation_id !== input.eventId ||
+      prior.payload_hash !== payloadHash
+    ) {
+      return { outcome: "replay_conflict", replayed: true };
+    }
+    const action = this.getCardAction(input.token);
+    return {
+      outcome: prior.outcome,
+      replayed: true,
+      ...(action === undefined ? {} : { action }),
+    };
+  }
+
+  public finishCardAction(input: {
+    token: string;
+    succeeded: boolean;
+    outcome: string;
+    now: string;
+    errorMessage?: string;
+  }): CardActionRecord {
+    assertIsoCutoff(input.now, "card action completion time");
+    return this.finishCardActionExecution({
+      ...input,
+      state: input.succeeded ? "succeeded" : "failed",
+    });
+  }
+
+  private controlFromRow(row: SessionControlRow): SessionControlRecord {
+    return {
+      machineId: row.machine_id,
+      harness: row.harness,
+      sessionId: row.session_id,
+      ...(row.muted_at === null ? {} : { mutedAt: row.muted_at }),
+      ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getSessionControl(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): SessionControlRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT machine_id, harness, session_id, muted_at, ended_at, updated_at
+        FROM session_controls
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
+      )
+      .get(input) as SessionControlRow | undefined;
+    return row === undefined ? undefined : this.controlFromRow(row);
+  }
+
+  public listSessionControls(): SessionControlRecord[] {
+    const rows = this.database
+      .prepare(
+        `
+        SELECT machine_id, harness, session_id, muted_at, ended_at, updated_at
+        FROM session_controls
+        ORDER BY updated_at DESC, machine_id, harness, session_id
+      `,
+      )
+      .all() as SessionControlRow[];
+    return rows.map((row) => this.controlFromRow(row));
+  }
+
+  public suppressionReason(
+    event: AgentAttentionEventV1,
+  ): "muted" | "ended" | undefined {
+    const control = this.getSessionControl(event);
+    if (
+      event.type !== "session.ended" &&
+      (control?.endedAt !== undefined ||
+        this.getSessionLaneState(event) === "ended")
+    ) {
+      return "ended";
+    }
+    if (event.type === "session.ended") {
+      return undefined;
+    }
+    if (
+      event.request !== undefined ||
+      event.type === "turn.failed" ||
+      event.type === "process.exited" ||
+      event.type === "process.stale"
+    ) {
+      return undefined;
+    }
+    return control?.mutedAt === undefined ? undefined : "muted";
+  }
+
+  public markDeliverySuppressed(
+    eventId: string,
+    attemptNumber: number,
+    reason: "muted" | "ended",
+    now: string,
+  ): void {
+    this.database.transaction(() => {
+      if (reason === "ended") {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests SET
+              state = 'cancelled',
+              resolved_at = ?
+            WHERE event_id = ? AND state = 'open'
+          `,
+          )
+          .run(now, eventId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'cancelled', updated_at = ?
+            WHERE state IN ('pending', 'drafting')
+              AND correlation_id IN (
+                SELECT correlation_id
+                FROM pending_requests
+                WHERE event_id = ?
+              )
+          `,
+          )
+          .run(now, eventId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts
+            SET state = 'cancelled', updated_at = ?
+            WHERE state IN ('pending', 'drafting')
+              AND correlation_id IN (
+                SELECT correlation_id
+                FROM pending_requests
+                WHERE event_id = ?
+              )
+          `,
+          )
+          .run(now, eventId);
+      }
+      const delivered = this.markDeliveredWithinTransaction(
+        eventId,
+        attemptNumber,
+        "session-control",
+        `suppressed:${reason}`,
+        now,
+      );
+      if (delivered !== 1) {
+        throw new Error(`cannot suppress non-delivering event ${eventId}`);
+      }
+      this.recordDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_suppressed_${sha256(
+          `${eventId}\u001f${reason}`,
+        ).slice(0, 40)}`,
+        recordedAt: now,
+        source: "daemon",
+        level: "info",
+        code: "notification.suppressed",
+        message: `notification suppressed because the relay lane is ${reason}`,
+      });
+    })();
+  }
+
+  public getEventTransportReceipt(
+    eventId: string,
+  ): { transportName: string; messageId: string } | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT transport_name, transport_message_id
+        FROM events WHERE event_id = ? AND status = 'delivered'
+      `,
+      )
+      .get(eventId) as
+      | {
+          transport_name: string | null;
+          transport_message_id: string | null;
+        }
+      | undefined;
+    return row?.transport_name === null ||
+      row?.transport_name === undefined ||
+      row.transport_message_id === null
+      ? undefined
+      : {
+          transportName: row.transport_name,
+          messageId: row.transport_message_id,
+        };
+  }
+
   private pendingFromRow(row: PendingRow): PendingRequestRecord {
     const optionRows = this.database
       .prepare(
@@ -957,6 +3380,46 @@ export class RelayStore {
     return row === undefined ? undefined : this.pendingFromRow(row);
   }
 
+  public listPendingRequests(limit = 100): PendingRequestRecord[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("pending request limit must be between 1 and 500");
+    }
+    const rows = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM pending_requests
+        WHERE state = 'open'
+        ORDER BY expires_at, created_at, correlation_id
+        LIMIT ?
+      `,
+      )
+      .all(limit) as PendingRow[];
+    return rows.map((row) => this.pendingFromRow(row));
+  }
+
+  public countOpenRequests(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): number {
+    const row = this.database
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM pending_requests
+        WHERE machine_id = ?
+          AND harness = ?
+          AND session_id = ?
+          AND state = 'open'
+      `,
+      )
+      .get(input.machineId, input.harness, input.sessionId) as {
+      count: number;
+    };
+    return row.count;
+  }
+
   public getPendingForEvent(eventId: string): PendingRequestRecord | undefined {
     const row = this.database
       .prepare(
@@ -968,6 +3431,1159 @@ export class RelayStore {
       )
       .get(eventId) as PendingRow | undefined;
     return row === undefined ? undefined : this.pendingFromRow(row);
+  }
+
+  public getPendingForTransportMessage(
+    messageId: string,
+  ): PendingRequestRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM pending_requests
+        WHERE transport_message_id = ?
+      `,
+      )
+      .get(messageId) as PendingRow | undefined;
+    return row === undefined ? undefined : this.pendingFromRow(row);
+  }
+
+  public getPendingForOptionToken(
+    token: string,
+  ): PendingRequestRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT pending_requests.*
+        FROM pending_options
+        JOIN pending_requests USING (correlation_id)
+        WHERE pending_options.option_token = ?
+      `,
+      )
+      .get(token) as PendingRow | undefined;
+    return row === undefined ? undefined : this.pendingFromRow(row);
+  }
+
+  private multiSelectDraftFromRow(
+    row: MultiSelectDraftRow,
+  ): MultiSelectDraftRecord {
+    const selected = this.database
+      .prepare(
+        `
+        SELECT selected.option_id
+        FROM interaction_draft_options AS selected
+        JOIN pending_options AS option
+          ON option.correlation_id = selected.correlation_id
+          AND option.option_id = selected.option_id
+        WHERE selected.correlation_id = ?
+        ORDER BY option.rowid
+      `,
+      )
+      .all(row.correlation_id) as Array<{ option_id: string }>;
+    return {
+      correlationId: row.correlation_id,
+      state: row.state,
+      minSelections: row.min_selections,
+      maxSelections: row.max_selections,
+      submitToken: row.submit_token,
+      cancelToken: row.cancel_token,
+      revision: row.revision,
+      selectedOptionIds: selected.map((option) => option.option_id),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getMultiSelectDraft(
+    correlationId: string,
+  ): MultiSelectDraftRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM interaction_drafts
+        WHERE correlation_id = ?
+      `,
+      )
+      .get(correlationId) as MultiSelectDraftRow | undefined;
+    return row === undefined ? undefined : this.multiSelectDraftFromRow(row);
+  }
+
+  public getMultiSelectDraftByActionToken(token: string):
+    | {
+        request: PendingRequestRecord;
+        draft: MultiSelectDraftRecord;
+        action: "submit" | "cancel";
+      }
+    | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT *,
+          CASE WHEN submit_token = @token THEN 'submit' ELSE 'cancel' END
+            AS draft_action
+        FROM interaction_drafts
+        WHERE submit_token = @token OR cancel_token = @token
+      `,
+      )
+      .get({ token }) as
+      (MultiSelectDraftRow & { draft_action: "submit" | "cancel" }) | undefined;
+    if (row === undefined) {
+      return undefined;
+    }
+    const request = this.getPendingRequest(row.correlation_id);
+    return request === undefined
+      ? undefined
+      : {
+          request,
+          draft: this.multiSelectDraftFromRow(row),
+          action: row.draft_action,
+        };
+  }
+
+  private pendingExpectedMatches(
+    request: PendingRequestRecord,
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    },
+  ): boolean {
+    return (
+      request.machineId === expected.machineId &&
+      request.harness === expected.harness &&
+      request.sessionId === expected.sessionId &&
+      request.turnId === expected.turnId &&
+      request.transportMessageId === expected.transportMessageId
+    );
+  }
+
+  private synchronizeTerminalDraft(
+    request: PendingRequestRecord,
+    now: string,
+  ): MultiSelectDraftRecord | undefined {
+    const stateByRequest: Record<
+      PendingRequestState,
+      MultiSelectDraftState | undefined
+    > = {
+      open: undefined,
+      answered: "superseded",
+      expired: "expired",
+      cancelled: "cancelled",
+      failed: "failed",
+    };
+    const state = stateByRequest[request.state];
+    if (state !== undefined) {
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts SET state = ?, updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(state, now, request.correlationId);
+    }
+    return this.getMultiSelectDraft(request.correlationId);
+  }
+
+  public setMultiSelectOption(input: {
+    optionToken: string;
+    selected: boolean;
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): MultiSelectDraftMutationResult {
+    return this.database.transaction((): MultiSelectDraftMutationResult => {
+      const request = this.getPendingForOptionToken(input.optionToken);
+      if (request?.requestKind !== "multi-select") {
+        return { outcome: "not_found" };
+      }
+      const currentDraft = this.getMultiSelectDraft(request.correlationId);
+      if (currentDraft === undefined) {
+        return { outcome: "not_found", request };
+      }
+      if (!this.pendingExpectedMatches(request, input.expected)) {
+        return {
+          outcome: "identity_mismatch",
+          request,
+          draft: currentDraft,
+        };
+      }
+      if (request.state !== "open") {
+        const draft =
+          this.synchronizeTerminalDraft(request, input.now) ?? currentDraft;
+        return {
+          outcome:
+            request.state === "expired"
+              ? "expired"
+              : request.state === "failed"
+                ? "failed"
+                : "stale",
+          request,
+          draft,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+
+      const option = request.options.find(
+        (candidate) => candidate.token === input.optionToken,
+      );
+      if (option === undefined) {
+        return { outcome: "not_found", request, draft: currentDraft };
+      }
+      const alreadySelected =
+        this.database
+          .prepare(
+            `
+            SELECT 1
+            FROM interaction_draft_options
+            WHERE correlation_id = ? AND option_id = ?
+          `,
+          )
+          .get(request.correlationId, option.optionId) !== undefined;
+      if (alreadySelected === input.selected) {
+        return {
+          outcome: "unchanged",
+          request,
+          draft: currentDraft,
+        };
+      }
+      if (
+        input.selected &&
+        currentDraft.selectedOptionIds.length >= currentDraft.maxSelections
+      ) {
+        return {
+          outcome: "selection_limit",
+          request,
+          draft: currentDraft,
+        };
+      }
+      if (input.selected) {
+        this.database
+          .prepare(
+            `
+            INSERT INTO interaction_draft_options (
+              correlation_id, option_id, selected_at
+            ) VALUES (?, ?, ?)
+          `,
+          )
+          .run(request.correlationId, option.optionId, input.now);
+      } else {
+        this.database
+          .prepare(
+            `
+            DELETE FROM interaction_draft_options
+            WHERE correlation_id = ? AND option_id = ?
+          `,
+          )
+          .run(request.correlationId, option.optionId);
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts SET
+            state = 'drafting',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "updated",
+        request,
+        draft: this.getMultiSelectDraft(request.correlationId)!,
+      };
+    })();
+  }
+
+  public finishMultiSelectDraft(input: {
+    actionToken: string;
+    action: "submit" | "cancel";
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): MultiSelectSubmitResult {
+    return this.database.transaction((): MultiSelectSubmitResult => {
+      const entry = this.getMultiSelectDraftByActionToken(input.actionToken);
+      if (
+        entry === undefined ||
+        entry.action !== input.action ||
+        entry.request.requestKind !== "multi-select"
+      ) {
+        return { outcome: "not_found" };
+      }
+      const { request, draft } = entry;
+      if (!this.pendingExpectedMatches(request, input.expected)) {
+        return { outcome: "identity_mismatch", request, draft };
+      }
+      if (request.state !== "open") {
+        const synchronized =
+          this.synchronizeTerminalDraft(request, input.now) ?? draft;
+        return {
+          outcome:
+            request.state === "answered" ||
+            (request.state === "cancelled" && input.action === "cancel")
+              ? "duplicate"
+              : request.state === "expired"
+                ? "expired"
+                : request.state === "failed"
+                  ? "failed"
+                  : "stale",
+          request,
+          draft: synchronized,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "cancel") {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests SET
+              state = 'cancelled',
+              resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts SET
+              state = 'cancelled',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "cancelled",
+          request: this.requirePending(request.correlationId),
+          draft: this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+
+      if (
+        draft.selectedOptionIds.length < draft.minSelections ||
+        draft.selectedOptionIds.length > draft.maxSelections
+      ) {
+        return { outcome: "invalid_selection", request, draft };
+      }
+      const answer = JSON.stringify(draft.selectedOptionIds);
+      if (Buffer.byteLength(answer, "utf8") > 4_000) {
+        throw new Error("validated multi-select answer exceeds 4000 bytes");
+      }
+      const update = this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'answered',
+            resolved_by = 'telegram',
+            answer = ?,
+            resolved_at = ?
+          WHERE correlation_id = ? AND state = 'open'
+        `,
+        )
+        .run(answer, input.now, request.correlationId);
+      if (update.changes !== 1) {
+        const raced = this.requirePending(request.correlationId);
+        return {
+          outcome: "duplicate",
+          request: raced,
+          draft:
+            this.synchronizeTerminalDraft(raced, input.now) ??
+            this.getMultiSelectDraft(request.correlationId)!,
+        };
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts SET
+            state = 'submitted',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "answered",
+        request: this.requirePending(request.correlationId),
+        draft: this.getMultiSelectDraft(request.correlationId)!,
+      };
+    })();
+  }
+
+  private questionSetInteraction(
+    request: PendingRequestRecord,
+  ): OperatorInteractionRequestV1 | undefined {
+    const event = this.getEvent(request.eventId)?.event;
+    return event?.request?.kind === "question-set"
+      ? event.request.interaction
+      : undefined;
+  }
+
+  private questionSetDraftFromRow(
+    row: QuestionSetDraftRow,
+    interaction: OperatorInteractionRequestV1,
+  ): QuestionSetDraftRecord {
+    const step = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM question_set_steps
+        WHERE correlation_id = ? AND ordinal = ?
+      `,
+      )
+      .get(row.correlation_id, row.current_index) as
+      QuestionSetStepRow | undefined;
+    if (step === undefined) {
+      throw new Error("question-set draft points outside its question order");
+    }
+    const answerRows = this.database
+      .prepare(
+        `
+        SELECT answer.answer_json
+        FROM question_set_answers AS answer
+        JOIN question_set_steps AS step
+          ON step.correlation_id = answer.correlation_id
+          AND step.question_id = answer.question_id
+        WHERE answer.correlation_id = ?
+        ORDER BY step.ordinal
+      `,
+      )
+      .all(row.correlation_id) as Array<{ answer_json: string }>;
+    return {
+      correlationId: row.correlation_id,
+      state: row.state,
+      currentIndex: row.current_index,
+      revision: row.revision,
+      ...(row.presentation_mode === null
+        ? {}
+        : {
+            presentationMode: InteractionPresentationModeSchema.parse(
+              row.presentation_mode,
+            ),
+          }),
+      submitToken: row.submit_token,
+      cancelToken: row.cancel_token,
+      ...(step.back_token === null ? {} : { backToken: step.back_token }),
+      ...(step.next_token === null ? {} : { nextToken: step.next_token }),
+      interaction,
+      answers: answerRows.map((answer) =>
+        InteractionQuestionAnswerSchema.parse(
+          JSON.parse(answer.answer_json) as unknown,
+        ),
+      ),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  public getQuestionSetDraft(
+    correlationId: string,
+  ): QuestionSetDraftRecord | undefined {
+    const request = this.getPendingRequest(correlationId);
+    const interaction =
+      request === undefined ? undefined : this.questionSetInteraction(request);
+    if (interaction === undefined) {
+      return undefined;
+    }
+    const row = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM question_set_drafts
+        WHERE correlation_id = ?
+      `,
+      )
+      .get(correlationId) as QuestionSetDraftRow | undefined;
+    return row === undefined
+      ? undefined
+      : this.questionSetDraftFromRow(row, interaction);
+  }
+
+  public setQuestionSetPresentationMode(
+    correlationId: string,
+    mode: InteractionPresentationMode,
+    now: string,
+  ): QuestionSetDraftRecord {
+    assertIsoCutoff(now, "question-set presentation time");
+    const presentationMode = InteractionPresentationModeSchema.parse(mode);
+    const changed = this.database
+      .prepare(
+        `
+        UPDATE question_set_drafts
+        SET presentation_mode = ?, updated_at = ?
+        WHERE correlation_id = ?
+          AND (presentation_mode IS NULL OR presentation_mode = ?)
+      `,
+      )
+      .run(presentationMode, now, correlationId, presentationMode).changes;
+    if (changed !== 1) {
+      throw new Error(
+        "question-set presentation mode changed after it was selected",
+      );
+    }
+    const draft = this.getQuestionSetDraft(correlationId);
+    if (draft === undefined) {
+      throw new Error("question-set draft disappeared while selecting a mode");
+    }
+    return draft;
+  }
+
+  public getQuestionSetDraftByActionToken(
+    token: string,
+    action: "next" | "back" | "submit" | "cancel",
+  ):
+    | {
+        request: PendingRequestRecord;
+        draft: QuestionSetDraftRecord;
+      }
+    | undefined {
+    const correlationId = this.questionSetCorrelationForToken(token, action);
+    if (correlationId === undefined) {
+      return undefined;
+    }
+    const request = this.getPendingRequest(correlationId);
+    const draft = this.getQuestionSetDraft(correlationId);
+    return request?.requestKind !== "question-set" || draft === undefined
+      ? undefined
+      : { request, draft };
+  }
+
+  private questionSetCorrelationForToken(
+    token: string,
+    action: "next" | "back" | "submit" | "cancel",
+  ): string | undefined {
+    if (action === "submit" || action === "cancel") {
+      const column = action === "submit" ? "submit_token" : "cancel_token";
+      const row = this.database
+        .prepare(
+          `
+          SELECT correlation_id
+          FROM question_set_drafts
+          WHERE ${column} = ?
+        `,
+        )
+        .get(token) as { correlation_id: string } | undefined;
+      return row?.correlation_id;
+    }
+    const column = action === "next" ? "next_token" : "back_token";
+    const row = this.database
+      .prepare(
+        `
+        SELECT correlation_id
+        FROM question_set_steps
+        WHERE ${column} = ?
+      `,
+      )
+      .get(token) as { correlation_id: string } | undefined;
+    return row?.correlation_id;
+  }
+
+  private questionSetOptionIds(question: InteractionQuestion): string[] {
+    if (question.kind === "confirm") {
+      return [question.confirm.optionId, question.decline.optionId];
+    }
+    return question.kind === "single-select" || question.kind === "multi-select"
+      ? question.options.map((option) => option.optionId)
+      : [];
+  }
+
+  private questionSetAnswer(
+    draft: QuestionSetDraftRecord,
+    question: InteractionQuestion,
+  ): InteractionQuestionAnswer | undefined {
+    return draft.answers.find(
+      (answer) => answer.questionId === question.questionId,
+    );
+  }
+
+  private completeQuestionSetAnswer(
+    draft: QuestionSetDraftRecord,
+    question: InteractionQuestion,
+  ): InteractionQuestionAnswer | undefined {
+    const answer = this.questionSetAnswer(draft, question);
+    if (question.kind === "multi-select") {
+      const optionIds = answer?.kind === "multi-select" ? answer.optionIds : [];
+      return optionIds.length >= question.minSelections &&
+        optionIds.length <= question.maxSelections
+        ? {
+            questionId: question.questionId,
+            kind: "multi-select",
+            optionIds,
+          }
+        : undefined;
+    }
+    return answer?.kind === question.kind ? answer : undefined;
+  }
+
+  private saveQuestionSetAnswer(
+    correlationId: string,
+    answer: InteractionQuestionAnswer,
+    now: string,
+  ): void {
+    this.database
+      .prepare(
+        `
+        INSERT INTO question_set_answers (
+          correlation_id, question_id, answer_json, updated_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(correlation_id, question_id) DO UPDATE SET
+          answer_json = excluded.answer_json,
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run(correlationId, answer.questionId, JSON.stringify(answer), now);
+  }
+
+  private synchronizeTerminalQuestionSet(
+    request: PendingRequestRecord,
+    now: string,
+  ): QuestionSetDraftRecord | undefined {
+    const stateByRequest: Record<
+      PendingRequestState,
+      QuestionSetDraftState | undefined
+    > = {
+      open: undefined,
+      answered: "superseded",
+      expired: "expired",
+      cancelled: "cancelled",
+      failed: "failed",
+    };
+    const state = stateByRequest[request.state];
+    if (state !== undefined) {
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts SET state = ?, updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(state, now, request.correlationId);
+    }
+    return this.getQuestionSetDraft(request.correlationId);
+  }
+
+  public mutateQuestionSet(input: {
+    action:
+      "choose" | "select" | "unselect" | "next" | "back" | "submit" | "cancel";
+    token: string;
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): QuestionSetMutationResult {
+    return this.database.transaction((): QuestionSetMutationResult => {
+      const optionAction =
+        input.action === "choose" ||
+        input.action === "select" ||
+        input.action === "unselect";
+      const optionRequest = optionAction
+        ? this.getPendingForOptionToken(input.token)
+        : undefined;
+      const correlationId = optionAction
+        ? optionRequest?.correlationId
+        : this.questionSetCorrelationForToken(
+            input.token,
+            input.action as "next" | "back" | "submit" | "cancel",
+          );
+      const request =
+        correlationId === undefined
+          ? undefined
+          : (optionRequest ?? this.getPendingRequest(correlationId));
+      if (request?.requestKind !== "question-set") {
+        return { outcome: "not_found" };
+      }
+      let draft = this.getQuestionSetDraft(request.correlationId);
+      if (draft === undefined) {
+        return { outcome: "not_found", request };
+      }
+      if (!this.pendingExpectedMatches(request, input.expected)) {
+        return { outcome: "identity_mismatch", request, draft };
+      }
+      if (request.state !== "open") {
+        draft =
+          this.synchronizeTerminalQuestionSet(request, input.now) ?? draft;
+        return {
+          outcome:
+            request.state === "answered" ||
+            (request.state === "cancelled" && input.action === "cancel")
+              ? "duplicate"
+              : request.state === "expired"
+                ? "expired"
+                : request.state === "failed"
+                  ? "failed"
+                  : "stale",
+          request,
+          draft,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+
+      const question = draft.interaction.questions[draft.currentIndex];
+      if (question === undefined) {
+        return { outcome: "invalid_transition", request, draft };
+      }
+      if (input.action === "cancel") {
+        if (input.token !== draft.cancelToken) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'cancelled', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              state = 'cancelled',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "cancelled",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "back") {
+        if (input.token !== draft.backToken || draft.currentIndex <= 0) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              current_index = current_index - 1,
+              state = 'drafting',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND current_index = ?
+          `,
+          )
+          .run(input.now, request.correlationId, draft.currentIndex);
+        return {
+          outcome: "moved",
+          request,
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "next") {
+        if (
+          input.token !== draft.nextToken ||
+          draft.currentIndex >= draft.interaction.questions.length - 1
+        ) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        const answer = this.completeQuestionSetAnswer(draft, question);
+        if (answer === undefined) {
+          return {
+            outcome:
+              question.kind === "free-text"
+                ? "unsupported_question"
+                : "incomplete",
+            request,
+            draft,
+          };
+        }
+        if (
+          question.kind === "multi-select" &&
+          this.questionSetAnswer(draft, question) === undefined
+        ) {
+          this.saveQuestionSetAnswer(request.correlationId, answer, input.now);
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              current_index = current_index + 1,
+              state = 'drafting',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND current_index = ?
+          `,
+          )
+          .run(input.now, request.correlationId, draft.currentIndex);
+        return {
+          outcome: "moved",
+          request,
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+      if (input.action === "submit") {
+        if (
+          input.token !== draft.submitToken ||
+          draft.currentIndex !== draft.interaction.questions.length - 1
+        ) {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        const answers = draft.interaction.questions.map((item) =>
+          this.completeQuestionSetAnswer(draft, item),
+        );
+        if (answers.some((answer) => answer === undefined)) {
+          const unsupported = draft.interaction.questions.some(
+            (item, index) =>
+              answers[index] === undefined && item.kind === "free-text",
+          );
+          return {
+            outcome: unsupported ? "unsupported_question" : "incomplete",
+            request,
+            draft,
+          };
+        }
+        for (const [index, answer] of answers.entries()) {
+          const question = draft.interaction.questions[index]!;
+          if (
+            answer !== undefined &&
+            this.questionSetAnswer(draft, question) === undefined
+          ) {
+            this.saveQuestionSetAnswer(
+              request.correlationId,
+              answer,
+              input.now,
+            );
+          }
+        }
+        const answerEnvelope = {
+          schema: "agent-interaction-answer.v1" as const,
+          answerId: `interaction_answer_${randomUUID()}`,
+          requestId: draft.interaction.requestId,
+          submittedAt: input.now,
+          answers: answers as InteractionQuestionAnswer[],
+        };
+        const answer = encodeInteractionAnswer(
+          draft.interaction,
+          answerEnvelope,
+        );
+        const update = this.database
+          .prepare(
+            `
+            UPDATE pending_requests SET
+              state = 'answered',
+              resolved_by = 'telegram',
+              answer = ?,
+              resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(answer, input.now, request.correlationId);
+        if (update.changes !== 1) {
+          const raced = this.requirePending(request.correlationId);
+          return {
+            outcome: "duplicate",
+            request: raced,
+            draft:
+              this.synchronizeTerminalQuestionSet(raced, input.now) ??
+              this.getQuestionSetDraft(request.correlationId)!,
+          };
+        }
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts SET
+              state = 'submitted',
+              revision = revision + 1,
+              updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "answered",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+
+      const option = request.options.find(
+        (candidate) => candidate.token === input.token,
+      );
+      if (option === undefined) {
+        return { outcome: "not_found", request, draft };
+      }
+      if (!this.questionSetOptionIds(question).includes(option.optionId)) {
+        return { outcome: "invalid_transition", request, draft };
+      }
+      let answer: InteractionQuestionAnswer;
+      if (input.action === "choose") {
+        if (question.kind !== "confirm" && question.kind !== "single-select") {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        answer = {
+          questionId: question.questionId,
+          kind: question.kind,
+          optionId: option.optionId,
+        };
+      } else {
+        if (question.kind !== "multi-select") {
+          return { outcome: "invalid_transition", request, draft };
+        }
+        const current = this.questionSetAnswer(draft, question);
+        const optionIds =
+          current?.kind === "multi-select" ? [...current.optionIds] : [];
+        const alreadySelected = optionIds.includes(option.optionId);
+        const selected = input.action === "select";
+        if (alreadySelected === selected) {
+          return { outcome: "unchanged", request, draft };
+        }
+        if (selected) {
+          if (optionIds.length >= question.maxSelections) {
+            return { outcome: "selection_limit", request, draft };
+          }
+          optionIds.push(option.optionId);
+          const order = this.questionSetOptionIds(question);
+          optionIds.sort((left, right) => {
+            return order.indexOf(left) - order.indexOf(right);
+          });
+        } else {
+          optionIds.splice(optionIds.indexOf(option.optionId), 1);
+        }
+        answer = {
+          questionId: question.questionId,
+          kind: "multi-select",
+          optionIds,
+        };
+      }
+      const previous = this.questionSetAnswer(draft, question);
+      if (
+        previous !== undefined &&
+        JSON.stringify(previous) === JSON.stringify(answer)
+      ) {
+        return { outcome: "unchanged", request, draft };
+      }
+      this.saveQuestionSetAnswer(request.correlationId, answer, input.now);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts SET
+            state = 'drafting',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "updated",
+        request,
+        draft: this.getQuestionSetDraft(request.correlationId)!,
+      };
+    })();
+  }
+
+  public setQuestionSetText(input: {
+    correlationId: string;
+    text: string;
+    now: string;
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    };
+  }): QuestionSetTextMutationResult {
+    return this.database.transaction((): QuestionSetTextMutationResult => {
+      const request = this.getPendingRequest(input.correlationId);
+      if (request?.requestKind !== "question-set") {
+        return { outcome: "not_found" };
+      }
+      let draft = this.getQuestionSetDraft(request.correlationId);
+      if (draft === undefined) {
+        return { outcome: "not_found", request };
+      }
+      if (!this.pendingExpectedMatches(request, input.expected)) {
+        return { outcome: "identity_mismatch", request, draft };
+      }
+      if (request.state !== "open") {
+        draft =
+          this.synchronizeTerminalQuestionSet(request, input.now) ?? draft;
+        return {
+          outcome:
+            request.state === "answered"
+              ? "duplicate"
+              : request.state === "expired"
+                ? "expired"
+                : request.state === "failed"
+                  ? "failed"
+                  : "stale",
+          request,
+          draft,
+        };
+      }
+      if (input.now >= request.expiresAt) {
+        this.database
+          .prepare(
+            `
+            UPDATE pending_requests
+            SET state = 'expired', resolved_at = ?
+            WHERE correlation_id = ? AND state = 'open'
+          `,
+          )
+          .run(input.now, request.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, request.correlationId);
+        return {
+          outcome: "expired",
+          request: this.requirePending(request.correlationId),
+          draft: this.getQuestionSetDraft(request.correlationId)!,
+        };
+      }
+
+      const question = draft.interaction.questions[draft.currentIndex];
+      if (question?.kind !== "free-text") {
+        return { outcome: "invalid_transition", request, draft };
+      }
+      const text = input.text.replace(/\r\n?/g, "\n").trim();
+      const reason: QuestionSetTextRejectionReason | undefined =
+        text.length === 0
+          ? "empty"
+          : text.length < question.minLength
+            ? "too_short"
+            : text.length > question.maxLength
+              ? "too_long"
+              : !question.multiline && text.includes("\n")
+                ? "multiline"
+                : undefined;
+      if (reason !== undefined) {
+        return { outcome: "invalid_text", reason, request, draft };
+      }
+      const answer: InteractionQuestionAnswer = {
+        questionId: question.questionId,
+        kind: "free-text",
+        text,
+      };
+      const previous = this.questionSetAnswer(draft, question);
+      if (
+        previous !== undefined &&
+        JSON.stringify(previous) === JSON.stringify(answer)
+      ) {
+        return { outcome: "unchanged", request, draft };
+      }
+      this.saveQuestionSetAnswer(request.correlationId, answer, input.now);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts SET
+            state = 'drafting',
+            revision = revision + 1,
+            updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, request.correlationId);
+      return {
+        outcome: "updated",
+        request,
+        draft: this.getQuestionSetDraft(request.correlationId)!,
+      };
+    })();
   }
 
   private requirePending(correlationId: string): PendingRequestRecord {
@@ -1014,6 +4630,24 @@ export class RelayStore {
           `,
           )
           .run(input.now, input.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE question_set_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, input.correlationId);
+        this.database
+          .prepare(
+            `
+            UPDATE interaction_drafts
+            SET state = 'expired', updated_at = ?
+            WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+          `,
+          )
+          .run(input.now, input.correlationId);
         return {
           outcome: "expired",
           request: this.requirePending(input.correlationId),
@@ -1037,6 +4671,24 @@ export class RelayStore {
           request: this.requirePending(input.correlationId),
         };
       }
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'superseded', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, input.correlationId);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
+          SET state = 'superseded', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(input.now, input.correlationId);
       return {
         outcome: "answered",
         request: this.requirePending(input.correlationId),
@@ -1044,10 +4696,187 @@ export class RelayStore {
     })();
   }
 
+  public resolveBrowserRequest(input: {
+    operationId: string;
+    correlationId: string;
+    response: BrowserRequestResponse;
+    now: string;
+  }): BrowserResolutionResult {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(input.operationId)) {
+      throw new Error("browser operation id is malformed");
+    }
+    assertIsoCutoff(input.now, "browser resolution time");
+    const payloadHash = sha256(
+      JSON.stringify([input.correlationId, input.response]),
+    );
+    return this.database.transaction((): BrowserResolutionResult => {
+      const prior = this.database
+        .prepare(
+          `
+          SELECT correlation_id, payload_hash, outcome
+          FROM browser_commands
+          WHERE operation_id = ?
+        `,
+        )
+        .get(input.operationId) as
+        | {
+            correlation_id: string;
+            payload_hash: string;
+            outcome: Exclude<BrowserResolutionOutcome, "replay_conflict">;
+          }
+        | undefined;
+      if (prior !== undefined) {
+        if (
+          prior.correlation_id !== input.correlationId ||
+          prior.payload_hash !== payloadHash
+        ) {
+          return { outcome: "replay_conflict", replayed: true };
+        }
+        const request = this.getPendingRequest(prior.correlation_id);
+        return {
+          outcome: prior.outcome,
+          replayed: true,
+          ...(request === undefined ? {} : { request }),
+        };
+      }
+
+      const request = this.getPendingRequest(input.correlationId);
+      let outcome: Exclude<BrowserResolutionOutcome, "replay_conflict">;
+      let resolutionRequest: PendingRequestRecord | undefined;
+      if (request === undefined) {
+        outcome = "not_found";
+      } else {
+        const answer = this.browserAnswer(
+          request,
+          input.response,
+          input.operationId,
+          input.now,
+        );
+        if (answer === undefined) {
+          outcome = "invalid_answer";
+          resolutionRequest = request;
+        } else {
+          const resolution = this.resolveRequest({
+            correlationId: request.correlationId,
+            answer,
+            resolvedBy: "web",
+            now: input.now,
+            expected: {
+              machineId: request.machineId,
+              harness: request.harness,
+              sessionId: request.sessionId,
+              ...(request.turnId === undefined
+                ? {}
+                : { turnId: request.turnId }),
+            },
+          });
+          outcome = resolution.outcome;
+          resolutionRequest = resolution.request;
+        }
+      }
+      this.database
+        .prepare(
+          `
+          INSERT INTO browser_commands (
+            operation_id, correlation_id, payload_hash, outcome, created_at
+          ) VALUES (?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          input.operationId,
+          input.correlationId,
+          payloadHash,
+          outcome,
+          input.now,
+        );
+      return {
+        outcome,
+        replayed: false,
+        ...(resolutionRequest === undefined
+          ? {}
+          : { request: resolutionRequest }),
+      };
+    })();
+  }
+
+  private browserAnswer(
+    request: PendingRequestRecord,
+    response: BrowserRequestResponse,
+    operationId: string,
+    now: string,
+  ): string | undefined {
+    if (
+      request.requestKind === "input" ||
+      request.requestKind === "continuation"
+    ) {
+      if (response.kind !== "text") {
+        return undefined;
+      }
+      const answer = response.text.replace(/\r\n?/g, "\n").trim();
+      return answer.length === 0 || answer.length > 4_000 ? undefined : answer;
+    }
+    if (
+      request.requestKind === "confirm" ||
+      request.requestKind === "select" ||
+      request.requestKind === "permission"
+    ) {
+      return response.kind === "option" &&
+        request.options.some((option) => option.optionId === response.optionId)
+        ? response.optionId
+        : undefined;
+    }
+    if (request.requestKind === "multi-select") {
+      if (response.kind !== "multi-select") {
+        return undefined;
+      }
+      const draft = this.getMultiSelectDraft(request.correlationId);
+      const selected = new Set(response.optionIds);
+      if (
+        draft === undefined ||
+        selected.size !== response.optionIds.length ||
+        selected.size < draft.minSelections ||
+        selected.size > draft.maxSelections ||
+        response.optionIds.some(
+          (optionId) =>
+            !request.options.some((option) => option.optionId === optionId),
+        )
+      ) {
+        return undefined;
+      }
+      const ordered = request.options
+        .filter((option) => selected.has(option.optionId))
+        .map((option) => option.optionId);
+      const answer = JSON.stringify(ordered);
+      return Buffer.byteLength(answer, "utf8") <= 4_000 ? answer : undefined;
+    }
+    if (response.kind !== "question-set") {
+      return undefined;
+    }
+    const interaction = this.questionSetInteraction(request);
+    if (interaction === undefined) {
+      return undefined;
+    }
+    const validation = validateInteractionAnswer(interaction, {
+      schema: "agent-interaction-answer.v1",
+      answerId: operationId,
+      requestId: request.correlationId,
+      submittedAt: now,
+      answers: response.answers,
+    });
+    return validation.ok ? JSON.stringify(validation.answer) : undefined;
+  }
+
   public resolveOptionToken(
     token: string,
-    resolvedBy: "terminal" | "telegram",
+    resolvedBy: "terminal" | "telegram" | "web",
     now: string,
+    expected?: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+      transportMessageId: string;
+    },
   ): ResolutionResult {
     const option = this.database
       .prepare(
@@ -1061,29 +4890,138 @@ export class RelayStore {
     if (option === undefined) {
       return { outcome: "not_found" };
     }
+    const request = this.getPendingRequest(option.correlation_id);
+    if (
+      request === undefined ||
+      (expected !== undefined &&
+        (request.machineId !== expected.machineId ||
+          request.harness !== expected.harness ||
+          request.sessionId !== expected.sessionId ||
+          request.turnId !== expected.turnId ||
+          request.transportMessageId !== expected.transportMessageId))
+    ) {
+      return {
+        outcome: request === undefined ? "not_found" : "identity_mismatch",
+        ...(request === undefined ? {} : { request }),
+      };
+    }
     return this.resolveRequest({
       correlationId: option.correlation_id,
       answer: option.option_id,
       resolvedBy,
       now,
+      ...(expected === undefined
+        ? {}
+        : {
+            expected: {
+              machineId: expected.machineId,
+              harness: expected.harness,
+              sessionId: expected.sessionId,
+              ...(expected.turnId === undefined
+                ? {}
+                : { turnId: expected.turnId }),
+            },
+          }),
     });
+  }
+
+  private resolveNumberedChoice(
+    request: PendingRequestRecord,
+    answer: string,
+    now: string,
+    minimumOptionCount: number,
+  ): NumberedChoiceResolutionResult {
+    if (
+      request.requestKind !== "select" ||
+      request.options.length <= minimumOptionCount
+    ) {
+      return { outcome: "not_found" };
+    }
+    const normalized = answer.trim();
+    if (!/^[1-9][0-9]*$/.test(normalized)) {
+      return { outcome: "invalid_choice", request };
+    }
+    const option = request.options[Number(normalized) - 1];
+    if (option === undefined) {
+      return { outcome: "invalid_choice", request };
+    }
+    return this.resolveRequest({
+      correlationId: request.correlationId,
+      answer: option.optionId,
+      resolvedBy: "telegram",
+      now,
+      expected: {
+        machineId: request.machineId,
+        harness: request.harness,
+        sessionId: request.sessionId,
+        ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+      },
+    });
+  }
+
+  public resolveTransportNumberedChoice(
+    messageId: string,
+    answer: string,
+    now: string,
+    minimumOptionCount: number,
+    expected: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+    },
+  ): NumberedChoiceResolutionResult {
+    const request = this.getPendingForTransportMessage(messageId);
+    if (request === undefined) {
+      return { outcome: "not_found" };
+    }
+    if (
+      request.machineId !== expected.machineId ||
+      request.harness !== expected.harness ||
+      request.sessionId !== expected.sessionId ||
+      request.turnId !== expected.turnId
+    ) {
+      return { outcome: "identity_mismatch", request };
+    }
+    return this.resolveNumberedChoice(request, answer, now, minimumOptionCount);
   }
 
   public resolveTransportReply(
     messageId: string,
     answer: string,
     now: string,
+    expected?: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      turnId?: string;
+    },
   ): ResolutionResult {
     const row = this.database
       .prepare(
         `
-        SELECT correlation_id
+        SELECT correlation_id, machine_id, harness, session_id, request_kind
         FROM pending_requests
         WHERE transport_message_id = ?
       `,
       )
-      .get(messageId) as { correlation_id: string } | undefined;
-    if (row === undefined) {
+      .get(messageId) as
+      | {
+          correlation_id: string;
+          machine_id: string;
+          harness: Harness;
+          session_id: string;
+          request_kind: PendingRequestRecord["requestKind"];
+        }
+      | undefined;
+    if (
+      row === undefined ||
+      (row.request_kind !== "input" && row.request_kind !== "continuation") ||
+      (expected !== undefined &&
+        (row.machine_id !== expected.machineId ||
+          row.harness !== expected.harness ||
+          row.session_id !== expected.sessionId))
+    ) {
       return { outcome: "not_found" };
     }
     return this.resolveRequest({
@@ -1091,47 +5029,362 @@ export class RelayStore {
       answer,
       resolvedBy: "telegram",
       now,
+      ...(expected === undefined ? {} : { expected }),
     });
   }
 
-  public cancelRequest(correlationId: string, now: string): ResolutionResult {
-    const current = this.getPendingRequest(correlationId);
-    if (current === undefined) {
-      return { outcome: "not_found" };
-    }
-    if (current.state !== "open") {
+  public resolveTopicText(input: {
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+    answer: string;
+    now: string;
+    numberedChoiceMinimumOptions?: number;
+  }): TopicTextCorrelationResult {
+    return this.database.transaction((): TopicTextCorrelationResult => {
+      const topic = this.database
+        .prepare(
+          `
+          SELECT machine_id, harness, session_id
+          FROM session_topics
+          WHERE transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND topic_id = @topicId
+            AND provisioning_status = 'ready'
+        `,
+        )
+        .get(input) as
+        | {
+            machine_id: string;
+            harness: Harness;
+            session_id: string;
+          }
+        | undefined;
+      if (topic === undefined) {
+        return { outcome: "topic_not_found", eligibleCount: 0 };
+      }
+
+      this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'expired',
+            resolved_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND state = 'open'
+            AND expires_at <= @now
+        `,
+        )
+        .run({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+        });
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'expired', updated_at = @now
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE machine_id = @machineId
+                AND harness = @harness
+                AND session_id = @sessionId
+                AND state = 'expired'
+            )
+        `,
+        )
+        .run({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+        });
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
+          SET state = 'expired', updated_at = @now
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE machine_id = @machineId
+                AND harness = @harness
+                AND session_id = @sessionId
+                AND state = 'expired'
+            )
+        `,
+        )
+        .run({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+        });
+
+      const candidates = this.database
+        .prepare(
+          `
+          SELECT *
+          FROM pending_requests
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND state = 'open'
+            AND expires_at > @now
+            AND transport_message_id IS NOT NULL
+            AND (
+              request_kind IN ('input', 'continuation')
+              OR (
+                @numberedChoiceMinimumOptions IS NOT NULL
+                AND request_kind = 'select'
+                AND (
+                  SELECT COUNT(*)
+                  FROM pending_options
+                  WHERE pending_options.correlation_id =
+                    pending_requests.correlation_id
+                ) > @numberedChoiceMinimumOptions
+              )
+              OR (
+                request_kind = 'question-set'
+                AND EXISTS (
+                  SELECT 1
+                  FROM question_set_drafts AS draft
+                  JOIN events
+                    ON events.event_id = pending_requests.event_id
+                  WHERE draft.correlation_id =
+                    pending_requests.correlation_id
+                    AND (
+                      json_extract(
+                        events.payload_json,
+                        '$.request.interaction.questions[' ||
+                          draft.current_index || '].kind'
+                      ) = 'free-text'
+                      OR (
+                        draft.presentation_mode = 'numbered-text'
+                        AND json_extract(
+                          events.payload_json,
+                          '$.request.interaction.questions[' ||
+                            draft.current_index || '].kind'
+                        ) IN ('confirm', 'single-select')
+                      )
+                    )
+                )
+              )
+            )
+          ORDER BY created_at, correlation_id
+          LIMIT 2
+        `,
+        )
+        .all({
+          machineId: topic.machine_id,
+          harness: topic.harness,
+          sessionId: topic.session_id,
+          now: input.now,
+          numberedChoiceMinimumOptions:
+            input.numberedChoiceMinimumOptions ?? null,
+        }) as PendingRow[];
+      if (candidates.length === 0) {
+        return { outcome: "no_eligible_request", eligibleCount: 0 };
+      }
+      if (candidates.length > 1) {
+        return {
+          outcome: "ambiguous_request",
+          eligibleCount: candidates.length,
+        };
+      }
+
+      const request = this.pendingFromRow(candidates[0]!);
+      if (request.requestKind === "question-set") {
+        if (request.transportMessageId === undefined) {
+          throw new Error(
+            "eligible question-set text request is not delivered",
+          );
+        }
+        const draft = this.getQuestionSetDraft(request.correlationId);
+        const question = draft?.interaction.questions[draft.currentIndex];
+        if (draft === undefined || question === undefined) {
+          throw new Error("eligible question-set draft is missing");
+        }
+        const expected = {
+          machineId: request.machineId,
+          harness: request.harness,
+          sessionId: request.sessionId,
+          ...(request.turnId === undefined ? {} : { turnId: request.turnId }),
+          transportMessageId: request.transportMessageId,
+        };
+        if (question.kind === "free-text") {
+          return {
+            outcome: "drafted",
+            eligibleCount: 1,
+            request,
+            mutation: this.setQuestionSetText({
+              correlationId: request.correlationId,
+              text: input.answer,
+              now: input.now,
+              expected,
+            }),
+          };
+        }
+        const optionIds = this.questionSetOptionIds(question);
+        const normalized = input.answer.trim();
+        const optionIndex = /^[1-9][0-9]*$/.test(normalized)
+          ? Number(normalized) - 1
+          : -1;
+        const optionId = optionIds[optionIndex];
+        const option =
+          optionId === undefined
+            ? undefined
+            : request.options.find(
+                (candidate) => candidate.optionId === optionId,
+              );
+        return {
+          outcome: "choice_drafted",
+          eligibleCount: 1,
+          request,
+          mutation:
+            option === undefined
+              ? { outcome: "invalid_choice", request, draft }
+              : this.mutateQuestionSet({
+                  action: "choose",
+                  token: option.token,
+                  now: input.now,
+                  expected,
+                }),
+        };
+      }
+      if (input.answer.trim().length === 0) {
+        return {
+          outcome: "invalid_text",
+          eligibleCount: 1,
+          request,
+        };
+      }
       return {
-        outcome: current.state === "answered" ? "duplicate" : current.state,
-        request: current,
+        outcome: "resolved",
+        eligibleCount: 1,
+        request,
+        resolution:
+          request.requestKind === "select"
+            ? this.resolveNumberedChoice(
+                request,
+                input.answer,
+                input.now,
+                input.numberedChoiceMinimumOptions ?? Number.MAX_SAFE_INTEGER,
+              )
+            : this.resolveRequest({
+                correlationId: request.correlationId,
+                answer: input.answer,
+                resolvedBy: "telegram",
+                now: input.now,
+                expected: {
+                  machineId: request.machineId,
+                  harness: request.harness,
+                  sessionId: request.sessionId,
+                  ...(request.turnId === undefined
+                    ? {}
+                    : { turnId: request.turnId }),
+                },
+              }),
       };
-    }
-    this.database
-      .prepare(
-        `
-        UPDATE pending_requests SET
-          state = 'cancelled',
-          resolved_at = ?
-        WHERE correlation_id = ? AND state = 'open'
-      `,
-      )
-      .run(now, correlationId);
-    return {
-      outcome: "cancelled",
-      request: this.requirePending(correlationId),
-    };
+    })();
+  }
+
+  public cancelRequest(correlationId: string, now: string): ResolutionResult {
+    return this.database.transaction((): ResolutionResult => {
+      const current = this.getPendingRequest(correlationId);
+      if (current === undefined) {
+        return { outcome: "not_found" };
+      }
+      if (current.state !== "open") {
+        return {
+          outcome: current.state === "answered" ? "duplicate" : current.state,
+          request: current,
+        };
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'cancelled',
+            resolved_at = ?
+          WHERE correlation_id = ? AND state = 'open'
+        `,
+        )
+        .run(now, correlationId);
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'cancelled', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(now, correlationId);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
+          SET state = 'cancelled', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        )
+        .run(now, correlationId);
+      return {
+        outcome: "cancelled",
+        request: this.requirePending(correlationId),
+      };
+    })();
   }
 
   public expireRequests(now: string): number {
-    return this.database
-      .prepare(
-        `
-        UPDATE pending_requests SET
-          state = 'expired',
-          resolved_at = ?
-        WHERE state = 'open' AND expires_at <= ?
-      `,
-      )
-      .run(now, now).changes;
+    return this.database.transaction(() => {
+      const changes = this.database
+        .prepare(
+          `
+          UPDATE pending_requests SET
+            state = 'expired',
+            resolved_at = ?
+          WHERE state = 'open' AND expires_at <= ?
+        `,
+        )
+        .run(now, now).changes;
+      this.database
+        .prepare(
+          `
+          UPDATE interaction_drafts
+          SET state = 'expired', updated_at = ?
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE state = 'expired'
+            )
+        `,
+        )
+        .run(now);
+      this.database
+        .prepare(
+          `
+          UPDATE question_set_drafts
+          SET state = 'expired', updated_at = ?
+          WHERE state IN ('pending', 'drafting')
+            AND correlation_id IN (
+              SELECT correlation_id
+              FROM pending_requests
+              WHERE state = 'expired'
+            )
+        `,
+        )
+        .run(now);
+      return changes;
+    })();
   }
 
   private resumeCommandFromRow(row: ResumeCommandRow): ResumeCommandRecord {
@@ -1483,6 +5736,214 @@ export class RelayStore {
     }));
   }
 
+  public listWebChanges(afterCursor = 0, limit = 100): WebChangeRecord[] {
+    if (
+      !Number.isSafeInteger(afterCursor) ||
+      afterCursor < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 500
+    ) {
+      throw new Error("web change cursor or limit is outside supported bounds");
+    }
+    const rows = this.database
+      .prepare(
+        `
+        SELECT
+          change_id, kind, action, entity_id, session_id, occurred_at,
+          payload_json
+        FROM web_changes
+        WHERE change_id > ?
+        ORDER BY change_id
+        LIMIT ?
+      `,
+      )
+      .all(afterCursor, limit) as WebChangeRow[];
+    return rows.map((row) => ({
+      cursor: row.change_id,
+      kind: row.kind,
+      action: row.action,
+      entityId: row.entity_id,
+      ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+      occurredAt: row.occurred_at,
+      payload: JSON.parse(row.payload_json) as Record<string, unknown>,
+    }));
+  }
+
+  public listSessionTimeline(
+    input: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+    },
+    limit = 100,
+  ): SessionTimelineRecord[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      throw new Error("session timeline limit must be between 1 and 500");
+    }
+    const rows = this.database
+      .prepare(
+        `
+        WITH timeline AS (
+          SELECT
+            'event:' || events.event_id AS id,
+            'hook-event' AS kind,
+            json_extract(events.payload_json, '$.occurredAt') AS at,
+            events.status AS status,
+            events.type AS label,
+            events.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            events.last_error_code AS detail_code
+          FROM events
+          LEFT JOIN pending_requests AS pending
+            ON pending.event_id = events.event_id
+          WHERE events.machine_id = @machineId
+            AND events.harness = @harness
+            AND events.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'delivery:' || attempts.id AS id,
+            'delivery' AS kind,
+            COALESCE(attempts.finished_at, attempts.started_at) AS at,
+            attempts.status AS status,
+            'attempt-' || attempts.attempt_number AS label,
+            events.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            attempts.error_code AS detail_code
+          FROM delivery_attempts AS attempts
+          JOIN events ON events.event_id = attempts.event_id
+          LEFT JOIN pending_requests AS pending
+            ON pending.event_id = events.event_id
+          WHERE events.machine_id = @machineId
+            AND events.harness = @harness
+            AND events.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'request:' || pending.correlation_id || ':opened' AS id,
+            'request' AS kind,
+            pending.created_at AS at,
+            'open' AS status,
+            pending.request_kind AS label,
+            pending.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            NULL AS detail_code
+          FROM pending_requests AS pending
+          WHERE pending.machine_id = @machineId
+            AND pending.harness = @harness
+            AND pending.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'request:' || pending.correlation_id || ':resolved' AS id,
+            'operator-action' AS kind,
+            pending.resolved_at AS at,
+            pending.state AS status,
+            COALESCE(pending.resolved_by, 'unknown') AS label,
+            pending.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            'request-resolution' AS detail_code
+          FROM pending_requests AS pending
+          WHERE pending.machine_id = @machineId
+            AND pending.harness = @harness
+            AND pending.session_id = @sessionId
+            AND pending.resolved_at IS NOT NULL
+
+          UNION ALL
+
+          SELECT
+            'action:' || actions.action_token AS id,
+            'operator-action' AS kind,
+            COALESCE(executions.finished_at, executions.claimed_at) AS at,
+            executions.state AS status,
+            actions.action_kind AS label,
+            events.event_id AS event_id,
+            pending.correlation_id AS correlation_id,
+            executions.outcome AS detail_code
+          FROM card_action_executions AS executions
+          JOIN card_actions AS actions
+            ON actions.action_token = executions.action_token
+          JOIN events ON events.event_id = actions.event_id
+          LEFT JOIN pending_requests AS pending
+            ON pending.event_id = events.event_id
+          WHERE events.machine_id = @machineId
+            AND events.harness = @harness
+            AND events.session_id = @sessionId
+
+          UNION ALL
+
+          SELECT
+            'resume:' || commands.correlation_id AS id,
+            'continuation' AS kind,
+            COALESCE(
+              commands.finished_at,
+              commands.started_at,
+              commands.claimed_at
+            ) AS at,
+            commands.state AS status,
+            'harness-resume' AS label,
+            pending.event_id AS event_id,
+            commands.correlation_id AS correlation_id,
+            COALESCE(
+              commands.error_code,
+              commands.signal,
+              CASE
+                WHEN commands.exit_code IS NULL THEN NULL
+                ELSE 'exit-' || commands.exit_code
+              END
+            ) AS detail_code
+          FROM resume_commands AS commands
+          LEFT JOIN pending_requests AS pending
+            ON pending.correlation_id = commands.correlation_id
+          WHERE commands.machine_id = @machineId
+            AND commands.harness = @harness
+            AND commands.session_id = @sessionId
+        )
+        SELECT
+          id, kind, at, status, label, event_id, correlation_id, detail_code
+        FROM timeline
+        WHERE at IS NOT NULL
+        ORDER BY at DESC, id DESC
+        LIMIT @limit
+      `,
+      )
+      .all({ ...input, limit }) as SessionTimelineRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      at: row.at,
+      status: row.status,
+      label: row.label,
+      ...(row.event_id === null ? {} : { eventId: row.event_id }),
+      ...(row.correlation_id === null
+        ? {}
+        : { correlationId: row.correlation_id }),
+      ...(row.detail_code === null ? {} : { detailCode: row.detail_code }),
+    }));
+  }
+
+  public webChangeBounds(): WebChangeBounds {
+    const row = this.database
+      .prepare(
+        `
+        SELECT MIN(change_id) AS first_cursor, MAX(change_id) AS last_cursor
+        FROM web_changes
+      `,
+      )
+      .get() as {
+      first_cursor: number | null;
+      last_cursor: number | null;
+    };
+    return {
+      ...(row.first_cursor === null ? {} : { firstCursor: row.first_cursor }),
+      ...(row.last_cursor === null ? {} : { lastCursor: row.last_cursor }),
+    };
+  }
+
   public pruneRetention(cutoffs: RetentionCutoffs): RetentionResult {
     for (const [name, value] of Object.entries(cutoffs)) {
       if (name !== "limit") {
@@ -1498,12 +5959,16 @@ export class RelayStore {
       const result: RetentionResult = {
         requestsExpired: 0,
         pendingRequests: 0,
+        interactionDrafts: 0,
+        questionSetDrafts: 0,
         resumeCommands: 0,
         events: 0,
         deliveryAttempts: 0,
         diagnostics: 0,
         telegramUpdates: 0,
         sessions: 0,
+        webChanges: 0,
+        browserCommands: 0,
       };
       const requestRows = this.database
         .prepare(
@@ -1536,11 +6001,21 @@ export class RelayStore {
       const deleteOptions = this.database.prepare(
         "DELETE FROM pending_options WHERE correlation_id = ?",
       );
+      const deleteDraft = this.database.prepare(
+        "DELETE FROM interaction_drafts WHERE correlation_id = ?",
+      );
+      const deleteQuestionSetDraft = this.database.prepare(
+        "DELETE FROM question_set_drafts WHERE correlation_id = ?",
+      );
       const deleteRequest = this.database.prepare(
         "DELETE FROM pending_requests WHERE correlation_id = ?",
       );
       for (const row of requestRows) {
         result.resumeCommands += deleteResume.run(row.correlation_id).changes;
+        result.interactionDrafts += deleteDraft.run(row.correlation_id).changes;
+        result.questionSetDrafts += deleteQuestionSetDraft.run(
+          row.correlation_id,
+        ).changes;
         deleteOptions.run(row.correlation_id);
         result.pendingRequests += deleteRequest.run(row.correlation_id).changes;
       }
@@ -1638,22 +6113,56 @@ export class RelayStore {
         `,
         )
         .run(cutoffs.sessionBefore, limit).changes;
+      result.webChanges = this.database
+        .prepare(
+          `
+          DELETE FROM web_changes
+          WHERE change_id IN (
+            SELECT change_id FROM web_changes
+            WHERE occurred_at < ?
+            ORDER BY change_id
+            LIMIT ?
+          )
+        `,
+        )
+        .run(cutoffs.webChangeBefore, limit).changes;
+      result.browserCommands = this.database
+        .prepare(
+          `
+          DELETE FROM browser_commands
+          WHERE operation_id IN (
+            SELECT operation_id FROM browser_commands
+            WHERE created_at < ?
+            ORDER BY created_at, operation_id
+            LIMIT ?
+          )
+        `,
+        )
+        .run(cutoffs.browserCommandBefore, limit).changes;
       return result;
     })();
   }
 
-  public listSessions(): SessionRecord[] {
+  public listSessions(limit?: number): SessionRecord[] {
+    if (
+      limit !== undefined &&
+      (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+    ) {
+      throw new Error("session limit must be between 1 and 500");
+    }
     const rows = this.database
       .prepare(
         `
         SELECT
           machine_id, bridge_session_id, harness, surface, harness_version,
-          session_id, state, last_seen_at, last_sequence
+          session_id, project_json, state, last_event_type, last_seen_at,
+          last_sequence
         FROM sessions
         ORDER BY last_seen_at DESC, machine_id, harness, session_id
+        ${limit === undefined ? "" : "LIMIT ?"}
       `,
       )
-      .all() as SessionRow[];
+      .all(...(limit === undefined ? [] : [limit])) as SessionRow[];
     return rows.map((row) => ({
       machineId: row.machine_id,
       bridgeSessionId: row.bridge_session_id,
@@ -1661,7 +6170,11 @@ export class RelayStore {
       surface: row.surface,
       harnessVersion: row.harness_version,
       sessionId: row.session_id,
+      project: ProjectRefSchema.parse(JSON.parse(row.project_json) as unknown),
       state: row.state,
+      ...(row.last_event_type === null
+        ? {}
+        : { lastEventType: row.last_event_type }),
       lastSeenAt: row.last_seen_at,
       lastSequence: row.last_sequence,
     }));
@@ -1697,6 +6210,14 @@ export class RelayStore {
       `,
       )
       .all() as CountRow[];
+    const topicCounts = this.database
+      .prepare(
+        `
+        SELECT provisioning_status AS key, COUNT(*) AS count
+        FROM session_topics GROUP BY provisioning_status
+      `,
+      )
+      .all() as CountRow[];
     const resumeCommandCounts = this.database
       .prepare(
         `
@@ -1727,6 +6248,13 @@ export class RelayStore {
       suspected_stalled: 0,
       exited: 0,
     };
+    const topics: StoreStatus["topics"] = {
+      pending: 0,
+      creating: 0,
+      ready: 0,
+      retry: 0,
+      failed: 0,
+    };
     const resumeCommands: StoreStatus["resumeCommands"] = {
       claimed: 0,
       running: 0,
@@ -1750,6 +6278,11 @@ export class RelayStore {
         sessions[row.key as SessionRecord["state"]] = row.count;
       }
     }
+    for (const row of topicCounts) {
+      if (row.key in topics) {
+        topics[row.key as TopicProvisioningStatus] = row.count;
+      }
+    }
     for (const row of resumeCommandCounts) {
       if (row.key in resumeCommands) {
         resumeCommands[row.key as ResumeCommandState] = row.count;
@@ -1764,6 +6297,7 @@ export class RelayStore {
     return {
       events,
       sessions,
+      topics,
       resumeCommands,
       diagnostics,
       pendingDeliveryCount: events.queued + events.retry + events.delivering,

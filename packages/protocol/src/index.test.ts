@@ -95,6 +95,150 @@ describe("AgentAttentionEventV1Schema", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("accepts twenty bounded select options and rejects a twenty-first", () => {
+    const request = {
+      correlationId: "correlation_select_12345678",
+      kind: "select" as const,
+      question: "Choose one",
+      options: Array.from({ length: 20 }, (_, index) => ({
+        id: `option_${String(index + 1).padStart(8, "0")}`,
+        label: `Choice ${String(index + 1)}`,
+      })),
+      expiresAt: "2026-07-24T12:05:00.000Z",
+    };
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request,
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: {
+          ...request,
+          options: [
+            ...request.options,
+            { id: "option_00000021", label: "Choice 21" },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates multi-select bounds and unique option IDs", () => {
+    const request = {
+      correlationId: "correlation_multi_12345678",
+      kind: "multi-select" as const,
+      question: "Choose several",
+      options: [
+        { id: "option_multi_0001", label: "One" },
+        { id: "option_multi_0002", label: "Two" },
+        { id: "option_multi_0003", label: "Three" },
+      ],
+      minSelections: 1,
+      maxSelections: 2,
+      expiresAt: "2026-07-24T12:05:00.000Z",
+    };
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request,
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: { ...request, minSelections: 3 },
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: {
+          ...request,
+          options: [
+            request.options[0]!,
+            { ...request.options[1]!, id: request.options[0]!.id },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("embeds a bounded ordered interaction with matching identity and expiry", () => {
+    const interaction = {
+      schema: "agent-interaction-request.v1" as const,
+      requestId: "correlation_question_set_0001",
+      createdAt: occurredAt,
+      expiresAt: "2026-07-24T12:05:00.000Z",
+      title: "Release questions",
+      lifecycle: "pending" as const,
+      questions: [
+        {
+          questionId: "question_confirm_0001",
+          kind: "confirm" as const,
+          prompt: "Proceed?",
+          confirm: { optionId: "confirm_yes_0000001", label: "Yes" },
+          decline: { optionId: "confirm_no_00000001", label: "No" },
+        },
+        {
+          questionId: "question_mode_0000001",
+          kind: "single-select" as const,
+          prompt: "Choose a mode",
+          options: [
+            { optionId: "mode_safe_00000001", label: "Safe" },
+            { optionId: "mode_fast_00000001", label: "Fast" },
+          ],
+        },
+      ],
+      fallback: {
+        preferredMode: "buttons" as const,
+        alternativeModes: ["web-handoff" as const],
+        whenUnavailable: "use-alternative" as const,
+      },
+    };
+    const request = {
+      correlationId: interaction.requestId,
+      kind: "question-set" as const,
+      question: interaction.title,
+      interaction,
+      expiresAt: interaction.expiresAt,
+    };
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request,
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: {
+          ...request,
+          correlationId: "correlation_question_set_other",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "input.required",
+        request: {
+          ...request,
+          expiresAt: "2026-07-24T12:06:00.000Z",
+        },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("AgentCommandV1Schema", () => {

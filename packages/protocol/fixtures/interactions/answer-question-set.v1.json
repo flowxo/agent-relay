@@ -1,0 +1,28 @@
+{
+  "schema": "agent-interaction-answer.v1",
+  "answerId": "answer_fixture_0001",
+  "requestId": "request_fixture_0001",
+  "submittedAt": "2026-07-25T12:05:00.000Z",
+  "answers": [
+    {
+      "questionId": "question_confirm_0001",
+      "kind": "confirm",
+      "optionId": "option_confirm_0001"
+    },
+    {
+      "questionId": "question_single_0001",
+      "kind": "single-select",
+      "optionId": "option_staging_0001"
+    },
+    {
+      "questionId": "question_multi_0001",
+      "kind": "multi-select",
+      "optionIds": ["option_unit_0001", "option_contract_0001"]
+    },
+    {
+      "questionId": "question_text_0001",
+      "kind": "free-text",
+      "text": "Synthetic fixture response only."
+    }
+  ]
+}

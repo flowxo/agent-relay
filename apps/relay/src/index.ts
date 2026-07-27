@@ -9,3 +9,6 @@ export * from "./installer.js";
 export * from "./machine-id.js";
 export * from "./supervisor.js";
 export * from "./telegram-poller.js";
+export * from "./web-assets.js";
+export * from "./web-credential.js";
+export * from "./web-contract.js";

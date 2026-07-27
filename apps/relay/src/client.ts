@@ -16,7 +16,9 @@ import type {
   ResumeClaimResult,
   ResumeCommandRecord,
   ResolutionResult,
+  SessionControlRecord,
   SessionRecord,
+  SessionTopicRecord,
   StoreStatus,
 } from "@agent-relay/core";
 import type { Harness } from "@agent-relay/protocol";
@@ -190,10 +192,24 @@ export class RelayClient {
   }
 
   public async status(): Promise<
-    StoreStatus & { transport: string; healthy: true }
+    StoreStatus & {
+      transport: string;
+      webEnabled: boolean;
+      healthy: true;
+      sessionRecords: SessionRecord[];
+      topicRecords: SessionTopicRecord[];
+      sessionControlRecords: SessionControlRecord[];
+    }
   > {
     return await this.request<
-      StoreStatus & { transport: string; healthy: true }
+      StoreStatus & {
+        transport: string;
+        webEnabled: boolean;
+        healthy: true;
+        sessionRecords: SessionRecord[];
+        topicRecords: SessionTopicRecord[];
+        sessionControlRecords: SessionControlRecord[];
+      }
     >("/v1/status");
   }
 
