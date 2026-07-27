@@ -641,9 +641,9 @@ try {
     })
   ).stdout;
   assert(
-    help.includes("agent-relay install") &&
-      help.includes("agent-relay canary") &&
-      help.includes("agent-relay uninstall"),
+    /^\s+install\s+Install or reconcile/m.test(help) &&
+      /^\s+canary\s+Prove the local fake-transport/m.test(help) &&
+      /^\s+uninstall\s+Remove only Agent Relay-owned/m.test(help),
     "installed CLI help is incomplete",
   );
 
