@@ -97,6 +97,28 @@ or raw working path as evidence. CI fails if the generated matrix, README
 summary, or SUPPORT summary differs from the registry, or if a linked fixture or
 evidence heading is missing.
 
+## Runner-bridge compatibility evidence
+
+The exact Codex app-server profile is one evidence snapshot, not a supported
+version range. Gate 3 combines four independently visible claims:
+
+1. the pinned `runner.protocol/v1` codec passes 33/33 fixtures;
+2. the exact `codex-cli 0.145.0` schema, fixture contract, and bounded live
+   canary pass;
+3. adoption, reconnect, reduced-fidelity, package, schema, and standalone
+   regression suites pass; and
+4. clean producer and consumer commits match the immutable artifact lock.
+
+The session-product compatibility canary invokes fixed commands against one
+explicit Agent Relay checkout and emits only commits, public versions, SHA-256
+digests, counts, booleans, and bounded enums. Normal repository and runtime
+paths remain independent of any sibling checkout.
+
+This evidence retains the `internal-until-gate-5` commitment. It cannot promote
+an unrecorded Codex version, infer Claude/Cursor actuator support from their
+observation-only profiles, or turn the Notifications adapter into a runner
+transport.
+
 ## Primary harness sources
 
 - [Codex hooks](https://learn.chatgpt.com/docs/hooks)

@@ -99,3 +99,43 @@ Every update is an explicit reviewable change:
 Do not fetch a mutable branch in the ordinary gate, import a sibling checkout,
 publish an npm package, alter production configuration, or synchronize product
 deployments as part of this procedure.
+
+## Runner protocol candidate updates
+
+`runner-protocol-lock.json` is a separate exact consumer lock for the
+experimental `runner.protocol/v1` artifacts. Normal install, build, test,
+package, and runtime paths use only the two committed archives under
+`vendor/runner-protocol-v1`; they never discover a sibling checkout.
+
+The producer first builds a clean, deterministic candidate. Check it without
+writing:
+
+```sh
+pnpm contracts:runner:update -- \
+  --artifacts /absolute/path/to/runner-protocol-v1
+```
+
+The command requires the versioned producer manifest, clean 40-character source
+commit, `internal-until-gate-5` commitment, exact two-package inventory, byte
+counts, SHA-256 digests, scripts-free package manifests, expected dependency
+closure, and the 33-case fixture corpus. It stages and runs the same hardened
+preflight as the ordinary consumer gate.
+
+The default mode is read-only. If the result reports `changed: true`, use a
+dedicated review branch and apply only after inspecting the producer change:
+
+```sh
+pnpm contracts:runner:update -- \
+  --artifacts /absolute/path/to/runner-protocol-v1 \
+  --apply
+```
+
+Apply refuses dirty lock/vendor targets. It derives the lock from validated
+bytes, replaces only the lock plus two vendored archives, verifies the complete
+new set, and restores the prior set if replacement is interrupted. Then run
+`pnpm contracts:runner`, the exact native canary, `pnpm check`, and the producer
+consumer verifier before committing the update.
+
+Do not treat an unchanged archive digest as permission to rewrite provenance by
+hand. Do not widen the compatibility commitment, publish either private `0.0.0`
+package, or force an older Agent Relay package to open newer local SQLite state.

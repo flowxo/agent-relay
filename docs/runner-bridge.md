@@ -181,3 +181,39 @@ compatibility promise or authorize publication.
 
 No mutable branch or sibling checkout is used at runtime or during normal
 contract verification.
+
+## Cross-repository compatibility and updates
+
+The runner lock has a separate explicit candidate workflow. The producer builds
+the two private packages twice, records the last clean commit that changed those
+protocol sources, and emits a manifest beside the archives. Agent Relay checks
+that candidate with:
+
+```sh
+pnpm contracts:runner:update -- \
+  --artifacts /absolute/path/to/runner-protocol-v1
+```
+
+This default check mode does not write. It validates the manifest, both archive
+inventories, lifecycle-script absence, package/dependency identity, digests,
+fixture inventory, and the complete candidate through the normal preflight. A
+current exact lock reports `changed: false`.
+
+An intentional update uses the same command with `--apply` from a dedicated
+review branch. Apply refuses dirty lock/vendor targets, derives every lock
+identity from validated producer bytes, stages the complete replacement, writes
+only the lock and two archives, and restores the prior set if replacement is
+interrupted. After apply, both repositories run their full gates, the exact
+Codex contract/live canary, package lifecycle and local-bundle verification, and
+the producer-owned consumer verifier.
+
+The resulting cross-repository record binds clean checkout commits, the protocol
+source commit, lock and artifact digests, 33/33 cases, the exact verified Codex
+version/schema, and separate package/standalone gates. It contains public
+versions, digests, counts, and enums only. It is internal Gate 3 evidence, not a
+public compatibility promise, npm release, Git tag, deployment, or Notifications
+integration.
+
+Rollback disables/revokes the bridge first. Reverting a contract/vendor commit
+does not authorize an older package to open a newer SQLite schema and never
+returns a product-managed session to standalone ownership.

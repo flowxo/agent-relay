@@ -176,3 +176,19 @@ follow the [prerelease guide](releasing.md).
 The final native Apple-silicon/Node 22 installed-artifact proof is separate:
 follow the [release-readiness evaluation](release-readiness.md) after building
 the exact clean-commit bundle.
+
+## External-harness Gate 3 evidence
+
+The session-product repository owns an explicit cross-repository compatibility
+canary. From one clean commit in each checkout it:
+
+- rebuilds the runner artifacts twice and compares them with this repository's
+  lock/vendor bytes;
+- runs this repository's full check and 33-case consumer;
+- runs the exact Codex contract and live canary;
+- builds and verifies the local release bundle without publication; and
+- writes one mode-`0600`, path-free, ignored evidence record.
+
+The command does not tag, publish, deploy, push, enable the bridge, configure a
+hosted account, or change a notification transport. Final release installation,
+signed provenance, and public compatibility remain later gates.

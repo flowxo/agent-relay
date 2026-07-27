@@ -175,6 +175,9 @@ for (const pattern of [
   /outcome_unknown/,
   /exact clean source commit/,
   /release_eligible: true/,
+  /contracts:runner:update/,
+  /default check mode does not write/i,
+  /internal Gate 3 evidence/i,
   /never erases `relay\.sqlite`/,
 ]) {
   requireText(
@@ -192,6 +195,8 @@ for (const pattern of [
   /records that exact version as incompatible|known-incompatible/,
   /fail\s+closed/,
   /capabilities:generate/,
+  /Runner-bridge compatibility evidence/,
+  /internal-until-gate-5/,
 ]) {
   requireText(
     compatibility,
