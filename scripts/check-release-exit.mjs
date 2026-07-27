@@ -602,7 +602,7 @@ try {
 
   const nativeAddon = resolve(
     consumer,
-    "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+    "node_modules/better-sqlite3/prebuilds/darwin-arm64.node",
   );
   const nativeAddonFile = (
     await run("/usr/bin/file", ["-b", nativeAddon], { privateValues })
