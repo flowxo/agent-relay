@@ -3,11 +3,15 @@ import { randomUUID } from "node:crypto";
 import {
   isCapabilityDescriptor,
   type CapabilityDescriptor,
+  type ApprovalId,
   type EventId,
   type MessageId,
+  type PartId,
   type RunnerId,
   type Sha256Digest,
+  type ToolCallId,
   type TraceId,
+  type TurnId,
   type WorkspaceId,
 } from "@session/contracts";
 import {
@@ -27,7 +31,7 @@ import {
   type RunnerSemanticEvent,
 } from "@session/protocol-runner";
 
-import { commandEffectFingerprint, sha256 } from "./digests.js";
+import { canonicalJson, commandEffectFingerprint, sha256 } from "./digests.js";
 import type {
   BridgeClock,
   RunnerBridgeConnection,
@@ -36,6 +40,7 @@ import type {
   StructuredHarnessCommandContext,
   StructuredHarnessCommandResult,
   StructuredHarnessDriver,
+  StructuredHarnessObservation,
 } from "./ports.js";
 import type {
   ProductNativeBinding,
@@ -55,6 +60,7 @@ export interface RunnerBridgeConfiguration {
   readonly maximumEffectOutcomes?: number;
   readonly maximumPendingEventFrames?: number;
   readonly commandTimeoutMs?: number;
+  readonly approvalTtlMs?: number;
 }
 
 interface PolicyFailure {
@@ -122,6 +128,7 @@ export class RunnerBridge {
   #sessionLease: string | undefined;
   #effectiveCapabilities: readonly CapabilityDescriptor[] = [];
   #maximumFrameBytes: number;
+  #unsubscribeDriver: (() => void) | undefined;
 
   constructor(input: {
     readonly store: RunnerBridgeStore;
@@ -164,7 +171,9 @@ export class RunnerBridge {
       !Number.isSafeInteger(configuration.maximumPendingEventFrames ?? 256) ||
       (configuration.maximumPendingEventFrames ?? 256) < 2 ||
       !Number.isSafeInteger(configuration.commandTimeoutMs ?? 30_000) ||
-      (configuration.commandTimeoutMs ?? 30_000) < 1
+      (configuration.commandTimeoutMs ?? 30_000) < 1 ||
+      !Number.isSafeInteger(configuration.approvalTtlMs ?? 300_000) ||
+      (configuration.approvalTtlMs ?? 300_000) < 1
     ) {
       throw new TypeError("Runner bridge configuration is invalid.");
     }
@@ -184,6 +193,19 @@ export class RunnerBridge {
       !this.#configuration.authorizedProjectIds.has(binding.projectId)
     ) {
       throw new Error("Product/native binding is outside local authority.");
+    }
+    this.#store.putBinding(binding);
+  }
+
+  registerStandaloneObservedBinding(binding: ProductNativeBinding): void {
+    if (
+      binding.actuatorOwner !== "standalone-attention" ||
+      binding.workspaceId !== this.#configuration.workspaceId ||
+      binding.runnerId !== this.#configuration.runnerId ||
+      binding.harnessProfileId !== this.#driver.profileId ||
+      !this.#configuration.authorizedProjectIds.has(binding.projectId)
+    ) {
+      throw new Error("Standalone observation binding is outside authority.");
     }
     this.#store.putBinding(binding);
   }
@@ -214,8 +236,22 @@ export class RunnerBridge {
       updatedAt: now,
     });
     this.#store.recoverInterruptedCommands(interruptedResultDigest, now);
-    await this.#driver.start();
+    this.#store.recoverDispatchingApprovals(now);
+    this.#store.expireApprovals(now);
+    this.#store.invalidatePendingApprovals(now);
+    this.#unsubscribeDriver = this.#driver.subscribe(async (observation) => {
+      try {
+        await this.#handleObservation(observation);
+      } catch {
+        this.#store.setLifecycle(
+          this.lifecycleState(),
+          this.#clock.now(),
+          "observation_projection_failed",
+        );
+      }
+    });
     try {
+      await this.#driver.start();
       this.#connection = await this.#transport.connect({
         onFrame: async (encodedFrame) => {
           await this.receive(encodedFrame);
@@ -234,6 +270,8 @@ export class RunnerBridge {
       });
       await this.#sendHello();
     } catch (error) {
+      this.#unsubscribeDriver?.();
+      this.#unsubscribeDriver = undefined;
       await this.#driver.stop().catch(() => undefined);
       throw error;
     }
@@ -248,6 +286,8 @@ export class RunnerBridge {
         await connection.close();
       }
     } finally {
+      this.#unsubscribeDriver?.();
+      this.#unsubscribeDriver = undefined;
       await this.#driver.stop();
       if (this.lifecycleState() !== "revoked") {
         this.#store.setLifecycle("configured", this.#clock.now());
@@ -666,6 +706,69 @@ export class RunnerBridge {
     ) {
       return safeFailure("invalid_binding", "Approval binding does not match.");
     }
+    if (
+      command.turn_id !== undefined &&
+      command.payload.command !== "turn.start" &&
+      command.payload.command !== "turn.follow_up" &&
+      command.payload.command !== "approval.resolve"
+    ) {
+      const turn = this.#store.turn(command.turn_id);
+      if (
+        !turn ||
+        turn.sessionId !== command.session_id ||
+        turn.aggregateRevision !== command.aggregate_revision ||
+        turn.nativeTurnReference === undefined ||
+        turn.state !== "running"
+      ) {
+        return safeFailure("invalid_binding", "Turn binding does not match.");
+      }
+    }
+    if (
+      command.turn_id !== undefined &&
+      (command.payload.command === "turn.start" ||
+        command.payload.command === "turn.follow_up") &&
+      this.#store.turn(command.turn_id) !== undefined &&
+      this.#store.command(command.idempotency_key) === undefined
+    ) {
+      return safeFailure(
+        "invalid_binding",
+        "Product turn already has a native binding attempt.",
+      );
+    }
+    if (
+      command.payload.command === "approval.resolve" &&
+      isRunnerApprovalResolveCommandFrame(command)
+    ) {
+      const body = command.payload.body;
+      const approval = this.#store.approval(body.approval_id);
+      if (
+        !approval ||
+        approval.state !== "pending" ||
+        Date.parse(approval.expiresAt) <= Date.parse(this.#clock.now()) ||
+        approval.sessionId !== command.session_id ||
+        approval.turnId !== command.turn_id ||
+        approval.toolCallId !== body.binding.tool_call_id ||
+        approval.capabilitySnapshotDigest !==
+          body.binding.capability_snapshot_digest ||
+        approval.capabilitySnapshotDigest !==
+          command.capability_snapshot_digest ||
+        approval.actionDigest !== body.binding.action_digest ||
+        canonicalJson(approval.action) !== canonicalJson(body.binding.action) ||
+        body.binding.workspace_id !== command.workspace_id ||
+        body.binding.runner_id !== command.runner_id ||
+        body.binding.project_id !== command.project_id ||
+        body.binding.worktree_id !== command.worktree_id ||
+        body.binding.session_id !== command.session_id ||
+        body.binding.turn_id !== command.turn_id ||
+        body.binding.harness_profile_id !== this.#driver.profileId ||
+        body.binding.expires_at !== approval.expiresAt
+      ) {
+        return safeFailure(
+          "invalid_binding",
+          "Approval binding does not match.",
+        );
+      }
+    }
     return undefined;
   }
 
@@ -706,12 +809,83 @@ export class RunnerBridge {
       command.session_id === undefined
         ? undefined
         : this.#store.binding(command.session_id);
+    if (
+      (command.payload.command === "turn.start" ||
+        command.payload.command === "turn.follow_up") &&
+      command.session_id !== undefined &&
+      command.turn_id !== undefined &&
+      command.aggregate_revision !== undefined
+    ) {
+      try {
+        this.#store.putPendingTurn({
+          sessionId: command.session_id,
+          turnId: command.turn_id,
+          aggregateRevision: command.aggregate_revision,
+          state: "native_pending",
+          createdAt: this.#clock.now(),
+          updatedAt: this.#clock.now(),
+        });
+      } catch {
+        this.#store.finishCommand(
+          command.idempotency_key,
+          "outcome_unknown",
+          internalResultDigest,
+          this.#clock.now(),
+          "native_turn_pending_commit_failed",
+        );
+        await this.#sendCommandEvent(
+          "runner.event/command.outcome_unknown",
+          command,
+          "outcome_unknown",
+        );
+        return;
+      }
+    }
+    const turn =
+      command.turn_id === undefined
+        ? undefined
+        : this.#store.turn(command.turn_id);
+    const approval =
+      command.payload.command === "approval.resolve" &&
+      isRunnerApprovalResolveCommandFrame(command)
+        ? this.#store.approval(command.payload.body.approval_id)
+        : undefined;
+    if (
+      command.payload.command === "approval.resolve" &&
+      isRunnerApprovalResolveCommandFrame(command) &&
+      (!approval ||
+        !this.#store.beginApprovalDispatch(
+          approval.approvalId,
+          command.payload.body.decision,
+          this.#clock.now(),
+        ))
+    ) {
+      this.#store.finishCommand(
+        command.idempotency_key,
+        "outcome_unknown",
+        internalResultDigest,
+        this.#clock.now(),
+        "approval_dispatch_transition_failed",
+      );
+      await this.#sendCommandEvent(
+        "runner.event/command.outcome_unknown",
+        command,
+        "outcome_unknown",
+      );
+      return;
+    }
     const context: StructuredHarnessCommandContext = {
       idempotencyKey: command.idempotency_key,
       effectFingerprint: fingerprint,
       ...(binding
         ? { nativeSessionReference: binding.nativeSessionReference }
         : {}),
+      ...(turn?.nativeTurnReference === undefined
+        ? {}
+        : { nativeTurnReference: turn.nativeTurnReference }),
+      ...(approval === undefined
+        ? {}
+        : { nativeApprovalReference: approval.nativeApprovalReference }),
       command,
     };
     const result = await this.#invokeDriver(context);
@@ -749,6 +923,11 @@ export class RunnerBridge {
             createdAt: this.#clock.now(),
             updatedAt: this.#clock.now(),
           });
+          await this.#sendStateEvent(
+            "runner.event/session.state_changed",
+            command,
+            { state: "running" },
+          );
         } catch {
           finalResult = {
             status: "outcome_unknown",
@@ -757,6 +936,65 @@ export class RunnerBridge {
           };
         }
       }
+    }
+    if (
+      (command.payload.command === "turn.start" ||
+        command.payload.command === "turn.follow_up") &&
+      result.status === "completed"
+    ) {
+      if (
+        command.turn_id === undefined ||
+        result.nativeTurnReference === undefined ||
+        result.nativeTurnReference.length < 1 ||
+        result.nativeTurnReference.length > 512
+      ) {
+        finalResult = {
+          status: "outcome_unknown",
+          resultDigest: result.resultDigest,
+          safeCode: "native_turn_reference_missing",
+        };
+        if (command.turn_id !== undefined) {
+          this.#store.setTurnState(
+            command.turn_id,
+            "outcome_unknown",
+            this.#clock.now(),
+          );
+        }
+      } else {
+        try {
+          this.#store.bindTurn(
+            command.turn_id,
+            result.nativeTurnReference,
+            this.#clock.now(),
+          );
+          await this.#sendStateEvent(
+            "runner.event/turn.state_changed",
+            command,
+            { state: "running" },
+          );
+        } catch {
+          finalResult = {
+            status: "outcome_unknown",
+            resultDigest: result.resultDigest,
+            safeCode: "native_turn_binding_commit_failed",
+          };
+          this.#store.setTurnState(
+            command.turn_id,
+            "outcome_unknown",
+            this.#clock.now(),
+          );
+        }
+      }
+    }
+    if (
+      command.payload.command === "approval.resolve" &&
+      approval !== undefined
+    ) {
+      this.#store.finishApprovalDispatch(
+        approval.approvalId,
+        finalResult.status === "completed" ? "resolved" : "outcome_unknown",
+        this.#clock.now(),
+      );
     }
     this.#store.finishCommand(
       command.idempotency_key,
@@ -773,6 +1011,294 @@ export class RunnerBridge {
         command,
         finalResult.status,
       );
+    }
+  }
+
+  async #handleObservation(
+    observation: StructuredHarnessObservation,
+  ): Promise<void> {
+    const nativeSessionReference = observation.nativeSessionReference;
+    if (!nativeSessionReference) {
+      return;
+    }
+    const binding = this.#store.bindingByNativeReference(
+      this.#driver.profileId,
+      nativeSessionReference,
+    );
+    if (!binding) {
+      return;
+    }
+    const nativeTurnReference = observation.nativeTurnReference;
+    const turn =
+      nativeTurnReference === undefined
+        ? undefined
+        : this.#store.turnByNativeReference(
+            binding.sessionId,
+            nativeTurnReference,
+          );
+    const fingerprint = sha256(
+      canonicalJson({
+        profile: this.#driver.profileId,
+        kind: observation.kind,
+        native_session: nativeSessionReference,
+        native_turn: nativeTurnReference ?? null,
+        native_item: observation.nativeItemReference ?? null,
+        native_approval: observation.nativeApprovalReference ?? null,
+        status: observation.status ?? null,
+        safe_code: observation.safeCode ?? null,
+        observed_at: observation.observedAt,
+      }),
+    );
+    const idSuffix = fingerprint.slice(0, 32);
+    let schema: RunnerSemanticEvent["schema"] = "runner.event/diagnostic.fact";
+    let payload: Readonly<Record<string, unknown>> = {
+      fact: "native_observation",
+      observation: observation.kind,
+    };
+    const turnId: string | undefined = turn?.turnId;
+    let persistTransition: (() => void) | undefined;
+
+    switch (observation.kind) {
+      case "session.started":
+      case "session.resumed":
+        schema = "runner.event/session.state_changed";
+        payload = {
+          state: observation.kind === "session.started" ? "running" : "resumed",
+        };
+        break;
+      case "turn.started":
+        if (!turn) {
+          return;
+        }
+        if (
+          turn.state === "completed" ||
+          turn.state === "failed" ||
+          turn.state === "interrupted" ||
+          turn.state === "outcome_unknown"
+        ) {
+          return;
+        }
+        if (turn.state !== "running") {
+          persistTransition = () => {
+            if (
+              this.#store.setTurnState(
+                turn.turnId,
+                "running",
+                observation.observedAt,
+              ) !== "advanced"
+            ) {
+              throw new Error("Native turn start did not advance.");
+            }
+          };
+        }
+        schema = "runner.event/turn.state_changed";
+        payload = { state: "running" };
+        break;
+      case "turn.completed":
+        if (
+          !turn ||
+          turn.state === "completed" ||
+          turn.state === "failed" ||
+          turn.state === "interrupted" ||
+          turn.state === "outcome_unknown"
+        ) {
+          return;
+        }
+        persistTransition = () => {
+          if (
+            this.#store.setTurnState(
+              turn.turnId,
+              observation.status === "failed" ? "failed" : "completed",
+              observation.observedAt,
+            ) !== "advanced"
+          ) {
+            throw new Error("Native turn completion did not advance.");
+          }
+        };
+        schema = "runner.event/turn.state_changed";
+        payload = {
+          state: observation.status === "failed" ? "failed" : "completed",
+        };
+        break;
+      case "item.started": {
+        if (!turn || !observation.nativeItemReference) {
+          return;
+        }
+        if (
+          this.#store.itemByNativeReference(
+            binding.sessionId,
+            observation.nativeItemReference,
+          )
+        ) {
+          return;
+        }
+        const partId = `prt_${idSuffix}` as PartId;
+        persistTransition = () => {
+          this.#store.putItem({
+            sessionId: binding.sessionId,
+            turnId: turn.turnId,
+            partId,
+            nativeItemReference: observation.nativeItemReference!,
+            itemKind: observation.itemKind ?? "native",
+            state: "running",
+            createdAt: observation.observedAt,
+            updatedAt: observation.observedAt,
+          });
+        };
+        schema = "runner.event/part.started";
+        payload = {
+          part_id: partId,
+          kind: observation.itemKind ?? "native",
+        };
+        break;
+      }
+      case "item.completed": {
+        if (!turn || !observation.nativeItemReference) {
+          return;
+        }
+        const item = this.#store.itemByNativeReference(
+          binding.sessionId,
+          observation.nativeItemReference,
+        );
+        if (!item || item.turnId !== turn.turnId) {
+          return;
+        }
+        if (item.state !== "running") {
+          return;
+        }
+        persistTransition = () => {
+          if (
+            this.#store.setItemState(
+              item.partId,
+              observation.status === "failed" ? "failed" : "completed",
+              observation.observedAt,
+            ) !== "advanced"
+          ) {
+            throw new Error("Native item completion did not advance.");
+          }
+        };
+        schema = "runner.event/part.completed";
+        payload = {
+          part_id: item.partId,
+          state: observation.status === "failed" ? "failed" : "completed",
+        };
+        break;
+      }
+      case "approval.requested": {
+        if (
+          !turn ||
+          !observation.nativeApprovalReference ||
+          !observation.nativeItemReference ||
+          !observation.action ||
+          !observation.actionDigest
+        ) {
+          return;
+        }
+        if (
+          this.#store.approvalByNativeReference(
+            binding.sessionId,
+            observation.nativeApprovalReference,
+          )
+        ) {
+          return;
+        }
+        const approvalId = `apr_${idSuffix}` as ApprovalId;
+        const toolCallId = `tool_${idSuffix}` as ToolCallId;
+        const expiresAt = new Date(
+          Date.parse(observation.observedAt) +
+            (this.#configuration.approvalTtlMs ?? 300_000),
+        ).toISOString();
+        persistTransition = () => {
+          this.#store.putApproval({
+            approvalId,
+            toolCallId,
+            sessionId: binding.sessionId,
+            turnId: turn.turnId,
+            nativeApprovalReference: observation.nativeApprovalReference!,
+            nativeItemReference: observation.nativeItemReference!,
+            action: observation.action!,
+            actionDigest: observation.actionDigest!,
+            capabilitySnapshotDigest: binding.capabilitySnapshotDigest,
+            expiresAt,
+            state: "pending",
+            createdAt: observation.observedAt,
+            updatedAt: observation.observedAt,
+          });
+        };
+        schema = "runner.event/approval.requested";
+        payload = {
+          approval_id: approvalId,
+          tool_call_id: toolCallId,
+          action: observation.action,
+          action_digest: observation.actionDigest,
+          capability_snapshot_digest: binding.capabilitySnapshotDigest,
+          expires_at: expiresAt,
+        };
+        break;
+      }
+      case "attention.required":
+        schema = "runner.event/diagnostic.fact";
+        payload = { fact: "attention_required" };
+        break;
+      case "native.error":
+        schema = "runner.event/diagnostic.fact";
+        payload = {
+          fact: "native_error",
+          safe_code: observation.safeCode ?? "native_error",
+        };
+        break;
+      case "process.exited":
+        persistTransition = () => {
+          this.#store.invalidatePendingApprovals(
+            observation.observedAt,
+            binding.sessionId,
+          );
+          this.#store.interruptActiveTurns(
+            binding.sessionId,
+            observation.observedAt,
+          );
+        };
+        schema = "runner.event/session.state_changed";
+        payload = { state: "exited" };
+        break;
+    }
+
+    const event = {
+      schema,
+      schema_version: 1,
+      event_id: `evt_${idSuffix}` as EventId,
+      project_id: binding.projectId,
+      ...(binding.worktreeId === undefined
+        ? {}
+        : { worktree_id: binding.worktreeId }),
+      session_id: binding.sessionId,
+      aggregate_revision: binding.aggregateRevision,
+      ...(turnId === undefined ? {} : { turn_id: turnId as TurnId }),
+      occurred_at: observation.observedAt,
+      classification: "metadata",
+      payload,
+    } as RunnerSemanticEvent;
+    const frame = this.#store.appendObservationOutbound(
+      fingerprint,
+      observation.kind,
+      observation.observedAt,
+      (sequence) =>
+        ({
+          schema: "runner.protocol/event_batch",
+          schema_version: 1,
+          message_id: messageId(),
+          workspace_id: this.#configuration.workspaceId,
+          runner_id: this.#configuration.runnerId,
+          sequence,
+          lane: "event",
+          sent_at: observation.observedAt,
+          trace_id: traceId(),
+          payload: { events: [event], classification: "metadata" },
+        }) as RunnerFrame,
+      persistTransition,
+    );
+    if (frame && !this.#store.isLanePaused("event")) {
+      await this.#sendPersisted(frame);
     }
   }
 
@@ -875,6 +1401,38 @@ export class RunnerBridge {
     await this.sendEvents([event]);
   }
 
+  async #sendStateEvent(
+    schema:
+      "runner.event/session.state_changed" | "runner.event/turn.state_changed",
+    command: RunnerCommandFrame,
+    payload: Readonly<Record<string, unknown>>,
+  ): Promise<void> {
+    if (
+      command.project_id === undefined ||
+      command.session_id === undefined ||
+      command.aggregate_revision === undefined
+    ) {
+      throw new Error("Runner state event scope is incomplete.");
+    }
+    await this.sendEvents([
+      {
+        schema,
+        schema_version: 1,
+        event_id: eventId(),
+        project_id: command.project_id,
+        ...(command.worktree_id === undefined
+          ? {}
+          : { worktree_id: command.worktree_id }),
+        session_id: command.session_id,
+        aggregate_revision: command.aggregate_revision,
+        ...(command.turn_id === undefined ? {} : { turn_id: command.turn_id }),
+        occurred_at: this.#clock.now(),
+        classification: "metadata",
+        payload,
+      },
+    ]);
+  }
+
   async sendEvents(events: readonly RunnerSemanticEvent[]): Promise<void> {
     if (events.length === 0) {
       return;
@@ -931,6 +1489,8 @@ export class RunnerBridge {
     if (connection) {
       await connection.close();
     }
+    this.#unsubscribeDriver?.();
+    this.#unsubscribeDriver = undefined;
     await this.#driver.stop();
   }
 

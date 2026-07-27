@@ -52,16 +52,18 @@ continuation logic do not require Cloudflare or another hosted runtime.
 
 The experimental [outbound runner bridge](runner-bridge.md) is an orthogonal,
 default-off component. It owns a separate SQLite spool/effect ledger and a typed
-structured-harness port. It does not extend `NotificationTransport`, read the
-attention database, or route runner frames through Telegram, Notifications, or
-the web companion.
+structured-harness port. The app composition exposes one narrow core-store
+ownership adapter for explicit local session adoption; neither bridge package
+imports core. The bridge does not extend `NotificationTransport` or route runner
+frames through Telegram, Notifications, or the web companion.
 
 The first implementation of that port is the exact-version Codex app-server
 driver. It owns a stdio child and exposes only typed lifecycle, turn, and
 approval operations plus content-free observations. Local project/path and turn
 material resolution remains outside the wire command. Durable adoption and
-product/native event correlation are composed later rather than embedded in the
-notification system.
+product/native event correlation are bridge-owned and remain separate from the
+notification system. Existing hooks use an observation-only profile whose
+advertised capabilities cannot be widened into product actuation.
 
 ## Evidence is deliberately separated
 

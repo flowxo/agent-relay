@@ -150,8 +150,9 @@ before reconciliation, then proves:
 
 - install dry runs do not mutate configuration;
 - an install followed by a repeat install is idempotent;
-- SQLite migrates an unversioned or schema-`1` prior store to schema `2`;
-- a schema newer than `2` is refused without modification;
+- SQLite migrates an unversioned, schema-`1`, or schema-`2` prior store to
+  schema `3`;
+- a schema newer than `3` is refused without modification;
 - the answer, web credential, diagnostic log, explicit retained files, and
   installer backups survive;
 - unrelated Codex, Claude, and Cursor configuration survives;

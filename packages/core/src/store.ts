@@ -50,7 +50,49 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 2;
+export const RELAY_STORE_SCHEMA_VERSION = 3;
+
+export interface SessionProductOwnershipClaim {
+  adoptionId: string;
+  requestFingerprint: string;
+  machineId: string;
+  harness: "codex";
+  surface: "cli";
+  sessionId: string;
+  bridgeSessionId: string;
+  expectedSequence: number;
+  projectAuthorityDigest: string;
+  capabilityDigest: string;
+  harnessVersion: string;
+  productSessionId: string;
+  claimedAt: string;
+}
+
+export interface SessionProductOwnershipReceipt {
+  adoptionId: string;
+  requestFingerprint: string;
+  machineId: string;
+  harness: "codex";
+  sessionId: string;
+  productSessionId: string;
+  claimedAt: string;
+}
+
+export type SessionProductOwnershipResult =
+  | {
+      outcome: "claimed" | "duplicate";
+      receipt: SessionProductOwnershipReceipt;
+    }
+  | { outcome: "rejected"; safeCode: string };
+
+function boundedOwnershipIdentifier(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 8 &&
+    value.length <= 160 &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value)
+  );
+}
 
 export interface IngestResult {
   eventId: string;
@@ -1084,6 +1126,19 @@ export class RelayStore {
         last_sequence INTEGER NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (machine_id, harness, session_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS session_product_ownership (
+        adoption_id TEXT PRIMARY KEY,
+        request_fingerprint TEXT NOT NULL,
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        product_session_id TEXT NOT NULL UNIQUE,
+        claimed_at TEXT NOT NULL,
+        UNIQUE(machine_id, harness, session_id),
+        FOREIGN KEY (machine_id, harness, session_id)
+          REFERENCES sessions(machine_id, harness, session_id)
       );
 
       CREATE TABLE IF NOT EXISTS session_topics (
@@ -2309,6 +2364,17 @@ export class RelayStore {
   public ingestEvent(eventInput: AgentAttentionEventV1): IngestResult {
     const event = AgentAttentionEventV1Schema.parse(eventInput);
     return this.database.transaction(() => {
+      if (
+        this.sessionActuatorOwner({
+          machineId: event.machineId,
+          harness: event.harness,
+          sessionId: event.sessionId,
+        }) === "product-managed"
+      ) {
+        throw new Error(
+          "product-managed session rejects standalone attention ingestion",
+        );
+      }
       this.registerSession({
         schema: "agent-session.v1",
         machineId: event.machineId,
@@ -2498,6 +2564,190 @@ export class RelayStore {
         inserted,
         status: existing.status,
       };
+    })();
+  }
+
+  public sessionActuatorOwner(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): "standalone-attention" | "product-managed" {
+    const row = this.database
+      .prepare(
+        `SELECT 1 AS present FROM session_product_ownership
+         WHERE machine_id = ? AND harness = ? AND session_id = ?`,
+      )
+      .get(input.machineId, input.harness, input.sessionId);
+    return row === undefined ? "standalone-attention" : "product-managed";
+  }
+
+  public inspectSessionProductOwnership(
+    adoptionId: string,
+  ): SessionProductOwnershipReceipt | undefined {
+    const row = this.database
+      .prepare(
+        `SELECT adoption_id, request_fingerprint, machine_id, harness,
+                session_id, product_session_id, claimed_at
+         FROM session_product_ownership WHERE adoption_id = ?`,
+      )
+      .get(adoptionId) as
+      | {
+          adoption_id: string;
+          request_fingerprint: string;
+          machine_id: string;
+          harness: "codex";
+          session_id: string;
+          product_session_id: string;
+          claimed_at: string;
+        }
+      | undefined;
+    return row
+      ? {
+          adoptionId: row.adoption_id,
+          requestFingerprint: row.request_fingerprint,
+          machineId: row.machine_id,
+          harness: row.harness,
+          sessionId: row.session_id,
+          productSessionId: row.product_session_id,
+          claimedAt: row.claimed_at,
+        }
+      : undefined;
+  }
+
+  public claimSessionForProduct(
+    claim: SessionProductOwnershipClaim,
+  ): SessionProductOwnershipResult {
+    return this.database.transaction((): SessionProductOwnershipResult => {
+      if (
+        !boundedOwnershipIdentifier(claim.adoptionId) ||
+        !/^[a-f0-9]{64}$/u.test(claim.requestFingerprint) ||
+        !boundedOwnershipIdentifier(claim.machineId) ||
+        claim.harness !== "codex" ||
+        claim.surface !== "cli" ||
+        !boundedOwnershipIdentifier(claim.sessionId) ||
+        !boundedOwnershipIdentifier(claim.bridgeSessionId) ||
+        !Number.isSafeInteger(claim.expectedSequence) ||
+        claim.expectedSequence < 0 ||
+        !/^sha256:[a-f0-9]{64}$/u.test(claim.projectAuthorityDigest) ||
+        !/^[a-f0-9]{64}$/u.test(claim.capabilityDigest) ||
+        typeof claim.harnessVersion !== "string" ||
+        claim.harnessVersion.length < 1 ||
+        claim.harnessVersion.length > 120 ||
+        !/^[A-Za-z0-9][A-Za-z0-9._+ -]*$/u.test(claim.harnessVersion) ||
+        !boundedOwnershipIdentifier(claim.productSessionId) ||
+        !Number.isFinite(Date.parse(claim.claimedAt))
+      ) {
+        return { outcome: "rejected", safeCode: "adoption_claim_malformed" };
+      }
+      const sameAdoption = this.inspectSessionProductOwnership(
+        claim.adoptionId,
+      );
+      if (sameAdoption) {
+        return sameAdoption.requestFingerprint === claim.requestFingerprint &&
+          sameAdoption.machineId === claim.machineId &&
+          sameAdoption.harness === claim.harness &&
+          sameAdoption.sessionId === claim.sessionId &&
+          sameAdoption.productSessionId === claim.productSessionId
+          ? { outcome: "duplicate" as const, receipt: sameAdoption }
+          : {
+              outcome: "rejected" as const,
+              safeCode: "adoption_identity_conflict",
+            };
+      }
+      const session = this.database
+        .prepare(
+          `SELECT machine_id, bridge_session_id, harness, surface,
+                  harness_version, session_id, project_json, capabilities_json,
+                  state, last_sequence
+           FROM sessions
+           WHERE machine_id = ? AND harness = ? AND session_id = ?`,
+        )
+        .get(claim.machineId, claim.harness, claim.sessionId) as
+        | {
+            machine_id: string;
+            bridge_session_id: string;
+            harness: Harness;
+            surface: Surface;
+            harness_version: string;
+            session_id: string;
+            project_json: string;
+            capabilities_json: string;
+            state: SessionRecord["state"];
+            last_sequence: number;
+          }
+        | undefined;
+      if (!session) {
+        return { outcome: "rejected", safeCode: "session_not_found" };
+      }
+      if (
+        session.harness !== "codex" ||
+        session.surface !== "cli" ||
+        !["active", "waiting"].includes(session.state)
+      ) {
+        return { outcome: "rejected", safeCode: "session_ineligible" };
+      }
+      if (
+        session.bridge_session_id !== claim.bridgeSessionId ||
+        session.harness_version !== claim.harnessVersion ||
+        session.last_sequence !== claim.expectedSequence ||
+        `sha256:${sha256(session.project_json)}` !==
+          claim.projectAuthorityDigest ||
+        sha256(session.capabilities_json) !== claim.capabilityDigest
+      ) {
+        return { outcome: "rejected", safeCode: "session_checkpoint_changed" };
+      }
+      if (
+        this.sessionActuatorOwner(claim) === "product-managed" ||
+        this.database
+          .prepare(
+            `SELECT 1 AS present FROM session_product_ownership
+             WHERE product_session_id = ? LIMIT 1`,
+          )
+          .get(claim.productSessionId) !== undefined
+      ) {
+        return { outcome: "rejected", safeCode: "session_owner_conflict" };
+      }
+      const pending = this.database
+        .prepare(
+          `SELECT 1 AS present FROM pending_requests
+           WHERE machine_id = ? AND harness = ? AND session_id = ?
+             AND state = 'open' LIMIT 1`,
+        )
+        .get(claim.machineId, claim.harness, claim.sessionId);
+      const resume = this.database
+        .prepare(
+          `SELECT 1 AS present FROM resume_commands
+           WHERE machine_id = ? AND harness = ? AND session_id = ?
+             AND state IN ('claimed', 'running') LIMIT 1`,
+        )
+        .get(claim.machineId, claim.harness, claim.sessionId);
+      if (pending !== undefined || resume !== undefined) {
+        return {
+          outcome: "rejected",
+          safeCode: "standalone_interaction_pending",
+        };
+      }
+      this.database
+        .prepare(
+          `INSERT INTO session_product_ownership(
+             adoption_id, request_fingerprint, machine_id, harness,
+             session_id, product_session_id, claimed_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          claim.adoptionId,
+          claim.requestFingerprint,
+          claim.machineId,
+          claim.harness,
+          claim.sessionId,
+          claim.productSessionId,
+          claim.claimedAt,
+        );
+      const receipt = this.inspectSessionProductOwnership(claim.adoptionId);
+      if (!receipt) {
+        throw new Error("session ownership receipt did not commit");
+      }
+      return { outcome: "claimed", receipt };
     })();
   }
 

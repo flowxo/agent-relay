@@ -244,7 +244,7 @@ export const HARNESS_COMPATIBILITY = CompatibilityRegistrySchema.parse({
         record: "docs/harness-evidence.md#codex-app-server-structured-profile",
         officialSources: ["https://developers.openai.com/codex/app-server"],
       },
-      note: "The owned stdio driver is exact-version fixture and canary proven; durable adoption and reconnect correlation remain separate.",
+      note: "The owned stdio driver, durable correlation, and local adoption recovery are exact-version proven behind the default-off bridge.",
     },
     {
       harness: "claude",

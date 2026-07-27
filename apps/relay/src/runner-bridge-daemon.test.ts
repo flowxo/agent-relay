@@ -24,10 +24,12 @@ afterEach(async () => {
 });
 
 function fakeRuntime(): DaemonRunnerBridge & {
+  setStandaloneSessionAuthority: ReturnType<typeof vi.fn>;
   start: ReturnType<typeof vi.fn<() => Promise<void>>>;
   stop: ReturnType<typeof vi.fn<() => Promise<void>>>;
 } {
   return {
+    setStandaloneSessionAuthority: vi.fn(),
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     status: () => ({ enabled: true, state: "ready", bindingCount: 1 }),
@@ -85,7 +87,11 @@ describe("runner bridge daemon composition", () => {
       drainIntervalMs: 60_000,
       retentionIntervalMs: 60_000,
     });
+    expect(runtime.setStandaloneSessionAuthority).toHaveBeenCalledTimes(1);
     expect(runtime.start).toHaveBeenCalledTimes(1);
+    expect(
+      runtime.setStandaloneSessionAuthority.mock.invocationCallOrder[0],
+    ).toBeLessThan(runtime.start.mock.invocationCallOrder[0]!);
     const address = daemon.server.address();
     if (address === null || typeof address === "string") {
       throw new Error("daemon address is unavailable");

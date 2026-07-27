@@ -178,6 +178,19 @@ newer schema than this package supports. Stop the older package and use the
 newer release or restore an appropriate backup. Do not edit SQLite
 `user_version` to bypass the refusal.
 
+## Experimental runner adoption requires recovery
+
+Runner status may report a claimed or blocked-recovery adoption. That means
+standalone interaction has already been disabled for the exact local session,
+but the product binding was not yet proven complete. Do not delete either SQLite
+file, restart the session through a standalone surface, or manually change
+ownership rows. Restart the same bridge composition so it can inspect the
+durable receipt and complete the original adoption ID.
+
+An `outcome_unknown` approval or command is deliberately not retryable. Inspect
+the native session locally and start a new product operation if appropriate;
+never re-send the old native approval response.
+
 ## Preparing a public report
 
 Reproduce with the fake transport and synthetic data if possible. Include only

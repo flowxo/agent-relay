@@ -28,7 +28,8 @@ stores:
   user-level installation; and
 - optional experimental `runner-bridge.json` and `runner-bridge.sqlite`, which
   retain bridge selection, runner authority, private product/native mappings,
-  queued protocol frames, cursors, and sanitized effect outcomes; and
+  queued protocol frames, cursors, sanitized effect outcomes, normalized
+  approval action digests, and adoption state; and
 - the stable random local machine identifier used to separate sessions.
 
 Agent Relay does not intentionally store a harness's raw hook payload or full
@@ -42,7 +43,10 @@ through Telegram or Notifications. When explicitly composed later, it initiates
 its own versioned outbound connection. Its status and doctor output exclude
 private native session references, proof material, leases, frame payloads,
 source, transcript, prompts, tool input/output, paths, environment, and
-credentials.
+credentials. Approval command text, paths, patches, reasons, and raw native
+request bodies stay inside the driver process; runner events contain only the
+normalized action kind, SHA-256 target/parameter digests, generic summary,
+product IDs, expiry, and capability digest.
 
 The installer may create private timestamped backups next to changed harness
 configuration files. The default files are:

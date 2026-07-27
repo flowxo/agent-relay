@@ -33,7 +33,9 @@ const identityFingerprint = `sha256:${"a".repeat(64)}`;
 const time = "2026-07-27T12:00:00.000Z";
 const capabilities = [
   { name: "session.lifecycle", version: 1, support: "native" },
+  { name: "turn.start", version: 1, support: "native" },
   { name: "turn.cancel", version: 1, support: "native" },
+  { name: "approval.resolve", version: 1, support: "native" },
   { name: "runner.diagnose", version: 1, support: "native" },
 ] as const satisfies readonly CapabilityDescriptor[];
 
@@ -201,6 +203,41 @@ function sessionStartCommand(
   };
 }
 
+function turnStartCommand(
+  sequence: number,
+  overrides: Partial<RunnerCommandFrame> = {},
+): RunnerCommandFrame {
+  return {
+    schema: "runner.protocol/command",
+    schema_version: 1,
+    message_id: `msg_turn_start_${String(sequence)}` as MessageId,
+    idempotency_key: "cmd_turn_start_fixture" as CommandId,
+    workspace_id: workspaceId,
+    runner_id: runnerId,
+    project_id: "prj_bridge_fixture" as RunnerCommandFrame["project_id"],
+    worktree_id: "wkt_bridge_fixture" as RunnerCommandFrame["worktree_id"],
+    session_id: "ses_bridge_fixture" as RunnerCommandFrame["session_id"],
+    turn_id: "trn_new_fixture" as RunnerCommandFrame["turn_id"],
+    aggregate_revision: 4,
+    capability_snapshot_digest: capabilityDigest,
+    sequence,
+    lane: "control",
+    sent_at: time as RunnerCommandFrame["sent_at"],
+    expires_at: "2026-07-27T12:05:00.000Z" as RunnerCommandFrame["expires_at"],
+    trace_id: `trc_turn_start_${String(sequence)}` as TraceId,
+    payload: {
+      command: "turn.start",
+      required_capability: "turn.start",
+      body: {
+        schema: "runner.command/turn.start",
+        schema_version: 1,
+        instruction_digest: sha256("turn instruction"),
+      },
+    },
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   store = new RunnerBridgeStore(":memory:");
   transport = new InMemoryRunnerBridgeTransport();
@@ -236,6 +273,15 @@ beforeEach(() => {
     createdAt: time,
     updatedAt: time,
   });
+  store.putPendingTurn({
+    sessionId: "ses_bridge_fixture",
+    turnId: "trn_bridge_fixture",
+    aggregateRevision: 4,
+    state: "native_pending",
+    createdAt: time,
+    updatedAt: time,
+  });
+  store.bindTurn("trn_bridge_fixture", "native-turn-reference", time);
 });
 
 describe("RunnerBridge", () => {
@@ -319,6 +365,43 @@ describe("RunnerBridge", () => {
         }),
       ]),
     );
+  });
+
+  test("binds a returned native turn before completing the command", async () => {
+    driver.setResult({
+      status: "completed",
+      resultDigest: sha256("native-turn-created"),
+      nativeTurnReference: "native-new-turn",
+    });
+    await handshake();
+    await transport.deliver(encode(turnStartCommand(3)));
+    expect(driver.callsByCommand.get("turn.start")).toBe(1);
+    expect(store.turn("trn_new_fixture")).toMatchObject({
+      nativeTurnReference: "native-new-turn",
+      state: "running",
+    });
+    expect(store.command("cmd_turn_start_fixture")?.status).toBe("completed");
+    expect(
+      sentFrames().some(
+        (frame) =>
+          frame.schema === "runner.protocol/event_batch" &&
+          frame.payload.events.some(
+            (event) =>
+              event.schema === "runner.event/turn.state_changed" &&
+              event.turn_id === "trn_new_fixture",
+          ),
+      ),
+    ).toBe(true);
+
+    await transport.deliver(
+      encode(
+        turnStartCommand(4, {
+          message_id: "msg_turn_start_changed" as MessageId,
+          idempotency_key: "cmd_turn_start_changed" as CommandId,
+        }),
+      ),
+    );
+    expect(driver.callsByCommand.get("turn.start")).toBe(1);
   });
 
   test("reconciles before executing and deduplicates one semantic effect", async () => {
@@ -454,6 +537,176 @@ describe("RunnerBridge", () => {
     expect(statusText).not.toContain("native-private-reference");
     expect(statusText).not.toContain(identityFingerprint);
     expect(diagnoseRunnerBridge(store).ok).toBe(true);
+  });
+
+  test("durably projects matched observations while connected and offline", async () => {
+    await handshake();
+    await driver.emit({
+      kind: "turn.started",
+      observedAt: time as RunnerCommandFrame["sent_at"],
+      nativeSessionReference: "native-private-reference",
+      nativeTurnReference: "native-turn-reference",
+      status: "inProgress",
+    });
+    await driver.emit({
+      kind: "item.started",
+      observedAt: time as RunnerCommandFrame["sent_at"],
+      nativeSessionReference: "native-private-reference",
+      nativeTurnReference: "native-turn-reference",
+      nativeItemReference: "native-item-private",
+      itemKind: "commandExecution",
+    });
+    expect(store.turn("trn_bridge_fixture")?.state).toBe("running");
+    expect(store.itemCount("running")).toBe(1);
+    expect(store.observationCount()).toBe(2);
+
+    transport.disconnect();
+    const action = {
+      schema: "actuator.action/v1",
+      kind: "process.execute",
+      target_digest: sha256("private-target"),
+      parameters_digest: sha256("private-parameters"),
+      summary: "Run a command",
+    } as const;
+    await driver.emit({
+      kind: "approval.requested",
+      observedAt: "2026-07-27T12:00:01.000Z" as RunnerCommandFrame["sent_at"],
+      nativeSessionReference: "native-private-reference",
+      nativeTurnReference: "native-turn-reference",
+      nativeItemReference: "native-item-private",
+      nativeApprovalReference: "native-approval-private",
+      action,
+      actionDigest: sha256(JSON.stringify(action)),
+    });
+    await driver.emit({
+      kind: "process.exited",
+      observedAt: "2026-07-27T12:00:02.000Z" as RunnerCommandFrame["sent_at"],
+      nativeSessionReference: "native-private-reference",
+      status: "unexpected",
+      safeCode: "native_process_exited",
+    });
+    expect(store.approvalCount("outcome_unknown")).toBe(1);
+    expect(store.turn("trn_bridge_fixture")?.state).toBe("interrupted");
+    expect(store.pendingOutboundCount("event")).toBe(4);
+
+    await driver.emit({
+      kind: "process.exited",
+      observedAt: "2026-07-27T12:00:02.000Z" as RunnerCommandFrame["sent_at"],
+      nativeSessionReference: "native-private-reference",
+      status: "unexpected",
+      safeCode: "native_process_exited",
+    });
+    expect(store.pendingOutboundCount("event")).toBe(4);
+    const durableFrames = store.pendingOutboundAfter("event", -1);
+    const durableText = JSON.stringify(durableFrames);
+    expect(durableText).not.toContain("native-private-reference");
+    expect(durableText).not.toContain("native-item-private");
+    expect(durableText).not.toContain("native-approval-private");
+    expect(durableText).not.toContain("private-target");
+    expect(durableText).not.toContain("private-parameters");
+  });
+
+  test("releases only the exact durable pending native approval", async () => {
+    await handshake();
+    const action = {
+      schema: "actuator.action/v1",
+      kind: "process.execute",
+      target_digest: sha256("approval-target"),
+      parameters_digest: sha256("approval-parameters"),
+      summary: "Run a command",
+    } as const;
+    const actionDigest = sha256(JSON.stringify(action));
+    await driver.emit({
+      kind: "approval.requested",
+      observedAt: time as RunnerCommandFrame["sent_at"],
+      nativeSessionReference: "native-private-reference",
+      nativeTurnReference: "native-turn-reference",
+      nativeItemReference: "native-item-approval",
+      nativeApprovalReference: "native-approval-exact",
+      action,
+      actionDigest,
+    });
+    const approval = store.approvalByNativeReference(
+      "ses_bridge_fixture",
+      "native-approval-exact",
+    );
+    expect(approval?.state).toBe("pending");
+    const nonceDigest = sha256("resolution-nonce");
+    const approvalCommand = {
+      schema: "runner.protocol/command",
+      schema_version: 1,
+      message_id: "msg_approval_exact",
+      idempotency_key: "cmd_approval_exact",
+      workspace_id: workspaceId,
+      runner_id: runnerId,
+      project_id: "prj_bridge_fixture",
+      worktree_id: "wkt_bridge_fixture",
+      session_id: "ses_bridge_fixture",
+      turn_id: "trn_bridge_fixture",
+      aggregate_revision: 4,
+      capability_snapshot_digest: capabilityDigest,
+      sequence: 3,
+      lane: "control",
+      sent_at: "2026-07-27T12:01:00.000Z",
+      expires_at: "2026-07-27T12:05:00.000Z",
+      trace_id: "trc_approval_exact",
+      payload: {
+        command: "approval.resolve",
+        required_capability: "approval.resolve",
+        body: {
+          schema: "runner.command/approval.resolve",
+          schema_version: 1,
+          approval_id: approval?.approvalId,
+          binding: {
+            workspace_id: workspaceId,
+            account_id: "acct_approval_fixture",
+            actor_id: "act_approval_fixture",
+            runner_id: runnerId,
+            project_id: "prj_bridge_fixture",
+            worktree_id: "wkt_bridge_fixture",
+            session_id: "ses_bridge_fixture",
+            turn_id: "trn_bridge_fixture",
+            tool_call_id: approval?.toolCallId,
+            harness_profile_id: driver.profileId,
+            capability_snapshot_digest: capabilityDigest,
+            action,
+            action_digest: actionDigest,
+            policy_id: "pol_approval_fixture",
+            policy_version: 1,
+            issued_at: time,
+            expires_at: approval?.expiresAt,
+            resolution_nonce_digest: nonceDigest,
+          },
+          decision: "approve",
+          resolved_at: "2026-07-27T12:01:00.000Z",
+          resolved_by_actor_id: "act_approval_fixture",
+          resolution_nonce_digest: nonceDigest,
+        },
+      },
+    } as RunnerCommandFrame;
+    await transport.deliver(encode(approvalCommand));
+    expect(driver.callsByCommand.get("approval.resolve")).toBe(1);
+    expect(driver.calls.at(-1)?.nativeApprovalReference).toBe(
+      "native-approval-exact",
+    );
+    expect(store.approval(approval!.approvalId)?.state).toBe("resolved");
+
+    await transport.deliver(
+      encode({
+        ...approvalCommand,
+        message_id: "msg_approval_substituted",
+        idempotency_key: "cmd_approval_substituted",
+        sequence: 4,
+        payload: {
+          ...approvalCommand.payload,
+          body: {
+            ...approvalCommand.payload.body,
+            decision: "deny",
+          },
+        },
+      }),
+    );
+    expect(driver.callsByCommand.get("approval.resolve")).toBe(1);
   });
 
   test("persists matching revocation before closing and refuses restart", async () => {

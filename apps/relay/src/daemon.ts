@@ -19,6 +19,7 @@ import {
   type NotificationsContractTransportOptions,
   type NotificationsResolutionPresenter,
 } from "@agent-relay/notifications-transport";
+import type { StandaloneSessionAuthorityPort } from "@agent-relay/runner-bridge";
 
 import { createRelayHttpServer } from "./http-server.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
@@ -35,6 +36,7 @@ import {
   notificationsStreamKey,
   NotificationsInteractionPoller,
 } from "./notifications-poller.js";
+import { RelayStoreSessionAuthority } from "./runner-bridge-session-authority.js";
 
 export interface DaemonNotificationsOptions extends NotificationsContractTransportOptions {
   bindingId: string;
@@ -43,6 +45,9 @@ export interface DaemonNotificationsOptions extends NotificationsContractTranspo
 }
 
 export interface DaemonRunnerBridge {
+  setStandaloneSessionAuthority?(
+    authority: StandaloneSessionAuthorityPort,
+  ): void;
   start(): Promise<void>;
   stop(): Promise<void>;
   status(): object;
@@ -220,6 +225,9 @@ export async function startDaemon(
   service.recover();
   if (options.runnerBridge !== undefined) {
     try {
+      options.runnerBridge.setStandaloneSessionAuthority?.(
+        new RelayStoreSessionAuthority(store),
+      );
       await options.runnerBridge.start();
     } catch (error) {
       store.close();

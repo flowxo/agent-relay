@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
+import Database from "better-sqlite3";
 import type {
   CommandId,
   MessageId,
@@ -159,5 +160,68 @@ describe("RunnerBridgeStore", () => {
       commandEffectFingerprint(accepted),
     );
     restarted.close();
+  });
+
+  test("migrates v1 correlation state and enforces terminal transitions", async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), "runner-bridge-store-"));
+    cleanup.push(directory);
+    const path = resolve(directory, "bridge.sqlite");
+    new RunnerBridgeStore(path).close();
+    const prior = new Database(path);
+    prior.exec(`
+      DROP TABLE session_adoption;
+      DROP TABLE observation_transition;
+      DROP TABLE product_native_approval_binding;
+      DROP TABLE product_native_item_binding;
+      DROP TABLE product_native_turn_binding;
+    `);
+    prior.pragma("user_version = 1");
+    prior.close();
+
+    const store = new RunnerBridgeStore(path);
+    store.putBinding({
+      workspaceId: "wsp_store",
+      runnerId: "run_store",
+      projectId: "prj_store",
+      sessionId: "ses_store",
+      harnessProfileId: "hpf_store",
+      nativeSessionReference: "native_store",
+      capabilitySnapshotDigest: sha256("capability"),
+      actuatorOwner: "product-managed",
+      aggregateRevision: 1,
+      createdAt: "2026-07-27T12:00:00.000Z",
+      updatedAt: "2026-07-27T12:00:00.000Z",
+    });
+    store.putPendingTurn({
+      sessionId: "ses_store",
+      turnId: "trn_store",
+      aggregateRevision: 1,
+      state: "native_pending",
+      createdAt: "2026-07-27T12:00:00.000Z",
+      updatedAt: "2026-07-27T12:00:00.000Z",
+    });
+    store.bindTurn(
+      "trn_store",
+      "native_turn_store",
+      "2026-07-27T12:00:01.000Z",
+    );
+    store.putItem({
+      sessionId: "ses_store",
+      turnId: "trn_store",
+      partId: "prt_store",
+      nativeItemReference: "native_item_store",
+      itemKind: "commandExecution",
+      state: "running",
+      createdAt: "2026-07-27T12:00:01.000Z",
+      updatedAt: "2026-07-27T12:00:01.000Z",
+    });
+    expect(
+      store.setItemState("prt_store", "completed", "2026-07-27T12:00:02.000Z"),
+    ).toBe("advanced");
+    expect(
+      store.setItemState("prt_store", "failed", "2026-07-27T12:00:03.000Z"),
+    ).toBe("invalid");
+    expect(store.itemCount("completed")).toBe(1);
+    store.close();
   });
 });

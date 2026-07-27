@@ -6,6 +6,7 @@ import type {
 import type {
   RunnerCommandFrame,
   RunnerHelloProofInput,
+  RunnerNormalizedActuatorAction,
 } from "@session/protocol-runner";
 
 export interface RunnerBridgeConnection {
@@ -65,6 +66,7 @@ export type StructuredHarnessObservationKind =
   | "item.started"
   | "item.completed"
   | "approval.requested"
+  | "attention.required"
   | "native.error"
   | "process.exited";
 
@@ -77,6 +79,8 @@ export interface StructuredHarnessObservation {
   readonly nativeApprovalReference?: string;
   readonly itemKind?: string;
   readonly approvalKind?: string;
+  readonly action?: RunnerNormalizedActuatorAction;
+  readonly actionDigest?: Sha256Digest;
   readonly status?: string;
   readonly safeCode?: string;
 }
@@ -84,6 +88,49 @@ export interface StructuredHarnessObservation {
 export type StructuredHarnessObserver = (
   observation: StructuredHarnessObservation,
 ) => void | Promise<void>;
+
+export interface StandaloneSessionAdoptionClaim {
+  readonly adoptionId: string;
+  readonly requestFingerprint: Sha256Digest;
+  readonly machineId: string;
+  readonly harness: "codex";
+  readonly surface: "cli";
+  readonly nativeSessionReference: string;
+  readonly bridgeSessionId: string;
+  readonly expectedSequence: number;
+  readonly projectAuthorityDigest: string;
+  readonly standaloneCapabilityDigest: Sha256Digest;
+  readonly harnessVersion: string;
+  readonly productSessionId: string;
+  readonly claimedAt: IsoTimestamp;
+}
+
+export interface StandaloneSessionAdoptionReceipt {
+  readonly adoptionId: string;
+  readonly requestFingerprint: Sha256Digest;
+  readonly productSessionId: string;
+  readonly nativeSessionReference: string;
+  readonly claimedAt: IsoTimestamp;
+}
+
+export type StandaloneSessionAdoptionResult =
+  | {
+      readonly status: "claimed" | "duplicate";
+      readonly receipt: StandaloneSessionAdoptionReceipt;
+    }
+  | {
+      readonly status: "rejected";
+      readonly safeCode: string;
+    };
+
+export interface StandaloneSessionAuthorityPort {
+  claim(
+    claim: StandaloneSessionAdoptionClaim,
+  ): Promise<StandaloneSessionAdoptionResult>;
+  inspect(
+    adoptionId: string,
+  ): Promise<StandaloneSessionAdoptionReceipt | undefined>;
+}
 
 export interface StructuredHarnessDriver {
   readonly profileId: string;

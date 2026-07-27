@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 
 import type { CapabilityDescriptor, Sha256Digest } from "@session/contracts";
 import type {
+  RunnerNormalizedActuatorAction,
   RunnerCommandFrame,
   RunnerCommandOutcomeStatus,
   RunnerFrame,
@@ -11,7 +12,7 @@ import type {
   RunnerReconcileEffectOutcome,
 } from "@session/protocol-runner";
 
-export const RUNNER_BRIDGE_STORE_SCHEMA_VERSION = 1;
+export const RUNNER_BRIDGE_STORE_SCHEMA_VERSION = 2;
 
 export type RunnerBridgeLifecycleState =
   | "disabled"
@@ -43,8 +44,76 @@ export interface ProductNativeBinding {
   readonly harnessProfileId: string;
   readonly nativeSessionReference: string;
   readonly capabilitySnapshotDigest: Sha256Digest;
-  readonly actuatorOwner: "product-managed";
+  readonly actuatorOwner: "standalone-attention" | "product-managed";
   readonly aggregateRevision: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export type ProductTurnState =
+  | "native_pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "interrupted"
+  | "outcome_unknown";
+
+export interface ProductNativeTurnBinding {
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly nativeTurnReference?: string;
+  readonly aggregateRevision: number;
+  readonly state: ProductTurnState;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export type ProductItemState = "running" | "completed" | "failed";
+
+export interface ProductNativeItemBinding {
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly partId: string;
+  readonly nativeItemReference: string;
+  readonly itemKind: string;
+  readonly state: ProductItemState;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export type ProductApprovalState =
+  "pending" | "dispatching" | "resolved" | "expired" | "outcome_unknown";
+
+export interface ProductNativeApprovalBinding {
+  readonly approvalId: string;
+  readonly toolCallId: string;
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly nativeApprovalReference: string;
+  readonly nativeItemReference: string;
+  readonly action: RunnerNormalizedActuatorAction;
+  readonly actionDigest: Sha256Digest;
+  readonly capabilitySnapshotDigest: Sha256Digest;
+  readonly expiresAt: string;
+  readonly state: ProductApprovalState;
+  readonly decision?: "approve" | "deny";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export type SessionAdoptionState =
+  | "proposed"
+  | "standalone_claimed"
+  | "complete"
+  | "rejected"
+  | "blocked_recovery";
+
+export interface StoredSessionAdoption {
+  readonly adoptionId: string;
+  readonly requestFingerprint: Sha256Digest;
+  readonly requestJson: string;
+  readonly state: SessionAdoptionState;
+  readonly safeCode?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -89,8 +158,49 @@ interface BindingRow {
   harness_profile_id: string;
   native_session_reference: string;
   capability_snapshot_digest: string;
-  actuator_owner: "product-managed";
+  actuator_owner: "standalone-attention" | "product-managed";
   aggregate_revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TurnBindingRow {
+  session_id: string;
+  turn_id: string;
+  native_turn_reference: string | null;
+  aggregate_revision: number;
+  state: ProductTurnState;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ItemBindingRow {
+  session_id: string;
+  turn_id: string;
+  part_id: string;
+  native_item_reference: string;
+  item_kind: string;
+  state: ProductItemState;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ApprovalBindingRow {
+  approval_id: string;
+  tool_call_id: string;
+  session_id: string;
+  turn_id: string;
+  native_approval_reference: string;
+  native_item_reference: string;
+  action_kind: RunnerNormalizedActuatorAction["kind"];
+  action_target_digest: string;
+  action_parameters_digest: string;
+  action_summary: string;
+  action_digest: string;
+  capability_snapshot_digest: string;
+  expires_at: string;
+  state: ProductApprovalState;
+  decision: "approve" | "deny" | null;
   created_at: string;
   updated_at: string;
 }
@@ -161,6 +271,60 @@ function bindingFromRow(row: BindingRow): ProductNativeBinding {
   };
 }
 
+function turnBindingFromRow(row: TurnBindingRow): ProductNativeTurnBinding {
+  return {
+    sessionId: row.session_id,
+    turnId: row.turn_id,
+    ...(row.native_turn_reference === null
+      ? {}
+      : { nativeTurnReference: row.native_turn_reference }),
+    aggregateRevision: row.aggregate_revision,
+    state: row.state,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function itemBindingFromRow(row: ItemBindingRow): ProductNativeItemBinding {
+  return {
+    sessionId: row.session_id,
+    turnId: row.turn_id,
+    partId: row.part_id,
+    nativeItemReference: row.native_item_reference,
+    itemKind: row.item_kind,
+    state: row.state,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function approvalBindingFromRow(
+  row: ApprovalBindingRow,
+): ProductNativeApprovalBinding {
+  return {
+    approvalId: row.approval_id,
+    toolCallId: row.tool_call_id,
+    sessionId: row.session_id,
+    turnId: row.turn_id,
+    nativeApprovalReference: row.native_approval_reference,
+    nativeItemReference: row.native_item_reference,
+    action: {
+      schema: "actuator.action/v1",
+      kind: row.action_kind,
+      target_digest: row.action_target_digest as Sha256Digest,
+      parameters_digest: row.action_parameters_digest as Sha256Digest,
+      summary: row.action_summary,
+    },
+    actionDigest: row.action_digest as Sha256Digest,
+    capabilitySnapshotDigest: row.capability_snapshot_digest as Sha256Digest,
+    expiresAt: row.expires_at,
+    state: row.state,
+    ...(row.decision === null ? {} : { decision: row.decision }),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function commandFromRow(row: CommandRow): StoredCommandEffect {
   return {
     idempotencyKey: row.idempotency_key,
@@ -218,6 +382,8 @@ export class RunnerBridgeStore {
     }
     if (version === 0) {
       this.#migrateFromZero();
+    } else if (version === 1) {
+      this.#migrateFromOne();
     }
   }
 
@@ -245,10 +411,13 @@ export class RunnerBridgeStore {
           harness_profile_id TEXT NOT NULL,
           native_session_reference TEXT NOT NULL,
           capability_snapshot_digest TEXT NOT NULL,
-          actuator_owner TEXT NOT NULL CHECK (actuator_owner = 'product-managed'),
+          actuator_owner TEXT NOT NULL CHECK (
+            actuator_owner IN ('standalone-attention', 'product-managed')
+          ),
           aggregate_revision INTEGER NOT NULL CHECK (aggregate_revision >= 0),
           created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
+          updated_at TEXT NOT NULL,
+          UNIQUE(harness_profile_id, native_session_reference)
         );
         CREATE INDEX product_native_binding_project
           ON product_native_binding(project_id);
@@ -289,6 +458,147 @@ export class RunnerBridgeStore {
           state TEXT NOT NULL CHECK (state IN ('requested', 'complete')),
           updated_at TEXT NOT NULL
         );
+        ${this.#versionTwoTablesSql()}
+      `);
+      this.#database.pragma(
+        `user_version = ${String(RUNNER_BRIDGE_STORE_SCHEMA_VERSION)}`,
+      );
+    })();
+  }
+
+  #versionTwoTablesSql(): string {
+    return `
+      CREATE TABLE product_native_turn_binding (
+        turn_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        native_turn_reference TEXT,
+        aggregate_revision INTEGER NOT NULL CHECK (aggregate_revision >= 0),
+        state TEXT NOT NULL CHECK (
+          state IN (
+            'native_pending', 'running', 'completed', 'failed',
+            'interrupted', 'outcome_unknown'
+          )
+        ),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES product_native_binding(session_id)
+          ON DELETE CASCADE,
+        UNIQUE(session_id, native_turn_reference)
+      );
+      CREATE INDEX product_native_turn_session
+        ON product_native_turn_binding(session_id);
+      CREATE TABLE product_native_item_binding (
+        part_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        native_item_reference TEXT NOT NULL,
+        item_kind TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (
+          state IN ('running', 'completed', 'failed')
+        ),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES product_native_binding(session_id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(turn_id) REFERENCES product_native_turn_binding(turn_id)
+          ON DELETE CASCADE,
+        UNIQUE(session_id, native_item_reference)
+      );
+      CREATE INDEX product_native_item_turn
+        ON product_native_item_binding(turn_id);
+      CREATE TABLE product_native_approval_binding (
+        approval_id TEXT PRIMARY KEY,
+        tool_call_id TEXT NOT NULL UNIQUE,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        native_approval_reference TEXT NOT NULL,
+        native_item_reference TEXT NOT NULL,
+        action_kind TEXT NOT NULL,
+        action_target_digest TEXT NOT NULL,
+        action_parameters_digest TEXT NOT NULL,
+        action_summary TEXT NOT NULL,
+        action_digest TEXT NOT NULL,
+        capability_snapshot_digest TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (
+          state IN (
+            'pending', 'dispatching', 'resolved', 'expired',
+            'outcome_unknown'
+          )
+        ),
+        decision TEXT CHECK (decision IN ('approve', 'deny')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES product_native_binding(session_id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(turn_id) REFERENCES product_native_turn_binding(turn_id)
+          ON DELETE CASCADE,
+        UNIQUE(session_id, native_approval_reference)
+      );
+      CREATE INDEX product_native_approval_session
+        ON product_native_approval_binding(session_id, state);
+      CREATE TABLE observation_transition (
+        fingerprint TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        event_sequence INTEGER NOT NULL,
+        observed_at TEXT NOT NULL
+      );
+      CREATE TABLE session_adoption (
+        adoption_id TEXT PRIMARY KEY,
+        request_fingerprint TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (
+          state IN (
+            'proposed', 'standalone_claimed', 'complete', 'rejected',
+            'blocked_recovery'
+          )
+        ),
+        safe_code TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `;
+  }
+
+  #migrateFromOne(): void {
+    this.#database.transaction(() => {
+      this.#database.exec(`
+        ALTER TABLE product_native_binding
+          RENAME TO product_native_binding_v1;
+        DROP INDEX IF EXISTS product_native_binding_project;
+        CREATE TABLE product_native_binding (
+          session_id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL,
+          runner_id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          worktree_id TEXT,
+          harness_profile_id TEXT NOT NULL,
+          native_session_reference TEXT NOT NULL,
+          capability_snapshot_digest TEXT NOT NULL,
+          actuator_owner TEXT NOT NULL CHECK (
+            actuator_owner IN ('standalone-attention', 'product-managed')
+          ),
+          aggregate_revision INTEGER NOT NULL CHECK (aggregate_revision >= 0),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(harness_profile_id, native_session_reference)
+        );
+        INSERT INTO product_native_binding(
+          session_id, workspace_id, runner_id, project_id, worktree_id,
+          harness_profile_id, native_session_reference,
+          capability_snapshot_digest, actuator_owner, aggregate_revision,
+          created_at, updated_at
+        )
+        SELECT
+          session_id, workspace_id, runner_id, project_id, worktree_id,
+          harness_profile_id, native_session_reference,
+          capability_snapshot_digest, actuator_owner, aggregate_revision,
+          created_at, updated_at
+        FROM product_native_binding_v1;
+        DROP TABLE product_native_binding_v1;
+        CREATE INDEX product_native_binding_project
+          ON product_native_binding(project_id);
+        ${this.#versionTwoTablesSql()}
       `);
       this.#database.pragma(
         `user_version = ${String(RUNNER_BRIDGE_STORE_SCHEMA_VERSION)}`,
@@ -369,40 +679,38 @@ export class RunnerBridgeStore {
   }
 
   putBinding(binding: ProductNativeBinding): void {
-    this.#database
-      .prepare(
-        `INSERT INTO product_native_binding(
+    this.#database.transaction(() => {
+      const existing = this.binding(binding.sessionId);
+      if (existing) {
+        if (JSON.stringify(existing) === JSON.stringify(binding)) {
+          return;
+        }
+        throw new Error("Product/native binding already exists.");
+      }
+      this.#database
+        .prepare(
+          `INSERT INTO product_native_binding(
           session_id, workspace_id, runner_id, project_id, worktree_id,
           harness_profile_id, native_session_reference,
           capability_snapshot_digest, actuator_owner, aggregate_revision,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(session_id) DO UPDATE SET
-          workspace_id = excluded.workspace_id,
-          runner_id = excluded.runner_id,
-          project_id = excluded.project_id,
-          worktree_id = excluded.worktree_id,
-          harness_profile_id = excluded.harness_profile_id,
-          native_session_reference = excluded.native_session_reference,
-          capability_snapshot_digest = excluded.capability_snapshot_digest,
-          actuator_owner = excluded.actuator_owner,
-          aggregate_revision = excluded.aggregate_revision,
-          updated_at = excluded.updated_at`,
-      )
-      .run(
-        binding.sessionId,
-        binding.workspaceId,
-        binding.runnerId,
-        binding.projectId,
-        binding.worktreeId ?? null,
-        binding.harnessProfileId,
-        binding.nativeSessionReference,
-        binding.capabilitySnapshotDigest,
-        binding.actuatorOwner,
-        binding.aggregateRevision,
-        binding.createdAt,
-        binding.updatedAt,
-      );
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          binding.sessionId,
+          binding.workspaceId,
+          binding.runnerId,
+          binding.projectId,
+          binding.worktreeId ?? null,
+          binding.harnessProfileId,
+          binding.nativeSessionReference,
+          binding.capabilitySnapshotDigest,
+          binding.actuatorOwner,
+          binding.aggregateRevision,
+          binding.createdAt,
+          binding.updatedAt,
+        );
+    })();
   }
 
   binding(sessionId: string): ProductNativeBinding | undefined {
@@ -410,6 +718,74 @@ export class RunnerBridgeStore {
       .prepare("SELECT * FROM product_native_binding WHERE session_id = ?")
       .get(sessionId) as BindingRow | undefined;
     return row ? bindingFromRow(row) : undefined;
+  }
+
+  bindingByNativeReference(
+    harnessProfileId: string,
+    nativeSessionReference: string,
+  ): ProductNativeBinding | undefined {
+    const row = this.#database
+      .prepare(
+        `SELECT * FROM product_native_binding
+         WHERE harness_profile_id = ? AND native_session_reference = ?`,
+      )
+      .get(harnessProfileId, nativeSessionReference) as BindingRow | undefined;
+    return row ? bindingFromRow(row) : undefined;
+  }
+
+  adoptBinding(binding: ProductNativeBinding): void {
+    if (binding.actuatorOwner !== "product-managed") {
+      throw new Error("Adopted binding must be product managed.");
+    }
+    this.#database.transaction(() => {
+      const existing = this.binding(binding.sessionId);
+      if (!existing) {
+        throw new Error("Standalone binding is missing.");
+      }
+      if (existing.actuatorOwner === "product-managed") {
+        if (
+          existing.workspaceId === binding.workspaceId &&
+          existing.runnerId === binding.runnerId &&
+          existing.projectId === binding.projectId &&
+          existing.worktreeId === binding.worktreeId &&
+          existing.harnessProfileId === binding.harnessProfileId &&
+          existing.nativeSessionReference === binding.nativeSessionReference &&
+          existing.capabilitySnapshotDigest ===
+            binding.capabilitySnapshotDigest &&
+          existing.aggregateRevision === binding.aggregateRevision
+        ) {
+          return;
+        }
+        throw new Error("Product-managed binding does not match adoption.");
+      }
+      if (
+        existing.workspaceId !== binding.workspaceId ||
+        existing.runnerId !== binding.runnerId ||
+        existing.projectId !== binding.projectId ||
+        existing.worktreeId !== binding.worktreeId ||
+        existing.nativeSessionReference !== binding.nativeSessionReference
+      ) {
+        throw new Error("Standalone binding cannot be adopted.");
+      }
+      const result = this.#database
+        .prepare(
+          `UPDATE product_native_binding
+           SET harness_profile_id = ?, capability_snapshot_digest = ?,
+               actuator_owner = 'product-managed', aggregate_revision = ?,
+               updated_at = ?
+           WHERE session_id = ? AND actuator_owner = 'standalone-attention'`,
+        )
+        .run(
+          binding.harnessProfileId,
+          binding.capabilitySnapshotDigest,
+          binding.aggregateRevision,
+          binding.updatedAt,
+          binding.sessionId,
+        );
+      if (result.changes !== 1) {
+        throw new Error("Standalone binding adoption did not commit.");
+      }
+    })();
   }
 
   hasProject(projectId: string): boolean {
@@ -426,6 +802,544 @@ export class RunnerBridgeStore {
     const row = this.#database
       .prepare("SELECT COUNT(*) AS count FROM product_native_binding")
       .get() as { count: number };
+    return row.count;
+  }
+
+  bindingCountByOwner(
+    actuatorOwner: ProductNativeBinding["actuatorOwner"],
+  ): number {
+    const row = this.#database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM product_native_binding
+         WHERE actuator_owner = ?`,
+      )
+      .get(actuatorOwner) as { count: number };
+    return row.count;
+  }
+
+  putPendingTurn(binding: ProductNativeTurnBinding): void {
+    if (
+      binding.state !== "native_pending" ||
+      binding.nativeTurnReference !== undefined
+    ) {
+      throw new Error("Pending turn binding is malformed.");
+    }
+    const existing = this.turn(binding.turnId);
+    if (existing) {
+      if (
+        existing.sessionId === binding.sessionId &&
+        existing.aggregateRevision === binding.aggregateRevision
+      ) {
+        return;
+      }
+      throw new Error("Product turn binding already exists.");
+    }
+    this.#database
+      .prepare(
+        `INSERT INTO product_native_turn_binding(
+          session_id, turn_id, native_turn_reference, aggregate_revision,
+          state, created_at, updated_at
+        ) VALUES (?, ?, NULL, ?, 'native_pending', ?, ?)`,
+      )
+      .run(
+        binding.sessionId,
+        binding.turnId,
+        binding.aggregateRevision,
+        binding.createdAt,
+        binding.updatedAt,
+      );
+  }
+
+  bindTurn(
+    turnId: string,
+    nativeTurnReference: string,
+    updatedAt: string,
+  ): ProductNativeTurnBinding {
+    return this.#database.transaction(() => {
+      const existing = this.turn(turnId);
+      if (!existing) {
+        throw new Error("Product turn binding is missing.");
+      }
+      if (existing.nativeTurnReference !== undefined) {
+        if (existing.nativeTurnReference === nativeTurnReference) {
+          return existing;
+        }
+        throw new Error("Product turn already has another native reference.");
+      }
+      const result = this.#database
+        .prepare(
+          `UPDATE product_native_turn_binding
+           SET native_turn_reference = ?, state = 'running', updated_at = ?
+           WHERE turn_id = ? AND state = 'native_pending'
+             AND native_turn_reference IS NULL`,
+        )
+        .run(nativeTurnReference, updatedAt, turnId);
+      if (result.changes !== 1) {
+        throw new Error("Product/native turn binding did not commit.");
+      }
+      const bound = this.turn(turnId);
+      if (!bound) {
+        throw new Error("Bound product turn disappeared.");
+      }
+      return bound;
+    })();
+  }
+
+  turn(turnId: string): ProductNativeTurnBinding | undefined {
+    const row = this.#database
+      .prepare("SELECT * FROM product_native_turn_binding WHERE turn_id = ?")
+      .get(turnId) as TurnBindingRow | undefined;
+    return row ? turnBindingFromRow(row) : undefined;
+  }
+
+  turnByNativeReference(
+    sessionId: string,
+    nativeTurnReference: string,
+  ): ProductNativeTurnBinding | undefined {
+    const row = this.#database
+      .prepare(
+        `SELECT * FROM product_native_turn_binding
+         WHERE session_id = ? AND native_turn_reference = ?`,
+      )
+      .get(sessionId, nativeTurnReference) as TurnBindingRow | undefined;
+    return row ? turnBindingFromRow(row) : undefined;
+  }
+
+  setTurnState(
+    turnId: string,
+    state: Exclude<ProductTurnState, "native_pending">,
+    updatedAt: string,
+  ): "advanced" | "duplicate" | "invalid" {
+    const existing = this.turn(turnId);
+    if (!existing) {
+      return "invalid";
+    }
+    if (existing.state === state) {
+      return "duplicate";
+    }
+    if (
+      existing.state === "completed" ||
+      existing.state === "failed" ||
+      existing.state === "interrupted" ||
+      existing.state === "outcome_unknown"
+    ) {
+      return "invalid";
+    }
+    const result = this.#database
+      .prepare(
+        `UPDATE product_native_turn_binding SET state = ?, updated_at = ?
+         WHERE turn_id = ? AND state IN ('native_pending', 'running')`,
+      )
+      .run(state, updatedAt, turnId);
+    return result.changes === 1 ? "advanced" : "invalid";
+  }
+
+  turnCount(state?: ProductTurnState): number {
+    const row =
+      state === undefined
+        ? (this.#database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM product_native_turn_binding",
+            )
+            .get() as { count: number })
+        : (this.#database
+            .prepare(
+              `SELECT COUNT(*) AS count FROM product_native_turn_binding
+               WHERE state = ?`,
+            )
+            .get(state) as { count: number });
+    return row.count;
+  }
+
+  interruptActiveTurns(sessionId: string, updatedAt: string): number {
+    const result = this.#database
+      .prepare(
+        `UPDATE product_native_turn_binding
+         SET state = 'interrupted', updated_at = ?
+         WHERE session_id = ? AND state IN ('native_pending', 'running')`,
+      )
+      .run(updatedAt, sessionId);
+    return result.changes;
+  }
+
+  putItem(binding: ProductNativeItemBinding): void {
+    if (binding.state !== "running") {
+      throw new Error("New native item must be running.");
+    }
+    const existing = this.item(binding.partId);
+    if (existing) {
+      if (
+        existing.sessionId === binding.sessionId &&
+        existing.turnId === binding.turnId &&
+        existing.nativeItemReference === binding.nativeItemReference &&
+        existing.itemKind === binding.itemKind
+      ) {
+        return;
+      }
+      throw new Error("Product item binding already exists.");
+    }
+    this.#database
+      .prepare(
+        `INSERT INTO product_native_item_binding(
+          session_id, turn_id, part_id, native_item_reference, item_kind,
+          state, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'running', ?, ?)`,
+      )
+      .run(
+        binding.sessionId,
+        binding.turnId,
+        binding.partId,
+        binding.nativeItemReference,
+        binding.itemKind,
+        binding.createdAt,
+        binding.updatedAt,
+      );
+  }
+
+  item(partId: string): ProductNativeItemBinding | undefined {
+    const row = this.#database
+      .prepare("SELECT * FROM product_native_item_binding WHERE part_id = ?")
+      .get(partId) as ItemBindingRow | undefined;
+    return row ? itemBindingFromRow(row) : undefined;
+  }
+
+  itemByNativeReference(
+    sessionId: string,
+    nativeItemReference: string,
+  ): ProductNativeItemBinding | undefined {
+    const row = this.#database
+      .prepare(
+        `SELECT * FROM product_native_item_binding
+         WHERE session_id = ? AND native_item_reference = ?`,
+      )
+      .get(sessionId, nativeItemReference) as ItemBindingRow | undefined;
+    return row ? itemBindingFromRow(row) : undefined;
+  }
+
+  setItemState(
+    partId: string,
+    state: Exclude<ProductItemState, "running">,
+    updatedAt: string,
+  ): "advanced" | "duplicate" | "invalid" {
+    const existing = this.item(partId);
+    if (!existing) {
+      return "invalid";
+    }
+    if (existing.state === state) {
+      return "duplicate";
+    }
+    if (existing.state !== "running") {
+      return "invalid";
+    }
+    const result = this.#database
+      .prepare(
+        `UPDATE product_native_item_binding SET state = ?, updated_at = ?
+         WHERE part_id = ? AND state = 'running'`,
+      )
+      .run(state, updatedAt, partId);
+    return result.changes === 1 ? "advanced" : "invalid";
+  }
+
+  itemCount(state?: ProductItemState): number {
+    const row =
+      state === undefined
+        ? (this.#database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM product_native_item_binding",
+            )
+            .get() as { count: number })
+        : (this.#database
+            .prepare(
+              `SELECT COUNT(*) AS count FROM product_native_item_binding
+               WHERE state = ?`,
+            )
+            .get(state) as { count: number });
+    return row.count;
+  }
+
+  putApproval(binding: ProductNativeApprovalBinding): void {
+    if (binding.state !== "pending") {
+      throw new Error("New native approval must be pending.");
+    }
+    const existing = this.approval(binding.approvalId);
+    if (existing) {
+      if (JSON.stringify(existing) === JSON.stringify(binding)) {
+        return;
+      }
+      throw new Error("Product approval binding already exists.");
+    }
+    this.#database
+      .prepare(
+        `INSERT INTO product_native_approval_binding(
+          approval_id, tool_call_id, session_id, turn_id,
+          native_approval_reference, native_item_reference, action_kind,
+          action_target_digest, action_parameters_digest, action_summary,
+          action_digest, capability_snapshot_digest, expires_at, state,
+          decision, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?)`,
+      )
+      .run(
+        binding.approvalId,
+        binding.toolCallId,
+        binding.sessionId,
+        binding.turnId,
+        binding.nativeApprovalReference,
+        binding.nativeItemReference,
+        binding.action.kind,
+        binding.action.target_digest,
+        binding.action.parameters_digest,
+        binding.action.summary,
+        binding.actionDigest,
+        binding.capabilitySnapshotDigest,
+        binding.expiresAt,
+        binding.createdAt,
+        binding.updatedAt,
+      );
+  }
+
+  approval(approvalId: string): ProductNativeApprovalBinding | undefined {
+    const row = this.#database
+      .prepare(
+        `SELECT * FROM product_native_approval_binding
+         WHERE approval_id = ?`,
+      )
+      .get(approvalId) as ApprovalBindingRow | undefined;
+    return row ? approvalBindingFromRow(row) : undefined;
+  }
+
+  approvalByNativeReference(
+    sessionId: string,
+    nativeApprovalReference: string,
+  ): ProductNativeApprovalBinding | undefined {
+    const row = this.#database
+      .prepare(
+        `SELECT * FROM product_native_approval_binding
+         WHERE session_id = ? AND native_approval_reference = ?`,
+      )
+      .get(sessionId, nativeApprovalReference) as
+      ApprovalBindingRow | undefined;
+    return row ? approvalBindingFromRow(row) : undefined;
+  }
+
+  beginApprovalDispatch(
+    approvalId: string,
+    decision: "approve" | "deny",
+    updatedAt: string,
+  ): boolean {
+    const result = this.#database
+      .prepare(
+        `UPDATE product_native_approval_binding
+         SET state = 'dispatching', decision = ?, updated_at = ?
+         WHERE approval_id = ? AND state = 'pending' AND expires_at > ?`,
+      )
+      .run(decision, updatedAt, approvalId, updatedAt);
+    return result.changes === 1;
+  }
+
+  finishApprovalDispatch(
+    approvalId: string,
+    state: "resolved" | "outcome_unknown",
+    updatedAt: string,
+  ): boolean {
+    const result = this.#database
+      .prepare(
+        `UPDATE product_native_approval_binding SET state = ?, updated_at = ?
+         WHERE approval_id = ? AND state = 'dispatching'`,
+      )
+      .run(state, updatedAt, approvalId);
+    return result.changes === 1;
+  }
+
+  recoverDispatchingApprovals(updatedAt: string): number {
+    const result = this.#database
+      .prepare(
+        `UPDATE product_native_approval_binding
+         SET state = 'outcome_unknown', updated_at = ?
+         WHERE state = 'dispatching'`,
+      )
+      .run(updatedAt);
+    return result.changes;
+  }
+
+  expireApprovals(updatedAt: string): number {
+    const result = this.#database
+      .prepare(
+        `UPDATE product_native_approval_binding
+         SET state = 'expired', updated_at = ?
+         WHERE state = 'pending' AND expires_at <= ?`,
+      )
+      .run(updatedAt, updatedAt);
+    return result.changes;
+  }
+
+  invalidatePendingApprovals(updatedAt: string, sessionId?: string): number {
+    const result =
+      sessionId === undefined
+        ? this.#database
+            .prepare(
+              `UPDATE product_native_approval_binding
+               SET state = 'outcome_unknown', updated_at = ?
+               WHERE state IN ('pending', 'dispatching')`,
+            )
+            .run(updatedAt)
+        : this.#database
+            .prepare(
+              `UPDATE product_native_approval_binding
+               SET state = 'outcome_unknown', updated_at = ?
+               WHERE session_id = ? AND state IN ('pending', 'dispatching')`,
+            )
+            .run(updatedAt, sessionId);
+    return result.changes;
+  }
+
+  approvalCount(state?: ProductApprovalState): number {
+    const row =
+      state === undefined
+        ? (this.#database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM product_native_approval_binding",
+            )
+            .get() as { count: number })
+        : (this.#database
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM product_native_approval_binding WHERE state = ?`,
+            )
+            .get(state) as { count: number });
+    return row.count;
+  }
+
+  appendObservationOutbound(
+    fingerprint: Sha256Digest,
+    kind: string,
+    observedAt: string,
+    build: (sequence: number) => RunnerFrame,
+    beforeAppend?: () => void,
+  ): RunnerFrame | undefined {
+    return this.#database.transaction(() => {
+      const current = this.lane("event").outbound_cursor;
+      const sequence = current + 1;
+      const inserted = this.#database
+        .prepare(
+          `INSERT OR IGNORE INTO observation_transition(
+            fingerprint, kind, event_sequence, observed_at
+          ) VALUES (?, ?, ?, ?)`,
+        )
+        .run(fingerprint, kind, sequence, observedAt);
+      if (inserted.changes === 0) {
+        return undefined;
+      }
+      beforeAppend?.();
+      const frame = build(sequence);
+      if (frame.lane !== "event" || frame.sequence !== sequence) {
+        throw new Error("Observation frame changed its lane or sequence.");
+      }
+      this.#database
+        .prepare(
+          `INSERT INTO outbound_frame(
+            lane, sequence, frame_json, created_at
+          ) VALUES ('event', ?, ?, ?)`,
+        )
+        .run(sequence, JSON.stringify(frame), observedAt);
+      this.#database
+        .prepare(
+          "UPDATE lane_state SET outbound_cursor = ? WHERE lane = 'event'",
+        )
+        .run(sequence);
+      return frame;
+    })();
+  }
+
+  observationCount(): number {
+    const row = this.#database
+      .prepare("SELECT COUNT(*) AS count FROM observation_transition")
+      .get() as { count: number };
+    return row.count;
+  }
+
+  proposeAdoption(adoption: StoredSessionAdoption): "accepted" | "duplicate" {
+    const existing = this.adoption(adoption.adoptionId);
+    if (existing) {
+      if (existing.requestFingerprint === adoption.requestFingerprint) {
+        return "duplicate";
+      }
+      throw new Error("Adoption identity was reused for another request.");
+    }
+    if (adoption.state !== "proposed") {
+      throw new Error("New adoption must be proposed.");
+    }
+    this.#database
+      .prepare(
+        `INSERT INTO session_adoption(
+          adoption_id, request_fingerprint, request_json, state,
+          safe_code, created_at, updated_at
+        ) VALUES (?, ?, ?, 'proposed', NULL, ?, ?)`,
+      )
+      .run(
+        adoption.adoptionId,
+        adoption.requestFingerprint,
+        adoption.requestJson,
+        adoption.createdAt,
+        adoption.updatedAt,
+      );
+    return "accepted";
+  }
+
+  adoption(adoptionId: string): StoredSessionAdoption | undefined {
+    const row = this.#database
+      .prepare("SELECT * FROM session_adoption WHERE adoption_id = ?")
+      .get(adoptionId) as
+      | {
+          adoption_id: string;
+          request_fingerprint: string;
+          request_json: string;
+          state: SessionAdoptionState;
+          safe_code: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    return row
+      ? {
+          adoptionId: row.adoption_id,
+          requestFingerprint: row.request_fingerprint as Sha256Digest,
+          requestJson: row.request_json,
+          state: row.state,
+          ...(row.safe_code === null ? {} : { safeCode: row.safe_code }),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }
+      : undefined;
+  }
+
+  transitionAdoption(
+    adoptionId: string,
+    expected: SessionAdoptionState,
+    state: SessionAdoptionState,
+    updatedAt: string,
+    safeCode?: string,
+  ): boolean {
+    const result = this.#database
+      .prepare(
+        `UPDATE session_adoption
+         SET state = ?, safe_code = ?, updated_at = ?
+         WHERE adoption_id = ? AND state = ?`,
+      )
+      .run(state, safeCode ?? null, updatedAt, adoptionId, expected);
+    return result.changes === 1;
+  }
+
+  adoptionCount(state?: SessionAdoptionState): number {
+    const row =
+      state === undefined
+        ? (this.#database
+            .prepare("SELECT COUNT(*) AS count FROM session_adoption")
+            .get() as { count: number })
+        : (this.#database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM session_adoption WHERE state = ?",
+            )
+            .get(state) as { count: number });
     return row.count;
   }
 

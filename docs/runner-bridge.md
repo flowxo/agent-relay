@@ -47,8 +47,19 @@ Project/artifact/diagnose and session-pause operations remain unsupported.
 
 Native notifications become content-free structured observations containing only
 opaque native references, lifecycle status, item/approval kind, timestamp, and
-safe code. Product event mapping and durable turn/approval correlation are a
-separate composition concern; the adapter never sends rendered attention cards.
+safe code. The bridge resolves those local references through durable
+session/turn/item/approval correlation and emits only product-qualified,
+metadata-classified semantic events. The adapter never sends rendered attention
+cards.
+
+An observation-only structured profile also represents existing hook/CLI/IDE
+attention evidence. Its capability descriptors contain only `session.observe`,
+`turn.observe`, and `attention.observe`; every actuator method is unsupported.
+The app composition derives its exact fidelity limits from the runtime-validated
+harness registry. In particular, Codex, Claude, and Cursor CLI observation does
+not claim active steering, Cursor permission automation remains disabled, Cursor
+IDE late resume remains unavailable, and a hook never becomes process-exit
+proof.
 
 ## Default-off composition
 
@@ -84,7 +95,9 @@ Bridge state is separate from standalone attention state:
 
 - `runner-bridge.json` is a strict, mode-`0600` enablement selection;
 - `runner-bridge.sqlite` stores runner authority, product/native bindings, lane
-  cursors, queued frames, sanitized effect outcomes, and reconciliation state.
+  cursors, queued frames, sanitized effect outcomes, reconciliation state,
+  product/native turn/item/approval correlation, observation deduplication, and
+  adoption intents/outcomes.
 
 The bridge database may contain private native session references and must not
 be shared. Status and doctor expose only a hashed authority reference, counts,
@@ -106,6 +119,14 @@ Notifications state, hooks, logs, web credentials, or fallback records.
   product-managed binding, capability snapshot, exact scope, current revision,
   body schema, and expiry.
 - Durable command acceptance precedes the allowlisted driver call.
+- `turn.start` and `turn.follow_up` persist a pending product turn before native
+  invocation, then bind the returned native turn before completing the effect.
+  Steer and cancel require that exact durable mapping after restart.
+- A native approval request stores one generated product approval/tool-call
+  mapping with a normalized action digest and expiry. Resolution must match the
+  complete closed runner binding. The bridge marks it `dispatching` before
+  releasing the local native request reference; restart or ambiguity becomes
+  `outcome_unknown` and is never retried automatically.
 - `session.start` is the sole operation permitted without an existing native
   session reference. Its completed result must return one bounded opaque thread
   reference, which is persisted exactly once before the effect is completed.
@@ -118,6 +139,27 @@ Notifications state, hooks, logs, web credentials, or fallback records.
   restart.
 - Event flow control retains paused frames; spool exhaustion rejects new effects
   while preserving control-lane capacity.
+
+## Standalone observation and adoption
+
+Standalone attention and product-managed actuation have explicit, monotonic
+ownership. Absence of a row in the standalone core store means
+`standalone-attention`; an observation-only bridge binding does not change that
+authority.
+
+The local adoption service can claim one exact eligible Codex CLI checkpoint for
+the verified Codex app-server profile. The request binds machine, surface,
+native session, bridge session, sequence, project/capability digests, harness
+version, product scope, revision, profile, issue time, and expiry. The core
+compare-and-set rejects changed, terminal, unknown, competing, or interactive
+sessions. After the claim commits, standalone event ingestion for that session
+fails closed.
+
+The bridge writes its intent before the core claim. If the process stops after
+the core commit but before the bridge binding, restart inspects the same durable
+receipt and completes only that request. It never implicitly restores standalone
+ownership. Public adoption UX and reverse transfer are intentionally not
+implemented in this experimental component.
 
 ## Pinned contract
 

@@ -35,7 +35,8 @@ unchanged rather than being opened by an older binary.
 - pre-reconciliation doctor fails specifically on package version and runtime
   entry mismatch;
 - upgrade dry run, reconciliation, and a second unchanged install;
-- SQLite schema `0` → `1` preservation and schema `2` downgrade refusal;
+- SQLite schema migration preservation through schema `3` and schema `4`
+  downgrade refusal;
 - web credential, relay log history, explicit credential/log fixtures, config
   backups, SQLite answer, and unrelated harness settings survive;
 - uninstall dry run and owned uninstall remove the launcher, manifest, and only

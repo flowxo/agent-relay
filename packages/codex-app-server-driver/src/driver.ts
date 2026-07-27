@@ -2,6 +2,7 @@ import type { CapabilityDescriptor, IsoTimestamp } from "@session/contracts";
 import { isRunnerApprovalResolveBody } from "@session/protocol-runner";
 import {
   sha256,
+  canonicalJson,
   type StructuredHarnessCommandContext,
   type StructuredHarnessCommandResult,
   type StructuredHarnessDriver,
@@ -172,6 +173,53 @@ function instructionDigest(
     : undefined;
 }
 
+function normalizedApprovalAction(
+  method: PendingApproval["method"],
+  params: Readonly<Record<string, unknown>>,
+): {
+  readonly action: {
+    readonly schema: "actuator.action/v1";
+    readonly kind: "process.execute" | "filesystem.write";
+    readonly target_digest: ReturnType<typeof sha256>;
+    readonly parameters_digest: ReturnType<typeof sha256>;
+    readonly summary: string;
+  };
+  readonly actionDigest: ReturnType<typeof sha256>;
+} {
+  const itemId =
+    typeof params["itemId"] === "string" ? params["itemId"] : "unknown-item";
+  const target =
+    method === "item/commandExecution/requestApproval" &&
+    typeof params["cwd"] === "string"
+      ? params["cwd"]
+      : itemId;
+  const action = {
+    schema: "actuator.action/v1" as const,
+    kind:
+      method === "item/commandExecution/requestApproval"
+        ? ("process.execute" as const)
+        : ("filesystem.write" as const),
+    target_digest: sha256(target),
+    parameters_digest: sha256(canonicalJson(params)),
+    summary:
+      method === "item/commandExecution/requestApproval"
+        ? "Codex command execution requires approval"
+        : "Codex file change requires approval",
+  };
+  return {
+    action,
+    actionDigest: sha256(
+      canonicalJson([
+        action.schema,
+        action.kind,
+        action.target_digest,
+        action.parameters_digest,
+        action.summary,
+      ]),
+    ),
+  };
+}
+
 export class CodexAppServerDriver implements StructuredHarnessDriver {
   readonly profileId = CODEX_APP_SERVER_PROFILE_ID;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
@@ -179,6 +227,7 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
   readonly #material: CodexCommandMaterialPort;
   readonly #now: () => IsoTimestamp;
   readonly #observers = new Set<StructuredHarnessObserver>();
+  readonly #activeSessions = new Set<string>();
   readonly #activeTurns = new Map<string, string>();
   readonly #pendingApprovals = new Map<string, PendingApproval>();
   #unsubscribeRpc: (() => void) | undefined;
@@ -230,6 +279,7 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
     } finally {
       this.#unsubscribeRpc?.();
       this.#unsubscribeRpc = undefined;
+      this.#activeSessions.clear();
       this.#activeTurns.clear();
       this.#pendingApprovals.clear();
     }
@@ -249,6 +299,7 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
           ephemeral: material.ephemeral ?? false,
         }),
       );
+      this.#activeSessions.add(response.thread.id);
       return completed("session.start", {
         nativeSessionReference: response.thread.id,
       });
@@ -274,6 +325,7 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
       if (response.thread.id !== threadId) {
         return unknown("native_session_reference_mismatch");
       }
+      this.#activeSessions.add(threadId);
       await this.#emit({
         kind: "session.resumed",
         observedAt: this.#now(),
@@ -461,16 +513,40 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
 
   async #acceptNativeMessage(message: CodexAppServerInbound): Promise<void> {
     if (message.kind === "process_exited") {
+      const affectedSessions = new Set(this.#activeSessions);
+      for (const threadId of this.#activeTurns.keys()) {
+        affectedSessions.add(threadId);
+      }
+      for (const approval of this.#pendingApprovals.values()) {
+        affectedSessions.add(approval.threadId);
+      }
+      this.#activeSessions.clear();
       this.#activeTurns.clear();
       this.#pendingApprovals.clear();
-      await this.#emit({
-        kind: "process.exited",
-        observedAt: this.#now(),
-        status: message.intentional ? "intentional" : "unexpected",
-        safeCode: message.intentional
-          ? "native_process_stopped"
-          : "native_process_exited",
-      });
+      if (affectedSessions.size === 0) {
+        await this.#emit({
+          kind: "process.exited",
+          observedAt: this.#now(),
+          status: message.intentional ? "intentional" : "unexpected",
+          safeCode: message.intentional
+            ? "native_process_stopped"
+            : "native_process_exited",
+        });
+        return;
+      }
+      await Promise.all(
+        [...affectedSessions].map(async (nativeSessionReference) => {
+          await this.#emit({
+            kind: "process.exited",
+            observedAt: this.#now(),
+            nativeSessionReference,
+            status: message.intentional ? "intentional" : "unexpected",
+            safeCode: message.intentional
+              ? "native_process_stopped"
+              : "native_process_exited",
+          });
+        }),
+      );
       return;
     }
     if (message.kind === "request") {
@@ -483,6 +559,7 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
     switch (message.method) {
       case "thread/started": {
         const params = ThreadStartedNotificationSchema.parse(message.params);
+        this.#activeSessions.add(params.thread.id);
         await this.#emit({
           kind: "session.started",
           observedAt: this.#now(),
@@ -566,6 +643,7 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
       return;
     }
     const params = ApprovalRequestSchema.parse(message.params);
+    const normalized = normalizedApprovalAction(message.method, params);
     const reference = codexRequestReference(message.id);
     this.#pendingApprovals.set(reference, {
       id: message.id,
@@ -586,6 +664,8 @@ export class CodexAppServerDriver implements StructuredHarnessDriver {
         message.method === "item/commandExecution/requestApproval"
           ? "commandExecution"
           : "fileChange",
+      action: normalized.action,
+      actionDigest: normalized.actionDigest,
       status: "pending",
     });
   }
