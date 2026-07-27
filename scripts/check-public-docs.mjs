@@ -13,6 +13,7 @@ const focusedDocuments = [
   "docs/compatibility.md",
   "docs/packaging.md",
   "docs/releasing.md",
+  "docs/release-readiness.md",
   "docs/fixtures.md",
   "docs/extending-transports.md",
   "docs/extending-harnesses.md",
@@ -175,6 +176,27 @@ for (const pattern of [
     compatibility,
     pattern,
     `compatibility policy is missing generated-evidence guidance: ${String(pattern)}`,
+  );
+}
+
+const releaseReadiness = await text("docs/release-readiness.md");
+for (const pattern of [
+  /What runs locally/,
+  /What leaves the machine/,
+  /What installation changes/,
+  /How to diagnose/,
+  /How to remove/,
+  /pnpm release:exit/,
+  /Node\.js 22\.23\.1/,
+  /native arm64/,
+  /globally linked workspace package/i,
+  /AR2/,
+  /does not publish/i,
+]) {
+  requireText(
+    releaseReadiness,
+    pattern,
+    `release-readiness guide is missing evaluator guidance: ${String(pattern)}`,
   );
 }
 

@@ -153,6 +153,7 @@ runtime, public callback, or Flow XO credential. See the
 - [Compatibility and evidence policy](docs/compatibility.md)
 - [Package identity and artifact boundary](docs/packaging.md)
 - [Prerelease build, attestation, and publication](docs/releasing.md)
+- [Release-readiness evaluation and native Node 22 proof](docs/release-readiness.md)
 - [Safe fixtures and compatibility evidence](docs/fixtures.md)
 - [Write a notification transport](docs/extending-transports.md)
 - [Write or update a harness adapter](docs/extending-harnesses.md)

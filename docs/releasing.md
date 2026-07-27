@@ -41,6 +41,11 @@ pnpm release:bundle
 pnpm release:bundle:verify
 ```
 
+On the supported Apple-silicon target, complete the separate native Node 22
+installed-artifact matrix with `pnpm release:exit`; see the
+[release-readiness evaluation](release-readiness.md). That command publishes
+nothing.
+
 The builder rebuilds and packs twice with the commit timestamp as
 `SOURCE_DATE_EPOCH`, then rejects different SHA-256 digests. It emits only:
 

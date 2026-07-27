@@ -1,0 +1,19 @@
+{
+  "schema": "agent-relay-release-exit.v1",
+  "recheckedAt": "2026-07-26",
+  "target": {
+    "platform": "darwin",
+    "architecture": "arm64",
+    "node": {
+      "version": "22.23.1",
+      "archive": "node-v22.23.1-darwin-arm64.tar.gz",
+      "url": "https://nodejs.org/dist/v22.23.1/node-v22.23.1-darwin-arm64.tar.gz",
+      "sha256": "ef28d8fab2c0e4314522d4bb1b7173270aa3937e93b92cb7de79c112ac1fa953",
+      "checksumSource": "https://nodejs.org/dist/v22.23.1/SHASUMS256.txt",
+      "maximumBytes": 67108864
+    }
+  },
+  "requiredHarnesses": ["codex", "claude", "cursor"],
+  "minimumVerifiedHarnesses": 1,
+  "evidenceOutput": ".artifacts/release-exit/agent-relay-release-exit.json"
+}

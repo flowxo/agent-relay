@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 
 import { runtimeDependencyGraph } from "./lib/release-bundle.mjs";
+import { assertReleaseExitConfiguration } from "./lib/release-exit-policy.mjs";
 import { assertReleaseConfiguration } from "./lib/release-policy.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -27,8 +28,10 @@ const [ci, prerelease, releasing, thirdPartyNotices, packageSource] =
   ]);
 const rootPackage = JSON.parse(packageSource);
 const release = JSON.parse(await text("packaging/release.json"));
+const releaseExit = JSON.parse(await text("packaging/release-exit.json"));
 const actionLock = JSON.parse(await text("packaging/actions-lock.json"));
 assertReleaseConfiguration(release, rootPackage);
+assertReleaseExitConfiguration(releaseExit, release);
 const runtimeGraph = await runtimeDependencyGraph(root, release);
 for (const dependency of runtimeGraph.packages) {
   requireText(

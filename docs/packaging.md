@@ -129,3 +129,7 @@ files, databases, logs, or private transcripts into the staging directory.
 For the clean-commit, two-build release bundle with SHA-256 checksums, SPDX 2.3
 SBOM, signed GitHub attestation boundary, OIDC gates, and rollback procedure,
 follow the [prerelease guide](releasing.md).
+
+The final native Apple-silicon/Node 22 installed-artifact proof is separate:
+follow the [release-readiness evaluation](release-readiness.md) after building
+the exact clean-commit bundle.
