@@ -15,10 +15,13 @@ describe("safe transport runtime status", () => {
   it.each([
     ["notifications-credential-invalid", "authentication"],
     ["notifications-scope-forbidden", "authorization"],
+    ["notifications-stream-identity-failure", "authorization"],
     ["notifications-subscriber-unbound", "configuration"],
     ["notifications-contract-invalid", "contract"],
+    ["notifications-stream-order-invalid", "contract"],
     ["notifications-provider-outcome-unknown", "outcome-unknown"],
     ["notifications-provider-terminal", "terminal"],
+    ["notifications-request-not-found", "terminal"],
     ["notifications-transport-unavailable", "transient"],
     ["notifications-future-additive-error", "transient"],
   ] as const)("classifies %s as %s", (code, expected) => {

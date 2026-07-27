@@ -71,6 +71,11 @@ export interface DeliveryContext {
 export interface DeliveryReceipt {
   transport: string;
   messageId: string;
+  hostedInteraction?: {
+    id: string;
+    streamKey: string;
+    type: "confirm" | "select" | "input";
+  };
 }
 
 export interface TopicCreation {

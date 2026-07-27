@@ -323,6 +323,10 @@ async function main(): Promise<void> {
           environmentValue: environment("AGENT_RELAY_WEB_ENABLED"),
           disabledByFlag: args.includes("--no-web"),
         });
+    const notificationsMachineId =
+      transportSelection.selected === "notifications"
+        ? await loadOrCreateMachineId(join(commandStateDir, "machine-id"))
+        : undefined;
     const daemon = await startDaemon({
       databasePath,
       webEnabled,
@@ -339,7 +343,9 @@ async function main(): Promise<void> {
         : { telegramOperatorUserId }),
       ...(telegramReplyChatId === undefined ? {} : { telegramReplyChatId }),
       ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
-      ...(notificationsConnection?.credential === undefined
+      ...(transportSelection.selected !== "notifications" ||
+      notificationsConnection?.credential === undefined ||
+      notificationsMachineId === undefined
         ? {}
         : {
             notifications: {
@@ -347,6 +353,10 @@ async function main(): Promise<void> {
               credential: notificationsConnection.credential.bearerToken,
               subscriberId: notificationsConnection.configuration.subscriberId,
               notifierId: notificationsConnection.configuration.notifierId,
+              bindingId: notificationsConnection.configuration.bindingId,
+              machineClientId:
+                notificationsConnection.configuration.machineClientId,
+              machineId: notificationsMachineId,
             },
           }),
       telegramUpdateMode:

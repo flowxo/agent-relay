@@ -487,8 +487,10 @@ retry, replay, acknowledgement, isolation, and local-authority boundary. The
 mock-backed `agent-relay notifications` setup command additionally proves
 subscriber authorization, locally generated narrow credentials, secure
 persistence, a synthetic canary, rotation, revocation, and explicit erasure. The
-daemon can now select its outbound Notifications adapter explicitly and reports
-safe readiness/runtime state. Continuous hosted answer polling is not yet
-implemented, so hosted sends work while phone answers do not yet return to local
-SQLite. Cross-repository promotion to `1.0.0-rc.1` remains gated by
-[C0-09](https://linear.app/flowxo/issue/FXO-1050).
+daemon can now select its Notifications adapter explicitly and reports safe
+readiness/runtime state. Selected hosted mode continuously polls the
+authenticated machine stream, commits exact-session answers and durable
+acknowledgement state to local SQLite, and advances its cursor only after
+provider acknowledgement. Hosted message-state reflection and the final
+parity/package slices remain. Cross-repository promotion to `1.0.0-rc.1` remains
+gated by [C0-09](https://linear.app/flowxo/issue/FXO-1050).

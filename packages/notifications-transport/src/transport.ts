@@ -10,6 +10,7 @@ import {
   mapDeliveryMessageToNotifications,
   type NotificationsMessageTarget,
 } from "./mapping.js";
+import { notificationsMachineStreamKey } from "./machine-stream.js";
 
 import type {
   DeliveryContext,
@@ -47,6 +48,7 @@ function noRedirectFetch(
 export interface NotificationsContractTransportOptions extends NotificationsMessageTarget {
   baseUrl: string | URL;
   credential: string;
+  machineClientId: string;
   fetch?: NotificationsFetch;
 }
 
@@ -54,6 +56,7 @@ export interface HostedDeliveryIdentity {
   eventId: string;
   interactionId?: string;
   messageId: string;
+  streamKey: string;
 }
 
 export interface HostedDeliveryDiagnostic {
@@ -81,6 +84,7 @@ export class NotificationsContractTransport implements NotificationTransport {
   public readonly name = "notifications";
   private readonly client: NotificationsClient;
   private readonly target: NotificationsMessageTarget;
+  private readonly streamKey: string;
   private blockedError: NotificationsDeliveryError | undefined;
   private suppressedDeliveries = 0;
   private readonly deliveryIdentities = new Map<
@@ -90,6 +94,10 @@ export class NotificationsContractTransport implements NotificationTransport {
 
   public constructor(options: NotificationsContractTransportOptions) {
     const baseUrl = normalizeNotificationsBaseUrl(options.baseUrl);
+    this.streamKey = notificationsMachineStreamKey(
+      baseUrl,
+      options.machineClientId,
+    );
     this.client = new NotificationsClient({
       baseUrl,
       credential: options.credential,
@@ -184,6 +192,7 @@ export class NotificationsContractTransport implements NotificationTransport {
       this.deliveryIdentities.set(message.eventId, {
         eventId: message.eventId,
         messageId: hosted.id,
+        streamKey: this.streamKey,
         ...(hosted.interaction === undefined
           ? {}
           : { interactionId: hosted.interaction.id }),
@@ -191,6 +200,15 @@ export class NotificationsContractTransport implements NotificationTransport {
       return {
         transport: this.name,
         messageId: hosted.id,
+        ...(hosted.interaction === undefined
+          ? {}
+          : {
+              hostedInteraction: {
+                id: hosted.interaction.id,
+                type: hosted.interaction.type,
+                streamKey: this.streamKey,
+              },
+            }),
       };
     } catch (error) {
       const classified = asNotificationsDeliveryError(error);

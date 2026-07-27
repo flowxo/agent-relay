@@ -1,7 +1,7 @@
 # Project specification: FlowXO Notifications Transport Adapter
 
-- **Status:** Planned; executable C0 consumer baseline complete; C0-09 gates
-  production promotion
+- **Status:** In progress; AR2.1–AR2.3 complete locally; C0-09 gates production
+  promotion
 - **Product:** Agent Relay
 - **Initiative:**
   [Agent Relay — Open Source V1](https://linear.app/flowxo/initiative/agent-relay-open-source-v1-664f633c9408)
@@ -36,9 +36,11 @@ The executable boundary is no longer an assumption. C0-07 is complete in
 and repository-native gate in `100c250`; and the exact Agent Relay
 `1.0.0-draft.1` candidate through `76240c4` is green in
 [PR #2](https://github.com/flowxo/agent-relay/pull/2). That evidence covers
-provider-neutral mapping and mock-backed consumer behavior. It does not add
-production daemon selection, credential persistence, or continuous hosted
-polling. The centrally owned
+provider-neutral mapping and mock-backed consumer behavior. AR2.1–AR2.3 now add
+private narrow-credential persistence, explicit daemon selection, durable hosted
+delivery identity, and the continuous poll/claim/resolve/ack loop against that
+executable mock. Hosted presentation reflection, common parity, packaged proof,
+and production dogfood remain. The centrally owned
 [C0-09 security review](https://linear.app/flowxo/issue/FXO-1050) still gates
 promotion to `1.0.0-rc.1` and production dogfood; mock-backed AR2 work may
 proceed independently.
@@ -431,7 +433,7 @@ default, and never stored in SQLite event payloads.
 | Record                       | Purpose                                                             |
 | ---------------------------- | ------------------------------------------------------------------- |
 | hosted delivery mapping      | local event ID to hosted message ID, transport, and status identity |
-| machine poll state           | machine-client ID, committed cursor, last success/error             |
+| machine poll state           | hashed stream key, committed cursor, last success/error             |
 | hosted event claim           | hosted event ID unique, cursor/order, local outcome, timestamps     |
 | hosted acknowledgement state | pending/acknowledged/retry metadata                                 |
 | hosted message update state  | pending/succeeded/terminal update attempt                           |
@@ -683,9 +685,10 @@ resolution.
 
 1. **Contract client and mapping (complete prerequisite)** — outbound delivery
    passes the pinned C0 mock.
-2. **Safe setup and configuration** — narrow credential and explicit transport
-   selection work.
-3. **Durable interaction poller** — local claim/resolve/ack survives restart.
+2. **Safe setup and configuration (complete)** — narrow credential and explicit
+   transport selection work.
+3. **Durable interaction poller (complete)** — local claim/resolve/ack survives
+   restart.
 4. **Presentation and diagnosis** — resolved update, status, doctor, and error
    handling work.
 5. **Transport parity and packaged canary** — fake/direct/hosted core behavior

@@ -31,8 +31,8 @@
   mismatch/preflight failures, cross-machine isolation, new-client and
   same-client rotation, cross-origin refusal, bounded retained cleanup state,
   local-commit cleanup, revocation, and retained-state erasure. Production
-  daemon selection is now implemented by FXO-1151; continuous hosted polling
-  remains unclaimed.
+  daemon selection is implemented by FXO-1151 and durable hosted polling by
+  FXO-1152.
 - FXO-1151 makes transport choice explicit and credential-independent. A strict
   private `transport.json`, `AGENT_RELAY_TRANSPORT`, and daemon-only
   `--transport` resolve with documented precedence across exactly `fake`,
@@ -43,14 +43,41 @@
   doctor output report selection, Telegram readiness, hashed hosted readiness,
   last send, local queue/retry/dead-letter counts, classified hosted error, and
   a terminal circuit without secrets, provider identities, message content, or
-  raw session records. Hosted polling is truthfully reported as `not-started`
-  until FXO-1152. Authentication/scope/binding/contract configuration failures
-  suppress repeated remote calls while every affected local event remains
-  durably diagnosed; transient failures keep the stable event identity and
-  bounded SQLite retry policy. The final local gate passed `pnpm check`,
-  including 46 Vitest files/358 tests, contract/distribution/package/lifecycle
-  proof; the independent packed lifecycle rerun, all three Chromium scenarios,
-  and `pnpm audit --prod` with no known vulnerabilities also passed.
+  raw session records. FXO-1152 replaces the former honest `not-started` polling
+  placeholder with durable runtime evidence.
+  Authentication/scope/binding/contract configuration failures suppress repeated
+  remote calls while every affected local event remains durably diagnosed;
+  transient failures keep the stable event identity and bounded SQLite retry
+  policy. The final local gate passed `pnpm check`, including 46 Vitest
+  files/358 tests, contract/distribution/package/lifecycle proof; the
+  independent packed lifecycle rerun, all three Chromium scenarios, and
+  `pnpm audit --prod` with no known vulnerabilities also passed.
+- FXO-1152 implements the selected hosted interaction loop against the exact
+  pinned `1.0.0-draft.1` client and mock. Interactive delivery commits hosted
+  message/interaction/type identity to SQLite. Schema `2` adds hashed machine
+  poll state, immutable hosted event claims, acknowledgement retry state, and
+  message-update retry state. The daemon drains oldest acknowledgement work
+  before bounded long polling, validates cursor continuity plus exact
+  binding/message/request/machine/harness/session/turn/type/option/expiry
+  identity, resolves through the existing first-writer-wins transition in the
+  same transaction as the safe claim, and advances the cursor only after an
+  identity-matching idempotent provider acknowledgement. Event payload digests
+  detect mutation without retaining raw hosted responses. Retryable poll/ack
+  failures back off; crash-before/after-ack recovery cannot duplicate a
+  decision; poison is explicitly quarantined; integrity failures stop without
+  acknowledgement or cursor skip. Focused SQLite, source, validator, poller,
+  status, and running-daemon tests cover confirm/select/input, invalid option,
+  stale/expired/duplicate/terminal races, wrong binding/session/turn, concurrent
+  isolation, bounded timeout, shutdown, retry, restart, and the real mock-backed
+  answer round trip. C0 does not expose a detached poll-response signature, and
+  the implementation records authenticated schema/contract evidence without
+  claiming one. Hosted terminal-message reflection remains FXO-1153. The final
+  local gate passed 49 Vitest files/374 tests, 17 contract-lock and supply-chain
+  tests, the six-test isolated Notifications consumer, the 187,517-byte
+  packed/1,202,168-byte unpacked artifact proof, and the complete
+  schema-1-to-schema-2 packed lifecycle. The focused hosted matrix passed 9
+  files/73 tests, all three Chromium scenarios passed, and `pnpm audit --prod`
+  found no known vulnerability.
 - Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
   when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
   all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
@@ -109,8 +136,8 @@
   web credential, prior relay log, explicit retained credential/log fixtures,
   installer backups, and unrelated harness settings survive. Install manifests
   now record package version; doctor validates package/runtime/manifest and
-  launcher agreement; owned paths reject symlinks; SQLite migrates unversioned
-  stores to schema `1`; and schema `2` is refused without modification. The
+  launcher agreement; owned paths reject symlinks; SQLite now migrates prior
+  stores to schema `2`; and schema `3` is refused without modification. The
   lifecycle checker is part of `pnpm check` and publishes nothing. The final
   local gate passed 41 Vitest files/309 tests, 17 contract and supply-chain
   tests, the six-test isolated Notifications consumer, the 102,408-byte
@@ -675,10 +702,11 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Commit and close FXO-1151, then proceed directly to FXO-1152 durable hosted
-poll/claim/resolve/ack state. Production hosted dogfood must still wait for AR2
-and a central C0-09 go disposition. npm scope/publication and the monitored
-public security-contact path remain owner-controlled promotion gates.
+Commit and close FXO-1152, then proceed directly to FXO-1153 hosted
+resolution-reflection and failure diagnosis. Production hosted dogfood must
+still wait for AR2 and a central C0-09 go disposition. npm scope/publication and
+the monitored public security-contact path remain owner-controlled promotion
+gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

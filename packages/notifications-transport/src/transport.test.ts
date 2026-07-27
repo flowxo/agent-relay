@@ -36,6 +36,7 @@ function transportFor(mock: NotificationsContractMock, fetch = fetchFor(mock)) {
   return new NotificationsContractTransport({
     baseUrl: "https://notifications.mock.test",
     credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+    machineClientId: "machine_client_synthetic_001",
     subscriberId: "agent_relay_operator",
     notifierId: "default",
     fetch,
@@ -264,6 +265,7 @@ describe("Notifications contract transport", () => {
         new NotificationsContractTransport({
           baseUrl: "http://notifications.example.test",
           credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+          machineClientId: "machine_client_synthetic_001",
           subscriberId: "agent_relay_operator",
         }),
     ).toThrow("HTTPS");

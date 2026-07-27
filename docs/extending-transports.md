@@ -102,9 +102,10 @@ error classification.
 
 The Notifications adapter in `packages/notifications-transport` demonstrates a
 provider-neutral contract mapping, explicit daemon selection, safe readiness
-diagnosis, and signed-answer validation against pinned artifacts. Outbound
-delivery is wired; durable hosted answer polling remains a later AR2 slice. See
-the [hosted boundary](hosted-notifications.md).
+diagnosis, authenticated contract validation against pinned artifacts, and a
+durable poll/claim/resolve/ack loop. It does not claim a detached response
+signature that the C0 poll contract does not provide. See the
+[hosted boundary](hosted-notifications.md).
 
 ## Minimum tests
 

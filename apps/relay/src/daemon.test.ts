@@ -6,9 +6,11 @@ import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
   createNotificationsContractMock,
 } from "@flowxo/notifications-contract-mock";
+import { makeProjectRef } from "@agent-relay/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startDaemon } from "./daemon.js";
+import { notificationsStreamKey } from "./notifications-poller.js";
 import { WebCredentialSchema } from "./web-credential.js";
 
 const temporaryDirectories: string[] = [];
@@ -184,6 +186,9 @@ describe("startDaemon Telegram update mode", () => {
         credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
         subscriberId: "agent_relay_operator",
         notifierId: "default",
+        bindingId: "binding_synthetic_relay",
+        machineClientId: "machine_client_synthetic_001",
+        machineId: "machine_synthetic_a",
         fetch: notificationsFetch,
       },
       telegramToken: "123456:synthetic-token-value",
@@ -223,7 +228,7 @@ describe("startDaemon Telegram update mode", () => {
       deadLettered: 0,
     });
     expect(mock.inspect().messages).toHaveLength(1);
-    expect(notificationsFetch).toHaveBeenCalledOnce();
+    expect(notificationsFetch).toHaveBeenCalled();
     expect(telegramFetch).not.toHaveBeenCalled();
 
     const address = daemon.server.address();
@@ -249,9 +254,10 @@ describe("startDaemon Telegram update mode", () => {
             lastSuccessfulSendAt: expect.any(String),
           },
           polling: {
-            committedCursor: null,
-            lastSuccessfulPollAt: null,
-            state: "not-started",
+            committedCursorRef: null,
+            lastError: null,
+            lastSuccessfulPollAt: expect.any(String),
+            state: "active",
             unacknowledgedEventCount: 0,
           },
           spool: {
@@ -265,6 +271,123 @@ describe("startDaemon Telegram update mode", () => {
     expect(JSON.stringify(status)).not.toContain(
       CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
     );
+    await daemon.close();
+  });
+
+  it("resolves and acknowledges a hosted choice through the running daemon", async () => {
+    const mock = createNotificationsContractMock({
+      scenario: "interaction-select",
+    });
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "notifications",
+      notifications: {
+        baseUrl: "https://notifications.mock.test",
+        credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+        subscriberId: "agent_relay_operator",
+        notifierId: "default",
+        bindingId: "binding_synthetic_relay",
+        machineClientId: "machine_client_synthetic_001",
+        machineId: "machine_synthetic_a",
+        fetch: async (input, init) =>
+          await mock.fetch(new Request(input, init)),
+      },
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    const correlationId = "request_daemon_hosted_choice_12345678";
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "event_daemon_hosted_choice_12345678",
+      occurredAt: "2026-07-25T17:45:00.000Z",
+      sequence: 1,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_hosted_choice_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_hosted_choice_12345678",
+      turnId: "turn_daemon_hosted_choice_12345678",
+      project: makeProjectRef("/workspace/daemon-hosted-choice"),
+      type: "input.required",
+      request: {
+        correlationId,
+        kind: "select",
+        question: "Choose one synthetic path.",
+        options: [
+          { id: "option_daemon_alpha_12345678", label: "Alpha" },
+          { id: "option_daemon_beta_12345678", label: "Beta" },
+        ],
+        expiresAt: "2026-07-25T18:00:00.000Z",
+      },
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    const pending = daemon.service.store.getPendingRequest(correlationId)!;
+    const beta = pending.options.find(
+      (option) => option.optionId === "option_daemon_beta_12345678",
+    );
+    const messageId = mock.inspect().messages[0]?.id;
+    if (beta === undefined || messageId === undefined) {
+      throw new Error("hosted choice identities were not persisted");
+    }
+    await expect(
+      mock.control.submitInteraction({
+        messageId,
+        response: { type: "select", value: beta.token },
+      }),
+    ).resolves.toMatchObject({ eventCreated: true, outcome: "authorized" });
+
+    await vi.waitFor(
+      () => {
+        expect(
+          daemon.service.store.getPendingRequest(correlationId),
+        ).toMatchObject({
+          state: "answered",
+          answer: "option_daemon_beta_12345678",
+          resolvedBy: "notifications",
+        });
+        expect(mock.inspect().cursorCommits).toHaveLength(1);
+      },
+      { timeout: 2_000 },
+    );
+    const streamKey = notificationsStreamKey(
+      "https://notifications.mock.test",
+      "machine_client_synthetic_001",
+    );
+    const rawCursor =
+      daemon.service.store.hostedPollStatus(streamKey).committedCursor;
+    const address = daemon.server.address();
+    if (
+      rawCursor === undefined ||
+      address === null ||
+      typeof address === "string"
+    ) {
+      throw new Error("hosted daemon cursor/status evidence is unavailable");
+    }
+    const status = await (
+      await fetch(`http://127.0.0.1:${address.port}/v1/status`)
+    ).json();
+    expect(status).toMatchObject({
+      transportRuntime: {
+        notifications: {
+          polling: {
+            committedCursorRef: expect.stringMatching(/^cursor_[a-f0-9]{12}$/u),
+            state: "active",
+            unacknowledgedEventCount: 0,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(status)).not.toContain(rawCursor);
     await daemon.close();
   });
 

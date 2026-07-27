@@ -41,6 +41,47 @@ describe("SQLite schema compatibility", () => {
     upgraded.close();
   });
 
+  it("migrates a version-one store to every durable hosted-work table", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+    const prior = new Database(databasePath);
+    prior.exec(`
+      DROP TABLE hosted_message_updates;
+      DROP TABLE hosted_event_acknowledgements;
+      DROP TABLE hosted_event_claims;
+      DROP TABLE hosted_poll_state;
+      DROP TABLE hosted_delivery_mappings;
+    `);
+    prior.pragma("user_version = 1");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare(
+          `
+          SELECT name
+          FROM sqlite_master
+          WHERE type = 'table' AND name LIKE 'hosted_%'
+          ORDER BY name
+        `,
+        )
+        .pluck()
+        .all(),
+    ).toEqual([
+      "hosted_delivery_mappings",
+      "hosted_event_acknowledgements",
+      "hosted_event_claims",
+      "hosted_message_updates",
+      "hosted_poll_state",
+    ]);
+    upgraded.close();
+  });
+
   it("refuses to open a newer schema and leaves it untouched", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");

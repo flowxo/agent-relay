@@ -39,6 +39,7 @@ export interface ExpectedHostedRequestIdentity {
   turnId?: string;
   interactionType: "confirm" | "select" | "input";
   expiresAt: string;
+  bindingId?: string;
   structuredRequest?: OperatorInteractionRequestV1;
 }
 
@@ -46,7 +47,7 @@ export interface HostedStreamProof {
   authenticatedMachineId: string;
   configuredMachineId: string;
   schemaValidated: boolean;
-  signatureVerified: boolean;
+  responseContractVerified: boolean;
   streamIdentityVerified: boolean;
 }
 
@@ -97,8 +98,8 @@ export type HostedAnswerValidation =
         | "correlation_mismatch"
         | "local_identity_mismatch"
         | "request_not_found"
+        | "contract_integrity_failure"
         | "schema_integrity_failure"
-        | "signature_integrity_failure"
         | "stream_identity_failure";
     };
 
@@ -233,11 +234,11 @@ export function validateHostedAnswer(input: {
       reasonCode: "schema_integrity_failure",
     };
   }
-  if (!input.stream.signatureVerified) {
+  if (!input.stream.responseContractVerified) {
     return {
       outcome: "stop",
       acknowledgement: "none",
-      reasonCode: "signature_integrity_failure",
+      reasonCode: "contract_integrity_failure",
     };
   }
   if (
@@ -251,7 +252,9 @@ export function validateHostedAnswer(input: {
   }
   if (
     !input.stream.streamIdentityVerified ||
-    input.expected.machineId !== input.stream.configuredMachineId
+    input.expected.machineId !== input.stream.configuredMachineId ||
+    (input.expected.bindingId !== undefined &&
+      input.event.channel_context.binding_id !== input.expected.bindingId)
   ) {
     return {
       outcome: "stop",
@@ -378,7 +381,7 @@ export function validateHostedAnswer(input: {
       correlationId: local.correlationId,
       answer,
       resolvedBy: "notifications",
-      now: input.event.occurred_at,
+      now: new Date(occurredAt).toISOString(),
       expected: {
         machineId: local.machineId,
         harness: local.harness,

@@ -14,6 +14,7 @@ import type { NotificationTransport, RelayLogger } from "@agent-relay/core";
 import type { RetentionOptions, RetentionResult } from "@agent-relay/core";
 import {
   NotificationsContractTransport,
+  NotificationsMachineInteractionSource,
   type NotificationsContractTransportOptions,
 } from "@agent-relay/notifications-transport";
 
@@ -28,6 +29,15 @@ import type {
 } from "./transport-config.js";
 import { buildDaemonTransportStatus } from "./transport-status.js";
 import { loadOrCreateWebCredential } from "./web-credential.js";
+import {
+  notificationsStreamKey,
+  NotificationsInteractionPoller,
+} from "./notifications-poller.js";
+
+export interface DaemonNotificationsOptions extends NotificationsContractTransportOptions {
+  bindingId: string;
+  machineId: string;
+}
 
 export interface DaemonOptions {
   databasePath: string;
@@ -46,7 +56,7 @@ export interface DaemonOptions {
   telegramWebhookSecret?: string;
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
-  notifications?: NotificationsContractTransportOptions;
+  notifications?: DaemonNotificationsOptions;
   coalescingWindowMs?: number;
   drainIntervalMs?: number;
   fallbackPath?: string;
@@ -138,6 +148,25 @@ export async function startDaemon(
       "transport readiness does not match the daemon transport selection",
     );
   }
+  const notificationsRuntime =
+    transport instanceof NotificationsContractTransport
+      ? options.notifications
+      : undefined;
+  if (
+    transport instanceof NotificationsContractTransport &&
+    notificationsRuntime === undefined
+  ) {
+    throw new Error(
+      "selected Notifications transport requires machine interaction configuration",
+    );
+  }
+  const hostedStreamKey =
+    notificationsRuntime === undefined
+      ? undefined
+      : notificationsStreamKey(
+          notificationsRuntime.baseUrl,
+          notificationsRuntime.machineClientId,
+        );
   if (
     telegramUpdateMode === "webhook" &&
     transport instanceof TelegramBotTransport &&
@@ -188,6 +217,7 @@ export async function startDaemon(
       buildDaemonTransportStatus({
         service,
         selection: transportSelection,
+        ...(hostedStreamKey === undefined ? {} : { hostedStreamKey }),
         ...(options.transportReadiness === undefined
           ? {}
           : { readiness: options.transportReadiness }),
@@ -310,6 +340,42 @@ export async function startDaemon(
     });
   }
 
+  let notificationsPollingAbort: AbortController | undefined;
+  let notificationsPolling: Promise<void> | undefined;
+  if (
+    transport instanceof NotificationsContractTransport &&
+    notificationsRuntime !== undefined &&
+    hostedStreamKey !== undefined
+  ) {
+    notificationsPollingAbort = new AbortController();
+    notificationsPolling = new NotificationsInteractionPoller({
+      store,
+      source: new NotificationsMachineInteractionSource({
+        baseUrl: notificationsRuntime.baseUrl,
+        credential: notificationsRuntime.credential,
+        ...(notificationsRuntime.fetch === undefined
+          ? {}
+          : { fetch: notificationsRuntime.fetch }),
+      }),
+      streamKey: hostedStreamKey,
+      machineId: notificationsRuntime.machineId,
+      bindingId: notificationsRuntime.bindingId,
+      logger,
+    })
+      .run(notificationsPollingAbort.signal)
+      .catch((error: unknown) => {
+        logger.log({
+          level: "error",
+          code: "notifications.poll-crashed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Notifications polling stopped unexpectedly",
+          at: new Date().toISOString(),
+        });
+      });
+  }
+
   let activeDrain: Promise<void> | undefined;
   const interval = setInterval(() => {
     if (activeDrain !== undefined) {
@@ -380,6 +446,7 @@ export async function startDaemon(
       return closePromise;
     }
     telegramPollingAbort?.abort();
+    notificationsPollingAbort?.abort();
     clearInterval(interval);
     clearInterval(retentionInterval);
     if (fallbackInterval !== undefined) {
@@ -400,6 +467,7 @@ export async function startDaemon(
       activeDrain ?? Promise.resolve(),
       activeFallbackReplay ?? Promise.resolve(),
       telegramPolling ?? Promise.resolve(),
+      notificationsPolling ?? Promise.resolve(),
     ]).then(() => {
       store.close();
     });

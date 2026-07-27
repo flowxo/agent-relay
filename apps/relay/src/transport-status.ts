@@ -1,4 +1,5 @@
 import type { RelayService } from "@agent-relay/core";
+import { sha256 } from "@agent-relay/protocol";
 import { NotificationsContractTransport } from "@agent-relay/notifications-transport";
 
 import type {
@@ -35,9 +36,14 @@ export interface DaemonTransportStatus {
         lastSuccessfulSendAt: string | null;
       };
       polling: {
-        committedCursor: string | null;
+        committedCursorRef: string | null;
+        lastError: {
+          at: string;
+          classification: NotificationsErrorClassification;
+          code: string;
+        } | null;
         lastSuccessfulPollAt: string | null;
-        state: "not-started";
+        state: "active" | "error" | "not-started";
         unacknowledgedEventCount: number;
       };
       spool: {
@@ -58,6 +64,10 @@ const AUTHENTICATION_ERRORS = new Set([
 const AUTHORIZATION_ERRORS = new Set([
   "notifications-environment-mismatch",
   "notifications-scope-forbidden",
+  "notifications-authentication-identity-mismatch",
+  "notifications-correlation-mismatch",
+  "notifications-local-identity-mismatch",
+  "notifications-stream-identity-failure",
 ]);
 
 const CONFIGURATION_ERRORS = new Set([
@@ -72,6 +82,9 @@ const CONTRACT_ERRORS = new Set([
   "notifications-idempotency-key-required",
   "notifications-request-contract-invalid",
   "notifications-request-invalid",
+  "notifications-contract-integrity-failure",
+  "notifications-schema-integrity-failure",
+  "notifications-stream-order-invalid",
   "notifications-unsafe-opaque-value",
 ]);
 
@@ -84,6 +97,7 @@ const TERMINAL_ERRORS = new Set([
   "notifications-cancellation-too-late",
   "notifications-provider-terminal",
   "notifications-resource-expired",
+  "notifications-request-not-found",
 ]);
 
 export function classifyNotificationsErrorCode(
@@ -114,6 +128,7 @@ export function buildDaemonTransportStatus(input: {
   readiness?: TransportReadinessReport;
   selection: ResolvedTransportSelection;
   service: RelayService;
+  hostedStreamKey?: string;
 }): DaemonTransportStatus {
   const storeStatus = input.service.store.status();
   const notificationsDelivery =
@@ -122,6 +137,10 @@ export function buildDaemonTransportStatus(input: {
     input.service.transport instanceof NotificationsContractTransport
       ? input.service.transport.circuitState()
       : { blocked: false, suppressedDeliveries: 0 };
+  const hostedPoll =
+    input.hostedStreamKey === undefined
+      ? undefined
+      : input.service.store.hostedPollStatus(input.hostedStreamKey);
 
   return {
     selectedTransport: input.selection.selected,
@@ -146,10 +165,27 @@ export function buildDaemonTransportStatus(input: {
                 },
         },
         polling: {
-          state: "not-started",
-          lastSuccessfulPollAt: null,
-          committedCursor: null,
-          unacknowledgedEventCount: 0,
+          state:
+            hostedPoll?.lastError !== undefined
+              ? "error"
+              : hostedPoll?.lastSuccessfulPollAt !== undefined
+                ? "active"
+                : "not-started",
+          lastSuccessfulPollAt: hostedPoll?.lastSuccessfulPollAt ?? null,
+          committedCursorRef:
+            hostedPoll?.committedCursor === undefined
+              ? null
+              : `cursor_${sha256(hostedPoll.committedCursor).slice(0, 12)}`,
+          lastError:
+            hostedPoll?.lastError === undefined
+              ? null
+              : {
+                  ...hostedPoll.lastError,
+                  classification: classifyNotificationsErrorCode(
+                    hostedPoll.lastError.code,
+                  ),
+                },
+          unacknowledgedEventCount: hostedPoll?.unacknowledgedEventCount ?? 0,
         },
         spool: {
           pending: storeStatus.events.queued + storeStatus.events.delivering,

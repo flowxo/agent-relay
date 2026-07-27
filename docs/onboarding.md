@@ -386,13 +386,15 @@ rule. A known stale or cross-topic request remains rejected.
 
 ### Optional hosted Notifications setup proof
 
-The optional hosted adapter now has a mock-backed setup and explicit outbound
-daemon lifecycle, documented in the
+The optional hosted adapter now has a mock-backed setup and explicit full daemon
+lifecycle, documented in the
 [hosted Notifications guide](./hosted-notifications.md). It can authorize a
 subscriber, generate and store a narrow credential, send a synthetic canary,
 rotate, revoke, erase, and deliver normal attention events when `notifications`
-is selected. Continuous hosted answer polling arrives in FXO-1152; selecting it
-now does not yet return phone answers to local SQLite.
+is selected. Selected hosted mode also long-polls confirm/select/input answers,
+commits them to the exact local request before provider acknowledgement, and
+recovers cursor/acknowledgement work after restart. Hosted terminal-message
+reflection remains the next AR2 slice.
 
 Do not place a broad Notifications project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment

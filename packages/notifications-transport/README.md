@@ -4,8 +4,9 @@ This private package is the production-promotable boundary between Agent Relay
 delivery semantics and the pinned FlowXO Notifications C0 API. C0-07 proves
 mapping and local authority. AR2.1 adds the bounded project administration
 client and mock-backed machine setup used by the CLI. AR2.2 wires explicit
-outbound daemon selection and a terminal configuration circuit; it still does
-not wire the continuous interaction poll loop or durable hosted cursor.
+outbound daemon selection and a terminal configuration circuit. AR2.3 adds the
+bounded interaction source used by the durable local poll/claim/resolve/ack
+loop.
 
 ## Machine bootstrap
 
@@ -72,16 +73,19 @@ copied into Agent Relay.
 ## Hosted answer authority
 
 `validateHostedAnswer` is pure. Before it returns an input suitable for
-`RelayStore.resolveRequest`, it proves validated schema/signature/stream
-evidence, authenticated and configured machine identity, the pinned hosted
-message and interaction, local correlation, local request kind, local
+`RelayStore.resolveRequest`, it proves authenticated schema/contract/stream
+evidence, configured machine and binding identity, the pinned hosted message and
+interaction, local correlation, local request kind, local
 machine/harness/session/turn identity, option membership, occurrence, and
-expiry. It cannot execute or select a resume command.
+expiry. It cannot execute or select a resume command. C0 does not expose a
+detached long-poll response signature, and this package does not claim one.
 
-The C0 harness commits the local resolution or safe quarantine first, then
-acknowledges Notifications. A crash before acknowledgement repeats the event;
-the reopened SQLite request proves a duplicate, and the already materialized
-resume command cannot be claimed twice.
+The daemon persists hosted delivery identity, immutable event digest, local
+outcome, acknowledgement retry, message-update retry, and committed cursor in
+SQLite. It commits local resolution or safe quarantine first, then acknowledges
+Notifications with a deterministic idempotency key. A crash before
+acknowledgement repeats the event; recovery drains that acknowledgement before a
+new poll, and the already materialized resume command cannot be claimed twice.
 
 Run the exact artifact and round-trip proof with:
 

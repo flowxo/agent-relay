@@ -1159,6 +1159,7 @@ export class RelayService {
             receipt.transport,
             receipt.messageId,
             this.now().toISOString(),
+            receipt.hostedInteraction,
           );
         } else {
           this.store.markNotificationAnchorDelivered({
