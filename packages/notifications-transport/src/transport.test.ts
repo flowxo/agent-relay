@@ -44,6 +44,35 @@ function transportFor(mock: NotificationsContractMock, fetch = fetchFor(mock)) {
 }
 
 describe("Notifications contract transport", () => {
+  it("advertises only interaction behavior proven by the pinned contract", () => {
+    const transport = transportFor(createNotificationsContractMock());
+
+    expect(
+      transport.observeInteractionCapabilities("2026-07-25T17:45:00.000Z"),
+    ).toEqual({
+      schema: "agent-interaction-provider-observation.v1",
+      capabilities: {
+        schema: "agent-interaction-capabilities.v1",
+        providerId: "transport_flowxo_notifications",
+        providerKind: "transport",
+        observedAt: "2026-07-25T17:45:00.000Z",
+        features: ["confirm", "single-select", "free-text"],
+        presentationModes: ["buttons", "direct-text"],
+        limits: {
+          maxQuestions: 1,
+          maxOptionsPerQuestion: 6,
+          maxTextLength: 3_000,
+          maxPayloadBytes: 8_192,
+        },
+      },
+      status: "proven",
+      evidence: "official-docs",
+      observedVersion: "@flowxo/notifications@1.0.0-draft.1",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-draft.1",
+      note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
+    });
+  });
+
   it("uses one stable event identity for idempotency and correlation", async () => {
     const mock = createNotificationsContractMock({
       scenario: "repeated-idempotent-message",

@@ -301,21 +301,23 @@ export class NotificationsInteractionPoller {
     work: HostedAcknowledgementRecord,
     signal: AbortSignal,
   ): Promise<"acknowledged" | "retry" | "stop"> {
+    const providerReasonCode =
+      work.disposition === "quarantined" ? work.reasonCode : undefined;
     try {
       const response = await this.options.source.acknowledge({
         eventId: work.eventId,
         cursor: work.cursor,
         disposition: work.disposition,
-        ...(work.reasonCode === undefined
+        ...(providerReasonCode === undefined
           ? {}
-          : { reasonCode: work.reasonCode }),
+          : { reasonCode: providerReasonCode }),
         signal: this.boundedSignal(signal),
       });
       if (
         response.event_id !== work.eventId ||
         response.cursor !== work.cursor ||
         response.disposition !== work.disposition ||
-        response.reason_code !== work.reasonCode ||
+        response.reason_code !== providerReasonCode ||
         response.committed_cursor === null
       ) {
         throw Object.assign(

@@ -1,5 +1,10 @@
 import { NotificationsClient } from "@flowxo/notifications";
 import { TransportError } from "@agent-relay/core/transport";
+import {
+  InteractionProviderObservationV1Schema,
+  MAX_INTERACTION_TEXT_LENGTH,
+  type InteractionProviderObservationV1,
+} from "@agent-relay/protocol";
 
 import { normalizeNotificationsBaseUrl } from "./bootstrap.js";
 import {
@@ -16,6 +21,7 @@ import type {
   DeliveryContext,
   DeliveryMessage,
   DeliveryReceipt,
+  InteractionCapabilityTransport,
   NotificationTransport,
 } from "@agent-relay/core/transport";
 import type { NotificationsFetch } from "@flowxo/notifications";
@@ -84,7 +90,9 @@ export interface NotificationsTransportCircuitState {
   suppressedDeliveries: number;
 }
 
-export class NotificationsContractTransport implements NotificationTransport {
+export class NotificationsContractTransport
+  implements NotificationTransport, InteractionCapabilityTransport
+{
   public readonly name = "notifications";
   private readonly client: NotificationsClient;
   private readonly target: NotificationsMessageTarget;
@@ -126,6 +134,33 @@ export class NotificationsContractTransport implements NotificationTransport {
         ? {}
         : { errorCode: this.blockedError.code }),
     };
+  }
+
+  public observeInteractionCapabilities(
+    observedAt: string,
+  ): InteractionProviderObservationV1 {
+    return InteractionProviderObservationV1Schema.parse({
+      schema: "agent-interaction-provider-observation.v1",
+      capabilities: {
+        schema: "agent-interaction-capabilities.v1",
+        providerId: "transport_flowxo_notifications",
+        providerKind: "transport",
+        observedAt,
+        features: ["confirm", "single-select", "free-text"],
+        presentationModes: ["buttons", "direct-text"],
+        limits: {
+          maxQuestions: 1,
+          maxOptionsPerQuestion: 6,
+          maxTextLength: MAX_INTERACTION_TEXT_LENGTH,
+          maxPayloadBytes: 8_192,
+        },
+      },
+      status: "proven",
+      evidence: "official-docs",
+      observedVersion: "@flowxo/notifications@1.0.0-draft.1",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-draft.1",
+      note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
+    });
   }
 
   public getHostedDeliveryIdentity(

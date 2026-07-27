@@ -495,6 +495,9 @@ provider acknowledgement. Terminal presentation is a separate durable,
 idempotent concern; the exact pinned draft.1 contract honestly reports it as
 unsupported because it has no resolved-message update endpoint. Safe status
 includes failure policy and presentation counts, and local disconnect/revocation
-stops new hosted calls without deleting state. The final parity/package slices
-remain. Cross-repository promotion to `1.0.0-rc.1` remains gated by
+stops new hosted calls without deleting state. A transport-neutral matrix now
+keeps fake, direct Telegram, and Notifications aligned on delivery identity,
+retry, confirm/select/input, expiry, duplicate/race authority, restart, and
+at-most-once resume. The final packed hosted handoff remains. Cross-repository
+promotion to `1.0.0-rc.1` remains gated by
 [C0-09](https://linear.app/flowxo/issue/FXO-1050).

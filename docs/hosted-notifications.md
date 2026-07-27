@@ -278,6 +278,26 @@ from durable state.
 A provider acknowledgement happens after the local result commits. A crash
 before acknowledgement can repeat the hosted answer, but the reopened SQLite
 state proves it is a duplicate and the resume command remains single-owner.
+Local duplicate/expired/cancelled reason codes remain in SQLite. The pinned
+machine contract accepts `reason_code` only with a `quarantined`
+acknowledgement, so a normal `processed` acknowledgement deliberately omits
+those local-only reasons.
+
+## Transport parity
+
+Fake, direct Telegram, and Notifications run the same local behavior matrix for
+bounded delivery, duplicate ingestion, retry identity, confirm/select/input,
+identity rejection, expiry, duplicate answers, both terminal/phone race orders,
+restart, and single-owner resume. The direct Telegram leg uses the real
+`TelegramBotTransport` and reply router against a synthetic Bot API; the hosted
+leg uses the exact pinned contract mock and durable poller.
+
+Presentation differences are declared rather than normalized away. Fake and
+direct Telegram advertise `message-updates`; the pinned Notifications
+observation advertises only proven confirm, single-select, and free-text
+behavior with one question and at most six options. It does not advertise
+durable drafts, ordered/multi-select sets, or message updates. The daemon also
+reports the exact resolved-presentation capability as unsupported.
 
 ## Deployment boundary
 
@@ -290,7 +310,6 @@ Before production selection, remaining AR2 work must document and test:
 
 - provider retention and privacy terms;
 - deliberate switching without double delivery;
-- common fake/direct-Telegram/hosted parity; and
 - the packaged hosted lifecycle.
 
 No hosted service may silently become required for installation, doctor, local

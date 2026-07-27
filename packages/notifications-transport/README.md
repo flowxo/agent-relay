@@ -60,6 +60,9 @@ copied into Agent Relay.
 - Multi-select, ordered sets, and select requests wider than the pinned hosted
   capability fail before HTTP. Their negotiated local fallback is retained; they
   are never flattened.
+- `observeInteractionCapabilities` publishes the exact draft.1 boundary:
+  confirm, single-select, and free-text; one question; at most six options; no
+  durable drafts, ordered/multi-select sets, or message updates.
 - Explicit availability failures retry only with the unchanged event ID.
   Authentication, scope, validation, unbound subscriber, terminal provider, and
   idempotency-conflict failures are terminal. A provider `outcome_unknown`
@@ -92,6 +95,9 @@ SQLite. It commits local resolution or safe quarantine first, then acknowledges
 Notifications with a deterministic idempotency key. A crash before
 acknowledgement repeats the event; recovery drains that acknowledgement before a
 new poll, and the already materialized resume command cannot be claimed twice.
+Local duplicate/terminal reason codes remain durable, but `processed`
+acknowledgements omit them because the pinned contract permits `reason_code`
+only for `quarantined`.
 
 ## Resolution presentation
 

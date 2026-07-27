@@ -100,6 +100,25 @@
   packed/1,220,612-byte unpacked artifact proof, and the complete packed
   lifecycle. All three Chromium scenarios passed, and `pnpm audit --prod` found
   no known vulnerability.
+- FXO-1154 adds one transport-neutral matrix that runs unchanged against the
+  in-memory fake, the real direct `TelegramBotTransport`/reply router with a
+  synthetic Bot API, and the exact Notifications transport/mock/poller. Twelve
+  shared scenarios cover bounded delivery, duplicate ingestion, retry with the
+  same event identity, confirm/select/input, local identity rejection, expiry,
+  duplicate answers, both terminal/phone race orders, restart, and exactly one
+  resume claim. All three transports reach equivalent local request/answer/
+  resume outcomes within declared capability: fake/direct Telegram advertise
+  message updates, while the pinned hosted observation advertises only proven
+  confirm, single-select, and free-text with one question/six options. The
+  matrix exposed a contract bug where local duplicate/expired reasons were sent
+  on `processed` acknowledgements; they now remain in SQLite but are omitted
+  from the provider request, as draft.1 requires. The 16-file focused parity,
+  Telegram, hosted-safety, structured-interaction, resume, and canary matrix
+  passed 146 tests. The final local gate passed 51 Vitest files/408 tests, 17
+  contract-lock and supply-chain tests, the six-test isolated Notifications
+  consumer, the 190,951-byte packed/1,221,519-byte unpacked artifact proof, and
+  the complete packed lifecycle. All three Chromium scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability.
 - Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
   when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
   all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
@@ -724,10 +743,10 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Commit and close FXO-1153, then proceed directly to FXO-1154 shared transport
-behavior parity. Production hosted dogfood must still wait for AR2 and a central
-C0-09 go disposition. npm scope/publication and the monitored public
-security-contact path remain owner-controlled promotion gates.
+Complete FXO-1155 packed hosted proof and the AR3-ready operational handoff.
+Production hosted dogfood must still wait for AR2 and a central C0-09 go
+disposition. npm scope/publication and the monitored public security-contact
+path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,
