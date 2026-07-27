@@ -393,10 +393,15 @@ const bundle = await verifyReleaseBundle({
 const names = releaseArtifactNames(release);
 const tarball = resolve(releaseDirectory, names.tarball);
 
-const hostArchitecture = (
-  await run("/usr/bin/uname", ["-m"], { privateValues: [root, homedir()] })
+const appleSiliconCapability = (
+  await run("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], {
+    privateValues: [root, homedir()],
+  })
 ).stdout.trim();
-assert(hostArchitecture === "arm64", "host kernel is not Apple silicon");
+assert(
+  appleSiliconCapability === "1",
+  "host does not report Apple-silicon execution support",
+);
 const macosVersion = (
   await run("/usr/bin/sw_vers", ["-productVersion"], {
     privateValues: [root, homedir()],
@@ -852,7 +857,7 @@ try {
     target: {
       operatingSystem: "macOS",
       version: macosVersion,
-      kernelArchitecture: hostArchitecture,
+      appleSilicon: true,
       node: runtimeObservation,
       npmVersion,
       nodeArchive: exit.target.node.archive,
