@@ -22,7 +22,11 @@
   complete packed lifecycle. All three Chromium scenarios passed, and
   `pnpm audit --prod` found no known vulnerability. Natural suppression on the
   installed `2.1.220` Claude Code build remains explicitly unclaimed until the
-  next background-work dogfood Stop occurs.
+  next background-work dogfood Stop occurs. PR #11 merged the exact candidate as
+  `bd7f54a`; the checkout-backed launcher was rebuilt and reconciled, doctor
+  reported a healthy direct-Telegram installation, and the single polling daemon
+  restarted after a successful private-topic preflight with no pending
+  deliveries.
 - Direct-Telegram baseline dogfood began on 2026-07-28 with explicit transport
   selection and healthy Bot API private-topic preflight. It immediately exposed
   a historical fallback hazard: first activation replayed 395 bounded records
@@ -888,12 +892,11 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Merge FXO-1348, reinstall that exact candidate, and restart the direct-Telegram
-daemon. The next natural Claude Code Stop with structured background work should
-create a local `background-work` suppression diagnostic and no operator card;
-the later Stop with empty collections should create the ordinary waiting card.
-Separately, resolve the native-hook monotonic ordering gap before relying on
-lane state as an ordering proof.
+Observe the next natural Claude Code Stop with structured background work. It
+should create a local `background-work` suppression diagnostic and no operator
+card; the later Stop with empty collections should create the ordinary waiting
+card. Separately, resolve FXO-1350's native-hook monotonic ordering gap before
+relying on lane state as an ordering proof.
 
 FXO-1345 is merged and locally proven. When convenient, send `/cleanup` in
 Telegram General, inspect the bounded exact-set preview, and confirm it to close
