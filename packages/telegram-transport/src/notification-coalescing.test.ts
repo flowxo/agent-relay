@@ -6,13 +6,16 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
+import {
+  FakeNotificationTransport,
+  RelayService,
+  RelayStore,
+  renderDetailsMessages,
+  renderDeliveryText,
+} from "@agent-relay/core";
 
-import { cardActionCallbackData } from "./card-action.js";
-import { FakeTelegramTransport } from "./fake-transport.js";
-import { renderDetailsMessages, renderDeliveryText } from "./message.js";
+import { cardActionCallbackData } from "./callbacks/card-action.js";
 import { TelegramReplyRouter } from "./reply-router.js";
-import { RelayService } from "./service.js";
-import { RelayStore } from "./store.js";
 
 const baseTime = "2026-07-25T12:00:00.000Z";
 
@@ -55,7 +58,7 @@ function event(
 describe("notification coalescing", () => {
   it("edits one durable card with an exact count and latest timestamp", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => new Date("2026-07-25T12:00:10.000Z"),
       coalescingWindowMs: 60_000,
@@ -148,7 +151,7 @@ describe("notification coalescing", () => {
   it("starts a new card outside the configured window or for different content", async () => {
     let now = new Date(baseTime);
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => now,
       coalescingWindowMs: 1_000,
@@ -183,7 +186,7 @@ describe("notification coalescing", () => {
 
   it("returns the latest ten grouped events with the true durable count", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => new Date(baseTime),
     });
@@ -208,7 +211,7 @@ describe("notification coalescing", () => {
   it("reuses a durable coalescing anchor after a daemon restart", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-coalescing-"));
     const databasePath = join(directory, "relay.sqlite");
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     try {
       const firstStore = new RelayStore(databasePath);
       const firstService = new RelayService(firstStore, transport, {
@@ -243,7 +246,7 @@ describe("notification coalescing", () => {
   it("turns a concurrent group race into one coalesced event and one visible retry", async () => {
     let now = new Date(baseTime);
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => now,
       retryPolicy: {
@@ -282,7 +285,7 @@ describe("notification coalescing", () => {
   it("never hides questions, crashes, stale warnings, or failed delivery attempts", async () => {
     let now = new Date(baseTime);
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => now,
       coalescingWindowMs: 60_000,
@@ -355,7 +358,7 @@ describe("notification coalescing", () => {
 
   it("diagnoses mute suppression while still delivering critical failures", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => new Date(baseTime),
     });

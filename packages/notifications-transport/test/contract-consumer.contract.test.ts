@@ -7,11 +7,11 @@ import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   RelayService,
   RelayStore,
-  TelegramReplyRouter,
 } from "@agent-relay/core";
+import { TelegramReplyRouter } from "@agent-relay/telegram-transport";
 import { makeProjectRef } from "@agent-relay/protocol";
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
@@ -960,7 +960,7 @@ describe("C0 Notifications consumer contract", () => {
     });
 
     const telegramStore = new RelayStore();
-    const telegramTransport = new FakeTelegramTransport();
+    const telegramTransport = new FakeNotificationTransport();
     const telegramService = new RelayService(telegramStore, telegramTransport, {
       now: () => new Date(occurredAt),
     });

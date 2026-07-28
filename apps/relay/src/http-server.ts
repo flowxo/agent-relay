@@ -27,7 +27,7 @@ import {
   redactText,
   renderDeliveryMessage,
 } from "@agent-relay/core";
-import type { TelegramReplyRouter } from "@agent-relay/core";
+import type { TelegramReplyRouter } from "@agent-relay/telegram-transport";
 import { z } from "zod";
 
 import {

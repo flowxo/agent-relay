@@ -3,18 +3,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   RelayService,
   RelayStore,
+} from "@agent-relay/core";
+import {
   TelegramBotTransport,
   TelegramReplyRouter,
+  type ReplyRouteOutcome,
+} from "@agent-relay/telegram-transport";
+import {
   isInteractionCapabilityTransport,
   type DeliveryContext,
   type DeliveryMessage,
   type DeliveryReceipt,
   type NotificationTransport,
-  type ReplyRouteOutcome,
-} from "@agent-relay/core";
+} from "@agent-relay/notification-contracts";
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
   createNotificationsContractMock,
@@ -61,7 +65,7 @@ interface TelegramApiMessage {
   messageId: number;
 }
 
-class RecordingFakeTransport extends FakeTelegramTransport {
+class RecordingFakeTransport extends FakeNotificationTransport {
   public readonly deliveryKeys: string[] = [];
 
   public override async deliver(

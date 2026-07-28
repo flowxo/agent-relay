@@ -52,6 +52,11 @@ breaking changes and required operator action.
 
 ### Changed
 
+- Notification delivery contracts now live in a provider-neutral internal
+  package, generic presentation code is grouped under core notifications, and
+  direct Telegram owns a separate adapter package. The end-user distribution
+  remains one bundled CLI and no configuration, protocol, SQLite schema, or
+  runtime behavior changes.
 - Install manifests now record the public package version.
 - Cursor permission decisions now fail closed as `disabled` instead of being
   advertised by a protocol flag while the installer intentionally omits them.

@@ -7,21 +7,21 @@ import {
   type InteractionProviderObservationV1,
   type OperatorInteractionRequestV1,
 } from "@agent-relay/protocol";
-
-import { FakeTelegramTransport } from "./fake-transport.js";
-import {
-  harnessInteractionObservation,
-  negotiateInteraction,
-  requiredInteractionFeatures,
-} from "./interaction-negotiation.js";
-import { RelayService } from "./service.js";
-import { RelayStore } from "./store.js";
 import type {
   DeliveryContext,
   DeliveryMessage,
   DeliveryReceipt,
   NotificationTransport,
-} from "./transport.js";
+} from "@agent-relay/notification-contracts";
+
+import { FakeNotificationTransport } from "./adapters/fake.js";
+import {
+  harnessInteractionObservation,
+  negotiateInteraction,
+  requiredInteractionFeatures,
+} from "./interaction-negotiation.js";
+import { RelayService } from "../service.js";
+import { RelayStore } from "../store.js";
 
 const observedAt = "2026-07-25T12:00:00.000Z";
 
@@ -93,7 +93,9 @@ function singleSelect(optionCount: number) {
 }
 
 function transportObservation(): InteractionProviderObservationV1 {
-  return new FakeTelegramTransport().observeInteractionCapabilities(observedAt);
+  return new FakeNotificationTransport().observeInteractionCapabilities(
+    observedAt,
+  );
 }
 
 describe("structured interaction capability negotiation", () => {
@@ -408,7 +410,7 @@ describe("structured interaction capability negotiation", () => {
       },
     };
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => new Date(observedAt),
     });

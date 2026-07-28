@@ -4,13 +4,13 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   MemoryLogger,
   RelayService,
   RelayStore,
   sessionTopicMetadata,
-  TelegramReplyRouter,
 } from "@agent-relay/core";
+import { TelegramReplyRouter } from "@agent-relay/telegram-transport";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef, sha256 } from "@agent-relay/protocol";
 
@@ -113,7 +113,7 @@ async function setup(
   credential?: WebCredential,
 ) {
   const store = new RelayStore();
-  const transport = new FakeTelegramTransport();
+  const transport = new FakeNotificationTransport();
   const logger = new MemoryLogger();
   const service = new RelayService(store, transport, {
     logger,

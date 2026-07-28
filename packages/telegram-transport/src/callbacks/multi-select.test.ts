@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   multiSelectCallbackData,
   parseMultiSelectCallbackData,
-} from "./telegram-multi-select.js";
+} from "./multi-select.js";
 
 describe("Telegram multi-select callback data", () => {
   it("round-trips bounded set, unset, submit, and cancel actions", () => {

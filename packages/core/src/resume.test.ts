@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
 
-import { FakeTelegramTransport } from "./fake-transport.js";
+import { FakeNotificationTransport } from "./notifications/adapters/fake.js";
 import { MemoryLogger } from "./logger.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
@@ -46,7 +46,7 @@ function continuationEvent(
 describe("durable late resume commands", () => {
   it("claims an answered continuation once and audits every transition", () => {
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date(now),
     });
     const event = continuationEvent();
@@ -112,7 +112,7 @@ describe("durable late resume commands", () => {
   it("returns a waiting state without treating inactivity as a hang", () => {
     const store = new RelayStore();
     const logger = new MemoryLogger();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date(now),
       logger,
     });
@@ -141,7 +141,7 @@ describe("durable late resume commands", () => {
   it("never claims an answer after its continuation expiry", () => {
     let current = new Date(now);
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date(current),
     });
     const event = continuationEvent({
@@ -180,7 +180,7 @@ describe("durable late resume commands", () => {
 
   it("audits an answered Cursor IDE request as unsupported", () => {
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date(now),
     });
     const event = continuationEvent({
@@ -235,7 +235,7 @@ describe("durable late resume commands", () => {
 
   it("isolates resume claims across concurrent bridge sessions", () => {
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date(now),
     });
     const first = continuationEvent({
@@ -314,7 +314,7 @@ describe("durable late resume commands", () => {
 
   it("represents a probe-backed stale event as a distinct warning state", () => {
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport());
+    const service = new RelayService(store, new FakeNotificationTransport());
     const event = continuationEvent({
       eventId: "evt_process_stale_12345678",
     });

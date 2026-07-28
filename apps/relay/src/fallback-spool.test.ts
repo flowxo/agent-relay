@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   MemoryLogger,
   RelayService,
   RelayStore,
@@ -96,7 +96,7 @@ describe("fallback spool replay", () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-fallback-"));
     const spoolPath = join(directory, "fallback.ndjson");
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const input = event();
 
@@ -185,7 +185,7 @@ describe("fallback spool replay", () => {
     expect(diagnostics).toHaveLength(1);
 
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport());
+    const service = new RelayService(store, new FakeNotificationTransport());
     const second = await replayFallbackSpool(spoolPath, serviceClient(service));
     expect(second).toMatchObject({
       filesCompleted: 1,
@@ -214,7 +214,10 @@ describe("fallback spool replay", () => {
           ),
         });
         const store = new RelayStore();
-        const service = new RelayService(store, new FakeTelegramTransport());
+        const service = new RelayService(
+          store,
+          new FakeNotificationTransport(),
+        );
         try {
           const [first, second] = await Promise.all([
             replayFallbackSpool(spoolPath, serviceClient(service)),

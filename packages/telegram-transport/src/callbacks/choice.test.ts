@@ -6,7 +6,7 @@ import {
   choiceCallbackData,
   parseChoiceCallbackData,
   TELEGRAM_CALLBACK_DATA_LIMIT_BYTES,
-} from "./telegram-choice.js";
+} from "./choice.js";
 
 describe("Telegram choice callback data", () => {
   it("round-trips only bounded opaque decision tokens", () => {

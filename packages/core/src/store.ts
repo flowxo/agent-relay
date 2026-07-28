@@ -28,12 +28,11 @@ import type {
   SessionRegistrationV1,
   Surface,
 } from "@agent-relay/protocol";
-
 import {
   CardActionKindSchema,
   CardActionTokenSchema,
   type CardActionKind,
-} from "./card-action.js";
+} from "@agent-relay/notification-contracts";
 
 export type DeliveryStatus =
   "queued" | "retry" | "delivering" | "delivered" | "dead_letter";

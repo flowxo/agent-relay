@@ -221,7 +221,7 @@ describe("Agent Relay contract evidence", () => {
     }
     assert.deepEqual(
       productionBoundaryViolations(
-        'import { TransportError } from "@agent-relay/core/transport";',
+        'import { TransportError } from "@agent-relay/notification-contracts";',
       ),
       [],
     );

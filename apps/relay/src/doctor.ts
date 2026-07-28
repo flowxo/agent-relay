@@ -8,7 +8,7 @@ import {
 } from "@agent-relay/harnesses";
 import type { CompatibilityClassification } from "@agent-relay/harnesses";
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   RelayService,
   RelayStore,
 } from "@agent-relay/core";
@@ -273,7 +273,7 @@ export async function runDoctor(
   let store: RelayStore | undefined;
   try {
     store = new RelayStore(options.databasePath ?? ":memory:");
-    const service = new RelayService(store, new FakeTelegramTransport());
+    const service = new RelayService(store, new FakeNotificationTransport());
     service.recover();
     const status = store.status();
     checks.push({

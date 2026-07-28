@@ -765,9 +765,9 @@ stories receive a companion file under:
 - `docs/product/open-source-v1-charter.md`
 - `docs/implementation-brief.md`
 - `docs/progress.md`
-- `packages/core/src/transport.ts`
+- `packages/notification-contracts/src/transport.ts`
 - `packages/core/src/service.ts`
-- `packages/core/src/reply-router.ts`
+- `packages/telegram-transport/src/reply-router.ts`
 - Portfolio
   `docs/projects/shared-contracts-and-autonomous-delivery-conventions/project-spec.md`
 - Portfolio `docs/roadmaps/delivery-roadmap.md`

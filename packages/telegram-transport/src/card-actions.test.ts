@@ -2,13 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
+import type { CardActionKind } from "@agent-relay/notification-contracts";
+import {
+  FakeNotificationTransport,
+  RelayService,
+  RelayStore,
+  type FakeDelivery,
+} from "@agent-relay/core";
 
-import { cardActionCallbackData, type CardActionKind } from "./card-action.js";
-import type { FakeDelivery } from "./fake-transport.js";
-import { FakeTelegramTransport } from "./fake-transport.js";
+import { cardActionCallbackData } from "./callbacks/card-action.js";
 import { TelegramReplyRouter } from "./reply-router.js";
-import { RelayService } from "./service.js";
-import { RelayStore } from "./store.js";
 
 const baseTime = "2026-07-25T12:00:00.000Z";
 
@@ -118,7 +121,7 @@ function callbackFor(
 
 async function setup() {
   const store = new RelayStore();
-  const transport = new FakeTelegramTransport();
+  const transport = new FakeNotificationTransport();
   const service = new RelayService(store, transport, {
     now: () => new Date(baseTime),
   });

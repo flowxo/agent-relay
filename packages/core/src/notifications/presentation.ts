@@ -3,23 +3,24 @@ import type {
   InteractionQuestion,
   InteractionQuestionAnswer,
 } from "@agent-relay/protocol";
+import type {
+  CardActionKind,
+  DeliveryAction,
+  DeliveryInteraction,
+  DeliveryMessage,
+} from "@agent-relay/notification-contracts";
 
-import { cardActionToken, type CardActionKind } from "./card-action.js";
-import { redactText } from "./redaction.js";
+import { cardActionToken } from "./action.js";
+import { COMPACT_BUTTON_OPTION_LIMIT } from "./interaction-negotiation.js";
+import { redactText } from "../redaction.js";
 import type {
   MultiSelectDraftRecord,
   PendingRequestRecord,
   QuestionSetDraftRecord,
-} from "./store.js";
-import { TELEGRAM_INLINE_CHOICE_LIMIT } from "./telegram-choice.js";
-import { sessionTopicMetadata } from "./topic.js";
-import type {
-  DeliveryAction,
-  DeliveryInteraction,
-  DeliveryMessage,
-} from "./transport.js";
+} from "../store.js";
+import { sessionTopicMetadata } from "../topic.js";
 
-export const TELEGRAM_MESSAGE_LIMIT = 4_096;
+export const DELIVERY_MESSAGE_LIMIT = 4_096;
 const CARD_SUMMARY_LIMIT = 480;
 const TRUNCATION_MARKER = " …[truncated]";
 
@@ -346,7 +347,7 @@ export function renderDeliveryText(message: DeliveryMessage): string {
       ? (message.interaction?.options ?? [])
       : [];
   const numberedChoices =
-    choices.length > TELEGRAM_INLINE_CHOICE_LIMIT
+    choices.length > COMPACT_BUTTON_OPTION_LIMIT
       ? [
           "",
           "Reply with one option number:",
@@ -406,7 +407,7 @@ export function renderDeliveryText(message: DeliveryMessage): string {
       : "";
   return redactText(
     `${message.title}\n\n${message.text}${multiSelectSummary}${questionSetSummary}${numberedChoices}${questionSetNumberedChoices}`,
-    TELEGRAM_MESSAGE_LIMIT,
+    DELIVERY_MESSAGE_LIMIT,
   );
 }
 

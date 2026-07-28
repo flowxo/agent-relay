@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef, sha256 } from "@agent-relay/protocol";
 
-import { FakeTelegramTransport } from "./fake-transport.js";
+import { FakeNotificationTransport } from "./notifications/adapters/fake.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
 
@@ -46,7 +46,7 @@ function event(
 describe("durable retention controls", () => {
   it("prunes terminal history while preserving recent and open work", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const oldService = new RelayService(store, transport, {
       now: () => new Date(oldTime),
     });
@@ -209,12 +209,16 @@ describe("durable retention controls", () => {
 
   it("never prunes a request with an active resume command", () => {
     const store = new RelayStore();
-    const oldService = new RelayService(store, new FakeTelegramTransport(), {
-      now: () => new Date(oldTime),
-    });
+    const oldService = new RelayService(
+      store,
+      new FakeNotificationTransport(),
+      {
+        now: () => new Date(oldTime),
+      },
+    );
     const currentService = new RelayService(
       store,
-      new FakeTelegramTransport(),
+      new FakeNotificationTransport(),
       { now: () => new Date(currentTime) },
     );
     const continuation = event("evt_retention_active_resume", oldTime, {

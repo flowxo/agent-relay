@@ -1,8 +1,9 @@
-import type { CardActionKind } from "./card-action.js";
 import type {
   InteractionPresentationMode,
   InteractionProviderObservationV1,
 } from "@agent-relay/protocol";
+
+import type { CardActionKind } from "./card-action.js";
 
 export interface DeliveryChoice {
   value: string;

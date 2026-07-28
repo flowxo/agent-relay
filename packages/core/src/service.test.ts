@@ -7,11 +7,14 @@ import {
   sha256,
 } from "@agent-relay/protocol";
 
-import { FakeTelegramTransport } from "./fake-transport.js";
+import { FakeNotificationTransport } from "./notifications/adapters/fake.js";
 import { MemoryLogger } from "./logger.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
-import { TransportError, type NotificationTransport } from "./transport.js";
+import {
+  TransportError,
+  type NotificationTransport,
+} from "@agent-relay/notification-contracts";
 
 function event(
   overrides: Partial<AgentAttentionEventV1> = {},
@@ -73,7 +76,7 @@ function clock(start = "2026-07-24T12:00:00.000Z") {
 describe("RelayService durable delivery loop", () => {
   it("deduplicates repeated event ingestion and user-visible delivery", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const input = event();
 
@@ -132,7 +135,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("renders a distinct correlated question in the notification", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     service.ingest(
       event({
@@ -158,7 +161,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("keeps a long assistant message retrievable behind a compact Details action", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const finalSentence = "This final sentence must reach Telegram.";
     const input = event({
@@ -196,7 +199,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("marks an assistant message that exceeds the delivery content bound", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     service.ingest(
       event({
@@ -214,7 +217,7 @@ describe("RelayService durable delivery loop", () => {
   it("queues offline failures and delivers once after the retry deadline", async () => {
     const testClock = clock();
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     transport.setOnline(false);
     const service = new RelayService(store, transport, {
       now: testClock.now,
@@ -246,7 +249,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("dead-letters a non-retryable transport rejection with a visible log", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     transport.failNext(1, {
       code: "fake-bad-request",
       message: "synthetic rejected message",
@@ -337,7 +340,7 @@ describe("RelayService durable delivery loop", () => {
   it("recovers a delivery lease left behind by an interrupted daemon", async () => {
     const testClock = clock();
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: testClock.now,
     });
@@ -355,7 +358,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("isolates concurrent sessions and never lets an older heartbeat rewind state", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const first = event({
       eventId: "evt_concurrent_session_one",
@@ -399,7 +402,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("rejects an event-id collision instead of silently swallowing it", () => {
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport());
+    const service = new RelayService(store, new FakeNotificationTransport());
     const first = event({ eventId: "evt_collision_12345678" });
     service.ingest(first);
 
@@ -414,7 +417,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("reports a proven supervised process exit as a distinct event class", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const exit = event({
       eventId: "evt_process_exit_12345678",
@@ -445,7 +448,7 @@ describe("RelayService durable delivery loop", () => {
 
   it("redacts known credential shapes before transport and logs", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const logger = new MemoryLogger();
     const service = new RelayService(store, transport, { logger });
     const secret = "sk-syntheticSecretToken123456789";
@@ -468,7 +471,7 @@ describe("RelayService durable delivery loop", () => {
   it("durably deduplicates diagnostics and redacts their messages", () => {
     const store = new RelayStore();
     const logger = new MemoryLogger();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       logger,
     });
     const diagnostic = {

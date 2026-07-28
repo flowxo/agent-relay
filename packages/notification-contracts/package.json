@@ -1,7 +1,8 @@
 {
-  "name": "@agent-relay/core",
+  "name": "@agent-relay/notification-contracts",
   "version": "0.1.0",
   "private": true,
+  "description": "Provider-neutral notification delivery contracts for Agent Relay",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -16,12 +17,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@agent-relay/notification-contracts": "workspace:*",
     "@agent-relay/protocol": "workspace:*",
-    "better-sqlite3": "13.0.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "7.6.13"
+    "@types/node": "24.13.3"
   }
 }

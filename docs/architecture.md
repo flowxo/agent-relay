@@ -3,7 +3,7 @@
 > **Audience:** prospective users, operators, security reviewers, and
 > contributors
 >
-> **Last verified:** 2026-07-27
+> **Last verified:** 2026-07-28
 
 Agent Relay is a local Node.js control layer between coding harness lifecycle
 events and replaceable notification surfaces. It is not an agent runtime, a
@@ -34,17 +34,48 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 
 ## Components
 
-| Component              | Responsibility                                                                          |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| Protocol               | Strict event, request, answer, command, session, and diagnostic contracts               |
-| Harness adapters       | Parse native payloads or implement one exact structured driver without channel coupling |
-| Hook runner            | Read one bounded stdin payload, contact the daemon, or write a redacted fallback        |
-| Local daemon           | Own HTTP ingress, scheduling, transport delivery, reply routing, and retention          |
-| SQLite store           | Persist identity, events, attempts, requests, answers, topics, and resume ownership     |
-| Notification transport | Deliver bounded cards; it cannot directly resume a harness                              |
-| Supervisor             | Own a CLI child, observe its exit, and execute an officially supported late resume      |
-| Web companion          | Present authenticated projections and submit typed decisions to the same store          |
-| Runner bridge          | Optional outbound session protocol, separate state, typed local harness actuation       |
+| Component                 | Responsibility                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts               |
+| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling |
+| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback        |
+| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention      |
+| SQLite store              | Persist identity, events, attempts, requests, answers, topics, and resume ownership     |
+| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts |
+| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core            |
+| Provider adapters         | Project cards to Telegram, Notifications, or a fake without owning request state        |
+| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume      |
+| Web companion             | Present authenticated projections and submit typed decisions to the same store          |
+| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation       |
+
+## Notification dependency direction
+
+Notification providers are outbound and inbound adapters around one local
+authority, not features embedded in core:
+
+```text
+@agent-relay/notification-contracts
+            ▲                ▲
+            │                │
+  @agent-relay/core    provider adapter packages
+            ▲          (telegram / Notifications)
+            └──────────────┬─┘
+                           │
+                    apps/relay composition
+```
+
+`packages/notification-contracts` owns the provider-neutral transport protocol.
+`packages/core/src/notifications` owns canonical presentation, interaction
+negotiation, deterministic action identity, and the in-memory fake adapter.
+`packages/telegram-transport` owns Bot API calls, callbacks, reply routing, and
+sanitized Telegram fixtures. `packages/notifications-transport` owns the
+optional hosted mapping. Only `apps/relay` selects and assembles a concrete
+provider.
+
+Provider adapters may depend inward on core application services when handling
+an inbound answer. Core never imports a concrete provider adapter. This keeps
+SQLite request authority reusable while allowing a provider to translate its
+authenticated callback into the existing first-writer-wins transition.
 
 The packages remain ordinary Node.js/macOS code. A transport may call a hosted
 service, but protocol, hooks, SQLite, the installer, the daemon, and

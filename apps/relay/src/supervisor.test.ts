@@ -7,12 +7,12 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   MemoryLogger,
   RelayService,
   RelayStore,
-  TelegramReplyRouter,
 } from "@agent-relay/core";
+import { TelegramReplyRouter } from "@agent-relay/telegram-transport";
 
 import { RelayClient } from "./client.js";
 import { createRelayHttpServer } from "./http-server.js";
@@ -70,7 +70,7 @@ function childResult(overrides: ChildResultOverrides = {}): OwnedChildResult {
 
 async function setup() {
   const store = new RelayStore();
-  const transport = new FakeTelegramTransport();
+  const transport = new FakeNotificationTransport();
   const service = new RelayService(store, transport, {
     now: () => new Date("2026-07-24T12:00:00.000Z"),
   });

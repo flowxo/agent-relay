@@ -315,6 +315,6 @@ duplicate-ID, empty-option, stale, and incompatible variants. All fixture
 content and identifiers are synthetic.
 
 Sanitized Telegram Bot API 10.2 projections live in
-`packages/core/fixtures/telegram`, including single-choice, multi-select, and
-ordered question-set keyboards. Tokens, chat IDs, and content are synthetic;
-credentials are never part of a fixture.
+`packages/telegram-transport/fixtures/telegram`, including single-choice,
+multi-select, and ordered question-set keyboards. Tokens, chat IDs, and content
+are synthetic; credentials are never part of a fixture.

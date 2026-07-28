@@ -1,4 +1,5 @@
-import { MemoryLogger, TransportError } from "@agent-relay/core";
+import { MemoryLogger } from "@agent-relay/core";
+import { TransportError } from "@agent-relay/notification-contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import type {

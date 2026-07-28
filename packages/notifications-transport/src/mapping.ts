@@ -4,7 +4,7 @@ import type { CreateMessageRequest } from "@flowxo/notifications";
 import type {
   DeliveryInteraction,
   DeliveryMessage,
-} from "@agent-relay/core/transport";
+} from "@agent-relay/notification-contracts";
 
 const SAFE_OPAQUE_VALUE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
 

@@ -23,9 +23,11 @@
   "dependencies": {
     "@agent-relay/core": "workspace:*",
     "@agent-relay/harnesses": "workspace:*",
+    "@agent-relay/notification-contracts": "workspace:*",
     "@agent-relay/notifications-transport": "workspace:*",
     "@agent-relay/protocol": "workspace:*",
     "@agent-relay/runner-bridge": "workspace:*",
+    "@agent-relay/telegram-transport": "workspace:*",
     "zod": "4.4.3"
   },
   "devDependencies": {

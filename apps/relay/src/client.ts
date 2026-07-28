@@ -10,7 +10,6 @@ import type {
   DrainResult,
   IngestResult,
   PendingRequestRecord,
-  ReplyRouteResult,
   RetentionOptions,
   RetentionResult,
   ResumeClaimResult,
@@ -19,6 +18,7 @@ import type {
   SessionRecord,
   StoreStatus,
 } from "@agent-relay/core";
+import type { ReplyRouteResult } from "@agent-relay/telegram-transport";
 import type { Harness } from "@agent-relay/protocol";
 
 import type { DaemonTransportStatus } from "./transport-status.js";

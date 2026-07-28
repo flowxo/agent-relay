@@ -8,8 +8,22 @@ import {
   InteractionProviderObservationV1Schema,
   sha256,
 } from "@agent-relay/protocol";
+import type {
+  CardActionKind,
+  DeliveryContext,
+  NotificationTransport,
+  TopicNotificationTransport,
+} from "@agent-relay/notification-contracts";
+import {
+  asTransportError,
+  isInteractionCapabilityTransport,
+  isInteractiveTransport,
+  isTopicTransport,
+  TopicUnavailableError,
+  TransportError,
+} from "@agent-relay/notification-contracts";
 
-import { negotiateInteraction } from "./interaction-negotiation.js";
+import { negotiateInteraction } from "./notifications/interaction-negotiation.js";
 import type { LogRecord, RelayLogger } from "./logger.js";
 import { NOOP_LOGGER } from "./logger.js";
 import {
@@ -18,8 +32,8 @@ import {
   renderDeliveryMessage,
   renderMultiSelectDeliveryMessage,
   renderQuestionSetDeliveryMessage,
-} from "./message.js";
-import { cardActionToken, type CardActionKind } from "./card-action.js";
+} from "./notifications/presentation.js";
+import { cardActionToken } from "./notifications/action.js";
 import { redactText } from "./redaction.js";
 import type {
   DiagnosticIngestResult,
@@ -40,19 +54,6 @@ import type {
 } from "./store.js";
 import { DEFAULT_RETRY_POLICY } from "./store.js";
 import { sessionTopicMetadata } from "./topic.js";
-import type {
-  DeliveryContext,
-  NotificationTransport,
-  TopicNotificationTransport,
-} from "./transport.js";
-import {
-  asTransportError,
-  isInteractionCapabilityTransport,
-  isInteractiveTransport,
-  isTopicTransport,
-  TopicUnavailableError,
-  TransportError,
-} from "./transport.js";
 
 export interface DrainResult {
   claimed: number;
