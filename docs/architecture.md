@@ -204,6 +204,13 @@ different payload reusing an operation ID conflicts.
 - Destructive topic cleanup requires a durable exact-set preview and authorized
   confirmation, then revalidates each explicit terminal tombstone immediately
   before provider deletion.
+- Inactive-topic pruning is a distinct operator-authorized selection mode. Its
+  durable cutoff never implies session death; successful deletion removes only
+  the transport mapping so later activity provisions a fresh topic.
+- A claimed deletion temporarily owns its exact topic mapping. Concurrent
+  delivery retries instead of entering a topic being deleted; new queued work
+  either makes revalidation skip deletion or provisions a fresh topic after the
+  provider confirms it.
 - Telegram has no caller-supplied send idempotency key. A crash after Telegram
   accepts a message but before its receipt commits leaves a narrow at-least-once
   duplicate window.

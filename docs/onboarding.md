@@ -395,6 +395,14 @@ candidate is revalidated before Telegram permanently deletes the topic and all
 of its messages. Cleanup is limited to twenty topics per confirmation; re-run
 the command for another batch.
 
+For abandoned or otherwise unneeded topics whose sessions were never explicitly
+ended, send `/prune`. It defaults to topics with no relay activity for 24 hours;
+use forms such as `/prune 12h` or `/prune 7d` for a one-hour-to-thirty-day
+window. The exact General preview requires **Prune topics** confirmation and
+revalidates the same active-work guards. Pruning deletes the Telegram topic but
+does not mark the session ended, so later session activity creates a fresh
+topic. An empty `/cleanup` result also includes a one-tap 24-hour prune preview.
+
 Every action is committed before Telegram is acknowledged. Repeated taps return
 the stored result without repeating the action. `status` exposes aggregate
 control/session counts and safe transport diagnosis; detailed session state is
@@ -589,8 +597,10 @@ bot topics. Its `deleteForumTopic` method does support private chats, but
 deletion also removes every message in the topic. End remains a durable local
 relay-lane state and leaves the topic intact; the separate `/cleanup` command
 previews and requires confirmation before calling the destructive method.
-Unavailable-topic responses trigger reconciliation. Interrupted topic creations
-are recovered in bounded retry batches at daemon startup.
+`/prune` uses that same destructive method for an operator-confirmed inactive
+set without adding a terminal tombstone; a later event creates a replacement
+topic. Unavailable-topic responses trigger reconciliation. Interrupted topic
+creations are recovered in bounded retry batches at daemon startup.
 
 ### Telegram startup or delivery reports a provider code
 

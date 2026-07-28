@@ -68,7 +68,7 @@ Common stable provider codes:
 | `telegram-invalid-chat`            | Open the intended bot chat, send `/start`, and verify discovery            |
 | `telegram-bot-blocked`             | Unblock the bot and restart                                                |
 | `telegram-topic-permission`        | Restore topic-management permission                                        |
-| `telegram-topic-delete-permission` | Restore topic deletion permission and run `/cleanup` again                 |
+| `telegram-topic-delete-permission` | Restore topic deletion permission and run `/cleanup` or `/prune` again     |
 | `telegram-webhook-conflict`        | Poll mode found an active webhook; inspect before changing it              |
 | `telegram-webhook-missing`         | Webhook mode has no configured Telegram HTTPS webhook                      |
 | `telegram-polling-conflict`        | Another process is consuming `getUpdates`; stop the unintended consumer    |
@@ -77,7 +77,7 @@ Common stable provider codes:
 Real Telegram fails closed and never falls back to General. See the
 [Telegram guide](telegram.md) for setup and preflight behavior.
 
-## `/cleanup` finds nothing or a deletion fails
+## `/cleanup` or `/prune` finds nothing, or deletion fails
 
 Cleanup accepts only topics whose sessions have an explicit End tombstone or a
 native `session.ended` event. Crashes, process exits, stopped turns, stale
@@ -91,6 +91,14 @@ failure uses `telegram-topic-delete-permission`. Correct the Bot API access and
 run `/cleanup` again. Never manually remove the SQLite mapping to force success:
 Agent Relay removes it only after Telegram confirms deletion or reports the
 topic already absent.
+
+`/prune` is the separate path for inactive topics that are not proven dead. It
+defaults to 24 hours and accepts a duration from one hour through thirty days,
+for example `/prune 6h` or `/prune 7d`. Active sessions, unexpired open
+requests, claimed/running continuations, pending deliveries, and activity newer
+than the selected cutoff are excluded. Pruning does not End a session. A later
+event recreates its topic, although the old Telegram topic and messages remain
+permanently deleted.
 
 ## A Telegram reply is ignored
 

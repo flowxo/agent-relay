@@ -456,6 +456,13 @@ before Telegram permanently deletes the topic and all of its messages. See the
 [direct Telegram guide](docs/telegram.md#delete-proven-dead-topics) for the full
 safety boundary.
 
+For inactive topics whose sessions were never explicitly ended, use `/prune` (24
+hours by default), `/prune 12h`, or `/prune 7d`. Agent Relay previews the exact
+guarded set and requires a button confirmation. Pruning removes only the
+Telegram topic mapping, not the retained session or its lane state; later
+activity creates a fresh topic. See
+[prune inactive topics](docs/telegram.md#prune-inactive-topics).
+
 ### Telegram activation canary
 
 Use a dedicated bot and private chat. Keep the three values in a secret manager

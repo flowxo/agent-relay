@@ -145,6 +145,64 @@ describe("SQLite schema compatibility", () => {
     upgraded.close();
   });
 
+  it("migrates a version-five cleanup operation to explicit selection semantics", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+    const prior = new Database(databasePath);
+    prior
+      .prepare(
+        `
+        INSERT INTO topic_cleanup_operations (
+          operation_id, transport_name, transport_scope, selection_mode,
+          inactive_before, state, eligible_count, candidates_json, created_at,
+          expires_at, finished_at, updated_at
+        ) VALUES (?, ?, ?, 'proven-dead', NULL, 'completed', 0, '[]', ?, ?, ?, ?)
+      `,
+      )
+      .run(
+        "cleanup_0123456789abcdef0123456789abcdef",
+        "fake-telegram",
+        "fake:private-chat",
+        "2026-07-28T12:00:00.000Z",
+        "2026-07-28T12:10:00.000Z",
+        "2026-07-28T12:00:00.000Z",
+        "2026-07-28T12:00:00.000Z",
+      );
+    prior.exec(`
+      ALTER TABLE topic_cleanup_operations DROP COLUMN inactive_before;
+      ALTER TABLE topic_cleanup_operations DROP COLUMN selection_mode;
+    `);
+    prior.pragma("user_version = 5");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare("PRAGMA table_info(topic_cleanup_operations)")
+        .all()
+        .map((column) => (column as { name: string }).name),
+    ).toEqual(expect.arrayContaining(["selection_mode", "inactive_before"]));
+    expect(
+      upgraded
+        .prepare(
+          `
+          SELECT selection_mode, inactive_before
+          FROM topic_cleanup_operations
+          WHERE operation_id = ?
+        `,
+        )
+        .get("cleanup_0123456789abcdef0123456789abcdef"),
+    ).toEqual({
+      selection_mode: "proven-dead",
+      inactive_before: null,
+    });
+    upgraded.close();
+  });
+
   it("refuses to open a newer schema and leaves it untouched", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");

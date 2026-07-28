@@ -2,6 +2,34 @@
 
 ## Proven
 
+- FXO-1357 adds a separate operator-authorized inactive-topic prune without
+  weakening proven-dead `/cleanup`. `/prune` defaults to 24 hours, accepts
+  bounded hour/day thresholds from one hour through thirty days, and produces a
+  bounded exact-set preview in General with permanent-history warning and
+  Confirm/Cancel buttons. An empty `/cleanup` result offers the default preview
+  with one tap. Inactivity only selects candidates: active sessions, unexpired
+  requests, claimed/running resumes, and queued/retrying/delivering events
+  remain excluded, and each candidate is revalidated immediately before provider
+  deletion. Successful prune removes only the topic mapping—never a session or
+  End tombstone—so later activity provisions a fresh topic. Schema `6` durably
+  retains the selection mode, exact cutoff, bounded transcript-free candidate
+  metadata, decisions, and retry state; schema-5 cleanup records migrate as
+  `proven-dead`. Fake-transport tests prove threshold parsing, malformed input
+  guidance, one-tap discovery, authorization/context checks, safety exclusions,
+  mixed skip/delete accounting, claimed-delete/new-delivery isolation,
+  concurrent-session isolation, restart/retry recovery, no transcript retention,
+  and later-topic recreation. Telegram Bot API 10.2 documentation confirms that
+  `deleteForumTopic` supports private chats and deletes all topic messages,
+  while `closeForumTopic` remains forum-supergroup-only. A sanitized prune
+  control fixture records the outbound shape; no live topic has been deleted
+  without an exact operator confirmation. On 2026-07-28 the complete
+  `pnpm check` passed 69 Vitest files/506 tests, 24 contract and supply-chain
+  tests, the six-test isolated Notifications consumer, all workspace builds, the
+  220,032-byte packed/1,366,493-byte unpacked 11-file artifact, hosted proof
+  digest `2d5f52cd51fca994d9e2dbf741e25ba841151d6b841a87d80d7fa01e5dbc51c1`, and
+  the schema-5-to-schema-6 packed lifecycle with schema-7 downgrade refusal. All
+  three Chromium scenarios passed, and `pnpm audit --prod` found no known
+  vulnerability.
 - FXO-1350 replaces native-hook fingerprint pseudo-sequences with a durable
   per-machine/harness/session allocator in the authoritative local SQLite store.
   Exact source-fingerprint retries reuse one event sequence; distinct hooks
@@ -873,11 +901,13 @@ also remain free of silent delivery, hook, or correlation failures.
   fixtures rather than induced failures against the live account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
-- Telegram cleanup is locally proven through the fake transport and sanitized
+- Telegram deletion is locally proven through the fake transport and sanitized
   Bot API fixtures, but live deletion against the private activation chat is not
-  yet claimed. The operator must inspect and confirm the exact `/cleanup`
-  preview; age, inactivity, crash, process exit, and stopped turns never make a
-  topic eligible.
+  yet claimed. `/cleanup` still requires an explicit End or native
+  `session.ended`; age, inactivity, crash, process exit, and stopped turns never
+  prove death. `/prune` deliberately uses inactivity only to scope an exact set
+  whose deletion the operator explicitly authorizes. The 24-hour default is an
+  operator-workflow policy, not a liveness claim.
 - Claude Code's structured background-work fields are official-contract and
   fixture proven on the locally installed `2.1.220` build, but the natural
   private-session suppression and later truly-idle Stop are not yet live
@@ -925,10 +955,11 @@ card; the later Stop with empty collections should create the ordinary waiting
 card. Confirm both events retain monotonic sequence and lane state after the
 schema-5 live upgrade.
 
-FXO-1345 is merged and locally proven. When convenient, send `/cleanup` in
-Telegram General, inspect the bounded exact-set preview, and confirm it to close
-the remaining live `deleteForumTopic` evidence gap. Do not infer cleanup
-eligibility from age or inactivity.
+After FXO-1357 is merged and the single dogfood daemon is upgraded, send
+`/prune` in Telegram General, inspect the bounded exact set, and confirm only
+the topics whose Telegram history may be permanently removed. A later event for
+any pruned session should create a fresh topic without changing that session's
+lane state. `/cleanup` remains available for explicitly ended sessions.
 
 Continue bounded local direct-Telegram dogfood while the Notifications owner
 prepares the approved hosted environment. Hosted AR3 evidence begins only after

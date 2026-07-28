@@ -1,3 +1,7 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
@@ -68,11 +72,21 @@ function clock() {
   };
 }
 
-function setup() {
-  const testClock = clock();
-  const store = new RelayStore();
-  const transport = new FakeNotificationTransport();
-  const logger = new MemoryLogger();
+function setup(
+  options: {
+    storePath?: string;
+    testClock?: ReturnType<typeof clock>;
+    transport?: FakeNotificationTransport;
+    logger?: MemoryLogger;
+  } = {},
+) {
+  const testClock = options.testClock ?? clock();
+  const store =
+    options.storePath === undefined
+      ? new RelayStore()
+      : new RelayStore(options.storePath);
+  const transport = options.transport ?? new FakeNotificationTransport();
+  const logger = options.logger ?? new MemoryLogger();
   const service = new RelayService(store, transport, {
     now: testClock.now,
     logger,
@@ -97,8 +111,7 @@ async function createTopic(
   sessionId: string,
   terminalType: "session.ended" | "process.exited" | "turn.started",
 ) {
-  runtime.service.ingest(event(sessionId, 1, "turn.stopped"));
-  await runtime.service.drain();
+  await createWaitingTopic(runtime, sessionId);
   runtime.service.ingest(event(sessionId, 2, terminalType));
   await runtime.service.drain();
   return runtime.store
@@ -106,14 +119,33 @@ async function createTopic(
     .find((topic) => topic.sessionId === sessionId)!;
 }
 
-async function preview(runtime: ReturnType<typeof setup>, updateId = 100) {
+async function createWaitingTopic(
+  runtime: ReturnType<typeof setup>,
+  sessionId: string,
+  lastAssistantMessage?: string,
+) {
+  runtime.service.ingest({
+    ...event(sessionId, 1, "turn.stopped"),
+    ...(lastAssistantMessage === undefined ? {} : { lastAssistantMessage }),
+  });
+  await runtime.service.drain();
+  return runtime.store
+    .listSessionTopics()
+    .find((topic) => topic.sessionId === sessionId)!;
+}
+
+async function preview(
+  runtime: ReturnType<typeof setup>,
+  updateId = 100,
+  text = "/cleanup",
+) {
   const result = await runtime.router.handle({
     update_id: updateId,
     message: {
       message_id: updateId + 1_000,
       from: { id: 7001 },
       chat: { id: 9001 },
-      text: "/cleanup",
+      text,
     },
   });
   const control = runtime.transport.operatorControls.at(-1);
@@ -298,7 +330,7 @@ describe("Telegram proven-dead topic cleanup", () => {
       runtime.transport.operatorControlEdits.find(
         (edit) => edit.messageId === first.control.receipt.messageId,
       )?.message.text,
-    ).toContain("replaced by a newer /cleanup request");
+    ).toContain("replaced by a newer topic-deletion request");
     await expect(
       runtime.router.handle({
         update_id: 110,
@@ -409,6 +441,436 @@ describe("Telegram proven-dead topic cleanup", () => {
         }),
         expect.objectContaining({
           code: "telegram.topic-cleanup-malformed",
+        }),
+      ]),
+    );
+    runtime.store.close();
+  });
+});
+
+describe("Telegram inactive-topic pruning", () => {
+  it("defaults to 24 hours, deletes only after confirmation, and recreates a later topic without ending the session", async () => {
+    const runtime = setup();
+    const original = await createWaitingTopic(
+      runtime,
+      "session_prune_recreate",
+    );
+
+    const tooSoon = await preview(runtime, 200, "/prune");
+    expect(tooSoon.result).toMatchObject({ outcome: "cleanup-previewed" });
+    expect(tooSoon.control.message.text).toContain(
+      "No safe session topics have been inactive for at least 1 day",
+    );
+
+    runtime.testClock.advance(24 * 60 * 60_000 + 1);
+    const shown = await preview(runtime, 201, "/prune");
+    expect(shown.control.message.text).toContain(
+      "Prune 1 session topic(s) inactive for at least 1 day",
+    );
+    expect(shown.control.message.text).toContain("session_prune_recreate");
+    expect(shown.control.message.text).toContain(
+      "a later event recreates a fresh topic",
+    );
+
+    await runtime.router.handle({
+      update_id: 202,
+      callback_query: {
+        id: "callback_prune_confirm",
+        from: { id: 7001 },
+        data: callbackData(shown.control, 0),
+        message: {
+          message_id: Number(shown.control.receipt.messageId),
+          chat: { id: 9001 },
+        },
+      },
+    });
+    await expect(runtime.service.drainTopicCleanups()).resolves.toMatchObject({
+      deleted: 1,
+      completedOperations: 1,
+    });
+    expect(runtime.store.getSessionControl(original)).toBeUndefined();
+    expect(
+      runtime.store
+        .listSessions()
+        .find((session) => session.sessionId === original.sessionId),
+    ).toMatchObject({ state: "waiting" });
+
+    runtime.service.ingest(event(original.sessionId, 2, "turn.stopped"));
+    await runtime.service.drain();
+    const recreated = runtime.store.getSessionTopic({
+      ...original,
+      transportName: runtime.transport.name,
+      transportScope: runtime.transport.topicScope,
+    });
+    expect(recreated?.topicId).toBeDefined();
+    expect(recreated?.topicId).not.toBe(original.topicId);
+    runtime.store.close();
+  });
+
+  it("supports bounded hour/day thresholds and explains malformed durations", async () => {
+    const runtime = setup();
+    await createWaitingTopic(runtime, "session_prune_duration");
+    runtime.testClock.advance(2 * 60 * 60_000);
+
+    const threeHours = await preview(runtime, 203, "/prune 3h");
+    expect(threeHours.control.message.text).toContain(
+      "No safe session topics have been inactive for at least 3 hours",
+    );
+    const oneHour = await preview(runtime, 204, "/prune 1h");
+    expect(oneHour.control.message.text).toContain("session_prune_duration");
+
+    const malformed = await runtime.router.handle({
+      update_id: 205,
+      message: {
+        message_id: 1_205,
+        from: { id: 7001 },
+        chat: { id: 9001 },
+        text: "/prune 31d",
+      },
+    });
+    expect(malformed).toMatchObject({ outcome: "cleanup-rejected" });
+    expect(runtime.transport.operatorControls.at(-1)?.message.text).toContain(
+      "between 1 hour and 30 days",
+    );
+    expect(runtime.store.listDiagnostics()).toContainEqual(
+      expect.objectContaining({
+        code: "telegram.topic-prune-invalid-duration",
+      }),
+    );
+    runtime.store.close();
+  });
+
+  it("offers a one-tap inactive preview when proven-dead cleanup finds nothing", async () => {
+    const runtime = setup();
+    await createWaitingTopic(runtime, "session_prune_discovery");
+    runtime.testClock.advance(24 * 60 * 60_000 + 1);
+
+    const cleanup = await preview(runtime, 206);
+    expect(cleanup.control.message.text).toContain(
+      "To review inactive topics without marking their sessions ended",
+    );
+    const startData = callbackData(cleanup.control, 0);
+    expect(startData).toBe("relay-p:v1:24h");
+
+    await expect(
+      runtime.router.handle({
+        update_id: 207,
+        callback_query: {
+          id: "callback_prune_start",
+          from: { id: 7001 },
+          data: startData,
+          message: {
+            message_id: Number(cleanup.control.receipt.messageId),
+            chat: { id: 9001 },
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "cleanup-previewed" });
+    expect(runtime.transport.operatorControls.at(-1)?.message.text).toContain(
+      "session_prune_discovery",
+    );
+    expect(runtime.transport.callbackAcknowledgements.at(-1)).toEqual({
+      callbackId: "callback_prune_start",
+      text: "Prune preview ready",
+    });
+    runtime.store.close();
+  });
+
+  it("excludes active, open-request, claimed-resume, and queued-delivery sessions", async () => {
+    const runtime = setup();
+    const eligible = await createWaitingTopic(
+      runtime,
+      "session_prune_eligible",
+    );
+    await createTopic(runtime, "session_prune_active", "turn.started");
+    await createTopic(runtime, "session_prune_ended", "session.ended");
+
+    const openSessionId = "session_prune_open_request";
+    await createWaitingTopic(runtime, openSessionId);
+    runtime.service.ingest({
+      ...event(openSessionId, 2, "input.required"),
+      request: {
+        correlationId: "correlation_prune_open_request",
+        kind: "input",
+        question: "Keep this topic?",
+        expiresAt: "2026-07-31T12:00:00.000Z",
+      },
+    });
+    await runtime.service.drain();
+
+    const resumeSessionId = "session_prune_resume";
+    await createWaitingTopic(runtime, resumeSessionId);
+    const continuation = {
+      ...event(resumeSessionId, 2, "turn.stopped"),
+      bridgeSessionId: `bridge_${resumeSessionId}`,
+      turnId: "turn_prune_resume",
+      request: {
+        correlationId: "correlation_prune_resume",
+        kind: "continuation" as const,
+        question: "Continue?",
+        expiresAt: "2026-07-31T12:00:00.000Z",
+      },
+    };
+    runtime.service.ingest(continuation);
+    await runtime.service.drain();
+
+    const queuedSessionId = "session_prune_queued";
+    await createWaitingTopic(runtime, queuedSessionId);
+    runtime.testClock.advance(25 * 60 * 60_000);
+    expect(
+      runtime.service.resolveTerminal({
+        correlationId: continuation.request.correlationId,
+        answer: "continue",
+        expected: {
+          machineId: continuation.machineId,
+          harness: continuation.harness,
+          sessionId: continuation.sessionId,
+          turnId: continuation.turnId,
+        },
+      }),
+    ).toMatchObject({ outcome: "answered" });
+    expect(
+      runtime.service.claimNextResume({
+        machineId: continuation.machineId,
+        bridgeSessionId: continuation.bridgeSessionId,
+        harness: continuation.harness,
+        ownerId: "owner_prune_resume",
+      }),
+    ).toMatchObject({ outcome: "claimed" });
+    runtime.service.ingest(event(queuedSessionId, 2, "turn.stopped"));
+
+    const shown = await preview(runtime, 208, "/prune");
+    expect(shown.control.message.text).toContain(eligible.sessionId);
+    expect(shown.control.message.text).not.toContain("session_prune_active");
+    expect(shown.control.message.text).not.toContain("session_prune_ended");
+    expect(shown.control.message.text).not.toContain(openSessionId);
+    expect(shown.control.message.text).not.toContain(resumeSessionId);
+    expect(shown.control.message.text).not.toContain(queuedSessionId);
+    expect(
+      runtime.store.getTopicCleanupOperation(
+        runtime.store.listTopicCleanupOperations().at(-1)!.operationId,
+      ),
+    ).toMatchObject({
+      mode: "inactive",
+      inactiveBefore: "2026-07-28T13:00:00.000Z",
+      eligibleCount: 1,
+    });
+    runtime.store.close();
+  });
+
+  it("revalidates each session independently and retains no transcript text", async () => {
+    const runtime = setup();
+    const privateSentinel = "PRIVATE_TRANSCRIPT_SENTINEL_DO_NOT_RETAIN";
+    const first = await createWaitingTopic(
+      runtime,
+      "session_prune_first",
+      privateSentinel,
+    );
+    const second = await createWaitingTopic(runtime, "session_prune_second");
+    runtime.testClock.advance(25 * 60 * 60_000);
+    const shown = await preview(runtime, 209, "/prune");
+    const operation = runtime.store.listTopicCleanupOperations().at(-1)!;
+    expect(operation.candidates).toHaveLength(2);
+    expect(JSON.stringify(operation)).not.toContain(privateSentinel);
+    expect(shown.control.message.text).not.toContain(privateSentinel);
+
+    runtime.service.ingest(event(first.sessionId, 2, "turn.activity"));
+    await runtime.router.handle({
+      update_id: 210,
+      callback_query: {
+        id: "callback_prune_isolation",
+        from: { id: 7001 },
+        data: callbackData(shown.control, 0),
+        message: {
+          message_id: Number(shown.control.receipt.messageId),
+          chat: { id: 9001 },
+        },
+      },
+    });
+    await expect(runtime.service.drainTopicCleanups()).resolves.toMatchObject({
+      claimed: 1,
+      deleted: 1,
+      skipped: 1,
+      completedOperations: 1,
+    });
+    expect(runtime.transport.topicDeletionAttempts).toEqual([
+      expect.objectContaining({ topicId: second.topicId }),
+    ]);
+    expect(
+      runtime.store.getSessionTopic({
+        ...first,
+        transportName: runtime.transport.name,
+        transportScope: runtime.transport.topicScope,
+      }),
+    ).toBeDefined();
+    runtime.store.close();
+  });
+
+  it("blocks delivery into a claimed deletion and lets new work cancel the prune safely", async () => {
+    const runtime = setup();
+    const topic = await createWaitingTopic(runtime, "session_prune_claim_race");
+    runtime.testClock.advance(25 * 60 * 60_000);
+    const shown = await preview(runtime, 215, "/prune");
+    await runtime.router.handle({
+      update_id: 216,
+      callback_query: {
+        id: "callback_prune_claim_race",
+        from: { id: 7001 },
+        data: callbackData(shown.control, 0),
+        message: {
+          message_id: Number(shown.control.receipt.messageId),
+          chat: { id: 9001 },
+        },
+      },
+    });
+    expect(
+      runtime.store.claimNextTopicCleanupCandidate(
+        runtime.testClock.now().toISOString(),
+      ),
+    ).toMatchObject({ outcome: "claimed" });
+
+    const deliveryAttemptsBefore = runtime.transport.attempts.length;
+    runtime.service.ingest(event(topic.sessionId, 2, "turn.stopped"));
+    await expect(runtime.service.drain()).resolves.toMatchObject({
+      claimed: 1,
+      retrying: 1,
+      delivered: 0,
+    });
+    expect(runtime.transport.attempts).toHaveLength(deliveryAttemptsBefore);
+    expect(runtime.logger.records).toContainEqual(
+      expect.objectContaining({
+        code: "delivery.retry-scheduled",
+        details: expect.objectContaining({
+          errorCode: "topic-deletion-busy",
+        }),
+      }),
+    );
+
+    runtime.service.recover();
+    await expect(runtime.service.drainTopicCleanups()).resolves.toMatchObject({
+      claimed: 0,
+      skipped: 1,
+      completedOperations: 1,
+    });
+    expect(runtime.transport.topicDeletionAttempts).toHaveLength(0);
+    runtime.testClock.advance(2_000);
+    await expect(runtime.service.drain()).resolves.toMatchObject({
+      claimed: 1,
+      delivered: 1,
+      retrying: 0,
+    });
+    expect(
+      runtime.store.getSessionTopic({
+        ...topic,
+        transportName: runtime.transport.name,
+        transportScope: runtime.transport.topicScope,
+      })?.topicId,
+    ).toBe(topic.topicId);
+    runtime.store.close();
+  });
+
+  it("persists prune mode and cutoff while recovering an interrupted deletion across restart", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-prune-"));
+    const storePath = join(directory, "relay.sqlite");
+    const runtime = setup({ storePath });
+    await createWaitingTopic(runtime, "session_prune_restart");
+    runtime.testClock.advance(25 * 60 * 60_000);
+    const shown = await preview(runtime, 213, "/prune");
+    await runtime.router.handle({
+      update_id: 214,
+      callback_query: {
+        id: "callback_prune_restart",
+        from: { id: 7001 },
+        data: callbackData(shown.control, 0),
+        message: {
+          message_id: Number(shown.control.receipt.messageId),
+          chat: { id: 9001 },
+        },
+      },
+    });
+    expect(
+      runtime.store.claimNextTopicCleanupCandidate(
+        runtime.testClock.now().toISOString(),
+      ),
+    ).toMatchObject({
+      outcome: "claimed",
+      operation: {
+        mode: "inactive",
+        inactiveBefore: "2026-07-28T13:00:00.000Z",
+      },
+    });
+    runtime.store.close();
+
+    const restarted = setup({
+      storePath,
+      testClock: runtime.testClock,
+      transport: runtime.transport,
+      logger: runtime.logger,
+    });
+    restarted.service.recover();
+    restarted.transport.failNextTopicDeletion(1);
+    await expect(restarted.service.drainTopicCleanups()).resolves.toMatchObject(
+      {
+        claimed: 1,
+        retrying: 1,
+      },
+    );
+    restarted.testClock.advance(2_000);
+    await expect(restarted.service.drainTopicCleanups()).resolves.toMatchObject(
+      {
+        claimed: 1,
+        deleted: 1,
+        completedOperations: 1,
+      },
+    );
+    expect(restarted.store.listTopicCleanupOperations().at(-1)).toMatchObject({
+      mode: "inactive",
+      inactiveBefore: "2026-07-28T13:00:00.000Z",
+      state: "completed",
+    });
+    expect(
+      restarted.logger.records.some(
+        (record) => record.code === "topic-cleanup.recovered",
+      ),
+    ).toBe(true);
+    restarted.store.close();
+  });
+
+  it("rejects unauthorized and wrong-context prune-start controls", async () => {
+    const runtime = setup();
+    await expect(
+      runtime.router.handle({
+        update_id: 211,
+        callback_query: {
+          id: "callback_prune_unauthorized",
+          from: { id: 7999 },
+          data: "relay-p:v1:24h",
+          message: { message_id: 1_211, chat: { id: 9001 } },
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "unauthorized" });
+    await expect(
+      runtime.router.handle({
+        update_id: 212,
+        callback_query: {
+          id: "callback_prune_wrong_context",
+          from: { id: 7001 },
+          data: "relay-p:v1:24h",
+          message: {
+            message_id: 1_212,
+            message_thread_id: 123,
+            chat: { id: 9001 },
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "cleanup-rejected" });
+    expect(runtime.store.listDiagnostics()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "telegram.topic-prune-unauthorized",
+        }),
+        expect.objectContaining({
+          code: "telegram.topic-prune-context-mismatch",
         }),
       ]),
     );

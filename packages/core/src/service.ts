@@ -57,6 +57,7 @@ import type {
   SessionRecord,
   SessionTimelineRecord,
   TopicCleanupDecisionResult,
+  TopicCleanupMode,
   TopicCleanupOperationRecord,
 } from "./store.js";
 import { DEFAULT_RETRY_POLICY } from "./store.js";
@@ -158,6 +159,28 @@ function safeLogRef(value: string): string {
 const MAX_STALE_BACKLOG_AGE_MS = 365 * 24 * 60 * 60_000;
 const DEFAULT_TOPIC_CLEANUP_PREVIEW_TTL_MS = 10 * 60_000;
 const DEFAULT_TOPIC_CLEANUP_PREVIEW_LIMIT = 20;
+export const DEFAULT_TOPIC_PRUNE_INACTIVE_MS = 24 * 60 * 60_000;
+export const MIN_TOPIC_PRUNE_INACTIVE_MS = 60 * 60_000;
+export const MAX_TOPIC_PRUNE_INACTIVE_MS = 30 * 24 * 60 * 60_000;
+
+function formatTopicInactivity(milliseconds: number): string {
+  const hours = Math.max(1, Math.floor(milliseconds / (60 * 60_000)));
+  if (hours % 24 === 0) {
+    const days = hours / 24;
+    return `${String(days)} day${days === 1 ? "" : "s"}`;
+  }
+  return `${String(hours)} hour${hours === 1 ? "" : "s"}`;
+}
+
+function topicCleanupTitle(mode: TopicCleanupMode): string {
+  return mode === "inactive"
+    ? "Agent Relay inactive-topic prune"
+    : "Agent Relay topic cleanup";
+}
+
+function topicCleanupCommand(mode: TopicCleanupMode): "/prune" | "/cleanup" {
+  return mode === "inactive" ? "/prune" : "/cleanup";
+}
 
 export class RelayService {
   private readonly retryPolicy: RetryPolicy;
@@ -284,7 +307,12 @@ export class RelayService {
   }
 
   public createTopicCleanupPreview(
-    options: { ttlMs?: number; limit?: number } = {},
+    options: {
+      ttlMs?: number;
+      limit?: number;
+      mode?: TopicCleanupMode;
+      inactiveForMs?: number;
+    } = {},
   ): TopicCleanupOperationRecord {
     if (
       !isTopicDeletionTransport(this.transport) ||
@@ -301,12 +329,36 @@ export class RelayService {
       );
     }
     const now = this.now();
+    const mode = options.mode ?? "proven-dead";
+    let inactiveBefore: string | undefined;
+    if (mode === "inactive") {
+      const inactiveForMs =
+        options.inactiveForMs ?? DEFAULT_TOPIC_PRUNE_INACTIVE_MS;
+      if (
+        !Number.isSafeInteger(inactiveForMs) ||
+        inactiveForMs < MIN_TOPIC_PRUNE_INACTIVE_MS ||
+        inactiveForMs > MAX_TOPIC_PRUNE_INACTIVE_MS
+      ) {
+        throw new Error(
+          `topic prune inactivity must be between ${String(
+            MIN_TOPIC_PRUNE_INACTIVE_MS,
+          )} and ${String(MAX_TOPIC_PRUNE_INACTIVE_MS)} ms`,
+        );
+      }
+      inactiveBefore = new Date(now.getTime() - inactiveForMs).toISOString();
+    } else if (options.inactiveForMs !== undefined) {
+      throw new Error(
+        "proven-dead topic cleanup does not accept an inactivity duration",
+      );
+    }
     return this.store.createTopicCleanupPreview({
       operationId: `cleanup_${randomUUID().replaceAll("-", "")}`,
       transportName: this.transport.name,
       transportScope: this.transport.topicScope,
       now: now.toISOString(),
       expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
+      mode,
+      ...(inactiveBefore === undefined ? {} : { inactiveBefore }),
       limit: options.limit ?? DEFAULT_TOPIC_CLEANUP_PREVIEW_LIMIT,
     });
   }
@@ -315,27 +367,64 @@ export class RelayService {
     operation: TopicCleanupOperationRecord,
     confirmCallbackData: string,
     cancelCallbackData: string,
+    pruneCallbackData?: string,
   ): OperatorControlMessage {
+    const title = topicCleanupTitle(operation.mode);
+    const threshold =
+      operation.mode === "inactive" && operation.inactiveBefore !== undefined
+        ? formatTopicInactivity(
+            Date.parse(operation.createdAt) -
+              Date.parse(operation.inactiveBefore),
+          )
+        : undefined;
     if (operation.candidates.length === 0) {
+      if (operation.mode === "inactive") {
+        return {
+          text: `${title}\n\nNo safe session topics have been inactive for at least ${threshold ?? "the selected duration"}. Active sessions, open requests, running resumes, and pending deliveries are excluded.`,
+          buttons: [],
+        };
+      }
       return {
-        text: "Agent Relay topic cleanup\n\nNo proven-dead session topics are ready for deletion. Only an explicit End action or native session-ended event qualifies.",
-        buttons: [],
+        text: `${title}\n\nNo proven-dead session topics are ready for deletion. Only an explicit End action or native session-ended event qualifies.\n\nTo review inactive topics without marking their sessions ended, use /prune.`,
+        buttons:
+          pruneCallbackData === undefined
+            ? []
+            : [
+                [
+                  {
+                    label: "Review topics inactive 24h",
+                    callbackData: pruneCallbackData,
+                  },
+                ],
+              ],
       };
     }
     const candidates = operation.candidates
-      .map(
-        (candidate) =>
-          `• ${candidate.harness} · ${redactText(
-            candidate.repository,
-            80,
-          )} · ${redactText(candidate.shortSessionId, 24)}`,
-      )
+      .map((candidate) => {
+        const inactive =
+          operation.mode === "inactive" &&
+          candidate.lastActivityAt !== undefined
+            ? ` · inactive ${formatTopicInactivity(
+                Math.max(
+                  0,
+                  Date.parse(operation.createdAt) -
+                    Date.parse(candidate.lastActivityAt),
+                ),
+              )}`
+            : "";
+        return `• ${candidate.harness} · ${redactText(
+          candidate.repository,
+          80,
+        )} · ${redactText(candidate.shortSessionId, 24)}${inactive}`;
+      })
       .join("\n");
     const remainder =
       operation.eligibleCount > operation.candidates.length
         ? `\n\n${String(
             operation.eligibleCount - operation.candidates.length,
-          )} more eligible topic(s) will remain for a later cleanup.`
+          )} more eligible topic(s) will remain for a later ${topicCleanupCommand(
+            operation.mode,
+          )}.`
         : "";
     const expiryMinutes = Math.max(
       1,
@@ -344,16 +433,24 @@ export class RelayService {
           60_000,
       ),
     );
+    const prompt =
+      operation.mode === "inactive"
+        ? `Prune ${String(
+            operation.candidates.length,
+          )} session topic(s) inactive for at least ${threshold ?? "the selected duration"}? Inactivity does not prove that a session ended. Your confirmation permanently removes each provider topic and its messages; a later event recreates a fresh topic.`
+        : `Delete ${String(
+            operation.candidates.length,
+          )} proven-dead session topic(s)? This permanently removes each provider topic and its messages.`;
     return {
-      text: `Agent Relay topic cleanup\n\nDelete ${String(
-        operation.candidates.length,
-      )} proven-dead session topic(s)? This permanently removes each Telegram topic and its messages.\n\n${candidates}${remainder}\n\nEligibility is rechecked immediately before every deletion. Confirmation expires in ${String(
+      text: `${title}\n\n${prompt}\n\n${candidates}${remainder}\n\nEligibility is rechecked immediately before every deletion. Confirmation expires in ${String(
         expiryMinutes,
       )} minute${expiryMinutes === 1 ? "" : "s"}.`,
       buttons: [
         [
           {
-            label: `Delete ${String(operation.candidates.length)} topic${
+            label: `${
+              operation.mode === "inactive" ? "Prune" : "Delete"
+            } ${String(operation.candidates.length)} topic${
               operation.candidates.length === 1 ? "" : "s"
             }`,
             callbackData: confirmCallbackData,
@@ -368,6 +465,7 @@ export class RelayService {
     operationId: string;
     confirmCallbackData: string;
     cancelCallbackData: string;
+    pruneCallbackData?: string;
   }): Promise<TopicCleanupOperationRecord> {
     if (!isOperatorControlTransport(this.transport)) {
       throw new Error(
@@ -384,6 +482,7 @@ export class RelayService {
           operation,
           input.confirmCallbackData,
           input.cancelCallbackData,
+          input.pruneCallbackData,
         ),
         { idempotencyKey: `topic_cleanup_preview:${operation.operationId}` },
       );
@@ -458,6 +557,8 @@ export class RelayService {
   private renderTopicCleanupStatus(
     operation: TopicCleanupOperationRecord,
   ): OperatorControlMessage {
+    const title = topicCleanupTitle(operation.mode);
+    const command = topicCleanupCommand(operation.mode);
     const counts = {
       deleted: operation.candidates.filter(
         (candidate) => candidate.state === "deleted",
@@ -478,30 +579,30 @@ export class RelayService {
     const text = (() => {
       switch (operation.state) {
         case "claimed":
-          return `Agent Relay topic cleanup\n\nDeletion is running. ${String(
+          return `${title}\n\nDeletion is running. ${String(
             counts.deleted + counts.alreadyMissing,
           )} removed, ${String(counts.skipped)} skipped after revalidation, ${String(
             counts.remaining,
           )} remaining.`;
         case "completed":
         case "completed-with-errors":
-          return `Agent Relay topic cleanup complete\n\n${String(
+          return `${title} complete\n\n${String(
             counts.deleted,
           )} deleted, ${String(
             counts.alreadyMissing,
           )} already absent, ${String(counts.skipped)} skipped because session state changed, ${String(
             counts.failed,
-          )} failed.${counts.failed > 0 ? "\n\nFailures were recorded for diagnosis. Run /cleanup again after correcting them." : ""}`;
+          )} failed.${counts.failed > 0 ? `\n\nFailures were recorded for diagnosis. Run ${command} again after correcting them.` : ""}`;
         case "cancelled":
-          return "Agent Relay topic cleanup\n\nCanceled. No topics were deleted.";
+          return `${title}\n\nCanceled. No topics were deleted.`;
         case "expired":
-          return "Agent Relay topic cleanup\n\nConfirmation expired. No topics were deleted; run /cleanup for a fresh preview.";
+          return `${title}\n\nConfirmation expired. No topics were deleted; run ${command} for a fresh preview.`;
         case "superseded":
-          return "Agent Relay topic cleanup\n\nThis preview was replaced by a newer /cleanup request.";
+          return `${title}\n\nThis preview was replaced by a newer topic-deletion request.`;
         case "preview-failed":
-          return "Agent Relay topic cleanup\n\nThe preview could not be delivered. The failure was recorded for diagnosis.";
+          return `${title}\n\nThe preview could not be delivered. The failure was recorded for diagnosis.`;
         case "previewed":
-          return "Agent Relay topic cleanup\n\nWaiting for confirmation.";
+          return `${title}\n\nWaiting for confirmation.`;
       }
     })();
     return { text, buttons: [] };
@@ -566,10 +667,8 @@ export class RelayService {
       if (claim.outcome === "none") {
         break;
       }
+      result.skipped += claim.skipped;
       if (claim.outcome === "terminal") {
-        result.skipped += claim.operation.candidates.filter(
-          (candidate) => candidate.state === "skipped",
-        ).length;
         result.completedOperations += 1;
         await this.syncTopicCleanupPresentation(claim.operation);
         continue;
@@ -1244,12 +1343,20 @@ export class RelayService {
         topicId: claim.topic.topicId,
       };
     }
-    if (claim.outcome === "busy" || claim.outcome === "deferred") {
+    if (
+      claim.outcome === "busy" ||
+      claim.outcome === "deleting" ||
+      claim.outcome === "deferred"
+    ) {
       throw new TransportError(
         claim.outcome === "busy"
           ? "session topic creation is already in progress"
-          : "session topic creation is waiting for its retry deadline",
-        `topic-provisioning-${claim.outcome}`,
+          : claim.outcome === "deleting"
+            ? "session topic deletion is already in progress"
+            : "session topic creation is waiting for its retry deadline",
+        claim.outcome === "deleting"
+          ? "topic-deletion-busy"
+          : `topic-provisioning-${claim.outcome}`,
         true,
       );
     }
