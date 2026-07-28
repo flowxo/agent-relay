@@ -5,8 +5,16 @@ import type {
 } from "@agent-relay/protocol";
 
 export interface DeliveryChoice {
-  token: string;
+  value: string;
   label: string;
+}
+
+export interface DeliveryInteraction {
+  type: "confirm" | "select" | "input";
+  correlationId: string;
+  prompt: string;
+  expiresAt: string;
+  options?: DeliveryChoice[];
 }
 
 export interface DeliveryMultiSelect {
@@ -49,8 +57,7 @@ export interface DeliveryMessage {
   eventId: string;
   title: string;
   text: string;
-  correlationId?: string;
-  choices?: DeliveryChoice[];
+  interaction?: DeliveryInteraction;
   multiSelect?: DeliveryMultiSelect;
   questionSet?: DeliveryQuestionSet;
   actions?: DeliveryAction[];

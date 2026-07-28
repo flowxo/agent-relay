@@ -226,7 +226,7 @@ function optionToken(
   if (option === undefined) {
     throw new Error(`missing option ${label}`);
   }
-  return option.token;
+  return option.value;
 }
 
 describe("durable ordered Telegram question sets", () => {
@@ -244,7 +244,7 @@ describe("durable ordered Telegram question sets", () => {
     expect(delivery.message.questionSet?.presentationMode).toBe(
       "numbered-text",
     );
-    expect(delivery.message.choices).toHaveLength(12);
+    expect(delivery.message.questionSet?.options).toHaveLength(12);
     expect(renderDeliveryText(delivery.message)).toContain("12. Numbered 12");
     expect(
       testRuntime.store.getQuestionSetDraft("correlation_wizard_numbered")

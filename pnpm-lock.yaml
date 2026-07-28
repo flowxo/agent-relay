@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  "@flowxo/notifications-contracts@1.0.0-rc.1": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+
 importers:
   .:
     devDependencies:
@@ -16,6 +19,9 @@ importers:
       "@types/node":
         specifier: 24.13.3
         version: 24.13.3
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       eslint:
         specifier: 10.7.0
         version: 10.7.0
@@ -74,6 +80,28 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/notifications-transport:
+    dependencies:
+      "@agent-relay/core":
+        specifier: workspace:*
+        version: link:../core
+      "@agent-relay/protocol":
+        specifier: workspace:*
+        version: link:../protocol
+      "@flowxo/notifications":
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz
+      "@flowxo/notifications-contracts":
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+    devDependencies:
+      "@flowxo/notifications-contract-mock":
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
+      "@types/node":
+        specifier: 24.13.3
+        version: 24.13.3
 
   packages/protocol:
     dependencies:
@@ -378,6 +406,34 @@ packages:
         integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==,
       }
     engines: { node: ^20.19.0 || ^22.13.0 || >=24 }
+
+  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz":
+    resolution:
+      {
+        integrity: sha512-w8jMpSlgDU6ZG8Xv7wDRGAXpzMU0orhRLAT4BGM5vGsDmrUVbi5J3tfjatHa6/y8VMt6rrxh3od7EJho+5diHw==,
+        tarball: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz,
+      }
+    version: 1.0.0-rc.1
+    engines: { node: ">=22.13.0 <23" }
+    hasBin: true
+
+  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz":
+    resolution:
+      {
+        integrity: sha512-TLCNNfgB+jvnSg/ItvcncbmlUi1hW4RgY89tzVtvDZ9WX5nyPOSagZLKPp2b8T49NTPUnNyzcpViigN7JoPYfg==,
+        tarball: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz,
+      }
+    version: 1.0.0-rc.1
+    engines: { node: ">=22.13.0 <23" }
+
+  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz":
+    resolution:
+      {
+        integrity: sha512-VOcIIal9q7ffYt+6Gi7X5U4ZyZ3HAbSAXXzObFHJLtjYM0RSMhbXbU5/XAjxVovl90mMVnfSE1DTY7U0OiAmoA==,
+        tarball: file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz,
+      }
+    version: 1.0.0-rc.1
+    engines: { node: ">=22.13.0 <23" }
 
   "@humanfs/core@0.19.2":
     resolution:
@@ -844,6 +900,12 @@ packages:
         integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==,
       }
 
+  ajv@8.20.0:
+    resolution:
+      {
+        integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==,
+      }
+
   assertion-error@2.0.1:
     resolution:
       {
@@ -1046,6 +1108,12 @@ packages:
         integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==,
       }
 
+  fast-uri@3.1.4:
+    resolution:
+      {
+        integrity: sha512-8JnbkQ4juDyvYs4mgFGQqg4yCYtFDtUtmp2QIQq11ZZe5CFQ5wcqm1rqDgAh/QdMySuBnPzMUiJUNZG5N/AiQw==,
+      }
+
   fdir@6.5.0:
     resolution:
       {
@@ -1108,6 +1176,13 @@ packages:
       }
     engines: { node: ">=10.13.0" }
 
+  hono@4.12.32:
+    resolution:
+      {
+        integrity: sha512-XcuyW9qE2kJn07PkecMOBd5Vq/hMy7mmGw+idz1yblbg9N17ijJODrvPkn7/dwL3Kulj8LcRJ69DLOWf91dRUg==,
+      }
+    engines: { node: ">=16.9.0" }
+
   ignore@5.3.2:
     resolution:
       {
@@ -1165,6 +1240,12 @@ packages:
     resolution:
       {
         integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==,
+      }
+
+  json-schema-traverse@1.0.0:
+    resolution:
+      {
+        integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==,
       }
 
   json-stable-stringify-without-jsonify@1.0.1:
@@ -1344,6 +1425,13 @@ packages:
         integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==,
       }
     engines: { node: ">=6" }
+
+  require-from-string@2.0.2:
+    resolution:
+      {
+        integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==,
+      }
+    engines: { node: ">=0.10.0" }
 
   rollup@4.62.2:
     resolution:
@@ -1731,6 +1819,18 @@ snapshots:
       "@eslint/core": 1.2.1
       levn: 0.4.1
 
+  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz":
+    dependencies:
+      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+      hono: 4.12.32
+
+  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz":
+    {}
+
+  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz":
+    dependencies:
+      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+
   "@humanfs/core@0.19.2":
     dependencies:
       "@humanfs/types": 0.15.0
@@ -1995,6 +2095,13 @@ snapshots:
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
 
+  ajv@8.20.0:
+    dependencies:
+      fast-deep-equal: 3.1.3
+      fast-uri: 3.1.4
+      json-schema-traverse: 1.0.0
+      require-from-string: 2.0.2
+
   assertion-error@2.0.1: {}
 
   balanced-match@4.0.4: {}
@@ -2142,6 +2249,8 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
+  fast-uri@3.1.4: {}
+
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
@@ -2172,6 +2281,8 @@ snapshots:
     dependencies:
       is-glob: 4.0.3
 
+  hono@4.12.32: {}
+
   ignore@5.3.2: {}
 
   ignore@7.0.6: {}
@@ -2191,6 +2302,8 @@ snapshots:
   json-buffer@3.0.1: {}
 
   json-schema-traverse@0.4.1: {}
+
+  json-schema-traverse@1.0.0: {}
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
@@ -2273,6 +2386,8 @@ snapshots:
   prettier@3.9.6: {}
 
   punycode@2.3.1: {}
+
+  require-from-string@2.0.2: {}
 
   rollup@4.62.2:
     dependencies:

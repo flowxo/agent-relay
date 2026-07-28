@@ -244,13 +244,16 @@ function rowsOf<T>(items: T[], size: number): T[][] {
 function inlineKeyboard(
   message: DeliveryMessage,
 ): Array<Array<{ text: string; callback_data: string }>> {
-  const choices = message.choices ?? [];
+  const choices =
+    message.multiSelect === undefined && message.questionSet === undefined
+      ? (message.interaction?.options ?? [])
+      : [];
   const choiceButtons =
     choices.length > TELEGRAM_INLINE_CHOICE_LIMIT
       ? []
       : choices.map((choice) => ({
           text: choice.label,
-          callback_data: choiceCallbackData(choice.token),
+          callback_data: choiceCallbackData(choice.value),
         }));
   const actionButtons = (message.actions ?? []).map((action) => ({
     text: action.label,
@@ -261,7 +264,7 @@ function inlineKeyboard(
       text: `${option.selected ? "✓" : "○"} ${option.label}`,
       callback_data: multiSelectCallbackData(
         option.selected ? "unselect" : "select",
-        option.token,
+        option.value,
       ),
     }),
   );
@@ -298,7 +301,7 @@ function inlineKeyboard(
                 ? "unselect"
                 : "select"
               : "choose",
-            option.token,
+            option.value,
           ),
         }))
       : [];

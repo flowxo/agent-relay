@@ -284,7 +284,7 @@ export interface PendingRequestRecord {
     | "continuation";
   question: string;
   expiresAt: string;
-  resolvedBy?: "terminal" | "telegram" | "web";
+  resolvedBy?: "terminal" | "telegram" | "web" | "notifications";
   answer?: string;
   resolvedAt?: string;
   transportMessageId?: string;
@@ -482,7 +482,7 @@ export type NumberedChoiceResolutionResult =
 export interface ResolveRequestInput {
   correlationId: string;
   answer: string;
-  resolvedBy: "terminal" | "telegram" | "web";
+  resolvedBy: "terminal" | "telegram" | "web" | "notifications";
   now: string;
   expected?: {
     machineId: string;
@@ -688,7 +688,7 @@ interface PendingRow {
   request_kind: PendingRequestRecord["requestKind"];
   question: string;
   expires_at: string;
-  resolved_by: "terminal" | "telegram" | "web" | null;
+  resolved_by: "terminal" | "telegram" | "web" | "notifications" | null;
   answer: string | null;
   resolved_at: string | null;
   transport_message_id: string | null;
@@ -4868,7 +4868,7 @@ export class RelayStore {
 
   public resolveOptionToken(
     token: string,
-    resolvedBy: "terminal" | "telegram" | "web",
+    resolvedBy: "terminal" | "telegram" | "web" | "notifications",
     now: string,
     expected?: {
       machineId: string;

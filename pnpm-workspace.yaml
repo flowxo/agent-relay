@@ -8,3 +8,6 @@ onlyBuiltDependencies:
 allowBuilds:
   better-sqlite3: true
   esbuild: true
+
+overrides:
+  "@flowxo/notifications-contracts@1.0.0-rc.1": "file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz"
