@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { z } from "zod";
 
 import {
@@ -15,8 +17,14 @@ import type {
   DeliveryMessage,
   DeliveryReceipt,
   InteractiveNotificationTransport,
+  OperatorControlContext,
+  OperatorControlMessage,
+  OperatorControlTransport,
   TopicCreation,
   TopicCreationContext,
+  TopicDeletionContext,
+  TopicDeletionReceipt,
+  TopicDeletionTransport,
   TopicNotificationTransport,
   TopicReceipt,
 } from "@agent-relay/notification-contracts";
@@ -61,6 +69,13 @@ const forumTopicSuccessSchema = z
         name: z.string().min(1).max(128),
       })
       .passthrough(),
+  })
+  .passthrough();
+
+const trueSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    result: z.literal(true),
   })
   .passthrough();
 
@@ -142,6 +157,28 @@ function identifiesUnavailableTopic(
   ].some((fragment) => normalized.includes(fragment));
 }
 
+function identifiesMissingTopicForDeletion(
+  method: string,
+  status: number,
+  description: string,
+): boolean {
+  if (method !== "deleteForumTopic" || status !== 400) {
+    return false;
+  }
+  const normalized = description.toLowerCase();
+  return [
+    "message thread not found",
+    "message thread is not found",
+    "message thread id is invalid",
+    "message_thread_id is invalid",
+    "topic not found",
+    "topic is not found",
+    "forum topic not found",
+    "forum topic is not found",
+    "topic_id_invalid",
+  ].some((fragment) => normalized.includes(fragment));
+}
+
 function telegramFailureCode(
   method: string,
   status: number,
@@ -198,6 +235,14 @@ function telegramFailureCode(
       normalized.includes("topics are not enabled"))
   ) {
     return "telegram-topics-disabled";
+  }
+  if (
+    method === "deleteForumTopic" &&
+    (normalized.includes("not enough rights") ||
+      normalized.includes("delete messages") ||
+      normalized.includes("not allowed to delete"))
+  ) {
+    return "telegram-topic-delete-permission";
   }
   return `telegram-http-${status}`;
 }
@@ -361,6 +406,42 @@ function inlineKeyboard(
   ];
 }
 
+function operatorInlineKeyboard(
+  message: OperatorControlMessage,
+): Array<Array<{ text: string; callback_data: string }>> {
+  if (message.buttons.length > 8) {
+    throw new TransportError(
+      "Operator control keyboard has too many rows",
+      "telegram-invalid-control",
+      false,
+    );
+  }
+  return message.buttons.map((row) => {
+    if (row.length < 1 || row.length > 8) {
+      throw new TransportError(
+        "Operator control keyboard row is outside supported bounds",
+        "telegram-invalid-control",
+        false,
+      );
+    }
+    return row.map((button) => {
+      const label = redactText(button.label, 64).trim();
+      if (
+        label.length === 0 ||
+        Buffer.byteLength(button.callbackData, "utf8") < 1 ||
+        Buffer.byteLength(button.callbackData, "utf8") > 64
+      ) {
+        throw new TransportError(
+          "Operator control button is outside Telegram bounds",
+          "telegram-invalid-control",
+          false,
+        );
+      }
+      return { text: label, callback_data: button.callbackData };
+    });
+  });
+}
+
 export type TelegramPolledUpdate = z.infer<typeof polledUpdateSchema>;
 
 export interface TelegramGetUpdatesOptions {
@@ -385,7 +466,11 @@ export interface TelegramSetupReport {
 }
 
 export class TelegramBotTransport
-  implements InteractiveNotificationTransport, TopicNotificationTransport
+  implements
+    InteractiveNotificationTransport,
+    OperatorControlTransport,
+    TopicDeletionTransport,
+    TopicNotificationTransport
 {
   public readonly name = "telegram";
   public readonly topicScope: string;
@@ -511,6 +596,74 @@ export class TelegramBotTransport
       transport: this.name,
       topicId: String(success.data.result.message_thread_id),
     };
+  }
+
+  public async deleteTopic(
+    topicId: string,
+    _context: TopicDeletionContext,
+  ): Promise<TopicDeletionReceipt> {
+    try {
+      const body = await this.callApi("deleteForumTopic", {
+        chat_id: this.chatId,
+        message_thread_id: this.parseTopicId(topicId),
+      });
+      if (!trueSuccessSchema.safeParse(body).success) {
+        throw new TransportError(
+          "Telegram deleteForumTopic response was malformed",
+          "telegram-malformed-response",
+          false,
+        );
+      }
+      return { transport: this.name, outcome: "deleted" };
+    } catch (error) {
+      if (
+        error instanceof TopicUnavailableError &&
+        error.code === "telegram-topic-already-missing"
+      ) {
+        return { transport: this.name, outcome: "already-missing" };
+      }
+      throw error;
+    }
+  }
+
+  public async deliverOperatorControl(
+    message: OperatorControlMessage,
+    context: OperatorControlContext,
+  ): Promise<DeliveryReceipt> {
+    const body = await this.callApi("sendMessage", {
+      chat_id: this.chatId,
+      text: redactText(message.text, 4_000),
+      disable_web_page_preview: true,
+      ...(context.topicId === undefined
+        ? {}
+        : { message_thread_id: this.parseTopicId(context.topicId) }),
+      reply_markup: { inline_keyboard: operatorInlineKeyboard(message) },
+    });
+    const success = successSchema.safeParse(body);
+    if (!success.success) {
+      throw new TransportError(
+        "Telegram control response did not include a message id",
+        "telegram-malformed-response",
+        false,
+      );
+    }
+    return {
+      transport: this.name,
+      messageId: String(success.data.result.message_id),
+    };
+  }
+
+  public async editOperatorControl(
+    messageId: string,
+    message: OperatorControlMessage,
+  ): Promise<void> {
+    await this.callApi("editMessageText", {
+      chat_id: this.chatId,
+      message_id: Number(messageId),
+      text: redactText(message.text, 4_000),
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: operatorInlineKeyboard(message) },
+    });
   }
 
   public async acknowledgeCallback(
@@ -760,6 +913,13 @@ export class TelegramBotTransport
     const description = failure.success
       ? (failure.data.description ?? "Telegram rejected the request")
       : "Telegram response did not match the Bot API schema";
+    if (identifiesMissingTopicForDeletion(method, status, description)) {
+      throw new TopicUnavailableError(
+        redactText(description, 500),
+        "telegram-topic-already-missing",
+        status,
+      );
+    }
     if (identifiesUnavailableTopic(method, payload, status, description)) {
       throw new TopicUnavailableError(
         redactText(description, 500),

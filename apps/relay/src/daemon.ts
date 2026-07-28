@@ -264,6 +264,7 @@ export async function startDaemon(
       : new TelegramReplyRouter(store, transport, {
           operatorUserId: options.telegramOperatorUserId,
           chatId: options.telegramReplyChatId,
+          topicCleanup: service,
           logger,
         });
   const server = createRelayHttpServer(service, {
@@ -487,6 +488,9 @@ export async function startDaemon(
     }
     activeDrain = service
       .drain()
+      .then(async () => {
+        await service.drainTopicCleanups();
+      })
       .then(() => undefined)
       .catch((error: unknown) => {
         logger.log({

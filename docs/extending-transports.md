@@ -30,8 +30,12 @@ contains a stable idempotency key and optional durable topic ID.
 Implement only what the provider can prove:
 
 - `TopicNotificationTransport` creates and returns one durable topic ID;
+- `TopicDeletionTransport` deletes one provider topic with an idempotent
+  `deleted` or `already-missing` receipt;
 - `InteractiveNotificationTransport` acknowledges callbacks and edits original
-  or resolved messages; and
+  or resolved messages;
+- `OperatorControlTransport` sends and edits provider-neutral operator controls
+  outside a session topic; and
 - `InteractionCapabilityTransport` reports observed provider limits for
   deterministic negotiation.
 
@@ -52,7 +56,10 @@ The transport never writes a resume command directly.
 
 Use `context.idempotencyKey` unchanged for every retry. Return a stable provider
 message ID. Topic creation uses its separate stable idempotency key and persists
-the returned topic before later messages use it.
+the returned topic before later messages use it. Topic deletion must be
+idempotent from the caller's perspective: an already-absent provider topic is a
+successful outcome, and the local topic mapping is retained until that receipt
+commits.
 
 Classify failures with `TransportError`:
 

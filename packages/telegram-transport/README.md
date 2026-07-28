@@ -2,8 +2,8 @@
 
 This private workspace package owns direct Telegram integration: Bot API
 requests, topic delivery, callback codecs, authenticated update routing,
-correlated replies, provider error classification, and sanitized Bot API
-fixtures.
+correlated replies, confirmed proven-dead topic cleanup, provider error
+classification, and sanitized Bot API fixtures.
 
 It implements `@agent-relay/notification-contracts` and may depend inward on
 core application/store services to submit a validated candidate answer. Core

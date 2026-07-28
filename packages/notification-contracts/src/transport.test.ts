@@ -4,6 +4,8 @@ import {
   asTransportError,
   isInteractionCapabilityTransport,
   isInteractiveTransport,
+  isOperatorControlTransport,
+  isTopicDeletionTransport,
   isTopicTransport,
   TopicUnavailableError,
   TransportError,
@@ -22,6 +24,8 @@ describe("notification transport contracts", () => {
     expect(isTopicTransport(requiredTransport)).toBe(false);
     expect(isInteractiveTransport(requiredTransport)).toBe(false);
     expect(isInteractionCapabilityTransport(requiredTransport)).toBe(false);
+    expect(isTopicDeletionTransport(requiredTransport)).toBe(false);
+    expect(isOperatorControlTransport(requiredTransport)).toBe(false);
 
     const capableTransport = {
       ...requiredTransport,
@@ -40,6 +44,28 @@ describe("notification transport contracts", () => {
     expect(isTopicTransport(capableTransport)).toBe(true);
     expect(isInteractiveTransport(capableTransport)).toBe(true);
     expect(isInteractionCapabilityTransport(capableTransport)).toBe(true);
+    expect(isTopicDeletionTransport(capableTransport)).toBe(false);
+    expect(isOperatorControlTransport(capableTransport)).toBe(false);
+  });
+
+  it("detects optional topic deletion and operator controls", () => {
+    const capableTransport = {
+      ...requiredTransport,
+      topicScope: "example:scope",
+      async createTopic() {
+        return { transport: "example", topicId: "topic-1" };
+      },
+      async deleteTopic() {
+        return { transport: "example", outcome: "deleted" as const };
+      },
+      async deliverOperatorControl() {
+        return { transport: "example", messageId: "message-2" };
+      },
+      async editOperatorControl() {},
+    };
+
+    expect(isTopicDeletionTransport(capableTransport)).toBe(true);
+    expect(isOperatorControlTransport(capableTransport)).toBe(true);
   });
 
   it("preserves classified transport failures", () => {

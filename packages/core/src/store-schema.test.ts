@@ -82,6 +82,34 @@ describe("SQLite schema compatibility", () => {
     upgraded.close();
   });
 
+  it("migrates a version-three store to the durable topic cleanup table", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+    const prior = new Database(databasePath);
+    prior.exec("DROP TABLE topic_cleanup_operations");
+    prior.pragma("user_version = 3");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare(
+          `
+          SELECT name
+          FROM sqlite_master
+          WHERE type = 'table' AND name = 'topic_cleanup_operations'
+        `,
+        )
+        .pluck()
+        .get(),
+    ).toBe("topic_cleanup_operations");
+    upgraded.close();
+  });
+
   it("refuses to open a newer schema and leaves it untouched", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");

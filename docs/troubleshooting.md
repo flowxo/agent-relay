@@ -60,21 +60,37 @@ work through another provider.
 
 Common stable provider codes:
 
-| Code                             | Meaning and safe action                                                    |
-| -------------------------------- | -------------------------------------------------------------------------- |
-| `telegram-invalid-token`         | Replace the token from BotFather                                           |
-| `telegram-topics-disabled`       | Enable Threaded Mode in BotFather and verify `getMe`                       |
-| `telegram-private-chat-required` | Use the intended one-to-one bot chat                                       |
-| `telegram-invalid-chat`          | Open the intended bot chat, send `/start`, and verify discovery            |
-| `telegram-bot-blocked`           | Unblock the bot and restart                                                |
-| `telegram-topic-permission`      | Restore topic-management permission                                        |
-| `telegram-webhook-conflict`      | Poll mode found an active webhook; inspect before changing it              |
-| `telegram-webhook-missing`       | Webhook mode has no configured Telegram HTTPS webhook                      |
-| `telegram-polling-conflict`      | Another process is consuming `getUpdates`; stop the unintended consumer    |
-| `telegram-topic-unavailable`     | A stored topic disappeared; allow the durable replacement path to complete |
+| Code                               | Meaning and safe action                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| `telegram-invalid-token`           | Replace the token from BotFather                                           |
+| `telegram-topics-disabled`         | Enable Threaded Mode in BotFather and verify `getMe`                       |
+| `telegram-private-chat-required`   | Use the intended one-to-one bot chat                                       |
+| `telegram-invalid-chat`            | Open the intended bot chat, send `/start`, and verify discovery            |
+| `telegram-bot-blocked`             | Unblock the bot and restart                                                |
+| `telegram-topic-permission`        | Restore topic-management permission                                        |
+| `telegram-topic-delete-permission` | Restore topic deletion permission and run `/cleanup` again                 |
+| `telegram-webhook-conflict`        | Poll mode found an active webhook; inspect before changing it              |
+| `telegram-webhook-missing`         | Webhook mode has no configured Telegram HTTPS webhook                      |
+| `telegram-polling-conflict`        | Another process is consuming `getUpdates`; stop the unintended consumer    |
+| `telegram-topic-unavailable`       | A stored topic disappeared; allow the durable replacement path to complete |
 
 Real Telegram fails closed and never falls back to General. See the
 [Telegram guide](telegram.md) for setup and preflight behavior.
+
+## `/cleanup` finds nothing or a deletion fails
+
+Cleanup accepts only topics whose sessions have an explicit End tombstone or a
+native `session.ended` event. Crashes, process exits, stopped turns, stale
+heartbeats, and age are deliberately insufficient. Open requests, active
+continuations, queued deliveries, and sessions that became active again also
+exclude or skip a candidate.
+
+The confirmation expires after ten minutes and is bound to the exact General
+message. A permanent failure records `topic-cleanup.delete-failed`; a permission
+failure uses `telegram-topic-delete-permission`. Correct the Bot API access and
+run `/cleanup` again. Never manually remove the SQLite mapping to force success:
+Agent Relay removes it only after Telegram confirms deletion or reports the
+topic already absent.
 
 ## A Telegram reply is ignored
 

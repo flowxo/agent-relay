@@ -2,7 +2,7 @@
 
 > **Status:** Living operational guide
 >
-> **Last verified:** 2026-07-26
+> **Last verified:** 2026-07-28
 >
 > **Scope:** macOS-first local development and direct Telegram activation
 
@@ -378,6 +378,15 @@ operator is never shown an already-used Details button.
   events are durably suppressed and delayed requests are canceled instead of
   silently reopening the lane.
 
+End intentionally leaves the Telegram topic intact. To remove ended-session
+topics, send `/cleanup` in General or any topic. Agent Relay posts the exact
+proven-dead candidate set in General and requires a ten-minute **Delete topics**
+confirmation. Crashes, process exits, stale sessions, stopped turns, and age do
+not qualify without an explicit End or native `session.ended` event. Every
+candidate is revalidated before Telegram permanently deletes the topic and all
+of its messages. Cleanup is limited to twenty topics per confirmation; re-run
+the command for another batch.
+
 Every action is committed before Telegram is acknowledged. Repeated taps return
 the stored result without repeating the action. `status` exposes aggregate
 control/session counts and safe transport diagnosis; detailed session state is
@@ -569,28 +578,29 @@ a stored topic is closed or otherwise unavailable. Telegram Bot API 10.2
 documents private-chat topic creation, editing, and deletion, but its
 `closeForumTopic` method is documented for forum supergroups rather than private
 bot topics. Its `deleteForumTopic` method does support private chats, but
-deletion also removes every message in the topic. Agent Relay does not currently
-call either method: End is a durable local relay-lane state and leaves the
-Telegram topic intact. Unavailable-topic responses trigger reconciliation.
-Interrupted topic creations are recovered in bounded retry batches at daemon
-startup.
+deletion also removes every message in the topic. End remains a durable local
+relay-lane state and leaves the topic intact; the separate `/cleanup` command
+previews and requires confirmation before calling the destructive method.
+Unavailable-topic responses trigger reconciliation. Interrupted topic creations
+are recovered in bounded retry batches at daemon startup.
 
 ### Telegram startup or delivery reports a provider code
 
 Agent Relay classifies provider responses before retry policy is applied:
 
-| Error code                       | Meaning and recovery                                                                                               |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `telegram-invalid-token`         | Replace `AGENT_RELAY_TELEGRAM_TOKEN` with the current BotFather token.                                             |
-| `telegram-topics-disabled`       | Enable Threaded Mode in BotFather, verify `getMe`, and restart.                                                    |
-| `telegram-private-chat-required` | Use the intended one-to-one chat ID; unthreaded/group fallback is disabled.                                        |
-| `telegram-invalid-chat`          | Verify the chat ID, open the bot chat, send `/start`, and restart.                                                 |
-| `telegram-bot-blocked`           | Unblock the bot, send `/start`, and retry.                                                                         |
-| `telegram-topic-permission`      | Restore topic-management permission or correct the target chat.                                                    |
-| `telegram-topic-unavailable`     | The stored topic was deleted/closed; Agent Relay invalidates it and creates a replacement.                         |
-| `telegram-webhook-conflict`      | Poll mode found an active webhook; inspect `getWebhookInfo`, then remove the stale webhook or select webhook mode. |
-| `telegram-webhook-missing`       | Webhook mode has no configured HTTPS URL; set the webhook before restarting.                                       |
-| `telegram-polling-conflict`      | Another process is calling `getUpdates`; stop the other consumer and restart this daemon.                          |
+| Error code                         | Meaning and recovery                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `telegram-invalid-token`           | Replace `AGENT_RELAY_TELEGRAM_TOKEN` with the current BotFather token.                                             |
+| `telegram-topics-disabled`         | Enable Threaded Mode in BotFather, verify `getMe`, and restart.                                                    |
+| `telegram-private-chat-required`   | Use the intended one-to-one chat ID; unthreaded/group fallback is disabled.                                        |
+| `telegram-invalid-chat`            | Verify the chat ID, open the bot chat, send `/start`, and restart.                                                 |
+| `telegram-bot-blocked`             | Unblock the bot, send `/start`, and retry.                                                                         |
+| `telegram-topic-permission`        | Restore topic-management permission or correct the target chat.                                                    |
+| `telegram-topic-delete-permission` | Restore permission to delete the bot-owned topic, then run `/cleanup` again.                                       |
+| `telegram-topic-unavailable`       | The stored topic was deleted/closed; Agent Relay invalidates it and creates a replacement.                         |
+| `telegram-webhook-conflict`        | Poll mode found an active webhook; inspect `getWebhookInfo`, then remove the stale webhook or select webhook mode. |
+| `telegram-webhook-missing`         | Webhook mode has no configured HTTPS URL; set the webhook before restarting.                                       |
+| `telegram-polling-conflict`        | Another process is calling `getUpdates`; stop the other consumer and restart this daemon.                          |
 
 Startup failures are emitted as structured `cli.failed` output with the stable
 provider code in `errorCode`. Runtime topic failures remain on the durable topic

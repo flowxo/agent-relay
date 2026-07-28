@@ -343,10 +343,10 @@ discarded; raw invalid input is never sent to Telegram.
 ## Retention and logs
 
 The daemon expires stale open requests, then applies bounded batches to terminal
-requests, delivered events, dead letters, diagnostics, Telegram update IDs, and
-provably inactive sessions. Open work and claimed/running resume commands are
-never pruned. Defaults retain delivered history for 30 days and dead letters and
-diagnostics for 90 days:
+requests, delivered events, dead letters, diagnostics, Telegram update IDs,
+completed topic-cleanup operations, and provably inactive sessions. Open work
+and claimed/running resume commands are never pruned. Defaults retain delivered
+history for 30 days and dead letters and diagnostics for 90 days:
 
 ```sh
 pnpm relay maintain --retention-days 30 \
@@ -447,6 +447,13 @@ and uses opaque callback tokens for fixed choices. Terminal and Telegram answers
 share a single SQLite first-writer-wins transition. Telegram retains pending Bot
 API updates for no longer than 24 hours; Agent Relay's longer-lived request
 state does not extend that upstream delivery window.
+
+End leaves its session topic intact. Send `/cleanup` from the authorized
+Telegram account to receive an exact-set preview in General, then confirm with a
+button. Only explicitly ended sessions qualify; every candidate is revalidated
+before Telegram permanently deletes the topic and all of its messages. See the
+[direct Telegram guide](docs/telegram.md#delete-proven-dead-topics) for the full
+safety boundary.
 
 ### Telegram activation canary
 

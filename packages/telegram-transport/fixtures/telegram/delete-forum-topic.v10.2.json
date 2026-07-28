@@ -1,0 +1,11 @@
+{
+  "method": "deleteForumTopic",
+  "request": {
+    "chat_id": "10001",
+    "message_thread_id": 77
+  },
+  "success_response": {
+    "ok": true,
+    "result": true
+  }
+}

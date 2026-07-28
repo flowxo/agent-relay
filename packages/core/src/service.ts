@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   AgentAttentionEventV1,
   RelayDiagnosticV1,
@@ -12,12 +14,15 @@ import type {
   CardActionKind,
   DeliveryContext,
   NotificationTransport,
+  OperatorControlMessage,
   TopicNotificationTransport,
 } from "@agent-relay/notification-contracts";
 import {
   asTransportError,
   isInteractionCapabilityTransport,
   isInteractiveTransport,
+  isOperatorControlTransport,
+  isTopicDeletionTransport,
   isTopicTransport,
   TopicUnavailableError,
   TransportError,
@@ -51,6 +56,8 @@ import type {
   ResolveRequestInput,
   SessionRecord,
   SessionTimelineRecord,
+  TopicCleanupDecisionResult,
+  TopicCleanupOperationRecord,
 } from "./store.js";
 import { DEFAULT_RETRY_POLICY } from "./store.js";
 import { sessionTopicMetadata } from "./topic.js";
@@ -86,6 +93,17 @@ export interface StaleBacklogQuarantineResult {
   quarantined: number;
   requestsExpired: number;
   cutoff?: string;
+}
+
+export interface TopicCleanupDrainResult {
+  supported: boolean;
+  claimed: number;
+  deleted: number;
+  alreadyMissing: number;
+  retrying: number;
+  failed: number;
+  skipped: number;
+  completedOperations: number;
 }
 
 export type BrowserSurfaceSyncResult =
@@ -138,6 +156,8 @@ function safeLogRef(value: string): string {
 }
 
 const MAX_STALE_BACKLOG_AGE_MS = 365 * 24 * 60 * 60_000;
+const DEFAULT_TOPIC_CLEANUP_PREVIEW_TTL_MS = 10 * 60_000;
+const DEFAULT_TOPIC_CLEANUP_PREVIEW_LIMIT = 20;
 
 export class RelayService {
   private readonly retryPolicy: RetryPolicy;
@@ -224,6 +244,8 @@ export class RelayService {
     const now = this.now().toISOString();
     const recovered = this.store.recoverInterruptedDeliveries(now);
     const recoveredTopics = this.store.recoverInterruptedTopics(now);
+    const recoveredTopicCleanups =
+      this.store.recoverInterruptedTopicCleanups(now);
     if (recovered > 0) {
       this.logger.log({
         level: "warn",
@@ -242,7 +264,401 @@ export class RelayService {
         details: { recovered: recoveredTopics },
       });
     }
+    if (recoveredTopicCleanups > 0) {
+      this.logger.log({
+        level: "warn",
+        code: "topic-cleanup.recovered",
+        message: `recovered ${recoveredTopicCleanups} interrupted topic deletion attempts`,
+        at: now,
+        details: { recovered: recoveredTopicCleanups },
+      });
+    }
     return recovered;
+  }
+
+  public supportsTopicCleanup(): boolean {
+    return (
+      isTopicDeletionTransport(this.transport) &&
+      isOperatorControlTransport(this.transport)
+    );
+  }
+
+  public createTopicCleanupPreview(
+    options: { ttlMs?: number; limit?: number } = {},
+  ): TopicCleanupOperationRecord {
+    if (
+      !isTopicDeletionTransport(this.transport) ||
+      !isOperatorControlTransport(this.transport)
+    ) {
+      throw new Error(
+        "the active notification transport does not support topic cleanup",
+      );
+    }
+    const ttlMs = options.ttlMs ?? DEFAULT_TOPIC_CLEANUP_PREVIEW_TTL_MS;
+    if (!Number.isSafeInteger(ttlMs) || ttlMs < 60_000 || ttlMs > 60 * 60_000) {
+      throw new Error(
+        "topic cleanup preview ttl must be between 60000 and 3600000 ms",
+      );
+    }
+    const now = this.now();
+    return this.store.createTopicCleanupPreview({
+      operationId: `cleanup_${randomUUID().replaceAll("-", "")}`,
+      transportName: this.transport.name,
+      transportScope: this.transport.topicScope,
+      now: now.toISOString(),
+      expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
+      limit: options.limit ?? DEFAULT_TOPIC_CLEANUP_PREVIEW_LIMIT,
+    });
+  }
+
+  private renderTopicCleanupPreview(
+    operation: TopicCleanupOperationRecord,
+    confirmCallbackData: string,
+    cancelCallbackData: string,
+  ): OperatorControlMessage {
+    if (operation.candidates.length === 0) {
+      return {
+        text: "Agent Relay topic cleanup\n\nNo proven-dead session topics are ready for deletion. Only an explicit End action or native session-ended event qualifies.",
+        buttons: [],
+      };
+    }
+    const candidates = operation.candidates
+      .map(
+        (candidate) =>
+          `• ${candidate.harness} · ${redactText(
+            candidate.repository,
+            80,
+          )} · ${redactText(candidate.shortSessionId, 24)}`,
+      )
+      .join("\n");
+    const remainder =
+      operation.eligibleCount > operation.candidates.length
+        ? `\n\n${String(
+            operation.eligibleCount - operation.candidates.length,
+          )} more eligible topic(s) will remain for a later cleanup.`
+        : "";
+    const expiryMinutes = Math.max(
+      1,
+      Math.ceil(
+        (Date.parse(operation.expiresAt) - Date.parse(operation.createdAt)) /
+          60_000,
+      ),
+    );
+    return {
+      text: `Agent Relay topic cleanup\n\nDelete ${String(
+        operation.candidates.length,
+      )} proven-dead session topic(s)? This permanently removes each Telegram topic and its messages.\n\n${candidates}${remainder}\n\nEligibility is rechecked immediately before every deletion. Confirmation expires in ${String(
+        expiryMinutes,
+      )} minute${expiryMinutes === 1 ? "" : "s"}.`,
+      buttons: [
+        [
+          {
+            label: `Delete ${String(operation.candidates.length)} topic${
+              operation.candidates.length === 1 ? "" : "s"
+            }`,
+            callbackData: confirmCallbackData,
+          },
+          { label: "Cancel", callbackData: cancelCallbackData },
+        ],
+      ],
+    };
+  }
+
+  public async deliverTopicCleanupPreview(input: {
+    operationId: string;
+    confirmCallbackData: string;
+    cancelCallbackData: string;
+  }): Promise<TopicCleanupOperationRecord> {
+    if (!isOperatorControlTransport(this.transport)) {
+      throw new Error(
+        "the active notification transport cannot deliver cleanup controls",
+      );
+    }
+    const operation = this.store.getTopicCleanupOperation(input.operationId);
+    if (operation === undefined) {
+      throw new Error("topic cleanup preview does not exist");
+    }
+    try {
+      const receipt = await this.transport.deliverOperatorControl(
+        this.renderTopicCleanupPreview(
+          operation,
+          input.confirmCallbackData,
+          input.cancelCallbackData,
+        ),
+        { idempotencyKey: `topic_cleanup_preview:${operation.operationId}` },
+      );
+      const attached = this.store.attachTopicCleanupPreview({
+        operationId: operation.operationId,
+        messageId: receipt.messageId,
+        now: this.now().toISOString(),
+      });
+      const superseded = this.store
+        .listTopicCleanupOperations()
+        .filter(
+          (candidate) =>
+            candidate.operationId !== operation.operationId &&
+            candidate.state === "superseded" &&
+            candidate.updatedAt === operation.createdAt,
+        );
+      for (const prior of superseded) {
+        await this.syncTopicCleanupPresentation(prior);
+      }
+      return attached;
+    } catch (error) {
+      const transportError = asTransportError(error);
+      const failedAt = this.now().toISOString();
+      this.store.failTopicCleanupPreview({
+        operationId: operation.operationId,
+        errorCode: transportError.code,
+        errorMessage: transportError.message,
+        now: failedAt,
+      });
+      this.reportDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_topic_cleanup_preview_${sha256(
+          operation.operationId,
+        ).slice(0, 36)}`,
+        recordedAt: failedAt,
+        source: "daemon",
+        level: "error",
+        code: "topic-cleanup.preview-delivery-failed",
+        message: `Topic cleanup preview delivery failed: ${transportError.code}`,
+      });
+      throw transportError;
+    }
+  }
+
+  public decideTopicCleanup(input: {
+    operationId: string;
+    action: "confirm" | "cancel";
+    messageId: string;
+    updateId: number;
+  }): TopicCleanupDecisionResult {
+    const result = this.store.decideTopicCleanup({
+      ...input,
+      now: this.now().toISOString(),
+    });
+    this.logger.log({
+      level:
+        result.outcome === "claimed" || result.outcome === "cancelled"
+          ? "info"
+          : "warn",
+      code: `topic-cleanup.decision-${result.outcome}`,
+      message: `topic cleanup decision outcome: ${result.outcome}`,
+      at: this.now().toISOString(),
+      details: {
+        operationRef: safeLogRef(input.operationId),
+        action: input.action,
+        updateId: input.updateId,
+      },
+    });
+    return result;
+  }
+
+  private renderTopicCleanupStatus(
+    operation: TopicCleanupOperationRecord,
+  ): OperatorControlMessage {
+    const counts = {
+      deleted: operation.candidates.filter(
+        (candidate) => candidate.state === "deleted",
+      ).length,
+      alreadyMissing: operation.candidates.filter(
+        (candidate) => candidate.state === "already-missing",
+      ).length,
+      skipped: operation.candidates.filter(
+        (candidate) => candidate.state === "skipped",
+      ).length,
+      failed: operation.candidates.filter(
+        (candidate) => candidate.state === "failed",
+      ).length,
+      remaining: operation.candidates.filter((candidate) =>
+        ["pending", "deleting", "retry"].includes(candidate.state),
+      ).length,
+    };
+    const text = (() => {
+      switch (operation.state) {
+        case "claimed":
+          return `Agent Relay topic cleanup\n\nDeletion is running. ${String(
+            counts.deleted + counts.alreadyMissing,
+          )} removed, ${String(counts.skipped)} skipped after revalidation, ${String(
+            counts.remaining,
+          )} remaining.`;
+        case "completed":
+        case "completed-with-errors":
+          return `Agent Relay topic cleanup complete\n\n${String(
+            counts.deleted,
+          )} deleted, ${String(
+            counts.alreadyMissing,
+          )} already absent, ${String(counts.skipped)} skipped because session state changed, ${String(
+            counts.failed,
+          )} failed.${counts.failed > 0 ? "\n\nFailures were recorded for diagnosis. Run /cleanup again after correcting them." : ""}`;
+        case "cancelled":
+          return "Agent Relay topic cleanup\n\nCanceled. No topics were deleted.";
+        case "expired":
+          return "Agent Relay topic cleanup\n\nConfirmation expired. No topics were deleted; run /cleanup for a fresh preview.";
+        case "superseded":
+          return "Agent Relay topic cleanup\n\nThis preview was replaced by a newer /cleanup request.";
+        case "preview-failed":
+          return "Agent Relay topic cleanup\n\nThe preview could not be delivered. The failure was recorded for diagnosis.";
+        case "previewed":
+          return "Agent Relay topic cleanup\n\nWaiting for confirmation.";
+      }
+    })();
+    return { text, buttons: [] };
+  }
+
+  public async syncTopicCleanupPresentation(
+    operation: TopicCleanupOperationRecord,
+  ): Promise<boolean> {
+    if (
+      operation.previewMessageId === undefined ||
+      !isOperatorControlTransport(this.transport)
+    ) {
+      return false;
+    }
+    try {
+      await this.transport.editOperatorControl(
+        operation.previewMessageId,
+        this.renderTopicCleanupStatus(operation),
+      );
+      return true;
+    } catch (error) {
+      const transportError = asTransportError(error);
+      const failedAt = this.now().toISOString();
+      this.reportDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_topic_cleanup_edit_${sha256(
+          `${operation.operationId}\u001f${operation.state}`,
+        ).slice(0, 36)}`,
+        recordedAt: failedAt,
+        source: "daemon",
+        level: "error",
+        code: "topic-cleanup.presentation-update-failed",
+        message: `Topic cleanup status update failed: ${transportError.code}`,
+      });
+      return false;
+    }
+  }
+
+  public async drainTopicCleanups(
+    limit = 10,
+  ): Promise<TopicCleanupDrainResult> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("topic cleanup drain limit must be between 1 and 100");
+    }
+    const result: TopicCleanupDrainResult = {
+      supported: isTopicDeletionTransport(this.transport),
+      claimed: 0,
+      deleted: 0,
+      alreadyMissing: 0,
+      retrying: 0,
+      failed: 0,
+      skipped: 0,
+      completedOperations: 0,
+    };
+    if (!isTopicDeletionTransport(this.transport)) {
+      return result;
+    }
+    for (let index = 0; index < limit; index += 1) {
+      const claim = this.store.claimNextTopicCleanupCandidate(
+        this.now().toISOString(),
+      );
+      if (claim.outcome === "none") {
+        break;
+      }
+      if (claim.outcome === "terminal") {
+        result.skipped += claim.operation.candidates.filter(
+          (candidate) => candidate.state === "skipped",
+        ).length;
+        result.completedOperations += 1;
+        await this.syncTopicCleanupPresentation(claim.operation);
+        continue;
+      }
+      result.claimed += 1;
+      try {
+        const receipt = await this.transport.deleteTopic(
+          claim.candidate.topicId,
+          {
+            idempotencyKey: `topic_cleanup:${claim.operation.operationId}:${sha256(
+              claim.candidate.topicId,
+            ).slice(0, 20)}`,
+          },
+        );
+        const completion = this.store.completeTopicCleanupCandidate({
+          operationId: claim.operation.operationId,
+          topicId: claim.candidate.topicId,
+          attemptNumber: claim.candidate.attemptCount,
+          outcome: receipt.outcome,
+          now: this.now().toISOString(),
+        });
+        if (receipt.outcome === "deleted") {
+          result.deleted += 1;
+        } else {
+          result.alreadyMissing += 1;
+        }
+        if (completion.becameTerminal) {
+          result.completedOperations += 1;
+          await this.syncTopicCleanupPresentation(completion.operation);
+        }
+      } catch (error) {
+        const transportError = asTransportError(error);
+        const failedAt = this.now().toISOString();
+        const completion = this.store.failTopicCleanupCandidate(
+          {
+            operationId: claim.operation.operationId,
+            topicId: claim.candidate.topicId,
+            attemptNumber: claim.candidate.attemptCount,
+            errorCode: transportError.code,
+            errorMessage: transportError.message,
+            retryable: transportError.retryable,
+            now: failedAt,
+          },
+          this.retryPolicy,
+        );
+        const candidate = completion.operation.candidates.find(
+          (entry) => entry.topicId === claim.candidate.topicId,
+        );
+        if (candidate?.state === "retry") {
+          result.retrying += 1;
+        } else {
+          result.failed += 1;
+        }
+        this.logger.log({
+          level: candidate?.state === "retry" ? "warn" : "error",
+          code:
+            candidate?.state === "retry"
+              ? "topic-cleanup.retry-scheduled"
+              : "topic-cleanup.delete-failed",
+          message: transportError.message,
+          at: failedAt,
+          details: {
+            operationRef: safeLogRef(claim.operation.operationId),
+            topicRef: safeLogRef(claim.candidate.topicId),
+            errorCode: transportError.code,
+            attemptNumber: claim.candidate.attemptCount,
+            retryable: transportError.retryable,
+          },
+        });
+        if (candidate?.state !== "retry") {
+          this.reportDiagnostic({
+            schema: "agent-relay-diagnostic.v1",
+            diagnosticId: `diag_topic_cleanup_delete_${sha256(
+              `${claim.operation.operationId}\u001f${claim.candidate.topicId}`,
+            ).slice(0, 36)}`,
+            recordedAt: failedAt,
+            source: "daemon",
+            level: "error",
+            code: "topic-cleanup.delete-failed",
+            message: `Topic deletion failed permanently: ${transportError.code}`,
+          });
+        }
+        if (completion.becameTerminal) {
+          result.completedOperations += 1;
+          await this.syncTopicCleanupPresentation(completion.operation);
+        }
+      }
+    }
+    return result;
   }
 
   public quarantineStaleBacklog(
@@ -400,6 +816,9 @@ export class RelayService {
         retentionDays(options.diagnosticDays, 90, "diagnosticDays"),
       ),
       telegramUpdateBefore: before(
+        retentionDays(options.telegramUpdateDays, 30, "telegramUpdateDays"),
+      ),
+      topicCleanupBefore: before(
         retentionDays(options.telegramUpdateDays, 30, "telegramUpdateDays"),
       ),
       sessionBefore: before(

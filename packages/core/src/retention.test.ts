@@ -200,6 +200,7 @@ describe("durable retention controls", () => {
       deliveryAttempts: 0,
       diagnostics: 0,
       telegramUpdates: 0,
+      topicCleanupOperations: 0,
       sessions: 0,
       webChanges: 0,
       browserCommands: 0,

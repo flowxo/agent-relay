@@ -301,7 +301,7 @@ describe("durable session topic registry", () => {
     });
     service.ingest(event("evt_topic_before_delete_12345678", { sequence: 1 }));
     await service.drain();
-    expect(transport.deleteTopic("1000")).toBe(true);
+    expect(transport.simulateTopicDeletion("1000")).toBe(true);
 
     service.ingest(
       event("evt_topic_after_delete_12345678", {
@@ -367,7 +367,7 @@ describe("durable session topic registry", () => {
     });
     service.ingest(event("evt_topic_before_close_12345678", { sequence: 1 }));
     await service.drain();
-    expect(transport.closeTopic("1000")).toBe(true);
+    expect(transport.simulateTopicClosure("1000")).toBe(true);
 
     service.ingest(
       event("evt_topic_after_close_12345678", {
