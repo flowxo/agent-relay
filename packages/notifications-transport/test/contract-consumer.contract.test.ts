@@ -723,7 +723,7 @@ describe("C0 Notifications consumer contract", () => {
   it("runs the exact packed mock as a guarded separate process", async () => {
     const running = await startPackedMock();
     expect(running.cli).toContain(
-      "@flowxo+notifications-contract-mock@file+vendor+notifications-c0+flowxo-notifications-contract-mock-1.0.0-draft.1.tgz",
+      "@flowxo+notifications-contract-mock@file+vendor+notifications-c0+flowxo-notifications-contract-mock-1.0.0-rc.1.tgz",
     );
     const event = selectEvent("packed");
     const store = new RelayStore();

@@ -117,7 +117,7 @@ interactive card is sent.
 
 [FXO-1048](https://linear.app/flowxo/issue/FXO-1048) consumes the exact
 version-pinned `@flowxo/notifications-contracts`, `@flowxo/notifications`, and
-executable mock `1.0.0-draft.1` tarballs through the immutable consumer fixture
+executable mock `1.0.0-rc.1` tarballs through the immutable consumer fixture
 under `vendor/notifications-c0`. The focused gate revalidates their
 owner-produced SHA-256 digests before running. Agent Relay does not copy that
 schema or generated type into its runtime contract, and CI has no
