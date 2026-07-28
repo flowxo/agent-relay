@@ -154,11 +154,15 @@ An upgrade preserves local state, credentials, logs, fallback records, config
 backups, and unrelated hooks. The install reconciliation is idempotent.
 
 SQLite migrations are forward-only. Schema version `1` upgrades the unversioned
-alpha fixture without losing its answered request. If a database advertises a
-newer schema than the running package supports, Agent Relay refuses to open it
-and doctor reports `refusing unsafe downgrade`; use the newer package or restore
-a database backup instead of forcing the older binary. Arbitrary downgrade
-safety is not claimed.
+alpha fixture without losing its answered request; schema version `5` adds
+durable per-session native-hook sequence counters and retry allocations. Stop
+the daemon and supervised processes before crossing a schema boundary, and keep
+a private database backup. Native hooks and the daemon intentionally share the
+same `relay.sqlite` so allocation commits are ordered across processes. If a
+database advertises a newer schema than the running package supports, Agent
+Relay refuses to open it and doctor reports `refusing unsafe downgrade`; use the
+newer package or restore a database backup instead of forcing the older binary.
+Arbitrary downgrade safety is not claimed.
 
 Runner-protocol vendor updates are source changes, not a substitute for this
 installed-package reconciliation. Check a producer candidate with

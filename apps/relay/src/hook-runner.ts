@@ -1,7 +1,8 @@
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
+import { RelayStore } from "@agent-relay/core";
 import {
   parseHarnessJson,
   renderSafeNoop,
@@ -26,6 +27,7 @@ export interface HookRunOptions {
   daemonUrl?: string;
   daemonToken?: string;
   fallbackPath?: string;
+  sequenceStorePath?: string;
   client?: RelayClient;
   waitMs?: number;
   pollIntervalMs?: number;
@@ -109,17 +111,86 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
     options.fallbackPath ??
     join(homedir(), ".agent-relay", "fallback-spool.ndjson");
   const fingerprint = await sourceFingerprint(options.raw);
+  const provisionalSequence =
+    options.sequence ?? Number.parseInt(fingerprint.slice(0, 12), 16);
   const context: AdapterContext = {
     machineId: options.machineId,
     bridgeSessionId: options.bridgeSessionId,
     harnessVersion: options.harnessVersion,
     surface: options.surface,
-    sequence: options.sequence ?? Number.parseInt(fingerprint.slice(0, 12), 16),
+    sequence: provisionalSequence,
     occurredAt,
     sourceFingerprint: fingerprint,
   };
-  const parsed = parseHarnessJson(options.harness, options.raw, context);
+  let parsed = parseHarnessJson(options.harness, options.raw, context);
   const safeStdout = `${JSON.stringify(renderSafeNoop().stdout)}\n`;
+  let sequenceDiagnostic: HookRunDiagnostic | undefined;
+
+  if (parsed.ok && options.sequence === undefined) {
+    let sequenceStore: RelayStore | undefined;
+    let allocatedSequence: number | undefined;
+    let allocationFailed = false;
+    try {
+      sequenceStore = new RelayStore(
+        options.sequenceStorePath ??
+          join(dirname(fallbackPath), "relay.sqlite"),
+      );
+      allocatedSequence = sequenceStore.allocateNativeHookSequence({
+        machineId: options.machineId,
+        harness: options.harness,
+        sessionId: parsed.event.sessionId,
+        eventId: parsed.event.eventId,
+        sourceFingerprint: fingerprint,
+        allocatedAt: occurredAt,
+      });
+    } catch {
+      allocationFailed = true;
+    }
+
+    let closeFailed = false;
+    if (sequenceStore !== undefined) {
+      try {
+        sequenceStore.close();
+      } catch {
+        closeFailed = true;
+      }
+    }
+
+    if (
+      allocatedSequence !== undefined &&
+      allocatedSequence !== provisionalSequence
+    ) {
+      parsed = parseHarnessJson(options.harness, options.raw, {
+        ...context,
+        sequence: allocatedSequence,
+      });
+    }
+
+    if (allocationFailed || closeFailed) {
+      const code =
+        allocatedSequence === undefined
+          ? "hook-sequence-allocation-failed"
+          : "hook-sequence-store-close-failed";
+      const message =
+        allocatedSequence === undefined
+          ? "native hook ordering allocator unavailable; using retry-stable reduced-fidelity ordering"
+          : "native hook ordering store cleanup failed; allocated ordering was retained";
+      const fallbackRecorded = await recordFallback(
+        fallbackPath,
+        "diagnostic",
+        {
+          code,
+          message,
+        },
+        occurredAt,
+      );
+      sequenceDiagnostic = {
+        code,
+        message,
+        fallbackRecorded,
+      };
+    }
+  }
 
   if (!parsed.ok) {
     const fallbackRecorded = await recordFallback(
@@ -205,6 +276,9 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
           eventId: event.eventId,
           daemonAccepted: true,
           requestState: "answered",
+          ...(sequenceDiagnostic === undefined
+            ? {}
+            : { diagnostic: sequenceDiagnostic }),
         };
       }
       return {
@@ -213,6 +287,9 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
         eventId: event.eventId,
         daemonAccepted: true,
         ...(request === undefined ? {} : { requestState: request.state }),
+        ...(sequenceDiagnostic === undefined
+          ? {}
+          : { diagnostic: sequenceDiagnostic }),
       };
     }
     return {
@@ -220,6 +297,9 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
       exitCode: 0,
       eventId: event.eventId,
       daemonAccepted: true,
+      ...(sequenceDiagnostic === undefined
+        ? {}
+        : { diagnostic: sequenceDiagnostic }),
     };
   } catch (error) {
     const fallbackRecorded = await recordFallback(

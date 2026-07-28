@@ -328,3 +328,12 @@ counts and discards task identity, description, command, agent type, schedule,
 prompt, transcript path, working path, and the assistant message. The exact
 installed `2.1.220` build is contract-compatible but a natural live suppression
 and later truly-idle Stop remain pending dogfood evidence.
+
+Native-hook ordering is implementation evidence, not an additional harness
+payload claim. Deterministic file-backed SQLite tests assign distinct hooks
+monotonic per-session sequences across simultaneous connections and process
+restart, reuse the same allocation on retry, advance past retained legacy
+hash-derived sequences, and prove a delayed fallback replay cannot rewind the
+session lane. The allocator stores only opaque normalized identifiers, a SHA-256
+source fingerprint, sequence, and timestamps; no private payload fixture was
+captured for this behavior.

@@ -2,6 +2,28 @@
 
 ## Proven
 
+- FXO-1350 replaces native-hook fingerprint pseudo-sequences with a durable
+  per-machine/harness/session allocator in the authoritative local SQLite store.
+  Exact source-fingerprint retries reuse one event sequence; distinct hooks
+  advance under an immediate transaction across independent connections and
+  restart. First use seeds from retained allocation, event, and session state,
+  so pre-upgrade hash-derived sequences are crossed without rewinding a lane.
+  Event identity collisions fail closed. If allocation is unavailable, the hook
+  still sends or durably spools the attention event using explicitly diagnosed
+  retry-stable reduced-fidelity ordering; a committed allocation survives a
+  later store-close failure. Schema `5` retains only opaque normalized identity,
+  SHA-256 source fingerprint, sequence, and timestamps, with bounded orphan
+  retention. Tests prove background-activity → idle-Stop order, delayed fallback
+  replay, duplicates, legacy adoption, malformed input, identity collisions,
+  allocator degradation, retention, migration, restart, and session isolation.
+  On 2026-07-28 the complete `pnpm check` passed 69 Vitest files/496 tests, 24
+  contract and supply-chain tests, the six-test isolated Notifications consumer,
+  all workspace builds, the 217,934-byte packed/1,357,546-byte unpacked 11-file
+  artifact, hosted proof digest
+  `5bd2c209286c8ad61a17f43f6a17aca4190f0dced7ea1d13ee3ed52a8907b352`, and the
+  schema-4-to-schema-5 packed lifecycle with schema-6 downgrade refusal. All
+  three Chromium scenarios passed, and `pnpm audit --prod` found no known
+  vulnerability.
 - FXO-1348 classifies a Claude Code `Stop` with non-empty structured
   `background_tasks` or `session_crons` as `turn.activity`, retains only the two
   bounded collection counts, keeps the lane active, and durably suppresses
@@ -851,12 +873,8 @@ also remain free of silent delivery, hook, or correlation failures.
 - Claude Code's structured background-work fields are official-contract and
   fixture proven on the locally installed `2.1.220` build, but the natural
   private-session suppression and later truly-idle Stop are not yet live
-  claimed. Native hook events also currently derive a retry-stable nominal
-  sequence from their source fingerprint rather than a genuinely monotonic
-  bridge counter. Delivery/suppression classification is event-local and
-  unaffected, but an unlucky cross-event hash order can leave the displayed
-  session lane state stale; that ordering reliability work is tracked separately
-  from FXO-1348.
+  claimed. The durable monotonic native-hook allocator is locally proven, but
+  its first installed live allocation remains pending the same natural canary.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.
@@ -895,8 +913,8 @@ also remain free of silent delivery, hook, or correlation failures.
 Observe the next natural Claude Code Stop with structured background work. It
 should create a local `background-work` suppression diagnostic and no operator
 card; the later Stop with empty collections should create the ordinary waiting
-card. Separately, resolve FXO-1350's native-hook monotonic ordering gap before
-relying on lane state as an ordering proof.
+card. Confirm both events retain monotonic sequence and lane state after the
+schema-5 live upgrade.
 
 FXO-1345 is merged and locally proven. When convenient, send `/cleanup` in
 Telegram General, inspect the bounded exact-set preview, and confirm it to close

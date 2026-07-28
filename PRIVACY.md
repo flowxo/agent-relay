@@ -18,7 +18,8 @@ stores:
 - `relay.sqlite`, including normalized events, delivery state, request state,
   bounded agent summaries or excerpts, operator answers, session metadata,
   diagnostics, resume claims, transport message/topic identifiers, and bounded
-  topic-cleanup previews, decisions, and attempt state;
+  topic-cleanup previews, decisions, attempt state, and native-hook ordering
+  allocations;
 - `fallback-spool.ndjson`, containing bounded normalized hook records that could
   not reach the daemon yet;
 - `relay.ndjson` and rotated siblings, containing structured redacted
@@ -38,6 +39,12 @@ transcript. It can store the bounded last assistant message, question, choice
 labels, failure summary, and operator answer needed to notify and continue a
 session. Those values can still contain private source or conversation content.
 Treat the state directory as sensitive.
+
+Native-hook ordering allocations contain only opaque machine, harness, session,
+and event identifiers, a SHA-256 canonical source fingerprint, a numeric
+sequence, and allocation/update timestamps. The allocator does not add the raw
+hook body, transcript, assistant message, task detail, credential, or
+machine-specific path to SQLite.
 
 For a Claude Code Stop that reports active background work, Agent Relay retains
 only the in-flight and scheduled item counts. It discards task and cron IDs,

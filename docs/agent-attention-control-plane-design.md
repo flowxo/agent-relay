@@ -533,6 +533,14 @@ interface AgentAttentionEventV1 {
 }
 ```
 
+The local V1 implementation keeps event identity and ordering separate for
+native hooks. A canonical source fingerprint makes retries idempotent, and a
+SQLite immediate transaction assigns a durable sequence per
+machine/harness/session. The same fingerprint reuses its allocation across
+processes and restarts; a distinct hook advances beyond both the counter and any
+retained pre-migration session/event sequence. The experimental product runner
+bridge retains its own protocol counter and does not share this allocator.
+
 Do not make transcript formats part of the protocol. Harness docs explicitly
 treat them as unstable. A local adapter may read a transcript as a best-effort
 enrichment source, but the event must remain valid without it.
@@ -654,6 +662,9 @@ require:
 
 - At-least-once event delivery; idempotent server processing.
 - Monotonic sequence per bridge session; tolerate gaps and replay.
+- Native local hooks persist retry-to-sequence allocations before daemon ingest;
+  allocator failure is diagnosed and falls back to explicitly reduced-fidelity
+  retry-stable ordering without discarding the attention event.
 - SQLite spool survives daemon, network, and laptop sleep.
 - WebSocket for commands; HTTP long-poll fallback.
 - Pending decisions survive Worker/DO eviction and local reconnect.
