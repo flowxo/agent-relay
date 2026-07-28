@@ -1,6 +1,6 @@
 # Project specification: Open Source Release Readiness
 
-- **Status:** Execution-ready; FXO-1141 in progress
+- **Status:** In progress; FXO-1141 through FXO-1147 complete
 - **Product:** Agent Relay
 - **Initiative:**
   [Agent Relay — Open Source V1](https://linear.app/flowxo/initiative/agent-relay-open-source-v1-664f633c9408)
@@ -331,6 +331,7 @@ Required focused docs:
 - direct Telegram setup;
 - transport-contributor guide;
 - harness-adapter contributor guide;
+- safe fixture and provenance guide;
 - compatibility/evidence policy;
 - release process;
 - hosted Notifications boundary; and
@@ -385,17 +386,23 @@ Changes to the following require maintainer/security review:
 
 - protocol schemas;
 - hook continuation output;
-- execution-authority propagation;
-- resume claim ownership;
-- installer paths or merge behavior;
-- secret redaction;
+- execution-authority, sandbox, or trust propagation;
+- resume claim ownership and session correlation;
+- installer paths, merge behavior, rollback, or uninstall ownership;
+- secret redaction, local web authentication, or CSRF;
 - SQLite migrations/retention;
-- transport authentication;
+- transport authentication or callback validation;
 - default outbound payload; and
-- supported capability claims.
+- supported capability, operating-system, harness-version, or runtime claims;
+  and
+- package contents, dependencies, provenance, or release workflows.
 
 Ordinary docs, fixtures, provider adapters behind interfaces, and diagnostics
-may use normal review after tests pass.
+may use normal review after tests pass. Every ordinary JSON fixture follows
+`docs/fixtures.md`, stays at or below 64 KiB, and appears in an exact manifest
+with source, version, date, evidence class, and privacy metadata. Vendored
+artifacts remain governed by immutable contract locks rather than fixture
+manifests.
 
 ## 10. Versioning and release model
 

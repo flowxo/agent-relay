@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -10,7 +11,7 @@ import {
   JsonLineLogger,
   RotatingFileLogger,
 } from "@agent-relay/core";
-import { HARNESS_CAPABILITIES } from "@agent-relay/harnesses";
+import { PUBLIC_COMPATIBILITY_RECORD } from "@agent-relay/harnesses";
 import {
   HarnessSchema,
   SurfaceSchema,
@@ -27,8 +28,36 @@ import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
+import { AGENT_RELAY_VERSION } from "./release.js";
 import { runSupervisor } from "./supervisor.js";
 import { seedWebDemo } from "./web-demo.js";
+
+const USAGE = `Agent Relay
+
+Usage:
+  agent-relay <command> [options]
+  agent-relay --version
+
+Commands:
+  daemon             Start the local relay daemon
+  web-demo           Start a sanitized local web demo
+  hook <harness>     Accept one native harness hook payload on stdin
+  run <harness>      Supervise a harness CLI process
+  status             Show daemon and delivery status
+  drain              Deliver queued events
+  replay-fallback    Replay the hook fallback spool
+  maintain           Apply retention policy
+  install            Install or reconcile user-level harness hooks
+  uninstall          Remove only Agent Relay-owned hooks and launcher
+  doctor             Diagnose the local installation and compatibility
+  capabilities       Print the generated harness capability registry
+  canary             Prove the local fake-transport delivery loop
+  telegram-canary    Prove a configured direct-Telegram reply loop
+
+Run "agent-relay <command> --help" only where the command documents flags in
+the public guides. Agent Relay currently supports macOS on Apple silicon with
+Node.js 22 or newer.
+`;
 
 function environment(name: string): string | undefined {
   const value = process.env[name];
@@ -112,10 +141,14 @@ function harnessExecutable(harness: "codex" | "claude" | "cursor"): string {
 function installEntryPath(args: string[]): string {
   const explicit = flag(args, "--entry");
   if (explicit !== undefined) {
-    return resolve(explicit);
+    return realpathSync(resolve(explicit));
   }
-  const currentEntry = resolve(process.argv[1] ?? "apps/relay/dist/cli.js");
-  if (currentEntry.endsWith("/src/cli.ts")) {
+  const invokedEntry = process.argv[1];
+  if (invokedEntry === undefined) {
+    throw new Error("cannot determine the Agent Relay executable path");
+  }
+  const currentEntry = realpathSync(resolve(invokedEntry));
+  if (currentEntry.endsWith(".ts")) {
     return resolve(dirname(currentEntry), "..", "dist", "cli.js");
   }
   return currentEntry;
@@ -123,6 +156,19 @@ function installEntryPath(args: string[]): string {
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
+  if (
+    command === undefined ||
+    command === "help" ||
+    command === "--help" ||
+    command === "-h"
+  ) {
+    process.stdout.write(USAGE);
+    return;
+  }
+  if (command === "--version" || command === "-V") {
+    process.stdout.write(`${AGENT_RELAY_VERSION}\n`);
+    return;
+  }
   if (command === "daemon" || command === "web-demo") {
     const demo = command === "web-demo";
     const commandStateDir = demo ? join(stateDir, "web-demo") : stateDir;
@@ -381,6 +427,9 @@ async function main(): Promise<void> {
     const report = await runDoctor({
       databasePath: flag(args, "--db") ?? ":memory:",
       rootDir: resolve(flag(args, "--root") ?? homedir()),
+      packageVersion: AGENT_RELAY_VERSION,
+      runtimeEntryPath: installEntryPath(args),
+      runtimeNodePath: process.execPath,
     });
     output(report);
     process.exitCode = report.healthy ? 0 : 1;
@@ -396,13 +445,14 @@ async function main(): Promise<void> {
     const versions = Object.fromEntries(
       observed.map((item) => [
         item.harness,
-        item.version ?? `unavailable (tested ${item.testedVersion})`,
+        item.version ?? `unavailable (verified ${item.verifiedVersion})`,
       ]),
     );
     output(
       await installAgentRelay({
         rootDir: resolve(flag(args, "--root") ?? homedir()),
         entryPath: installEntryPath(args),
+        packageVersion: AGENT_RELAY_VERSION,
         ...(flag(args, "--node") === undefined
           ? {}
           : { nodePath: resolve(flag(args, "--node") ?? "") }),
@@ -457,7 +507,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "capabilities") {
-    output(HARNESS_CAPABILITIES);
+    output(PUBLIC_COMPATIBILITY_RECORD);
     return;
   }
   if (command === "canary") {
@@ -522,13 +572,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  await mkdir(dirname(join(stateDir, "placeholder")), {
-    recursive: true,
-    mode: 0o700,
-  });
-  process.stderr.write(
-    "Usage: agent-relay daemon|web-demo|hook|run|status|drain|replay-fallback|maintain|install|uninstall|doctor|capabilities|canary|telegram-canary\n",
-  );
+  process.stderr.write(`Unknown command: ${command}\n\n${USAGE}`);
   process.exitCode = 2;
 }
 

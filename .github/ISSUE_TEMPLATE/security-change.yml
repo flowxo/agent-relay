@@ -1,0 +1,71 @@
+name: Security-sensitive design change
+description: Propose a planned boundary change without vulnerability details.
+title: "[Security design]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This public form is only for planned design work that contains no vulnerability or exploit detail. Report an actual or suspected vulnerability privately through the Security contact link.
+
+        Never paste tokens, `.env` files, private keys, SQLite or other private databases, raw logs/configs, hook payloads, callbacks, transcripts, source code from a private repository, account/session identifiers, usernames, hostnames, repository identities, machine-specific paths, or steps that expose a live system.
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Boundary
+      options:
+        - Protocol or hook continuation
+        - Execution authority, sandbox, trust, or resume
+        - Installer, config merge, rollback, or uninstall
+        - Redaction, local web authentication, or CSRF
+        - SQLite migration or retention
+        - Transport authentication or default outbound data
+        - Compatibility or support claim
+        - Package, dependency, provenance, or release workflow
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Intended outcome
+      description:
+        Describe the planned behavior without sensitive exploitation detail.
+    validations:
+      required: true
+  - type: textarea
+    id: threat
+    attributes:
+      label: Threat model and authority change
+      description:
+        Identify trusted inputs, attacker-controlled inputs, state transitions,
+        and any authority or outbound-data change.
+    validations:
+      required: true
+  - type: textarea
+    id: controls
+    attributes:
+      label: Proposed controls and fail-closed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Credential-free verification
+      description:
+        Include negative, malformed, duplicate, stale, concurrent, rollback, and
+        privacy cases as applicable.
+    validations:
+      required: true
+  - type: checkboxes
+    id: review
+    attributes:
+      label: Review gate
+      options:
+        - label:
+            I understand this change requires explicit maintainer review with
+            security impact considered.
+          required: true
+        - label:
+            This issue contains no vulnerability, exploit, credential, private
+            database, raw log/config, payload, transcript, identity, or
+            machine-specific path.
+          required: true

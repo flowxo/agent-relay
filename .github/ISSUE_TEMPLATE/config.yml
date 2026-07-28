@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/flowxo/agent-relay/security/advisories/new
+    about:
+      Never post exploits, secrets, transcripts, databases, or private paths in
+      a public issue.
+  - name: Read the support and privacy guidance
+    url: https://github.com/flowxo/agent-relay/blob/main/SUPPORT.md
+    about: Learn what is supported and how to prepare a sanitized report.
+  - name: Read the contribution guide
+    url: https://github.com/flowxo/agent-relay/blob/main/CONTRIBUTING.md
+    about: Set up a credential-free checkout and choose the bounded change path.

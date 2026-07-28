@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -104,6 +105,9 @@ describe("agent relay harness installer", () => {
     expect(markerCount(claude)).toBe(3);
     expect(markerCount(cursor)).toBe(1);
     expect((await stat(runtime.paths.launcherPath)).mode & 0o777).toBe(0o700);
+    expect(await readJson(runtime.paths.manifestPath)).toMatchObject({
+      packageVersion: "0.1.0-alpha.1",
+    });
     expect(await inspectAgentRelayInstallation(runtime.rootDir)).toMatchObject({
       healthy: true,
       installed: true,
@@ -295,5 +299,68 @@ describe("agent relay harness installer", () => {
         encoding: "utf8",
       }).status,
     ).toBe(0);
+  });
+
+  it("refuses symlinked owned paths and hostile roots before mutation", async () => {
+    expect(() => installerPaths("/")).toThrow(
+      "installer root cannot be the filesystem root",
+    );
+
+    const runtime = await setup("agent-relay-install-symlink-");
+    const external = await mkdtemp(join(tmpdir(), "agent-relay-external-"));
+    await symlink(external, dirname(runtime.paths.configs.codex));
+
+    await expect(
+      installAgentRelay({
+        rootDir: runtime.rootDir,
+        entryPath: runtime.entryPath,
+        harnessVersions: versions,
+      }),
+    ).rejects.toThrow("refuses symbolic links");
+    await expect(access(join(external, "hooks.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(runtime.paths.launcherPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("diagnoses package and launcher ownership mismatches", async () => {
+    const runtime = await setup("agent-relay-install-mismatch-");
+    await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+    });
+
+    const packageMismatch = await inspectAgentRelayInstallation(
+      runtime.rootDir,
+      {
+        packageVersion: "0.1.0-alpha.999",
+      },
+    );
+    expect(packageMismatch.healthy).toBe(false);
+    expect(packageMismatch.checks).toContainEqual(
+      expect.objectContaining({
+        name: "package-version",
+        level: "fail",
+      }),
+    );
+
+    await writeFile(
+      runtime.paths.launcherPath,
+      "#!/bin/sh\n# Managed by agent-relay installer.\nexit 0\n",
+      { encoding: "utf8", mode: 0o700 },
+    );
+    const launcherMismatch = await inspectAgentRelayInstallation(
+      runtime.rootDir,
+    );
+    expect(launcherMismatch.healthy).toBe(false);
+    expect(launcherMismatch.checks).toContainEqual(
+      expect.objectContaining({
+        name: "launcher-target",
+        level: "fail",
+      }),
+    );
   });
 });

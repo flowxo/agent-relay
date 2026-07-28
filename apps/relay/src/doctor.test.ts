@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  harnessObservationLevel,
   observeHarnessVersions,
   runDoctor,
   TESTED_HARNESS_VERSIONS,
@@ -40,9 +41,24 @@ describe("doctor version and installation checks", () => {
         cursor: missingCursor,
       }),
     ).toMatchObject([
-      { harness: "codex", available: true, drifted: false },
-      { harness: "claude", available: true, drifted: true },
-      { harness: "cursor", available: false, drifted: false },
+      {
+        harness: "codex",
+        available: true,
+        classification: "verified",
+        drifted: false,
+      },
+      {
+        harness: "claude",
+        available: true,
+        classification: "compatible-unverified",
+        drifted: true,
+      },
+      {
+        harness: "cursor",
+        available: false,
+        classification: "unsupported",
+        drifted: false,
+      },
     ]);
     const report = await runDoctor({
       executables: { codex, claude, cursor: missingCursor },
@@ -57,7 +73,16 @@ describe("doctor version and installation checks", () => {
     );
   });
 
-  it("reports a complete tested-version installation as healthy", async () => {
+  it("fails a version recorded as contract-incompatible", () => {
+    expect(
+      harnessObservationLevel({
+        available: true,
+        classification: "unsupported",
+      }),
+    ).toBe("fail");
+  });
+
+  it("reports a complete verified-version installation as healthy", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "agent-relay-doctor-"));
     const entryPath = join(rootDir, "entry.js");
     await writeFile(entryPath, "process.exitCode = 0;\n", "utf8");

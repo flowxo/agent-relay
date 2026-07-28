@@ -4,7 +4,14 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { HARNESS_CAPABILITIES, capabilityFor } from "./capabilities.js";
+import {
+  capabilityFor,
+  classifyObservedHarnessVersion,
+  HARNESS_CAPABILITIES,
+  HARNESS_COMPATIBILITY,
+  PUBLIC_COMPATIBILITY_RECORD,
+  VERIFIED_CLI_HARNESS_EVIDENCE,
+} from "./capabilities.js";
 import { renderStopContinuation } from "./continuation.js";
 import { parseHarnessJson } from "./parsers.js";
 import { buildLateResumeInvocation, deriveLateResumePolicy } from "./resume.js";
@@ -225,10 +232,41 @@ describe("capability declarations", () => {
     );
     expect(capabilityFor("cursor", "cli")?.detail.lateResume).toBe(true);
     expect(capabilityFor("cursor", "ide")?.detail.lateResume).toBe(false);
+    expect(capabilityFor("cursor", "cli")?.protocol.permissionDecision).toBe(
+      false,
+    );
+    expect(
+      capabilityFor("cursor", "ide")?.detail.capabilityClassifications
+        .permissionDecision,
+    ).toBe("disabled");
     expect(
       HARNESS_CAPABILITIES.every(
         (entry) => entry.processExitObservation === false,
       ),
     ).toBe(true);
+    expect(HARNESS_COMPATIBILITY.schema).toBe("agent-relay-compatibility.v1");
+    expect(PUBLIC_COMPATIBILITY_RECORD.records).toHaveLength(6);
+    expect(JSON.stringify(PUBLIC_COMPATIBILITY_RECORD)).not.toMatch(
+      /transcript|cwd|executable|fixturePaths|knownIncompatibleVersions/,
+    );
+  });
+
+  it("classifies exact, drifted, and known-incompatible versions", () => {
+    const codex = VERIFIED_CLI_HARNESS_EVIDENCE.codex;
+    expect(classifyObservedHarnessVersion(codex, "codex-cli 0.145.0")).toBe(
+      "verified",
+    );
+    expect(classifyObservedHarnessVersion(codex, "codex-cli 0.146.0")).toBe(
+      "compatible-unverified",
+    );
+    expect(
+      classifyObservedHarnessVersion(
+        {
+          verifiedVersion: "verified-version",
+          knownIncompatibleVersions: ["incompatible-version"],
+        },
+        "incompatible-version",
+      ),
+    ).toBe("unsupported");
   });
 });

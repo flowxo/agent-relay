@@ -1,0 +1,69 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import Database from "better-sqlite3";
+import { describe, expect, it } from "vitest";
+
+import { RELAY_STORE_SCHEMA_VERSION, RelayStore } from "./store.js";
+
+function schemaVersion(database: Database.Database): number {
+  return database.pragma("user_version", { simple: true }) as number;
+}
+
+async function digest(path: string): Promise<string> {
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
+}
+
+describe("SQLite schema compatibility", () => {
+  it("upgrades an unversioned prior store without losing retained data", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+
+    const prior = new Database(databasePath);
+    prior.exec(
+      "CREATE TABLE retained_fixture (value TEXT NOT NULL); INSERT INTO retained_fixture VALUES ('preserved-answer');",
+    );
+    prior.pragma("user_version = 0");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded.prepare("SELECT value FROM retained_fixture").pluck().get(),
+    ).toBe("preserved-answer");
+    upgraded.close();
+  });
+
+  it("refuses to open a newer schema and leaves it untouched", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+
+    const future = new Database(databasePath);
+    future.exec(
+      "CREATE TABLE future_fixture (value TEXT NOT NULL); INSERT INTO future_fixture VALUES ('future-data');",
+    );
+    future.pragma(`user_version = ${String(RELAY_STORE_SCHEMA_VERSION + 1)}`);
+    future.close();
+    const before = await digest(databasePath);
+
+    expect(() => new RelayStore(databasePath)).toThrow(
+      `SQLite schema version ${String(RELAY_STORE_SCHEMA_VERSION + 1)} is newer than supported version ${String(RELAY_STORE_SCHEMA_VERSION)}; refusing unsafe downgrade`,
+    );
+    expect(await digest(databasePath)).toBe(before);
+
+    const unchanged = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(unchanged)).toBe(RELAY_STORE_SCHEMA_VERSION + 1);
+    expect(
+      unchanged.prepare("SELECT value FROM future_fixture").pluck().get(),
+    ).toBe("future-data");
+    unchanged.close();
+  });
+});

@@ -1,0 +1,83 @@
+name: Sanitized compatibility evidence
+description: Report an exact harness or provider version observation safely.
+title: "[Compatibility]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for compatibility evidence, not vulnerabilities. Report a vulnerability through the private Security contact link.
+
+        Never paste tokens, `.env` files, SQLite or other private databases, raw logs/configs, hook payloads, transcripts, source code, account/chat/session identifiers, usernames, hostnames, repository identities, or machine-specific paths. Submit only synthetic fixtures and bounded evidence.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Harness or provider
+      options:
+        - Codex
+        - Claude Code
+        - Cursor
+        - Telegram Bot API
+        - Flow XO Notifications
+        - Other documented provider
+    validations:
+      required: true
+  - type: input
+    id: surface
+    attributes:
+      label: Surface and exact version
+      description: Include only the product surface and exact version line.
+      placeholder: Codex CLI; codex-cli 0.145.0
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: Evidence class
+      options:
+        - Official contract only
+        - Sanitized official example
+        - Local help/version observation
+        - Fake transport or synthetic canary
+        - Sanitized live canary
+        - Known incompatible observation
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Primary source and observation date
+      description:
+        Link official documentation and give the date; do not paste a private
+        payload.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Bounded result
+      description:
+        State the capability tested, expected result, actual classification, and
+        safe evidence IDs.
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Proposed synthetic fixture and tests
+      description:
+        Describe sanitization, manifest metadata, size, malformed cases, and
+        isolation coverage.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label:
+            I reviewed this report and removed all credentials, private
+            databases, raw logs/configs, hook payloads, transcripts, identities,
+            and machine-specific paths.
+          required: true
+        - label: This is not a vulnerability or sensitive security report.
+          required: true

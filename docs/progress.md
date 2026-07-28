@@ -8,10 +8,11 @@
   Agent Relay C0 consumer/compatibility history in PR #2: `68b2fbf` → `100c250`
   → `fee4629` → `76240c4`. It is not yet integrated to `main` or published as a
   release.
-- Linear initiative `Agent Relay — Open Source V1` now owns four ordered
-  implementation projects. AR1 has started with FXO-1141; AR2 remains planned
-  and may use executable mocks; AR3 is blocked on AR1, AR2, and C0-09; AR4
-  follows dogfood evidence. Post-V1 hosted-fleet explorations remain separate.
+- Linear initiative `Agent Relay — Open Source V1` owns four ordered
+  implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
+  all five milestones at 100%; AR2 remains planned and may use executable mocks;
+  AR3 is blocked on AR2 and C0-09; AR4 follows dogfood evidence. Post-V1
+  hosted-fleet explorations remain separate.
 - C0-07 (FXO-1048) and C0-08 (FXO-1049) are Done. Agent Relay pins and verifies
   the exact three Notifications `1.0.0-draft.1` artifacts, runs a
   scripts-disabled clean consumer install, and proves mapping, retry,
@@ -29,6 +30,143 @@
   known vulnerability. Repository scans found no tracked activation file,
   database, log, actual machine path, Telegram-token shape, or credential value;
   the local `.env.activation` remained gitignored and mode `0600`.
+- FXO-1142 establishes the public governance boundary. The standard MIT license
+  names Flow XO, LLC; all six workspace manifests declare `MIT`; security,
+  privacy, support, conduct, and maintainer policies agree with implemented
+  local state, outbound payload, retention, uninstall, and review behavior; and
+  the issue chooser prevents blank or unsanitized bug reports.
+  `pnpm governance:check` is part of the full quality gate. On 2026-07-26 the
+  slice passed `pnpm check` (40 Vitest files/305 tests, 17 contract and
+  supply-chain tests, and the six-test isolated Notifications consumer proof),
+  all three Chromium end-to-end scenarios, `pnpm audit --prod`, YAML parsing,
+  diff checks, and a credential/path scan.
+- FXO-1143 adds a public landing path plus nine focused guides for architecture,
+  lifecycle installation, Telegram, local web, troubleshooting, compatibility,
+  transport extensions, harness extensions, and the optional hosted
+  Notifications boundary. The guides distinguish native hook evidence,
+  supervised exit proof, inline continuation, late CLI resume, and unsupported
+  Cursor IDE resume; route new users through the fake canary before credentialed
+  Telegram; and keep local operation independent of hosted accounts and
+  Cloudflare. Primary Codex, Claude Code, Cursor, and Telegram sources were
+  rechecked on 2026-07-26 without widening support beyond exact fixture/canary
+  evidence. `pnpm docs:check` validates the guide set, local links, required
+  boundary statements, onboarding order, and private-data patterns as part of
+  `pnpm check`. The full 305-test/contract/distribution gate, all three Chromium
+  scenarios, production audit, and an isolated compiled fake-daemon canary all
+  passed.
+- FXO-1144 establishes one standalone, private
+  `@flowxo/agent-relay@0.1.0-alpha.0` CLI artifact without publishing it.
+  Internal workspace code is bundled; exact `better-sqlite3@13.0.1` and
+  `zod@4.4.3` remain external runtime dependencies; no programmatic export or
+  declaration surface is claimed; and source maps are omitted after an explicit
+  disclosure review. `pnpm package:check`, now part of the full gate, matched
+  all 11 files to the allowlist, measured 100,883 packed and 474,271 unpacked
+  bytes, rejected source/workspace/private-path leakage, installed with scripts
+  disabled into an isolated prefix, explicitly rebuilt SQLite, and proved CLI
+  help, one clean fake delivery, five static web assets, and the authenticated
+  web API from an isolated home. The check caught and resolved Apple-silicon
+  Rosetta Node metadata before acceptance. Registry scope ownership, trusted
+  publishing, and actual publication remain owner-controlled gates.
+- FXO-1145 advances the private candidate to `0.1.0-alpha.1` and proves the
+  complete packed lifecycle against a deterministic sanitized `0.1.0-alpha.0`
+  fixture. A quoted-path isolated home/prefix passes install dry run, install,
+  healthy doctor, fake canary, stale package/entry diagnosis, upgrade dry run,
+  reconciliation, unchanged repeat install, post-upgrade doctor/canary, owned
+  uninstall, and package removal. The durable answered request, SQLite state,
+  web credential, prior relay log, explicit retained credential/log fixtures,
+  installer backups, and unrelated harness settings survive. Install manifests
+  now record package version; doctor validates package/runtime/manifest and
+  launcher agreement; owned paths reject symlinks; SQLite migrates unversioned
+  stores to schema `1`; and schema `2` is refused without modification. The
+  lifecycle checker is part of `pnpm check` and publishes nothing. The final
+  local gate passed 41 Vitest files/309 tests, 17 contract and supply-chain
+  tests, the six-test isolated Notifications consumer, the 102,408-byte
+  packed/479,554-byte unpacked artifact proof, all three Chromium scenarios, and
+  a production audit with no known vulnerability.
+- FXO-1146 replaces the manual two-source support interpretation with one
+  runtime-validated `agent-relay-compatibility.v1` registry. It drives protocol
+  flags, exact doctor expectations/evidence IDs, safe `agent-relay capabilities`
+  output, the classified matrix, and identical generated README/SUPPORT
+  summaries. The generator validates fixture files and evidence anchors and
+  fails on drift. `verified`, `compatible-unverified`, `unsupported`, and
+  `disabled` are explicit per capability; Cursor permission automation is now
+  false at runtime. A non-model local check classified installed Claude Code
+  `2.1.220` as drift from live-proven `2.1.219` without advancing the claim;
+  Codex `0.145.0` and Cursor `2026.07.23-e383d2b` remained exact matches. The
+  public bug form requests redacted doctor classifications, the safe capability
+  record, evidence/diagnostic IDs, versions, environment, and a synthetic
+  reproduction while prohibiting databases, logs, transcripts, secrets, and
+  paths. The final local gate passed 41 Vitest files/311 tests, 17 contract and
+  supply-chain tests, the six-test isolated Notifications consumer, the
+  104,988-byte packed/491,088-byte unpacked artifact proof, the full packed
+  lifecycle, all three Chromium scenarios, and a production audit with no known
+  vulnerability.
+- FXO-1147 establishes the bounded public contribution path. Node 22 and exact
+  pnpm 11.17.0 setup, scripts-disabled frozen installation, focused checks, CI
+  parity, browser/package proof, architecture ownership, commit expectations,
+  security routing, and change-specific maintainer gates now live in
+  `CONTRIBUTING.md`. Dedicated public forms distinguish bugs, compatibility
+  evidence, transports, harness adapters, documentation, and planned
+  security-sensitive design while steering actual vulnerabilities to private
+  reporting and prohibiting credentials, databases, logs/configs, payloads,
+  transcripts, identities, and machine paths. The PR template makes protocol,
+  hook continuation, authority/resume, installer, redaction/web, migration/
+  retention, transport authentication/outbound data, support, and release gates
+  explicit. A new fixture policy plus `pnpm fixtures:check` enforces three exact
+  manifests, 12 sanitized JSON fixtures, source/version/date/evidence/privacy
+  metadata, a 64 KiB bound, regular-file/no-symlink rules, and common secret and
+  private-path patterns. Seven Node tests cover malformed JSON, oversize,
+  symlinks, non-JSON files, sensitive values, duplicate inventory, and missing
+  provenance. All six issue forms parse as YAML. The final local gate passed 41
+  Vitest files/311 tests, seven fixture tests, 17 contract and supply-chain
+  tests, the six-test isolated Notifications consumer, the 105,127-byte
+  packed/491,406-byte unpacked artifact proof, the full packed lifecycle, all
+  three Chromium scenarios, and a production audit with no known vulnerability.
+- FXO-1148 establishes a credential-free, least-privilege prerelease pipeline
+  without authorizing publication. A clean checkout now produces exactly four
+  reviewable files: the private `0.1.0-alpha.1` tarball, `SHA256SUMS`, an exact
+  source/reproducibility manifest, and an SPDX 2.3 SBOM covering all 11 packed
+  files plus the frozen three-package runtime dependency closure. The builder
+  packs twice from the same commit timestamp and rejects different SHA-256
+  digests; the verifier rejects changed artifacts, duplicate checksums,
+  duplicate SBOM records, inventory drift, and source-commit mismatch. CI and
+  prerelease actions are immutable-SHA pinned, install scripts remain disabled
+  until the approved native rebuild, and production audit/browser/package gates
+  are mandatory. Build and SBOM attestations have a separate minimal permission
+  job; any future npm OIDC job requires that successful provenance job, an exact
+  tag/workflow identity, a public canonical repository, manual input, and the
+  protected `npm-prerelease` environment. Checked-in publication approval and
+  registry action remain `false`/`blocked`, so neither the package nor the
+  workflow can contact npm. On clean implementation commit `a331ab5`, two
+  105,388-byte tarballs matched at SHA-256, the independent verifier reported
+  four SPDX packages and 11 files, and all bundle checksums passed. The full
+  local gate passed 41 Vitest files/311 tests, 15 release/secret-policy tests,
+  seven fixture tests, 17 contract and supply-chain tests, the six-test isolated
+  Notifications consumer, a 105,388-byte packed/492,013-byte unpacked artifact,
+  the complete lifecycle, all three Chromium scenarios, and a production audit
+  with no known vulnerability.
+- FXO-1149 completes the AR1 native minimum-runtime exit gate. The exact
+  clean-commit bundle was installed under the official hash-pinned and
+  code-signature-checked Node.js 22.23.1 `darwin/arm64` runtime with npm 10.9.8
+  on Apple-silicon macOS 26.5.2. A quoted temporary home and prefix received no
+  credential variables and no linked workspace package. The reviewed SQLite
+  lifecycle selected its arm64 prebuild and passed a real in-memory query.
+  Doctor was healthy: Codex `0.145.0` and Cursor `2026.07.23-e383d2b` matched
+  exact evidence, while Claude Code `2.1.220` remained an honest
+  `compatible-unverified` warning against `2.1.219`. Install dry-run, install,
+  unchanged reinstall, one fake delivery with zero retry/dead-letter, uninstall
+  dry-run, owned uninstall, retained SQLite, npm removal, and zero remaining
+  owned hooks passed. The ignored path-free evidence file was mode `0600` and
+  contained only safe versions, hashes, evidence IDs, counts, booleans, and
+  limitations. The enforced non-implementer guide answers what runs locally,
+  what leaves, what changes, how to diagnose, and how to remove the product, and
+  records the no-architecture-change AR2 handoff. No real home, credential, tag,
+  release, attestation, registry, or production service was changed.
+- AR1 closed in Linear on 2026-07-26 after all nine stories reached Done and all
+  five milestones reached 100%. Draft PR #4 was clean at implementation head
+  `345448e5a7293dacfe9c92d1400ec22c6351cd2e`; CI, packaged Chromium E2E, and
+  GitGuardian all passed. The parent `Agent Relay — Open Source V1` initiative
+  and its other projects were not changed during project reconciliation.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -387,7 +525,7 @@
   it matches a signal the owning parent actually observed and forwarded;
   unrelated non-zero exits remain durable crash events. Supervised hook version
   metadata also now overrides stale install-time metadata.
-- The implementation gates pass all 251 unit/integration tests across 35 test
+- The implementation gates pass all 311 unit/integration tests across 41 test
   files plus 3 Chromium end-to-end scenarios, including the SQLite-backed
   daemon, retries/dead letters, malformed ingress, hook fallback privacy, inline
   and late continuation, owned-child exit observation, stale answer rejection,
@@ -486,14 +624,18 @@ also remain free of silent delivery, hook, or correlation failures.
 - Browser end-to-end coverage currently uses current Chromium with the fake
   Telegram transport. Real Telegram activation remains proven separately, and
   Safari/Firefox compatibility is not yet claimed.
+- GitHub private vulnerability reporting is unavailable while the repository
+  remains private. The policy and exact private-report URL are ready, but
+  enabling and verifying the feature is a mandatory part of the later,
+  explicitly approved public-promotion step. No security email was invented.
 
 ## Next action
 
-Land the reviewable FXO-1141 baseline without rewriting its preserved C0 commit
-line, then start AR1 governance and public-product work with FXO-1142 and
-FXO-1143. AR1 packaging begins at FXO-1144. Mock-backed AR2 work may proceed
-against the pinned `1.0.0-draft.1` artifacts, but production hosted dogfood must
-wait for AR1, AR2, and a central C0-09 go disposition.
+Begin mock-backed AR2 work against the pinned `1.0.0-draft.1` artifacts and the
+standalone AR1 package boundary. Production hosted dogfood must still wait for
+AR2 and a central C0-09 go disposition. npm scope/publication and the monitored
+public security-contact path remain owner-controlled promotion gates; AR1 does
+not authorize those external actions.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

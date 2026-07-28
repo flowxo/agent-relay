@@ -2,7 +2,7 @@
 
 > **Status:** Living operational guide
 >
-> **Last verified:** 2026-07-25
+> **Last verified:** 2026-07-26
 >
 > **Scope:** macOS-first local development and direct Telegram activation
 
@@ -10,6 +10,11 @@ This is the canonical path from a clean checkout to one proven
 agent-to-Telegram-to-agent interaction. Update it whenever installation,
 configuration, supported harness behavior, Telegram requirements, or the
 activation canary changes.
+
+For the shorter public entry points, see the
+[installation lifecycle](./install-upgrade-uninstall.md),
+[Telegram guide](./telegram.md), [web companion guide](./web-companion.md), and
+[troubleshooting guide](./troubleshooting.md).
 
 Do not add real tokens, account identifiers, private messages, session IDs,
 usernames, hostnames, or machine-specific paths to this document.
@@ -42,13 +47,18 @@ Requirements:
 From the repository root:
 
 ```sh
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm contracts:preinstall
+pnpm rebuild
 pnpm check
 pnpm build
 ```
 
-No Telegram credentials are needed for these checks. Tests use sanitized
-fixtures and a fake transport.
+The scripts-disabled install prevents dependency lifecycle code from running
+before the exact vendored Notifications artifacts are inspected. The contract
+preflight validates those archives and pins, then `pnpm rebuild` runs the
+approved native build needed by SQLite. No Telegram credentials are needed for
+these checks. Tests use sanitized fixtures and a fake transport.
 
 ## 2. Create and configure the Telegram bot
 
@@ -189,9 +199,10 @@ Review or trust newly installed hooks through each harness's supported UI. Codex
 exposes `/hooks`; Claude Code and Cursor expose their corresponding hook
 configuration views.
 
-`doctor` must report a healthy launcher, SQLite spool, capability matrix,
-expected hook counts, and installed harness versions. Version drift is a warning
-to recapture evidence before claiming compatibility.
+`doctor` must report a healthy launcher, SQLite spool, runtime-validated
+compatibility registry, expected hook counts, and installed harness versions.
+Version drift is a `compatible-unverified` warning to recapture evidence before
+claiming compatibility; a known-incompatible version fails.
 
 ## 5. Start the daemon
 

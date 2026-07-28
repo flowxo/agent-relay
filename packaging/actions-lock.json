@@ -1,0 +1,31 @@
+{
+  "schema": "agent-relay-actions-lock.v1",
+  "recheckedAt": "2026-07-26",
+  "source": "Immutable refs resolved from the official GitHub action repositories after rechecking current GitHub Actions and npm trusted-publishing documentation.",
+  "actions": {
+    "actions/checkout": {
+      "version": "v7",
+      "sha": "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    },
+    "pnpm/action-setup": {
+      "version": "v6",
+      "sha": "b0f76dfb45f55f8421693e4803ac7bb65143bd34"
+    },
+    "actions/setup-node": {
+      "version": "v6",
+      "sha": "249970729cb0ef3589644e2896645e5dc5ba9c38"
+    },
+    "actions/upload-artifact": {
+      "version": "v6",
+      "sha": "b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+    },
+    "actions/download-artifact": {
+      "version": "v7",
+      "sha": "37930b1c2abaa49bbe596cd826c3c89aef350131"
+    },
+    "actions/attest": {
+      "version": "v4",
+      "sha": "36051bcae73b7c2a8a6945a48cbf80953c6baa35"
+    }
+  }
+}

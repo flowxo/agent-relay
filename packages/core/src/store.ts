@@ -50,6 +50,8 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
+export const RELAY_STORE_SCHEMA_VERSION = 1;
+
 export interface IngestResult {
   eventId: string;
   inserted: boolean;
@@ -898,13 +900,26 @@ export class RelayStore {
 
   public constructor(path = ":memory:") {
     this.database = new Database(path);
-    this.database.pragma("foreign_keys = ON");
-    this.database.pragma("busy_timeout = 5000");
-    if (path !== ":memory:") {
-      this.database.pragma("journal_mode = WAL");
-      this.database.pragma("synchronous = FULL");
+    try {
+      const observedSchemaVersion = this.database.pragma("user_version", {
+        simple: true,
+      }) as number;
+      if (observedSchemaVersion > RELAY_STORE_SCHEMA_VERSION) {
+        throw new Error(
+          `SQLite schema version ${String(observedSchemaVersion)} is newer than supported version ${String(RELAY_STORE_SCHEMA_VERSION)}; refusing unsafe downgrade`,
+        );
+      }
+      this.database.pragma("foreign_keys = ON");
+      this.database.pragma("busy_timeout = 5000");
+      if (path !== ":memory:") {
+        this.database.pragma("journal_mode = WAL");
+        this.database.pragma("synchronous = FULL");
+      }
+      this.migrate();
+    } catch (error) {
+      this.database.close();
+      throw error;
     }
-    this.migrate();
   }
 
   private migrate(): void {
@@ -1469,6 +1484,9 @@ export class RelayStore {
         "ALTER TABLE question_set_drafts ADD COLUMN presentation_mode TEXT",
       );
     }
+    this.database.pragma(
+      `user_version = ${String(RELAY_STORE_SCHEMA_VERSION)}`,
+    );
   }
 
   public close(): void {

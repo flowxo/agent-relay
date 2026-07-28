@@ -1,22 +1,31 @@
 # Harness contract evidence
 
-Recorded on 2026-07-24 and 2026-07-25 on macOS arm64. The fixture corpus under
-`packages/harnesses/fixtures` contains only synthetic identifiers, paths, and
-messages.
+Recorded on 2026-07-24 through 2026-07-26 on macOS arm64. The fixture corpus
+under `packages/harnesses/fixtures` contains only synthetic identifiers, paths,
+and messages. Primary Codex, Claude Code, Cursor, and Telegram documentation was
+rechecked on 2026-07-26 for the public guides; no support claim was widened
+without new fixture and canary evidence. The generated compatibility matrix is
+the authoritative support summary; this ledger provides its linked provenance.
 
 ## Local observations
 
-| Harness     | Installed version       | Commands observed                                                                        |
-| ----------- | ----------------------- | ---------------------------------------------------------------------------------------- |
-| Codex       | `codex-cli 0.145.0`     | `codex --version`, `codex --help`, `codex exec resume --help`, `codex app-server --help` |
-| Claude Code | `2.1.219 (Claude Code)` | `claude --version`, `claude --help`                                                      |
-| Cursor      | `2026.07.23-e383d2b`    | `cursor-agent --version`, `cursor-agent --help`, `cursor-agent resume --help`            |
+| Harness     | Exact live-verified version | Commands observed                                                                        |
+| ----------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| Codex       | `codex-cli 0.145.0`         | `codex --version`, `codex --help`, `codex exec resume --help`, `codex app-server --help` |
+| Claude Code | `2.1.219 (Claude Code)`     | `claude --version`, `claude --help`                                                      |
+| Cursor      | `2026.07.23-e383d2b`        | `cursor-agent --version`, `cursor-agent --help`, `cursor-agent resume --help`            |
 
 The local help output proves that all three CLIs expose a session-resume entry
 point. It also proves that Codex App Server is installed and exposes a
 structured transport. Cursor was initially observed as `3.12.30`; its login flow
 auto-updated the launcher to the version recorded above before the live
 stop/resume canary. These checks do not invoke a model or incur API cost.
+
+A non-model maintenance check on 2026-07-26 observed Claude Code
+`2.1.220 (Claude Code)`. No hook or live continuation canary was rerun, so that
+installed version is deliberately `compatible-unverified`; `2.1.219` remains the
+exact verified claim. This is the expected doctor warning path, not evidence for
+silently advancing the support table.
 
 ## Installer observations
 
@@ -236,6 +245,9 @@ exits remain crash evidence.
   `thread/resume`, `turn/start`, and `turn/steer`.
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks) documents `Stop`,
   `StopFailure`, `Notification`, and permission wire contracts.
+- [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
+  documents programmatic hooks, permissions, streaming input, and session
+  resume.
 - [Cursor hooks](https://cursor.com/docs/hooks) and the official
   [agent best-practices example](https://cursor.com/blog/agent-best-practices)
   document the `stop` payload and `followup_message`.

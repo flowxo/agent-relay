@@ -1,0 +1,162 @@
+# Direct Telegram setup and operation
+
+> **Transport:** optional direct Telegram Bot API
+>
+> **Default reply mode:** long polling from the loopback daemon
+
+Direct Telegram requires no hosted Agent Relay account or public web server. The
+bot sends one private topic per logical harness session so concurrent sessions
+remain distinguishable.
+
+## Prerequisites
+
+- the fake canary in [the install guide](install-upgrade-uninstall.md) passes;
+- a dedicated Telegram bot;
+- a one-to-one chat with that bot;
+- the intended operator's Telegram user ID; and
+- private-chat **Threaded Mode** enabled through BotFather.
+
+Telegram does not currently document a Bot API method for enabling Threaded Mode
+with the bot token. The token can verify `has_topics_enabled` and create topics
+after BotFather enables it. Creating a topic does not enable the account-level
+feature.
+
+The living [onboarding guide](onboarding.md) contains the safe `getUpdates`
+discovery flow and BotFather details. Never copy the resulting numeric IDs or
+token into a fixture, issue, screenshot, or committed file.
+
+## Store configuration privately
+
+Copy the variable names into a secret manager or a mode-`0600`, gitignored local
+file:
+
+```dotenv
+AGENT_RELAY_TELEGRAM_TOKEN=<bot token>
+AGENT_RELAY_TELEGRAM_CHAT_ID=<private chat id>
+AGENT_RELAY_TELEGRAM_OPERATOR_ID=<authorized operator id>
+AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll
+```
+
+The development-only `.env.activation` filename is already ignored. Verify its
+permissions and ignore status without printing the values:
+
+```sh
+test "$(stat -f '%Lp' .env.activation)" = 600
+git check-ignore -q .env.activation
+```
+
+Long polling requires no public callback. Webhook mode is available only when an
+external HTTPS bridge already exists and additionally requires
+`AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET`. Polling and webhooks are mutually
+exclusive; inspect `getWebhookInfo` before removing or changing a webhook.
+
+## Start and preflight
+
+Load the private environment with shell tracing disabled, then start the
+installed daemon:
+
+```sh
+set +x
+set -a
+. ./.env.activation
+set +a
+
+~/.agent-relay/bin/agent-relay daemon
+```
+
+Before listening, the daemon calls Telegram `getMe`, `getChat`, and
+`getWebhookInfo`. It fails closed unless:
+
+- the token is valid;
+- the chat is private;
+- private topics are enabled; and
+- poll/webhook configuration agrees with Telegram.
+
+Real Telegram never falls back to General or silently switches to the fake
+transport. Expected structured evidence includes `telegram.preflight-succeeded`,
+`telegram.poll-started` in poll mode, and `daemon.started` with transport
+`telegram`.
+
+## Run the bounded activation canary
+
+In another terminal with the same environment:
+
+```sh
+~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
+```
+
+Open the new canary topic and send the exact synthetic challenge printed by the
+card:
+
+```text
+relay-canary-ok
+```
+
+Success requires topic creation/reuse, delivery, authorized operator/chat/topic
+routing, exact request correlation, durable first-writer-wins resolution, and
+`resolvedBy: telegram`. Command output omits the private question and answer.
+
+## Session topics and cards
+
+The first event for a machine + harness + session lazily creates a bounded topic
+name containing:
+
+- harness;
+- sanitized repository display name;
+- optional branch; and
+- a readable short session suffix plus collision digest.
+
+The absolute working path, transcript, bot identity, and full session ID are not
+used in the topic name. SQLite retains the provider topic mapping across
+restarts.
+
+Cards are plain text and bounded below Telegram's message limit. They show
+session identity, event kind/age, and a bounded summary or question. Model text
+cannot create a button: callback data is a versioned opaque local token.
+
+Available controls depend on durable event state:
+
+- **Continue** resolves one eligible continuation;
+- **Details** posts bounded, secret-redacted pages once;
+- **Mute** suppresses routine cards but not questions or proven failures; and
+- **End** closes only the Agent Relay lane after open questions are resolved.
+
+End does not claim to terminate an unowned harness process.
+
+Confirmations, selections, permissions, and ordered question sets use buttons.
+Free text can be typed directly in a session topic only when exactly one
+compatible request is open there. With zero candidates, Agent Relay posts
+guidance; with multiple candidates, it asks for Telegram's Reply gesture on the
+specific request card. It never searches another topic or treats arbitrary topic
+chatter as a button answer.
+
+## Reliability and privacy
+
+The configured chat, operator, topic, original message, request, and session
+must all match before an answer is claimed. Telegram `update_id` values and
+callback actions are durable and idempotent. A stale, duplicate, unauthorized,
+cross-topic, expired, or already-resolved answer is diagnosed without echoing
+its text into logs.
+
+Telegram retains unconfirmed Bot API updates for no longer than 24 hours. Local
+request retention cannot recover an upstream update after that boundary.
+Messages already accepted by Telegram remain subject to Telegram's own storage
+and deletion behavior.
+
+Telegram has no caller-supplied idempotency key for `sendMessage` or topic
+creation. SQLite prevents normal duplicates, but a process crash after Telegram
+accepts a request and before the receipt commits leaves a narrow at-least-once
+duplicate window.
+
+If Telegram proves a stored topic is unavailable, Agent Relay invalidates only
+that mapping, records `topic.reconciliation-required`, retries the owning event,
+and creates a replacement. It never sends that event into General.
+
+See [troubleshooting](troubleshooting.md) for provider codes and
+[PRIVACY.md](../PRIVACY.md) for outbound fields and erasure.
+
+## Primary references
+
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Telegram forum topics](https://core.telegram.org/api/forum)
+- [Telegram Bot FAQ](https://core.telegram.org/bots/faq)

@@ -1,0 +1,91 @@
+name: Sanitized bug report
+description: Report a reproducible Agent Relay defect without private data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Agent Relay. Report vulnerabilities privately through the Security contact link.
+
+        Never paste tokens, `.env` files, SQLite data, raw logs, hook payloads, transcripts, usernames, hostnames, account/chat/session IDs, repository names, or real working paths. Reproduce with the fake transport and synthetic values whenever possible.
+  - type: input
+    id: version
+    attributes:
+      label: Agent Relay version or commit
+      placeholder: 0.1.0-alpha.1 or an immutable commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Sanitized environment
+      description: Include macOS version/architecture and Node.js version only.
+      placeholder: macOS 15 arm64; Node.js 22.x
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Harness, surface, and exact version
+      description: Copy only the version line; do not include a session or path.
+      placeholder: Codex CLI; codex-cli 0.145.0
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Redacted doctor result
+      description:
+        Include check names, pass/warn/fail states, compatibility
+        classifications, evidence IDs, and version strings only. Do not attach a
+        database, raw log, config, transcript, or path.
+      placeholder: Paste a manually redacted subset of agent-relay doctor JSON.
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Safe capability record
+      description:
+        Paste agent-relay capabilities output. It is designed to exclude machine
+        paths and transcripts; still review it before submission.
+    validations:
+      required: true
+  - type: input
+    id: diagnostic_ids
+    attributes:
+      label: Relevant diagnostic IDs
+      description: Include bounded IDs only, never their raw log lines.
+      placeholder: diag_synthetic_12345678, or none
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Synthetic reproduction
+      description:
+        Use fake credentials, fake transport, and machine-neutral paths.
+      placeholder:
+        Describe the smallest safe sequence that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label:
+            I reviewed this report and removed all credentials, private content,
+            databases, logs, transcripts, account identifiers, machine
+            identifiers, and machine-specific paths.
+          required: true
+        - label: This is not a vulnerability or sensitive security report.
+          required: true
