@@ -51,7 +51,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 5;
+export const RELAY_STORE_SCHEMA_VERSION = 6;
 
 const NativeHookSequenceAllocationInputSchema = z
   .object({
@@ -226,6 +226,8 @@ export type TopicCleanupCandidateState =
   | "skipped"
   | "failed";
 
+export type TopicCleanupMode = "proven-dead" | "inactive";
+
 export interface TopicCleanupCandidateRecord {
   machineId: string;
   harness: Harness;
@@ -233,6 +235,7 @@ export interface TopicCleanupCandidateRecord {
   topicId: string;
   repository: string;
   shortSessionId: string;
+  lastActivityAt?: string;
   state: TopicCleanupCandidateState;
   attemptCount: number;
   nextAttemptAt: string;
@@ -253,6 +256,8 @@ export interface TopicCleanupOperationRecord {
   operationId: string;
   transportName: string;
   transportScope: string;
+  mode: TopicCleanupMode;
+  inactiveBefore?: string;
   state: TopicCleanupOperationState;
   eligibleCount: number;
   candidates: TopicCleanupCandidateRecord[];
@@ -281,10 +286,12 @@ export type TopicCleanupClaimResult =
       outcome: "claimed";
       operation: TopicCleanupOperationRecord;
       candidate: TopicCleanupCandidateRecord;
+      skipped: number;
     }
   | {
       outcome: "terminal";
       operation: TopicCleanupOperationRecord;
+      skipped: number;
     }
   | { outcome: "none" };
 
@@ -334,6 +341,7 @@ export type SessionTopicClaimResult =
       attemptNumber: number;
     }
   | { outcome: "busy"; topic: SessionTopicRecord }
+  | { outcome: "deleting"; topic: SessionTopicRecord }
   | { outcome: "deferred"; topic: SessionTopicRecord }
   | { outcome: "failed"; topic: SessionTopicRecord };
 
@@ -960,6 +968,8 @@ interface TopicCleanupOperationRow {
   operation_id: string;
   transport_name: string;
   transport_scope: string;
+  selection_mode: string;
+  inactive_before: string | null;
   state: TopicCleanupOperationState;
   eligible_count: number;
   candidates_json: string;
@@ -1097,6 +1107,7 @@ const TopicCleanupCandidateSchema = z
     topicId: z.string().min(1).max(128),
     repository: z.string().min(1).max(120),
     shortSessionId: z.string().min(1).max(120),
+    lastActivityAt: z.iso.datetime({ offset: true }).optional(),
     state: z.enum([
       "pending",
       "deleting",
@@ -1115,6 +1126,8 @@ const TopicCleanupCandidateSchema = z
 const TopicCleanupCandidatesSchema = z
   .array(TopicCleanupCandidateSchema)
   .max(100);
+
+const TopicCleanupModeSchema = z.enum(["proven-dead", "inactive"]);
 
 function topicCleanupIsTerminal(state: TopicCleanupCandidateState): boolean {
   return (
@@ -1432,6 +1445,8 @@ export class RelayStore {
         operation_id TEXT PRIMARY KEY,
         transport_name TEXT NOT NULL,
         transport_scope TEXT NOT NULL,
+        selection_mode TEXT NOT NULL DEFAULT 'proven-dead',
+        inactive_before TEXT,
         state TEXT NOT NULL,
         eligible_count INTEGER NOT NULL,
         candidates_json TEXT NOT NULL,
@@ -2008,6 +2023,23 @@ export class RelayStore {
         "ALTER TABLE question_set_drafts ADD COLUMN presentation_mode TEXT",
       );
     }
+    const topicCleanupColumns = this.database
+      .prepare("PRAGMA table_info(topic_cleanup_operations)")
+      .all() as Array<{ name: string }>;
+    if (
+      !topicCleanupColumns.some((column) => column.name === "selection_mode")
+    ) {
+      this.database.exec(
+        "ALTER TABLE topic_cleanup_operations ADD COLUMN selection_mode TEXT NOT NULL DEFAULT 'proven-dead'",
+      );
+    }
+    if (
+      !topicCleanupColumns.some((column) => column.name === "inactive_before")
+    ) {
+      this.database.exec(
+        "ALTER TABLE topic_cleanup_operations ADD COLUMN inactive_before TEXT",
+      );
+    }
     this.database.pragma(
       `user_version = ${String(RELAY_STORE_SCHEMA_VERSION)}`,
     );
@@ -2168,6 +2200,37 @@ export class RelayStore {
       .get(input) as SessionTopicRow | undefined;
   }
 
+  private topicDeletionClaimed(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+  }): boolean {
+    return (
+      this.database
+        .prepare(
+          `
+          SELECT 1
+          FROM topic_cleanup_operations AS cleanup,
+            json_each(cleanup.candidates_json) AS candidate
+          WHERE cleanup.transport_name = @transportName
+            AND cleanup.transport_scope = @transportScope
+            AND cleanup.state = 'claimed'
+            AND json_extract(candidate.value, '$.machineId') = @machineId
+            AND json_extract(candidate.value, '$.harness') = @harness
+            AND json_extract(candidate.value, '$.sessionId') = @sessionId
+            AND json_extract(candidate.value, '$.topicId') = @topicId
+            AND json_extract(candidate.value, '$.state')
+              IN ('pending', 'retry', 'deleting')
+          LIMIT 1
+        `,
+        )
+        .get(input) !== undefined
+    );
+  }
+
   public claimSessionTopic(
     input: ClaimSessionTopicInput,
   ): SessionTopicClaimResult {
@@ -2200,6 +2263,20 @@ export class RelayStore {
         .get(input) as { state: SessionRecord["state"] } | undefined;
       if (session === undefined) {
         throw new Error("cannot claim a topic for an unknown session");
+      }
+      const existingRow = this.getSessionTopicRow(input);
+      if (
+        existingRow?.provisioning_status === "ready" &&
+        existingRow.topic_id !== null &&
+        this.topicDeletionClaimed({
+          ...input,
+          topicId: existingRow.topic_id,
+        })
+      ) {
+        return {
+          outcome: "deleting",
+          topic: this.topicFromRow(existingRow),
+        };
       }
       const metadata = { ...input, lifecycleState: session.state };
       this.database
@@ -4182,6 +4259,9 @@ export class RelayStore {
       topicId: candidate.topicId,
       repository: candidate.repository,
       shortSessionId: candidate.shortSessionId,
+      ...(candidate.lastActivityAt === undefined
+        ? {}
+        : { lastActivityAt: candidate.lastActivityAt }),
       state: candidate.state,
       attemptCount: candidate.attemptCount,
       nextAttemptAt: candidate.nextAttemptAt,
@@ -4193,6 +4273,14 @@ export class RelayStore {
       operationId: row.operation_id,
       transportName: row.transport_name,
       transportScope: row.transport_scope,
+      mode: TopicCleanupModeSchema.parse(row.selection_mode),
+      ...(row.inactive_before === null
+        ? {}
+        : {
+            inactiveBefore: z.iso
+              .datetime({ offset: true })
+              .parse(row.inactive_before),
+          }),
       state: row.state,
       eligibleCount: row.eligible_count,
       candidates,
@@ -4247,16 +4335,27 @@ export class RelayStore {
     return rows.map((row) => this.topicCleanupFromRow(row));
   }
 
-  private topicCleanupEligibilityWhere(): string {
+  private topicCleanupEligibilityWhere(mode: TopicCleanupMode): string {
+    const selection =
+      mode === "proven-dead"
+        ? `(
+          controls.ended_at IS NOT NULL
+          OR sessions.last_event_type = 'session.ended'
+        )`
+        : `(
+          topics.updated_at <= @inactiveBefore
+          AND controls.ended_at IS NULL
+          AND (
+            sessions.last_event_type IS NULL
+            OR sessions.last_event_type <> 'session.ended'
+          )
+        )`;
     return `
       topics.transport_name = @transportName
       AND topics.transport_scope = @transportScope
       AND topics.provisioning_status = 'ready'
       AND topics.topic_id IS NOT NULL
-      AND (
-        controls.ended_at IS NOT NULL
-        OR sessions.last_event_type = 'session.ended'
-      )
+      AND ${selection}
       AND sessions.state <> 'active'
       AND NOT EXISTS (
         SELECT 1
@@ -4292,12 +4391,32 @@ export class RelayStore {
     transportScope: string;
     now: string;
     expiresAt: string;
+    mode?: TopicCleanupMode;
+    inactiveBefore?: string;
     limit?: number;
   }): TopicCleanupOperationRecord {
     assertIsoCutoff(input.now, "topic cleanup preview time");
     assertIsoCutoff(input.expiresAt, "topic cleanup preview expiry");
     if (input.expiresAt <= input.now) {
       throw new Error("topic cleanup preview expiry must be in the future");
+    }
+    const mode = TopicCleanupModeSchema.parse(input.mode ?? "proven-dead");
+    const inactiveBefore =
+      mode === "inactive" ? input.inactiveBefore : undefined;
+    if (mode === "inactive") {
+      if (inactiveBefore === undefined) {
+        throw new Error("inactive topic cleanup requires an inactivity cutoff");
+      }
+      assertIsoCutoff(inactiveBefore, "inactive topic cleanup cutoff");
+      if (inactiveBefore >= input.now) {
+        throw new Error(
+          "inactive topic cleanup cutoff must be before the preview time",
+        );
+      }
+    } else if (input.inactiveBefore !== undefined) {
+      throw new Error(
+        "proven-dead topic cleanup does not accept an inactivity cutoff",
+      );
     }
     if (
       input.operationId.length < 16 ||
@@ -4345,12 +4464,17 @@ export class RelayStore {
           ON controls.machine_id = topics.machine_id
           AND controls.harness = topics.harness
           AND controls.session_id = topics.session_id
-        WHERE ${this.topicCleanupEligibilityWhere()}
+        WHERE ${this.topicCleanupEligibilityWhere(mode)}
       `;
+      const queryInput = {
+        ...input,
+        mode,
+        inactiveBefore: inactiveBefore ?? null,
+      };
       const eligibleCount = (
         this.database
           .prepare(`SELECT COUNT(*) AS count ${from}`)
-          .get(input) as { count: number }
+          .get(queryInput) as { count: number }
       ).count;
       const rows = this.database
         .prepare(
@@ -4361,20 +4485,22 @@ export class RelayStore {
             topics.session_id,
             topics.topic_id,
             topics.repository,
-            topics.short_session_id
+            topics.short_session_id,
+            topics.updated_at
           ${from}
           ORDER BY topics.updated_at, topics.machine_id, topics.harness,
             topics.session_id
           LIMIT @limit
         `,
         )
-        .all({ ...input, limit }) as Array<{
+        .all({ ...queryInput, limit }) as Array<{
         machine_id: string;
         harness: Harness;
         session_id: string;
         topic_id: string;
         repository: string;
         short_session_id: string;
+        updated_at: string;
       }>;
       const candidates: TopicCleanupCandidateRecord[] = rows.map((row) => ({
         machineId: row.machine_id,
@@ -4383,6 +4509,7 @@ export class RelayStore {
         topicId: row.topic_id,
         repository: row.repository,
         shortSessionId: row.short_session_id,
+        lastActivityAt: row.updated_at,
         state: "pending",
         attemptCount: 0,
         nextAttemptAt: input.now,
@@ -4392,18 +4519,18 @@ export class RelayStore {
         .prepare(
           `
           INSERT INTO topic_cleanup_operations (
-            operation_id, transport_name, transport_scope, state,
-            eligible_count, candidates_json, created_at, expires_at,
-            finished_at, updated_at
+            operation_id, transport_name, transport_scope, selection_mode,
+            inactive_before, state, eligible_count, candidates_json,
+            created_at, expires_at, finished_at, updated_at
           ) VALUES (
-            @operationId, @transportName, @transportScope, @state,
-            @eligibleCount, @candidatesJson, @now, @expiresAt,
-            @finishedAt, @now
+            @operationId, @transportName, @transportScope, @mode,
+            @inactiveBefore, @state, @eligibleCount, @candidatesJson,
+            @now, @expiresAt, @finishedAt, @now
           )
         `,
         )
         .run({
-          ...input,
+          ...queryInput,
           state: candidates.length === 0 ? "completed" : "previewed",
           eligibleCount,
           candidatesJson: JSON.stringify(candidates),
@@ -4581,7 +4708,7 @@ export class RelayStore {
             ON controls.machine_id = topics.machine_id
             AND controls.harness = topics.harness
             AND controls.session_id = topics.session_id
-          WHERE ${this.topicCleanupEligibilityWhere()}
+          WHERE ${this.topicCleanupEligibilityWhere(operation.mode)}
             AND topics.machine_id = @machineId
             AND topics.harness = @harness
             AND topics.session_id = @sessionId
@@ -4592,6 +4719,7 @@ export class RelayStore {
           ...candidate,
           transportName: operation.transportName,
           transportScope: operation.transportScope,
+          inactiveBefore: operation.inactiveBefore ?? null,
           now,
         }) !== undefined
     );
@@ -4716,6 +4844,7 @@ export class RelayStore {
       for (const row of rows) {
         const operation = this.topicCleanupFromRow(row);
         const candidates = [...operation.candidates];
+        let skipped = 0;
         for (const [index, candidate] of candidates.entries()) {
           if (
             candidate.state !== "pending" &&
@@ -4730,6 +4859,7 @@ export class RelayStore {
               nextAttemptAt: now,
               lastErrorCode: "topic-cleanup-state-changed",
             };
+            skipped += 1;
             continue;
           }
           const { lastErrorCode: _lastErrorCode, ...candidateWithoutError } =
@@ -4750,6 +4880,7 @@ export class RelayStore {
             outcome: "claimed",
             operation: this.getTopicCleanupOperation(operation.operationId)!,
             candidate: claimed,
+            skipped,
           };
         }
         const finalized = this.finalizeTopicCleanupOperation(
@@ -4758,7 +4889,11 @@ export class RelayStore {
           now,
         );
         if (finalized.becameTerminal) {
-          return { outcome: "terminal", operation: finalized.operation };
+          return {
+            outcome: "terminal",
+            operation: finalized.operation,
+            skipped,
+          };
         }
       }
       return { outcome: "none" };

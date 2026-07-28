@@ -17,9 +17,9 @@ stores:
 
 - `relay.sqlite`, including normalized events, delivery state, request state,
   bounded agent summaries or excerpts, operator answers, session metadata,
-  diagnostics, resume claims, transport message/topic identifiers, and bounded
-  topic-cleanup previews, decisions, attempt state, and native-hook ordering
-  allocations;
+  diagnostics, resume claims, transport message/topic identifiers,
+  topic-cleanup/prune modes, inactivity cutoffs, bounded candidate metadata,
+  decisions, attempt state, and native-hook ordering allocations;
 - `fallback-spool.ndjson`, containing bounded normalized hook records that could
   not reach the daemon yet;
 - `relay.ndjson` and rotated siblings, containing structured redacted
@@ -137,6 +137,10 @@ Local retention does not delete messages already accepted by Telegram or another
 provider. The direct-Telegram `/cleanup` command is an explicit exception: after
 an exact-set preview and operator confirmation, it calls Telegram's destructive
 topic deletion API, which removes the selected topics and all messages in them.
+`/prune` uses the same confirmation and deletion path for an inactive set. Its
+durable state contains the cutoff and bounded topic/session display metadata,
+not transcript text. Pruning does not erase or mark the local session ended, and
+later activity can create a new provider topic.
 
 ## Uninstall and erasure
 

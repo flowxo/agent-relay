@@ -165,6 +165,32 @@ Telegram confirms deletion or absence. Permanent failures and control-message
 edit failures remain visible in diagnostics. `/v1/status` exposes safe aggregate
 counts under `topicCleanups`. Re-run `/cleanup` for additional eligible topics.
 
+### Prune inactive topics
+
+Use `/prune` when a topic is no longer useful but the relay cannot prove that
+its session ended. `/prune` defaults to 24 hours; `/prune 12h` and `/prune 7d`
+select other inactivity windows from one hour through thirty days. Commands may
+be sent in General or a session topic. When `/cleanup` finds no proven-dead
+topics, its result also offers a **Review topics inactive 24h** button.
+
+Inactivity scopes the exact preview; it never becomes evidence that the session
+ended. A prune candidate must have had no relay topic activity since the
+selected cutoff and must satisfy the same active-session, open-request,
+continuation, pending-delivery, ready-mapping, and per-candidate revalidation
+guards as `/cleanup`.
+
+The preview states the inactivity threshold and lists at most twenty candidates
+in General. Tapping **Prune topics** authorizes permanent Telegram deletion of
+that exact set. Successful pruning removes only the transport topic mapping. It
+does not create an End tombstone or change the retained session state. If that
+session emits another event later, Agent Relay creates a fresh Telegram topic.
+The deleted topic's Telegram message history cannot be recovered.
+
+While a deletion is claimed, normal delivery cannot reuse that exact mapping.
+New work queued before the provider call makes revalidation skip the prune; work
+that races an in-flight provider deletion retries and provisions a fresh topic
+after deletion completes.
+
 Confirmations, selections, permissions, and ordered question sets use buttons.
 Free text can be typed directly in a session topic only when exactly one
 compatible request is open there. With zero candidates, Agent Relay posts
@@ -194,8 +220,9 @@ If Telegram proves a stored topic is unavailable, Agent Relay invalidates only
 that mapping, records `topic.reconciliation-required`, retries the owning event,
 and creates a replacement. It never sends that event into General.
 
-Confirmed topic cleanup is a separate durable worker. Its exact preview,
-operator decision, per-topic attempts, and terminal result survive restart.
+Confirmed cleanup and inactive pruning share a durable deletion worker. The
+selection mode, inactivity cutoff, exact preview, operator decision, per-topic
+attempts, and terminal result survive restart.
 
 See [troubleshooting](troubleshooting.md) for provider codes and
 [PRIVACY.md](../PRIVACY.md) for outbound fields and erasure.

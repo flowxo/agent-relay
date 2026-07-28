@@ -4,6 +4,9 @@ import { z } from "zod";
 
 import { sha256 } from "@agent-relay/protocol";
 import {
+  DEFAULT_TOPIC_PRUNE_INACTIVE_MS,
+  MAX_TOPIC_PRUNE_INACTIVE_MS,
+  MIN_TOPIC_PRUNE_INACTIVE_MS,
   NOOP_LOGGER,
   renderDetailsMessages,
   renderDeliveryMessage,
@@ -23,12 +26,14 @@ import {
   type RelayStore,
   type ResolutionResult,
   type TopicCleanupDecisionResult,
+  type TopicCleanupMode,
   type TopicCleanupOperationRecord,
 } from "@agent-relay/core";
 import type { NotificationTransport } from "@agent-relay/notification-contracts";
 import {
   asTransportError,
   isInteractiveTransport,
+  isOperatorControlTransport,
   isTopicTransport,
 } from "@agent-relay/notification-contracts";
 
@@ -50,8 +55,11 @@ import {
 } from "./callbacks/question-set.js";
 import {
   parseTopicCleanupCallbackData,
+  parseTopicPruneStartCallbackData,
   topicCleanupCallbackData,
+  topicPruneStartCallbackData,
   type ParsedTopicCleanupCallback,
+  type ParsedTopicPruneStartCallback,
 } from "./callbacks/topic-cleanup.js";
 
 const userSchema = z
@@ -142,11 +150,14 @@ export interface TopicCleanupController {
   createTopicCleanupPreview(options?: {
     ttlMs?: number;
     limit?: number;
+    mode?: TopicCleanupMode;
+    inactiveForMs?: number;
   }): TopicCleanupOperationRecord;
   deliverTopicCleanupPreview(input: {
     operationId: string;
     confirmCallbackData: string;
     cancelCallbackData: string;
+    pruneCallbackData?: string;
   }): Promise<TopicCleanupOperationRecord>;
   decideTopicCleanup(input: {
     operationId: string;
@@ -210,6 +221,30 @@ function cardResolutionState(
 
 function isTopicCleanupCommand(text: string): boolean {
   return /^\/cleanup(?:@[A-Za-z0-9_]+)?$/iu.test(text.trim());
+}
+
+function isTopicPruneCommand(text: string): boolean {
+  return /^\/prune(?:@[A-Za-z0-9_]+)?(?:\s|$)/iu.test(text.trim());
+}
+
+function parseTopicPruneDuration(text: string): number | undefined {
+  const match =
+    /^\/prune(?:@[A-Za-z0-9_]+)?(?:\s+([1-9][0-9]{0,2})([hd]))?$/iu.exec(
+      text.trim(),
+    );
+  if (match === null) {
+    return undefined;
+  }
+  if (match[1] === undefined) {
+    return DEFAULT_TOPIC_PRUNE_INACTIVE_MS;
+  }
+  const amount = Number(match[1]);
+  const inactiveForMs =
+    amount * (match[2]?.toLowerCase() === "d" ? 24 : 1) * 60 * 60_000;
+  return inactiveForMs >= MIN_TOPIC_PRUNE_INACTIVE_MS &&
+    inactiveForMs <= MAX_TOPIC_PRUNE_INACTIVE_MS
+    ? inactiveForMs
+    : undefined;
 }
 
 export class TelegramReplyRouter {
@@ -587,6 +622,10 @@ export class TelegramReplyRouter {
 
   private async handleTopicCleanupCommand(
     updateId: number,
+    options: {
+      mode?: TopicCleanupMode;
+      inactiveForMs?: number;
+    } = {},
   ): Promise<ReplyRouteResult> {
     const controller = this.options.topicCleanup;
     if (controller === undefined || !controller.supportsTopicCleanup()) {
@@ -598,7 +637,7 @@ export class TelegramReplyRouter {
       return { outcome: "cleanup-rejected", updateId };
     }
     try {
-      const operation = controller.createTopicCleanupPreview();
+      const operation = controller.createTopicCleanupPreview(options);
       await controller.deliverTopicCleanupPreview({
         operationId: operation.operationId,
         confirmCallbackData: topicCleanupCallbackData(
@@ -609,6 +648,13 @@ export class TelegramReplyRouter {
           "cancel",
           operation.operationId,
         ),
+        ...(operation.mode === "proven-dead"
+          ? {
+              pruneCallbackData: topicPruneStartCallbackData(
+                DEFAULT_TOPIC_PRUNE_INACTIVE_MS / (60 * 60_000),
+              ),
+            }
+          : {}),
       });
       return { outcome: "cleanup-previewed", updateId };
     } catch (error) {
@@ -630,6 +676,51 @@ export class TelegramReplyRouter {
           retryable: transportError.retryable,
         },
       });
+      return { outcome: "failed", updateId };
+    }
+  }
+
+  private async handleTopicPruneCommand(
+    updateId: number,
+    text: string,
+  ): Promise<ReplyRouteResult> {
+    const inactiveForMs = parseTopicPruneDuration(text);
+    if (inactiveForMs !== undefined) {
+      return await this.handleTopicCleanupCommand(updateId, {
+        mode: "inactive",
+        inactiveForMs,
+      });
+    }
+    const message = {
+      text: "Agent Relay inactive-topic prune\n\nUsage: /prune, /prune 12h, or /prune 7d. The duration must be between 1 hour and 30 days. /prune defaults to 24 hours.",
+      buttons: [],
+    };
+    if (!isOperatorControlTransport(this.transport)) {
+      this.diagnoseCardCallback(
+        updateId,
+        "telegram.topic-prune-invalid-duration",
+        "Invalid inactive-topic prune duration",
+      );
+      return { outcome: "cleanup-rejected", updateId };
+    }
+    try {
+      await this.transport.deliverOperatorControl(message, {
+        idempotencyKey: `topic_prune_usage:${String(updateId)}`,
+      });
+      this.diagnoseCardCallback(
+        updateId,
+        "telegram.topic-prune-invalid-duration",
+        "Invalid inactive-topic prune duration",
+      );
+      return { outcome: "cleanup-rejected", updateId };
+    } catch (error) {
+      const transportError = asTransportError(error);
+      this.diagnoseCardCallback(
+        updateId,
+        "telegram.topic-prune-usage-delivery-failed",
+        `Topic prune usage delivery failed: ${transportError.code}`,
+        "error",
+      );
       return { outcome: "failed", updateId };
     }
   }
@@ -701,6 +792,35 @@ export class TelegramReplyRouter {
         );
         return { outcome: "cleanup-rejected", updateId };
     }
+  }
+
+  private async handleTopicPruneStartCallback(
+    callback: TelegramCallback,
+    parsed: ParsedTopicPruneStartCallback,
+    updateId: number,
+  ): Promise<ReplyRouteResult> {
+    if (
+      callback.message === undefined ||
+      callback.message.message_thread_id !== undefined
+    ) {
+      return await this.rejectTopicCleanupCallback(
+        callback,
+        updateId,
+        "telegram.topic-prune-context-mismatch",
+        "This prune control is stale or in the wrong conversation",
+      );
+    }
+    const route = await this.handleTopicCleanupCommand(updateId, {
+      mode: "inactive",
+      inactiveForMs: parsed.inactiveForMs,
+    });
+    await this.acknowledge(
+      callback.id,
+      route.outcome === "cleanup-previewed"
+        ? "Prune preview ready"
+        : "Could not open prune preview",
+    );
+    return route;
   }
 
   private async handleChoiceCallback(
@@ -1897,7 +2017,8 @@ export class TelegramReplyRouter {
           callback.data?.startsWith("relay:") === true ||
           callback.data?.startsWith("relay-m:") === true ||
           callback.data?.startsWith("relay-w:") === true ||
-          callback.data?.startsWith("relay-c:") === true
+          callback.data?.startsWith("relay-c:") === true ||
+          callback.data?.startsWith("relay-p:") === true
         ) {
           this.diagnoseCardCallback(
             update.update_id,
@@ -1907,14 +2028,31 @@ export class TelegramReplyRouter {
                 ? "telegram.multi-select-unauthorized"
                 : callback.data.startsWith("relay-w:")
                   ? "telegram.question-set-unauthorized"
-                  : callback.data.startsWith("relay-c:")
-                    ? "telegram.topic-cleanup-unauthorized"
-                    : "telegram.choice-unauthorized",
+                  : callback.data.startsWith("relay-p:")
+                    ? "telegram.topic-prune-unauthorized"
+                    : callback.data.startsWith("relay-c:")
+                      ? "telegram.topic-cleanup-unauthorized"
+                      : "telegram.choice-unauthorized",
             "Unauthorized Telegram callback",
           );
         }
         await this.acknowledge(callback.id, "Not authorized");
         route = { outcome: "unauthorized", updateId: update.update_id };
+      } else if (callback.data?.startsWith("relay-p:") === true) {
+        const prune = parseTopicPruneStartCallbackData(callback.data);
+        route =
+          prune === undefined
+            ? await this.rejectTopicCleanupCallback(
+                callback,
+                update.update_id,
+                "telegram.topic-prune-malformed",
+                "Malformed or stale prune control",
+              )
+            : await this.handleTopicPruneStartCallback(
+                callback,
+                prune,
+                update.update_id,
+              );
       } else if (callback.data?.startsWith("relay-c:") === true) {
         const cleanup = parseTopicCleanupCallbackData(callback.data);
         route =
@@ -2010,6 +2148,11 @@ export class TelegramReplyRouter {
         route = { outcome: "unsupported", updateId: update.update_id };
       } else if (isTopicCleanupCommand(message.text)) {
         route = await this.handleTopicCleanupCommand(update.update_id);
+      } else if (isTopicPruneCommand(message.text)) {
+        route = await this.handleTopicPruneCommand(
+          update.update_id,
+          message.text,
+        );
       } else if (isTopicTransport(this.transport)) {
         const topicId =
           message.message_thread_id === undefined

@@ -52,6 +52,17 @@
       ]
     },
     {
+      "file": "topic-prune-control.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Sanitized Bot API 10.2 inactive-topic operator-control projection exercised against the fake HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "session metadata and inactivity age replaced",
+        "cleanup operation identifier replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
       "file": "delete-forum-topic.v10.2.json",
       "method": "deleteForumTopic",
       "evidence": "Bot API 10.2 request and response shape verified against the official method contract and fake HTTP transport",
