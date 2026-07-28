@@ -23,7 +23,15 @@
   `5bd2c209286c8ad61a17f43f6a17aca4190f0dced7ea1d13ee3ed52a8907b352`, and the
   schema-4-to-schema-5 packed lifecycle with schema-6 downgrade refusal. All
   three Chromium scenarios passed, and `pnpm audit --prod` found no known
-  vulnerability.
+  vulnerability. PR #13 merged as `2db2a93`; the checkout-backed install
+  reconciled unchanged, doctor remained healthy, and one direct-Telegram poller
+  restarted on schema `5` with no pending or dead-letter delivery. Two natural
+  post-build hook allocations match their retained event sequences exactly. The
+  live verification also found that three supervisor tests had omitted a
+  temporary hook state path: the pre-guard suite wrote one synthetic orphan
+  allocation/counter but no event, session, or notification into dogfood state.
+  The exact synthetic rows were removed under a transaction, SQLite integrity
+  remained healthy, and those tests now use isolated temporary allocator state.
 - FXO-1348 classifies a Claude Code `Stop` with non-empty structured
   `background_tasks` or `session_crons` as `turn.activity`, retains only the two
   bounded collection counts, keeps the lane active, and durably suppresses
@@ -873,8 +881,9 @@ also remain free of silent delivery, hook, or correlation failures.
 - Claude Code's structured background-work fields are official-contract and
   fixture proven on the locally installed `2.1.220` build, but the natural
   private-session suppression and later truly-idle Stop are not yet live
-  claimed. The durable monotonic native-hook allocator is locally proven, but
-  its first installed live allocation remains pending the same natural canary.
+  claimed. The installed durable allocator is active and its retained hook
+  sequences match; only the background-specific activity-to-idle transition
+  remains pending the natural canary.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.
