@@ -5,7 +5,7 @@ import {
   renderNotificationsBody,
 } from "./mapping.js";
 
-import type { DeliveryMessage } from "@agent-relay/core/transport";
+import type { DeliveryMessage } from "@agent-relay/notification-contracts";
 import type { NotificationsMappingError } from "./mapping.js";
 
 const expiresAt = "2026-07-25T18:00:00.000Z";

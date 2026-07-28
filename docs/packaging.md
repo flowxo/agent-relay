@@ -18,10 +18,12 @@ approved release commit can make the staged artifact registry-eligible.
 
 ## Why one package
 
-The TypeScript workspace keeps protocol, harness, core, runner-bridge, and relay
-boundaries for development. Publishing those as separately versioned packages
-would expose internal APIs and workspace coordination without helping an
-operator.
+The TypeScript workspace keeps protocol, harness, notification-contract,
+provider-adapter, core, runner-bridge, and relay composition boundaries for
+development. In particular, Telegram and hosted Notifications are private
+sibling adapter packages; neither is part of core's dependency surface.
+Publishing those as separately versioned packages would expose internal APIs and
+workspace coordination without helping an operator.
 
 The release build bundles all internal runtime TypeScript into one executable
 JavaScript file. Only `better-sqlite3` and `zod` remain runtime dependencies.

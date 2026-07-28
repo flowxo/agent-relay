@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FakeTelegramTransport } from "@agent-relay/core";
+import { FakeNotificationTransport } from "@agent-relay/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RelayClient } from "./client.js";
@@ -206,8 +206,8 @@ describe("Telegram activation canary", () => {
     const relayClient = new RelayClient({
       baseUrl: `http://127.0.0.1:${String(address.port)}`,
     });
-    expect(daemon.service.transport).toBeInstanceOf(FakeTelegramTransport);
-    const transport = daemon.service.transport as FakeTelegramTransport;
+    expect(daemon.service.transport).toBeInstanceOf(FakeNotificationTransport);
+    const transport = daemon.service.transport as FakeNotificationTransport;
     const running = runTelegramCanary({
       client: relayClient,
       machineId: "machine_telegram_canary_12345678",

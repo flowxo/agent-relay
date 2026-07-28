@@ -2,6 +2,28 @@
 
 ## Proven
 
+- FXO-1340 separates notification ownership without changing the end-user
+  package or runtime contract. The private `@agent-relay/notification-contracts`
+  package now owns provider-neutral delivery, topic, interaction, capability,
+  receipt, action-token, and failure contracts. Generic presentation,
+  negotiation, deterministic action identity, and `FakeNotificationTransport`
+  live under `packages/core/src/notifications`; the fake retains its prior
+  `fake-telegram` durable transport identity so existing delivery summaries
+  remain continuous. Bot API calls, callback codecs, correlated reply routing,
+  adapter tests, and sanitized Telegram fixtures live in the private
+  `@agent-relay/telegram-transport` package. The hosted adapter consumes the
+  same neutral contracts, and only `apps/relay` composes concrete providers. A
+  source-level architecture test prevents core or the neutral contracts from
+  importing provider packages. The move also hardened the repository secret
+  scanner so dirty-tree deletions are excluded without omitting any present
+  tracked or unignored file. On 2026-07-28 the full `pnpm check` passed 66
+  Vitest files/461 tests, 24 contract and supply-chain tests, the six-test
+  isolated Notifications consumer, all workspace builds, the 208,496-byte
+  packed/1,305,254-byte unpacked 11-file artifact, hosted proof digest
+  `febfe7e5235719f5fc7fba69196c2a3c41171915ac24268a7d2215b619def268`, and the
+  complete packed lifecycle. All three Chromium scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability. No public protocol,
+  configuration, SQLite schema, delivery behavior, or publication state changed.
 - GitHub PRs #1/#5 integrated the completed multi-session MVP. PR #2 then
   integrated the exact Notifications `1.0.0-rc.1` consumer, PR #3 integrated the
   V1 release baseline, PR #4 integrated AR1 release readiness, and PR #6

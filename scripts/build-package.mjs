@@ -56,12 +56,12 @@ await build({
   },
   external: ["better-sqlite3", "zod"],
   alias: {
-    "@agent-relay/core/transport": resolve(
-      root,
-      "packages/core/src/transport.ts",
-    ),
     "@agent-relay/core": resolve(root, "packages/core/src/index.ts"),
     "@agent-relay/harnesses": resolve(root, "packages/harnesses/src/index.ts"),
+    "@agent-relay/notification-contracts": resolve(
+      root,
+      "packages/notification-contracts/src/index.ts",
+    ),
     "@agent-relay/notifications-transport": resolve(
       root,
       "packages/notifications-transport/src/index.ts",
@@ -70,6 +70,10 @@ await build({
     "@agent-relay/runner-bridge": resolve(
       root,
       "packages/runner-bridge/src/index.ts",
+    ),
+    "@agent-relay/telegram-transport": resolve(
+      root,
+      "packages/telegram-transport/src/index.ts",
     ),
   },
   logLevel: "warning",

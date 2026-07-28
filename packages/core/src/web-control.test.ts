@@ -7,10 +7,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef, sha256 } from "@agent-relay/protocol";
 
-import { FakeTelegramTransport } from "./fake-transport.js";
+import { FakeNotificationTransport } from "./notifications/adapters/fake.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
-import { TransportError } from "./transport.js";
+import { TransportError } from "@agent-relay/notification-contracts";
 
 const now = "2026-07-25T12:00:00.000Z";
 const temporaryDirectories: string[] = [];
@@ -132,7 +132,7 @@ function questionSetEvent(): AgentAttentionEventV1 {
 function runtime(store = new RelayStore()) {
   return {
     store,
-    service: new RelayService(store, new FakeTelegramTransport(), {
+    service: new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date(now),
     }),
   };
@@ -399,7 +399,7 @@ describe("durable web control", () => {
   });
 
   it("keeps a committed browser answer and diagnoses notification edit failure", async () => {
-    class FailingEditTransport extends FakeTelegramTransport {
+    class FailingEditTransport extends FakeNotificationTransport {
       public override async editResolvedMessage(): Promise<void> {
         throw new TransportError(
           "synthetic notification edit timeout",
@@ -513,9 +513,13 @@ describe("durable web control", () => {
   it("rejects a stale browser answer without reopening the request", () => {
     const { store, service } = runtime();
     service.ingest(event());
-    const lateService = new RelayService(store, new FakeTelegramTransport(), {
-      now: () => new Date("2026-07-25T12:11:00.000Z"),
-    });
+    const lateService = new RelayService(
+      store,
+      new FakeNotificationTransport(),
+      {
+        now: () => new Date("2026-07-25T12:11:00.000Z"),
+      },
+    );
 
     expect(
       lateService.resolveBrowser({
@@ -570,7 +574,8 @@ describe("durable web control", () => {
       "updated",
     );
     expect(
-      (service.transport as FakeTelegramTransport).messageEdits.at(-1)?.text,
+      (service.transport as FakeNotificationTransport).messageEdits.at(-1)
+        ?.text,
     ).toContain("Answered");
     expect(service.executeBrowserSessionAction(command)).toMatchObject({
       outcome: "succeeded",

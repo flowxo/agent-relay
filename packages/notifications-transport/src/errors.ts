@@ -4,7 +4,7 @@ import {
   NotificationsProtocolError,
   NotificationsTransportError,
 } from "@flowxo/notifications";
-import { TransportError } from "@agent-relay/core/transport";
+import { TransportError } from "@agent-relay/notification-contracts";
 
 import { NotificationsMappingError } from "./mapping.js";
 

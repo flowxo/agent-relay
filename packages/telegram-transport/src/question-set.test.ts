@@ -10,15 +10,17 @@ import {
   makeProjectRef,
   validateInteractionAnswer,
 } from "@agent-relay/protocol";
+import { TransportError } from "@agent-relay/notification-contracts";
+import {
+  FakeNotificationTransport,
+  RelayService,
+  RelayStore,
+  renderDeliveryText,
+  type FakeDelivery,
+} from "@agent-relay/core";
 
-import type { FakeDelivery } from "./fake-transport.js";
-import { FakeTelegramTransport } from "./fake-transport.js";
-import { renderDeliveryText } from "./message.js";
 import { TelegramReplyRouter } from "./reply-router.js";
-import { RelayService } from "./service.js";
-import { RelayStore } from "./store.js";
-import { questionSetCallbackData } from "./telegram-question-set.js";
-import { TransportError } from "./transport.js";
+import { questionSetCallbackData } from "./callbacks/question-set.js";
 
 const baseTime = "2026-07-24T12:00:00.000Z";
 const temporaryDirectories: string[] = [];
@@ -144,7 +146,7 @@ function numberedQuestionSetEvent(): AgentAttentionEventV1 {
   };
 }
 
-class InspectingTelegramTransport extends FakeTelegramTransport {
+class InspectingTelegramTransport extends FakeNotificationTransport {
   public beforeAcknowledgement: ((text: string) => void) | undefined;
 
   public override async acknowledgeCallback(

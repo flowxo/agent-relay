@@ -1,5 +1,5 @@
 import { NotificationsClient } from "@flowxo/notifications";
-import { TransportError } from "@agent-relay/core/transport";
+import { TransportError } from "@agent-relay/notification-contracts";
 import {
   InteractionProviderObservationV1Schema,
   MAX_INTERACTION_TEXT_LENGTH,
@@ -23,7 +23,7 @@ import type {
   DeliveryReceipt,
   InteractionCapabilityTransport,
   NotificationTransport,
-} from "@agent-relay/core/transport";
+} from "@agent-relay/notification-contracts";
 import type { NotificationsFetch } from "@flowxo/notifications";
 
 const CONFIGURATION_TERMINAL_CODES = new Set([

@@ -1,9 +1,9 @@
+import type { RelayLogger } from "@agent-relay/core";
+import { NOOP_LOGGER } from "@agent-relay/core";
 import type {
-  RelayLogger,
   TelegramGetUpdatesOptions,
   TelegramPolledUpdate,
-} from "@agent-relay/core";
-import { NOOP_LOGGER } from "@agent-relay/core";
+} from "@agent-relay/telegram-transport";
 
 export interface TelegramUpdateSource {
   getUpdates(

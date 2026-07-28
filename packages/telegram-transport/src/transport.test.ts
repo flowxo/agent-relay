@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { TelegramBotTransport } from "./telegram-transport.js";
+import { TelegramBotTransport } from "./transport.js";
 
 const message = {
   eventId: "evt_telegram_12345678",

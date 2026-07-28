@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { NotificationsContractTransport } from "./index.js";
 
-import type { DeliveryMessage } from "@agent-relay/core/transport";
+import type { DeliveryMessage } from "@agent-relay/notification-contracts";
 import type { NotificationsContractMock } from "@flowxo/notifications-contract-mock";
 
 function fetchFor(mock: NotificationsContractMock): typeof fetch {

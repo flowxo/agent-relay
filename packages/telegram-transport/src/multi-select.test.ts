@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
+import {
+  FakeNotificationTransport,
+  RelayService,
+  RelayStore,
+} from "@agent-relay/core";
 
-import { FakeTelegramTransport } from "./fake-transport.js";
 import { TelegramReplyRouter } from "./reply-router.js";
-import { RelayService } from "./service.js";
-import { RelayStore } from "./store.js";
-import { multiSelectCallbackData } from "./telegram-multi-select.js";
+import { multiSelectCallbackData } from "./callbacks/multi-select.js";
 
 const baseTime = "2026-07-24T12:00:00.000Z";
 const temporaryDirectories: string[] = [];
@@ -63,7 +65,7 @@ function multiSelectEvent(
   };
 }
 
-class InspectingTelegramTransport extends FakeTelegramTransport {
+class InspectingTelegramTransport extends FakeNotificationTransport {
   public beforeAcknowledgement: ((text: string) => void) | undefined;
 
   public override async acknowledgeCallback(

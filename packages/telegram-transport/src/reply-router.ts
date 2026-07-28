@@ -3,14 +3,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { sha256 } from "@agent-relay/protocol";
-
 import {
-  parseCardActionCallbackData,
-  type ParsedCardActionCallback,
-} from "./card-action.js";
-import type { RelayLogger } from "./logger.js";
-import { NOOP_LOGGER } from "./logger.js";
-import {
+  NOOP_LOGGER,
   renderDetailsMessages,
   renderDeliveryMessage,
   renderDeliveryText,
@@ -19,35 +13,39 @@ import {
   renderQuestionSetDeliveryMessage,
   renderQuestionSetResolutionMessage,
   type AttentionCardResolutionState,
-} from "./message.js";
-import type {
-  MultiSelectDraftRecord,
-  NumberedChoiceResolutionResult,
-  PendingRequestRecord,
-  QuestionSetDraftRecord,
-  QuestionSetNumberedChoiceMutationResult,
-  QuestionSetTextMutationResult,
-  RelayStore,
-  ResolutionResult,
-} from "./store.js";
-import {
-  parseChoiceCallbackData,
-  TELEGRAM_INLINE_CHOICE_LIMIT,
-} from "./telegram-choice.js";
-import {
-  parseMultiSelectCallbackData,
-  type ParsedMultiSelectCallback,
-} from "./telegram-multi-select.js";
-import {
-  parseQuestionSetCallbackData,
-  type ParsedQuestionSetCallback,
-} from "./telegram-question-set.js";
-import type { NotificationTransport } from "./transport.js";
+  type MultiSelectDraftRecord,
+  type NumberedChoiceResolutionResult,
+  type PendingRequestRecord,
+  type QuestionSetDraftRecord,
+  type QuestionSetNumberedChoiceMutationResult,
+  type QuestionSetTextMutationResult,
+  type RelayLogger,
+  type RelayStore,
+  type ResolutionResult,
+} from "@agent-relay/core";
+import type { NotificationTransport } from "@agent-relay/notification-contracts";
 import {
   asTransportError,
   isInteractiveTransport,
   isTopicTransport,
-} from "./transport.js";
+} from "@agent-relay/notification-contracts";
+
+import {
+  parseCardActionCallbackData,
+  type ParsedCardActionCallback,
+} from "./callbacks/card-action.js";
+import {
+  parseChoiceCallbackData,
+  TELEGRAM_INLINE_CHOICE_LIMIT,
+} from "./callbacks/choice.js";
+import {
+  parseMultiSelectCallbackData,
+  type ParsedMultiSelectCallback,
+} from "./callbacks/multi-select.js";
+import {
+  parseQuestionSetCallbackData,
+  type ParsedQuestionSetCallback,
+} from "./callbacks/question-set.js";
 
 const userSchema = z
   .object({

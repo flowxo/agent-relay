@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   RelayService,
   RelayStore,
 } from "@agent-relay/core";
@@ -11,7 +11,7 @@ import { makeWebDemoEvents, seedWebDemo } from "./web-demo.js";
 describe("credential-free local web demo data", () => {
   it("creates concurrent sanitized lanes without transcript content", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => new Date("2026-07-25T12:00:00.000Z"),
     });

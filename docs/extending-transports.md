@@ -8,7 +8,8 @@ Start with the repository [contribution workflow](../CONTRIBUTING.md) and
 and pull-request paths so authentication, callback correlation, default outbound
 data, retention, and provider support claims receive the right review.
 
-Start in `packages/core/src/transport.ts`. The required interface is:
+Start in `packages/notification-contracts/src/transport.ts`. The required
+interface is:
 
 ```ts
 interface NotificationTransport {
@@ -87,18 +88,33 @@ quarantined or rejected with a bounded diagnostic.
 
 ## Implementation path
 
-1. Implement the narrow required interface behind the core boundary.
+1. Add a sibling provider package that depends on
+   `@agent-relay/notification-contracts`; do not put provider API code in core.
 2. Add provider capability observation and negotiation only for proven shapes.
 3. Map canonical delivery data without widening the privacy contract.
 4. Map provider failures into retryable/terminal/ambiguous classes.
 5. Add authenticated inbound validation as a pure step before local mutation.
-6. Wire selection through daemon configuration; keep fake transport available.
+6. Wire selection only in the `apps/relay` composition root; keep the fake
+   transport available.
 7. Document credentials, endpoint, disablement, retention, and uninstall.
 
-The in-memory fake transport in `packages/core/src/fake-transport.ts` is the
-reference test double. Telegram in `packages/core/src/telegram-transport.ts`
-demonstrates topics, buttons, edits, polling/webhook correlation, and provider
-error classification.
+The dependency direction is deliberate:
+
+```text
+notification-contracts <- core
+notification-contracts <- provider adapter
+core + provider adapters <- apps/relay
+```
+
+Core must not import a concrete provider package. An inbound adapter may depend
+inward on core's application/store ports to submit a validated candidate answer;
+that does not transfer request authority to the provider.
+
+The in-memory fake transport in
+`packages/core/src/notifications/adapters/fake.ts` is the reference test double.
+The adapter in `packages/telegram-transport` demonstrates topics, buttons,
+edits, polling/webhook correlation, and provider error classification without
+placing Telegram Bot API code in core.
 
 The Notifications adapter in `packages/notifications-transport` demonstrates a
 provider-neutral contract mapping, explicit daemon selection, safe readiness
@@ -134,7 +150,8 @@ For a normal transport change, begin with:
 
 ```sh
 pnpm fixtures:check
-pnpm exec vitest run packages/core
+pnpm exec vitest run packages/core packages/notification-contracts
+pnpm exec vitest run packages/telegram-transport
 pnpm check
 ```
 

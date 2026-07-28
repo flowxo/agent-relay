@@ -63,7 +63,7 @@ permission to copy private content into the repository.
 | Root                                              | Purpose                                     |
 | ------------------------------------------------- | ------------------------------------------- |
 | `packages/harnesses/fixtures`                     | Sanitized native harness payload contracts  |
-| `packages/core/fixtures/telegram`                 | Sanitized Telegram Bot API request shapes   |
+| `packages/telegram-transport/fixtures/telegram`   | Sanitized Telegram Bot API request shapes   |
 | `packages/protocol/fixtures/interactions`         | Synthetic provider-neutral interaction data |
 | `vendor/notifications-c0` and `contracts/vendor/` | Pinned artifacts governed by contract locks |
 

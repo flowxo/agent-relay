@@ -91,10 +91,19 @@ Keep these ownership rules intact:
 - runtime-validated protocol contracts live in `packages/protocol`;
 - native payload parsing, capability evidence, continuation output, and resume
   invocation construction live in `packages/harnesses`;
+- provider-neutral delivery, receipt, interaction, capability, and transport
+  failure contracts live in `packages/notification-contracts`;
 - SQLite in `packages/core` is authoritative for events, requests, answers,
   retries, and resume claims;
-- transports deliver bounded presentations and submit candidate answers; they do
-  not decide request state or execute commands;
+- provider-neutral presentation code lives under
+  `packages/core/src/notifications`, while concrete providers live in sibling
+  adapter packages such as `packages/telegram-transport` and
+  `packages/notifications-transport`;
+- transports deliver bounded presentations and submit candidate answers; core
+  never imports a concrete provider, and providers do not decide request state
+  or execute commands;
+- `apps/relay` is the composition root that selects and assembles concrete
+  transports;
 - only a supervisor that owns a child process can prove its exit;
 - native hooks do not prove crashes and must fail with bounded diagnostics plus
   safe native output;

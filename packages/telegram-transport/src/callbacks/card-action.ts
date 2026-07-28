@@ -1,17 +1,9 @@
 import { z } from "zod";
 
-import { sha256 } from "@agent-relay/protocol";
-
-export const CardActionKindSchema = z.enum([
-  "continue",
-  "details",
-  "mute",
-  "end",
-]);
-
-export type CardActionKind = z.infer<typeof CardActionKindSchema>;
-
-export const CardActionTokenSchema = z.string().regex(/^card_[a-f0-9]{32}$/);
+import {
+  CardActionTokenSchema,
+  type CardActionKind,
+} from "@agent-relay/notification-contracts";
 
 const ACTION_CODES: Record<CardActionKind, string> = {
   continue: "c",
@@ -33,13 +25,6 @@ export interface ParsedCardActionCallback {
   version: 1;
   action: CardActionKind;
   token: string;
-}
-
-export function cardActionToken(
-  eventId: string,
-  action: CardActionKind,
-): string {
-  return `card_${sha256(`${eventId}\u001f${action}`).slice(0, 32)}`;
 }
 
 export function cardActionCallbackData(

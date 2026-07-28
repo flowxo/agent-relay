@@ -9,16 +9,7 @@ import {
   sha256,
   type InteractionProviderObservationV1,
 } from "@agent-relay/protocol";
-
-import { cardActionCallbackData } from "./card-action.js";
-import { renderDeliveryText } from "./message.js";
-import { redactText } from "./redaction.js";
-import {
-  choiceCallbackData,
-  TELEGRAM_INLINE_CHOICE_LIMIT,
-} from "./telegram-choice.js";
-import { multiSelectCallbackData } from "./telegram-multi-select.js";
-import { questionSetCallbackData } from "./telegram-question-set.js";
+import { redactText, renderDeliveryText } from "@agent-relay/core";
 import type {
   DeliveryContext,
   DeliveryMessage,
@@ -28,8 +19,19 @@ import type {
   TopicCreationContext,
   TopicNotificationTransport,
   TopicReceipt,
-} from "./transport.js";
-import { TopicUnavailableError, TransportError } from "./transport.js";
+} from "@agent-relay/notification-contracts";
+import {
+  TopicUnavailableError,
+  TransportError,
+} from "@agent-relay/notification-contracts";
+
+import { cardActionCallbackData } from "./callbacks/card-action.js";
+import {
+  choiceCallbackData,
+  TELEGRAM_INLINE_CHOICE_LIMIT,
+} from "./callbacks/choice.js";
+import { multiSelectCallbackData } from "./callbacks/multi-select.js";
+import { questionSetCallbackData } from "./callbacks/question-set.js";
 
 const successSchema = z
   .object({

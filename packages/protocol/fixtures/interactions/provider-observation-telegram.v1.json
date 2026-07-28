@@ -25,7 +25,7 @@
   "status": "proven",
   "evidence": "live-canary",
   "observedVersion": "Telegram Bot API 10.2",
-  "fixture": "packages/core/fixtures/telegram/question-set-send-message.v10.2.json",
+  "fixture": "packages/telegram-transport/fixtures/telegram/question-set-send-message.v10.2.json",
   "documentation": "https://core.telegram.org/bots/api",
   "note": "Sanitized request fixtures and fake-transport routing tests prove buttons, topic-bound text, numbered replies, and message edits. Web handoff is not advertised."
 }

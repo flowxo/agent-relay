@@ -14,8 +14,8 @@ const fixtureSets = [
   },
   {
     name: "Telegram",
-    root: "packages/core/fixtures/telegram",
-    manifest: "packages/core/fixtures/telegram/manifest.json",
+    root: "packages/telegram-transport/fixtures/telegram",
+    manifest: "packages/telegram-transport/fixtures/telegram/manifest.json",
   },
   {
     name: "interaction protocol",

@@ -3,15 +3,18 @@ import type { Server } from "node:http";
 import { dirname, join } from "node:path";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   JsonLineLogger,
   RelayService,
   RelayStore,
-  TelegramReplyRouter,
-  TelegramBotTransport,
 } from "@agent-relay/core";
-import type { NotificationTransport, RelayLogger } from "@agent-relay/core";
+import type { RelayLogger } from "@agent-relay/core";
+import type { NotificationTransport } from "@agent-relay/notification-contracts";
 import type { RetentionOptions, RetentionResult } from "@agent-relay/core";
+import {
+  TelegramBotTransport,
+  TelegramReplyRouter,
+} from "@agent-relay/telegram-transport";
 import {
   NotificationsContractTransport,
   NotificationsMachineInteractionSource,
@@ -95,7 +98,7 @@ function selectTransport(options: DaemonOptions): NotificationTransport {
   const selected = options.selectedTransport ?? "fake";
   switch (selected) {
     case "fake":
-      return new FakeTelegramTransport();
+      return new FakeNotificationTransport();
     case "telegram": {
       if (
         options.telegramToken === undefined ||

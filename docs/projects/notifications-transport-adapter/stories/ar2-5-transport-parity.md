@@ -16,7 +16,7 @@ authority, and direct Telegram remains an executable first-class path.
 
 The shared suite uses:
 
-- `FakeTelegramTransport`;
+- `FakeNotificationTransport`;
 - the real `TelegramBotTransport` and `TelegramReplyRouter` against a bounded
   synthetic Bot API; and
 - the real `NotificationsContractTransport`, pinned executable contract mock,
@@ -92,12 +92,12 @@ pnpm exec vitest run \
   apps/relay/src/notifications-poller.test.ts \
   apps/relay/src/canary.test.ts \
   packages/core/src/service.test.ts \
-  packages/core/src/reply-router.test.ts \
-  packages/core/src/telegram-transport.test.ts \
-  packages/core/src/multi-select.test.ts \
-  packages/core/src/question-set.test.ts \
-  packages/core/src/question-set-text.test.ts \
-  packages/core/src/card-actions.test.ts \
+  packages/telegram-transport/src/reply-router.test.ts \
+  packages/telegram-transport/src/transport.test.ts \
+  packages/telegram-transport/src/multi-select.test.ts \
+  packages/telegram-transport/src/question-set.test.ts \
+  packages/telegram-transport/src/question-set-text.test.ts \
+  packages/telegram-transport/src/card-actions.test.ts \
   packages/core/src/resume.test.ts \
   packages/notifications-transport/src/transport.test.ts \
   packages/notifications-transport/src/mapping.test.ts \

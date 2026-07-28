@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
+import {
+  FakeNotificationTransport,
+  RelayService,
+  RelayStore,
+  renderDeliveryText,
+} from "@agent-relay/core";
 
-import { FakeTelegramTransport } from "./fake-transport.js";
-import { renderDeliveryText } from "./message.js";
 import { TelegramReplyRouter } from "./reply-router.js";
-import { RelayService } from "./service.js";
-import { RelayStore } from "./store.js";
 
 const baseTime = "2026-07-24T12:00:00.000Z";
 
@@ -77,12 +79,12 @@ function selectEvent(
 
 async function setup(
   options: {
-    transport?: FakeTelegramTransport;
+    transport?: FakeNotificationTransport;
     now?: () => Date;
   } = {},
 ) {
   const store = new RelayStore();
-  const transport = options.transport ?? new FakeTelegramTransport();
+  const transport = options.transport ?? new FakeNotificationTransport();
   const now = options.now ?? (() => new Date(baseTime));
   const service = new RelayService(store, transport, {
     now,
@@ -499,7 +501,7 @@ describe("Telegram reply correlation", () => {
 
   it("uses opaque callback tokens and makes duplicate updates harmless", async () => {
     const storesAtAcknowledgement: RelayStore[] = [];
-    class CommitCheckingTransport extends FakeTelegramTransport {
+    class CommitCheckingTransport extends FakeNotificationTransport {
       public override async acknowledgeCallback(
         callbackId: string,
         text: string,
@@ -627,7 +629,7 @@ describe("Telegram reply correlation", () => {
 
   it("rejects stale choice callbacks only after durably expiring the request", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: () => new Date(baseTime),
     });
@@ -918,7 +920,7 @@ describe("Telegram reply correlation", () => {
 
   it("expires stale replies and leaves identity-mismatched requests open", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const input = questionEvent(
       "correlation_stale_answer",
       "session_stale_answer",

@@ -7,8 +7,11 @@ import type {
   TopicCreationContext,
   TopicNotificationTransport,
   TopicReceipt,
-} from "./transport.js";
-import { TopicUnavailableError, TransportError } from "./transport.js";
+} from "@agent-relay/notification-contracts";
+import {
+  TopicUnavailableError,
+  TransportError,
+} from "@agent-relay/notification-contracts";
 import {
   InteractionProviderObservationV1Schema,
   MAX_INTERACTION_OPTIONS,
@@ -36,9 +39,11 @@ export interface FakeTopic {
   receipt: TopicReceipt;
 }
 
-export class FakeTelegramTransport
+export class FakeNotificationTransport
   implements InteractiveNotificationTransport, TopicNotificationTransport
 {
+  // Retain the pre-refactor durable transport identity so existing local
+  // delivery summaries remain continuous across this code-ownership change.
   public readonly name = "fake-telegram";
   public readonly topicScope = "fake:private-chat";
 

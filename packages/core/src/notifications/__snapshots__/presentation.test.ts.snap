@@ -4,20 +4,20 @@ exports[`compact attention cards > bounds malformed oversized model text and kee
 {
   "actions": [
     {
-      "callbackData": "relay-card:v1:c:card_5eb62fa6f27b2f274852a7cb91a8c5a0",
       "kind": "continue",
+      "token": "<opaque-card-token>",
     },
     {
-      "callbackData": "relay-card:v1:d:card_d6aafdaa92408374f0cf5705cd6dff5a",
       "kind": "details",
+      "token": "<opaque-card-token>",
     },
     {
-      "callbackData": "relay-card:v1:m:card_23812c1bc983b0f6690f1b784a7d0e20",
       "kind": "mute",
+      "token": "<opaque-card-token>",
     },
     {
-      "callbackData": "relay-card:v1:e:card_b168e44c8d643154999f210a56795afb",
       "kind": "end",
+      "token": "<opaque-card-token>",
     },
   ],
   "text": "Waiting for your next instruction · time unknown
@@ -34,14 +34,14 @@ exports[`compact attention cards > snapshots every event kind with stable identi
   "input.required": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:m:card_91bb33b0320915d8fb60041c82ebb76e",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_48eaf8b1a683aac88cb1b21c20dfe589",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Input required · 1m ago
@@ -54,14 +54,14 @@ Summary: Synthetic input.required summary. Question: Synthetic input.required qu
   "permission.required": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:m:card_c1522dcd5bc9655d4b7c19a3ab72ffa9",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_f58a70770a2ab6ccfbaa7fc81ffbc466",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Approval required · 1m ago
@@ -83,14 +83,14 @@ Summary: Synthetic process.exited summary.",
   "process.stale": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:m:card_8b477d571ea98d39cb2b529dd3512bd7",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_3d570804488ff6ab486d0ecf23cfdbeb",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Process may be stale · 1m ago
@@ -112,14 +112,14 @@ Summary: Synthetic session.ended summary.",
   "session.started": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:m:card_7304c19ba4f29a1f45111ce8a8c6ac34",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_2e6f308f2b37f98fc6f3863c501ee8fb",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Session started · 1m ago
@@ -132,14 +132,14 @@ Summary: Synthetic session.started summary.",
   "turn.activity": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:m:card_5e19e765843eebed2ff7630775a4df78",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_11de33e6b303740a22e0b391fd8c6f68",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Activity · 1m ago
@@ -152,14 +152,14 @@ Summary: Synthetic turn.activity summary.",
   "turn.failed": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:m:card_88b262dd8875d29a2e8a9bc67e72905b",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_f83cd7e26798a34b90b0a050478ce408",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Turn failed · 1m ago
@@ -172,14 +172,14 @@ Summary: Synthetic turn.failed summary.",
   "turn.started": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:m:card_22c25e4d661007656561948befcf042a",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_1ef21ec035d028efd961e121288646a7",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Working · 1m ago
@@ -192,19 +192,19 @@ Summary: Synthetic turn.started summary.",
   "turn.stopped": {
     "actions": [
       {
-        "callbackData": "relay-card:v1:c:card_5eb62fa6f27b2f274852a7cb91a8c5a0",
         "kind": "continue",
         "label": "Continue",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:m:card_23812c1bc983b0f6690f1b784a7d0e20",
         "kind": "mute",
         "label": "Mute",
+        "token": "<opaque-card-token>",
       },
       {
-        "callbackData": "relay-card:v1:e:card_b168e44c8d643154999f210a56795afb",
         "kind": "end",
         "label": "End",
+        "token": "<opaque-card-token>",
       },
     ],
     "text": "Waiting for your next instruction · 1m ago

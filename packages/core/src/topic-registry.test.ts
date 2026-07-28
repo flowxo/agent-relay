@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
 
-import { FakeTelegramTransport } from "./fake-transport.js";
+import { FakeNotificationTransport } from "./notifications/adapters/fake.js";
 import { MemoryLogger } from "./logger.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
@@ -60,7 +60,7 @@ function clock(start = "2026-07-25T12:00:00.000Z") {
 describe("durable session topic registry", () => {
   it("reuses one topic for repeated events from the same session", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     service.ingest(event("evt_topic_replay_one", { sequence: 1 }));
     service.ingest(event("evt_topic_replay_two", { sequence: 2 }));
@@ -92,7 +92,7 @@ describe("durable session topic registry", () => {
   it("allows only one topic creator under concurrent first deliveries", async () => {
     const testClock = clock();
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: testClock.now,
       retryPolicy: {
@@ -131,7 +131,7 @@ describe("durable session topic registry", () => {
 
   it("never shares a topic between simultaneous sessions", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     service.ingest(
       event("evt_topic_isolation_codex", {
@@ -161,7 +161,7 @@ describe("durable session topic registry", () => {
     const databasePath = join(directory, "relay.sqlite");
     try {
       const firstStore = new RelayStore(databasePath);
-      const firstTransport = new FakeTelegramTransport();
+      const firstTransport = new FakeNotificationTransport();
       const firstService = new RelayService(firstStore, firstTransport);
       firstService.ingest(event("evt_topic_before_restart", { sequence: 1 }));
       await firstService.drain();
@@ -198,7 +198,7 @@ describe("durable session topic registry", () => {
   it("retries topic creation through the event spool and records a diagnostic", async () => {
     const testClock = clock();
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const logger = new MemoryLogger();
     transport.failNextTopicCreation(1);
     const service = new RelayService(store, transport, {
@@ -248,7 +248,7 @@ describe("durable session topic registry", () => {
   it("preserves the assigned topic across retryable delivery failures", async () => {
     const testClock = clock();
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     transport.failNext(1);
     const service = new RelayService(store, transport, {
       now: testClock.now,
@@ -290,7 +290,7 @@ describe("durable session topic registry", () => {
   it("diagnoses and recreates a deleted topic without falling back to the general chat", async () => {
     const testClock = clock();
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: testClock.now,
       retryPolicy: {
@@ -356,7 +356,7 @@ describe("durable session topic registry", () => {
   it("diagnoses and replaces a closed topic deterministically", async () => {
     const testClock = clock();
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport, {
       now: testClock.now,
       retryPolicy: {
@@ -401,7 +401,7 @@ describe("durable session topic registry", () => {
 
   it("isolates duplicate, delayed, and out-of-order events across interleaved sessions", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const sessionA = "session_interleaved_a_12345678";
     const sessionB = "session_interleaved_b_87654321";
@@ -462,7 +462,7 @@ describe("durable session topic registry", () => {
 
   it("dead-letters a non-retryable topic rejection without losing diagnosis", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     transport.failNextTopicCreation(1, {
       code: "fake-topics-disabled",
       message: "threaded mode is disabled",
@@ -491,7 +491,7 @@ describe("durable session topic registry", () => {
 
   it("sanitizes topic metadata without persisting path or secret text in the name", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const secret = "sk-syntheticSecretToken123456789";
     service.ingest(
@@ -521,7 +521,7 @@ describe("durable session topic registry", () => {
 
   it("keeps collision-resistant identity visible when readable suffixes match", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     service.ingest(
       event("evt_topic_collision_one_12345678", {
@@ -558,7 +558,7 @@ describe("durable session topic registry", () => {
 
   it("exposes stable lane states without renaming the topic on every event", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const sessionId = "session_topic_states_12345678";
     const started = event("evt_topic_state_running_12345678", {
@@ -643,7 +643,7 @@ describe("durable session topic registry", () => {
 
   it("suppresses and cancels delayed work after a session is ended", async () => {
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const sessionId = "session_topic_ended_12345678";
     service.ingest(
@@ -724,7 +724,7 @@ describe("durable session topic registry", () => {
         secondStore.recoverInterruptedTopics("2026-07-25T12:00:01.000Z", 0),
       ).toThrow("topic recovery limit must be between 1 and 5000");
 
-      const transport = new FakeTelegramTransport();
+      const transport = new FakeNotificationTransport();
       const service = new RelayService(secondStore, transport, {
         now: () => new Date("2026-07-25T12:00:01.000Z"),
       });

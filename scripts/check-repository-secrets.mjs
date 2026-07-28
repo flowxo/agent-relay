@@ -188,19 +188,32 @@ export async function checkTrackedRepository({
   repositoryRoot = root,
   currentHome = homedir(),
 } = {}) {
-  const { stdout } = await runFile(
-    "git",
-    ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-    {
+  const [{ stdout }, { stdout: deletedStdout }] = await Promise.all([
+    runFile(
+      "git",
+      ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      {
+        cwd: repositoryRoot,
+        encoding: "buffer",
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    ),
+    runFile("git", ["ls-files", "-z", "--deleted"], {
       cwd: repositoryRoot,
       encoding: "buffer",
       maxBuffer: 16 * 1024 * 1024,
-    },
+    }),
+  ]);
+  const deletedPaths = new Set(
+    deletedStdout
+      .toString("utf8")
+      .split("\0")
+      .filter((path) => path.length > 0),
   );
   const paths = stdout
     .toString("utf8")
     .split("\0")
-    .filter((path) => path.length > 0)
+    .filter((path) => path.length > 0 && !deletedPaths.has(path))
     .sort();
 
   let textFiles = 0;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  FakeTelegramTransport,
+  FakeNotificationTransport,
   RelayService,
   RelayStore,
 } from "@agent-relay/core";
@@ -41,7 +41,7 @@ describe("hook entrypoint", () => {
   it("returns safe native JSON and queues the event through the client", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();
-    const transport = new FakeTelegramTransport();
+    const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const client = new RelayClient({
       fetch: async (_input, init) => {
@@ -121,7 +121,7 @@ describe("hook entrypoint", () => {
   it("returns the documented inline continuation when a correlated answer wins", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date("2026-07-24T12:00:00.000Z"),
     });
     let ingested: Parameters<typeof service.ingest>[0] | undefined;
@@ -186,7 +186,7 @@ describe("hook entrypoint", () => {
   it("times out safely without inventing an answer", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date("2026-07-24T12:00:00.000Z"),
     });
     const client = new RelayClient({
@@ -233,7 +233,7 @@ describe("hook entrypoint", () => {
   it("opens a durable continuation without blocking a supervised CLI hook", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport(), {
+    const service = new RelayService(store, new FakeNotificationTransport(), {
       now: () => new Date("2026-07-24T12:00:00.000Z"),
     });
     let ingested: Parameters<typeof service.ingest>[0] | undefined;
@@ -274,7 +274,7 @@ describe("hook entrypoint", () => {
   it("keeps event identity stable across whitespace and timestamp-only retries", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();
-    const service = new RelayService(store, new FakeTelegramTransport());
+    const service = new RelayService(store, new FakeNotificationTransport());
     const inserted: boolean[] = [];
     const client = new RelayClient({
       fetch: async (_input, init) => {

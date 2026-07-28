@@ -1,9 +1,8 @@
+import { RelayService, RelayStore } from "@agent-relay/core";
 import {
-  RelayService,
-  RelayStore,
   TransportError,
   type NotificationTransport,
-} from "@agent-relay/core";
+} from "@agent-relay/notification-contracts";
 import { describe, expect, it } from "vitest";
 
 import {

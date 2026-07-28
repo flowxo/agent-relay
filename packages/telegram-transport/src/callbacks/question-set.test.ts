@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseQuestionSetCallbackData,
   questionSetCallbackData,
-} from "./telegram-question-set.js";
+} from "./question-set.js";
 
 describe("Telegram question-set callback data", () => {
   it("round-trips bounded choice, navigation, submit, and cancel actions", () => {

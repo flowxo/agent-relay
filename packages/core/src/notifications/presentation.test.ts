@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1, EventType } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
+import { CardActionTokenSchema } from "@agent-relay/notification-contracts";
 
-import { cardActionCallbackData } from "./card-action.js";
 import {
+  DELIVERY_MESSAGE_LIMIT,
   renderDeliveryMessage,
   renderDeliveryText,
-  TELEGRAM_MESSAGE_LIMIT,
-} from "./message.js";
+} from "./presentation.js";
 
 const occurredAt = "2026-07-25T12:00:00.000Z";
 const now = new Date("2026-07-25T12:01:30.000Z");
@@ -99,7 +99,7 @@ describe("compact attention cards", () => {
             actions: card.actions?.map((action) => ({
               kind: action.kind,
               label: action.label,
-              callbackData: cardActionCallbackData(action.kind, action.token),
+              token: "<opaque-card-token>",
             })),
           },
         ];
@@ -171,21 +171,37 @@ describe("compact attention cards", () => {
     expect(card.text).toContain("time unknown");
     expect(summary).not.toContain("\n");
     expect(summary).toContain("…[truncated]");
-    expect(rendered.length).toBeLessThanOrEqual(TELEGRAM_MESSAGE_LIMIT);
+    expect(rendered.length).toBeLessThanOrEqual(DELIVERY_MESSAGE_LIMIT);
     expect(card.actions?.map((action) => action.kind)).toContain("details");
     expect({
       title: card.title,
       text: card.text,
       actions: card.actions?.map((action) => ({
         kind: action.kind,
-        callbackData: cardActionCallbackData(action.kind, action.token),
+        token: "<opaque-card-token>",
       })),
     }).toMatchSnapshot();
     for (const action of card.actions ?? []) {
-      const callbackData = cardActionCallbackData(action.kind, action.token);
-      expect(callbackData.length).toBeLessThanOrEqual(64);
-      expect(callbackData).not.toContain("forged");
-      expect(callbackData).not.toContain("fake bold");
+      expect(CardActionTokenSchema.safeParse(action.token).success).toBe(true);
+      expect(action.token).not.toContain("forged");
+      expect(action.token).not.toContain("fake bold");
+    }
+  });
+
+  it("derives valid, deterministic, action-specific opaque tokens", () => {
+    const first = renderDeliveryMessage(eventFor("turn.stopped"), {
+      now,
+    }).actions;
+    const second = renderDeliveryMessage(eventFor("turn.stopped"), {
+      now,
+    }).actions;
+    const firstTokens = (first ?? []).map((action) => action.token);
+    const secondTokens = (second ?? []).map((action) => action.token);
+
+    expect(firstTokens).toEqual(secondTokens);
+    expect(new Set(firstTokens).size).toBe(firstTokens.length);
+    for (const token of firstTokens) {
+      expect(CardActionTokenSchema.safeParse(token).success).toBe(true);
     }
   });
 

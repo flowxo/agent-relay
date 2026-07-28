@@ -275,8 +275,9 @@ proven mapping into the daemon.
 
 ## Implementation guidance
 
-- Reuse `packages/core/src/transport.ts`, `service.ts`, `store.ts`, and the
-  existing `FakeTelegramTransport` tests.
+- Reuse `packages/notification-contracts/src/transport.ts`,
+  `packages/core/src/service.ts`, `packages/core/src/store.ts`, and the existing
+  fake-notification transport tests.
 - Put the contract client/mapping proof in the AR2-planned
   `packages/notifications-transport` boundary so it can be promoted without
   moving code; keep daemon wiring out of C0.
@@ -331,7 +332,7 @@ The implementation agent must stop before:
 - [C0 project specification](https://github.com/flowxo/flowxo-portfolio/blob/main/docs/projects/shared-contracts-and-autonomous-delivery-conventions/project-spec.md)
 - [C0-03 interaction/machine contract story](https://github.com/flowxo/flowxo-notifications/blob/main/docs/projects/shared-contracts-and-autonomous-delivery-conventions/stories/c0-03-publish-interaction-and-machine-contracts.md)
 - [C0-05 mock/client story](https://github.com/flowxo/flowxo-notifications/blob/main/docs/projects/shared-contracts-and-autonomous-delivery-conventions/stories/c0-05-deliver-notifications-mock-and-client.md)
-- `agent-relay/packages/core/src/transport.ts`
+- `agent-relay/packages/notification-contracts/src/transport.ts`
 - `agent-relay/packages/core/src/service.ts`
 - `agent-relay/packages/core/src/store.ts`
 - `agent-relay/docs/projects/notifications-transport-adapter/project-spec.md`

@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { TELEGRAM_CALLBACK_DATA_LIMIT_BYTES } from "./telegram-choice.js";
+import { TELEGRAM_CALLBACK_DATA_LIMIT_BYTES } from "./choice.js";
 
 export type MultiSelectCallbackAction =
   "select" | "unselect" | "submit" | "cancel";
