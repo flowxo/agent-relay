@@ -356,6 +356,198 @@ describe("RelayService durable delivery loop", () => {
     store.close();
   });
 
+  it("quarantines stale backlog without hiding open requests or proven crashes", async () => {
+    const testClock = clock("2026-07-24T12:00:00.000Z");
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const logger = new MemoryLogger();
+    const service = new RelayService(store, transport, {
+      logger,
+      now: testClock.now,
+    });
+    const staleStop = event({
+      eventId: "event_stale_stop_12345678",
+      occurredAt: "2026-07-24T10:00:00.000Z",
+      sessionId: "session_stale_stop_12345678",
+    });
+    const staleFailure = event({
+      eventId: "event_stale_failure_12345678",
+      occurredAt: "2026-07-24T10:01:00.000Z",
+      sessionId: "session_stale_failure_12345678",
+      type: "turn.failed",
+      failure: {
+        class: "synthetic-failure",
+        message: "Synthetic stale failure",
+      },
+    });
+    const freshStop = event({
+      eventId: "event_fresh_stop_12345678",
+      occurredAt: "2026-07-24T11:30:00.000Z",
+      sessionId: "session_fresh_stop_12345678",
+    });
+    const activeRequest = event({
+      eventId: "event_active_request_12345678",
+      occurredAt: "2026-07-24T10:02:00.000Z",
+      sessionId: "session_active_request_12345678",
+      type: "input.required",
+      request: {
+        correlationId: "request_active_backlog_12345678",
+        kind: "input",
+        question: "Keep this synthetic request deliverable.",
+        expiresAt: "2026-07-24T13:00:00.000Z",
+      },
+    });
+    const expiredRequest = event({
+      eventId: "event_expired_request_12345678",
+      occurredAt: "2026-07-24T10:03:00.000Z",
+      sessionId: "session_expired_request_12345678",
+      type: "input.required",
+      request: {
+        correlationId: "request_expired_backlog_12345678",
+        kind: "input",
+        question: "Expire this synthetic request.",
+        expiresAt: "2026-07-24T11:00:00.000Z",
+      },
+    });
+    const provenCrash = event({
+      eventId: "event_proven_crash_12345678",
+      occurredAt: "2026-07-24T10:04:00.000Z",
+      sessionId: "session_proven_crash_12345678",
+      type: "process.exited",
+      failure: {
+        class: "signal",
+        message: "Synthetic owned child received SIGKILL",
+      },
+      processExit: {
+        source: "owned-child",
+        supervisorId: "supervisor_stale_guard_12345678",
+        startedAt: "2026-07-24T10:00:00.000Z",
+        exitedAt: "2026-07-24T10:04:00.000Z",
+        signal: "SIGKILL",
+        classification: "signal",
+        expected: false,
+      },
+    });
+    for (const input of [
+      staleStop,
+      staleFailure,
+      freshStop,
+      activeRequest,
+      expiredRequest,
+      provenCrash,
+    ]) {
+      service.ingest(input);
+    }
+
+    expect(service.quarantineStaleBacklog(60 * 60_000)).toEqual({
+      enabled: true,
+      maxAgeMs: 60 * 60_000,
+      quarantined: 3,
+      requestsExpired: 1,
+      cutoff: "2026-07-24T11:00:00.000Z",
+    });
+    expect(store.getEvent(staleStop.eventId)?.status).toBe("dead_letter");
+    expect(store.getEvent(staleFailure.eventId)?.status).toBe("dead_letter");
+    expect(store.getEvent(expiredRequest.eventId)?.status).toBe("dead_letter");
+    expect(store.getEvent(freshStop.eventId)?.status).toBe("queued");
+    expect(store.getEvent(activeRequest.eventId)?.status).toBe("queued");
+    expect(store.getEvent(provenCrash.eventId)?.status).toBe("queued");
+    expect(
+      store.getPendingRequest(expiredRequest.request!.correlationId),
+    ).toMatchObject({ state: "expired" });
+    expect(
+      store
+        .listSessionTimeline(staleStop)
+        .find((item) => item.id === `event:${staleStop.eventId}`),
+    ).toMatchObject({
+      status: "dead_letter",
+      detailCode: "delivery-stale-backlog",
+    });
+    expect(
+      logger.records.find(
+        (record) => record.code === "delivery.stale-backlog-quarantined",
+      )?.details,
+    ).toEqual({
+      quarantined: 3,
+      maxAgeMs: 60 * 60_000,
+      requestsExpired: 1,
+    });
+    expect(store.listDiagnostics()).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        code: "delivery.stale-backlog-quarantined",
+      }),
+    );
+    expect(service.quarantineStaleBacklog(60 * 60_000)).toMatchObject({
+      quarantined: 0,
+      requestsExpired: 0,
+    });
+
+    await expect(service.drain()).resolves.toMatchObject({
+      claimed: 3,
+      delivered: 3,
+    });
+    expect(
+      new Set(transport.deliveries.map((item) => item.message.eventId)),
+    ).toEqual(
+      new Set([freshStop.eventId, activeRequest.eventId, provenCrash.eventId]),
+    );
+    store.close();
+  });
+
+  it("quarantines a stale delivery recovered from an interrupted lease", () => {
+    const testClock = clock("2026-07-24T12:00:00.000Z");
+    const store = new RelayStore();
+    const service = new RelayService(store, new FakeNotificationTransport(), {
+      now: testClock.now,
+    });
+    const stale = event({
+      eventId: "event_stale_recovered_12345678",
+      occurredAt: "2026-07-24T10:00:00.000Z",
+      sessionId: "session_stale_recovered_12345678",
+    });
+    service.ingest(stale);
+    expect(store.claimDueEvents(testClock.now().toISOString())).toHaveLength(1);
+    expect(service.recover()).toBe(1);
+
+    expect(service.quarantineStaleBacklog(60 * 60_000)).toMatchObject({
+      quarantined: 1,
+    });
+    expect(store.getEvent(stale.eventId)?.status).toBe("dead_letter");
+    store.close();
+  });
+
+  it("validates and explicitly disables the stale backlog guard", () => {
+    const store = new RelayStore();
+    const service = new RelayService(store, new FakeNotificationTransport(), {
+      now: clock().now,
+    });
+    const stale = event({
+      occurredAt: "2026-07-24T10:00:00.000Z",
+      eventId: "event_stale_disabled_12345678",
+      sessionId: "session_stale_disabled_12345678",
+    });
+    service.ingest(stale);
+
+    expect(service.quarantineStaleBacklog(0)).toEqual({
+      enabled: false,
+      maxAgeMs: 0,
+      quarantined: 0,
+      requestsExpired: 0,
+    });
+    expect(store.getEvent(stale.eventId)?.status).toBe("queued");
+    expect(() => service.quarantineStaleBacklog(-1)).toThrow(
+      "stale backlog max age",
+    );
+    expect(() => service.quarantineStaleBacklog(1.5)).toThrow(
+      "stale backlog max age",
+    );
+    expect(() =>
+      service.quarantineStaleBacklog(365 * 24 * 60 * 60_000 + 1),
+    ).toThrow("stale backlog max age");
+    store.close();
+  });
+
   it("isolates concurrent sessions and never lets an older heartbeat rewind state", async () => {
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();

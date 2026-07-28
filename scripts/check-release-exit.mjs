@@ -754,7 +754,9 @@ try {
     "native fake canary",
   );
   assert(
-    canary.drain?.delivered === 1 &&
+    canary.ingest?.inserted === true &&
+      canary.outcome === "delivered" &&
+      canary.verification?.status === "delivered" &&
       canary.drain?.retrying === 0 &&
       canary.drain?.deadLettered === 0,
     "native fake canary did not complete one clean delivery",

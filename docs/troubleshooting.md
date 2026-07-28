@@ -111,6 +111,22 @@ If the daemon was unavailable, inspect durable fallback status. A valid hook
 returns safe native no-op JSON and spools a bounded normalized record; it should
 not block the harness or silently discard the failure.
 
+## Historical fallback events become dead letters
+
+For Telegram or Notifications, the installed daemon defaults
+`AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS` to one hour. After interrupted-delivery
+recovery and fallback replay—but before automatic drain—older queued work is
+marked `dead_letter` with `delivery-stale-backlog`. One bounded
+`delivery.stale-backlog-quarantined` diagnostic records the count without event
+text.
+
+This is deliberate flood protection, not silent loss. Still-open unexpired
+requests and `process.exited` events carrying proven `owned-child` evidence are
+exempt. Normal dead-letter retention remains authoritative. Set the value to `0`
+only for an intentional full historical replay; inspect `status` first, because
+external transports do not provide a caller-controlled idempotency key for every
+provider operation.
+
 ## Stop arrives but late resume does not
 
 Late resume requires a process launched by `agent-relay run`. A native hook in

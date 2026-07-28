@@ -99,6 +99,11 @@ export interface IngestResult {
   status: DeliveryStatus;
 }
 
+export interface StaleBacklogQuarantineInput {
+  cutoff: string;
+  now: string;
+}
+
 export interface ClaimedEvent {
   event: AgentAttentionEventV1;
   attemptNumber: number;
@@ -3299,6 +3304,37 @@ export class RelayStore {
         .run(now).changes;
     })();
     return result;
+  }
+
+  public quarantineStaleBacklog(input: StaleBacklogQuarantineInput): number {
+    assertIsoCutoff(input.cutoff, "stale backlog cutoff");
+    assertIsoCutoff(input.now, "stale backlog quarantine time");
+    if (input.cutoff > input.now) {
+      throw new Error("stale backlog cutoff cannot be in the future");
+    }
+    return this.database
+      .prepare(
+        `
+        UPDATE events SET
+          status = 'dead_letter',
+          next_attempt_at = @now,
+          lease_started_at = NULL,
+          last_error_code = 'delivery-stale-backlog',
+          last_error_message =
+            'Event exceeded the startup backlog age before transport delivery'
+        WHERE status IN ('queued', 'retry')
+          AND created_at < @cutoff
+          AND type <> 'process.exited'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pending_requests AS pending
+            WHERE pending.event_id = events.event_id
+              AND pending.state = 'open'
+              AND pending.expires_at > @now
+          )
+      `,
+      )
+      .run(input).changes;
   }
 
   public getEvent(

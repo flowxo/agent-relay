@@ -421,14 +421,13 @@ try {
     });
     const canaryResult = parseJsonOutput(canary.stdout, "packed canary");
     assertEqual(
-      canaryResult.drain,
-      {
-        claimed: 1,
-        delivered: 1,
-        retrying: 0,
-        deadLettered: 0,
-      },
-      "packed fake canary did not complete exactly one clean delivery",
+      canaryResult.ingest?.inserted === true &&
+        canaryResult.outcome === "delivered" &&
+        canaryResult.verification?.status === "delivered" &&
+        canaryResult.drain?.retrying === 0 &&
+        canaryResult.drain?.deadLettered === 0,
+      true,
+      "packed fake canary did not reach one clean durable delivery",
     );
 
     const ui = await globalThis.fetch(`${baseUrl}/ui/`);

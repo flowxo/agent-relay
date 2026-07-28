@@ -2,7 +2,7 @@ import { appendFile, mkdtemp, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   FakeNotificationTransport,
@@ -269,6 +269,93 @@ describe("fallback spool replay", () => {
       filesCompleted: 1,
     });
     expect(daemon.service.store.getEvent(input.eventId)).toBeDefined();
+    await daemon.close();
+  });
+
+  it("quarantines stale replay before the daemon can drain it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-fallback-"));
+    const spoolPath = join(directory, "fallback.ndjson");
+    const databasePath = join(directory, "relay.sqlite");
+    const input = event("evt_fallback_stale_guard_12345678");
+    await appendFallbackRecord(spoolPath, {
+      schema: "agent-relay-fallback.v1",
+      recordedAt: "2026-07-24T12:00:00.000Z",
+      kind: "event",
+      payload: input,
+    });
+    const logger = new MemoryLogger();
+
+    const daemon = await startDaemon({
+      databasePath,
+      host: "127.0.0.1",
+      port: 0,
+      fallbackPath: spoolPath,
+      fallbackReplayIntervalMs: 60_000,
+      startupBacklogMaxAgeMs: 60 * 60_000,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+      retention: { deadLetterDays: 3_650 },
+      logger,
+    });
+
+    expect(daemon.initialFallbackReplay).toMatchObject({
+      records: 1,
+      events: 1,
+      filesCompleted: 1,
+    });
+    expect(daemon.initialStaleBacklogQuarantine).toMatchObject({
+      enabled: true,
+      quarantined: 1,
+      maxAgeMs: 60 * 60_000,
+    });
+    expect(daemon.service.store.getEvent(input.eventId)?.status).toBe(
+      "dead_letter",
+    );
+    expect(
+      (daemon.service.transport as FakeNotificationTransport).deliveries,
+    ).toHaveLength(0);
+    expect(
+      logger.records.some(
+        (record) => record.code === "delivery.stale-backlog-quarantined",
+      ),
+    ).toBe(true);
+    await daemon.close();
+  });
+
+  it("pauses drain until a later fallback replay is guarded", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-fallback-"));
+    const spoolPath = join(directory, "fallback.ndjson");
+    const input = event("evt_fallback_periodic_guard_12345678");
+    const daemon = await startDaemon({
+      databasePath: join(directory, "relay.sqlite"),
+      host: "127.0.0.1",
+      port: 0,
+      fallbackPath: spoolPath,
+      fallbackReplayIntervalMs: 10,
+      startupBacklogMaxAgeMs: 60 * 60_000,
+      drainIntervalMs: 5,
+      retentionIntervalMs: 60_000,
+      retention: { deadLetterDays: 3_650 },
+      logger: new MemoryLogger(),
+    });
+
+    await appendFallbackRecord(spoolPath, {
+      schema: "agent-relay-fallback.v1",
+      recordedAt: "2026-07-24T12:00:00.000Z",
+      kind: "event",
+      payload: input,
+    });
+    await vi.waitFor(
+      () => {
+        expect(daemon.service.store.getEvent(input.eventId)?.status).toBe(
+          "dead_letter",
+        );
+      },
+      { timeout: 2_000 },
+    );
+    expect(
+      (daemon.service.transport as FakeNotificationTransport).deliveries,
+    ).toHaveLength(0);
     await daemon.close();
   });
 });

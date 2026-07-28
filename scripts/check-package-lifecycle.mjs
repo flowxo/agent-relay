@@ -526,7 +526,9 @@ if (process.platform !== "darwin") {
       "prior fake canary",
     );
     assert(
-      priorCanary.drain.delivered === 1 &&
+      priorCanary.ingest?.inserted === true &&
+        priorCanary.outcome === "delivered" &&
+        priorCanary.verification?.status === "delivered" &&
         priorCanary.drain.retrying === 0 &&
         priorCanary.drain.deadLettered === 0,
       "prior fake canary did not deliver cleanly",
@@ -672,7 +674,9 @@ if (process.platform !== "darwin") {
       "current fake canary",
     );
     assert(
-      currentCanary.drain.delivered === 1 &&
+      currentCanary.ingest?.inserted === true &&
+        currentCanary.outcome === "delivered" &&
+        currentCanary.verification?.status === "delivered" &&
         currentCanary.drain.retrying === 0 &&
         currentCanary.drain.deadLettered === 0,
       "upgraded fake canary did not deliver cleanly",

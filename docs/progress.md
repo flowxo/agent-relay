@@ -2,6 +2,33 @@
 
 ## Proven
 
+- Direct-Telegram baseline dogfood began on 2026-07-28 with explicit transport
+  selection and healthy Bot API private-topic preflight. It immediately exposed
+  a historical fallback hazard: first activation replayed 395 bounded records
+  (335 events and 60 diagnostics) and started producing obsolete provider
+  topics. The daemon was stopped, a private database backup was preserved, and
+  only the 289 pre-activation queued/retrying records were removed from the
+  active delivery queue; delivered evidence and topic mappings were retained.
+  FXO-1343 now defaults real transports to a one-hour startup backlog bound,
+  after recovery and fallback replay but before automatic drain. Older queued
+  work becomes a visible `delivery-stale-backlog` dead letter with one bounded
+  diagnostic; open unexpired requests and proven owned-child exits remain
+  deliverable. The guard repeats after periodic fallback replay, pauses drain
+  while replay/guard work is active, fails closed on invalid state, and is
+  disabled by default for the fake transport. The local fake canary also now
+  verifies its exact durable event status, removing a race when the background
+  drain wins before the CLI drain call. On 2026-07-28 the complete `pnpm check`
+  passed 66 Vitest files/469 tests, 24 contract and supply-chain tests, the
+  six-test isolated Notifications consumer, all workspace builds, the
+  209,539-byte packed/1,309,669-byte unpacked 11-file artifact, hosted proof
+  digest `97db3397191a4cc14695b2515427f6f1239723709612235d97a0e9da53b409be`, and
+  the complete packed lifecycle.
+- Telegram topic lifecycle is now explicit. End creates a local durable lane
+  tombstone and suppresses later relay work, but it does not remove the Telegram
+  topic. Current official Bot API documentation permits `deleteForumTopic` in a
+  private chat and deletes the topic with all of its messages. Agent Relay does
+  not yet call that destructive method; FXO-1345 owns previewed, confirmed,
+  exactly-once cleanup for proven-dead topics.
 - FXO-1340 separates notification ownership without changing the end-user
   package or runtime contract. The private `@agent-relay/notification-contracts`
   package now owns provider-neutral delivery, topic, interaction, capability,
@@ -443,7 +470,9 @@
   the End button are terminal relay-lane tombstones: delayed events are
   suppressed and delayed requests are canceled instead of resurrecting the lane.
   The private Telegram adapter does not claim the supergroup-only
-  `closeForumTopic` contract.
+  `closeForumTopic` contract and does not yet call the destructive,
+  private-chat-capable `deleteForumTopic`; ended topics therefore remain
+  visible.
 - FXO-1057 is green locally. A configurable, rolling coalescing window updates
   one durable card only for exact-equivalent request-free stop/activity/start
   noise, with a visible count and latest timestamp. Questions, crashes, stale
@@ -776,6 +805,10 @@ also remain free of silent delivery, hook, or correlation failures.
   fixtures rather than induced failures against the live account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
+- Ended Telegram topics currently remain visible. Cleanup must use explicit
+  terminal relay state rather than age or inactivity, exclude open requests and
+  in-flight resumes, revalidate at deletion time, and preserve local diagnostic
+  evidence even though Telegram deletes the provider message history.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.
@@ -811,18 +844,20 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Keep the Phase 3 runner bridge default-off until a product composition root
-supplies the typed transport, identity, project-material, and adoption runtime.
-The next user-facing runner work is FXO-1122 rather than implicit activation of
-this internal bridge.
+Finish FXO-1343 through the complete repository gate, merge it, install that
+exact candidate, and restart the direct-Telegram daemon with the one-hour guard
+active. Then implement FXO-1345 as a separate destructive-operation slice:
+preview the explicitly ended topic set, require an expiring authorized
+confirmation, revalidate each candidate, and retry/diagnose partial provider
+failure.
 
-Begin AR3 real-service dogfood only after the Notifications owner supplies an
-approved environment implementing narrow machine bootstrap and durable poll/ack,
-and authorizes the bounded canary. That phase must confirm production
-retention/privacy terms, real subscriber activation and digest verification,
-live delivery/reply/recovery, and deliberate transport-switch operations. npm
-scope/publication and the monitored public security-contact path remain
-owner-controlled promotion gates.
+Continue bounded local direct-Telegram dogfood while the Notifications owner
+prepares the approved hosted environment. Hosted AR3 evidence begins only after
+that environment implements narrow machine bootstrap and durable poll/ack and
+authorizes the canary. It must still confirm production retention/privacy,
+subscriber activation and digest verification, live delivery/reply/recovery, and
+deliberate transport switching. npm scope/publication and the monitored public
+security-contact path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

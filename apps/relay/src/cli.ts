@@ -20,7 +20,7 @@ import {
 } from "@agent-relay/protocol";
 
 import { RelayClient } from "./client.js";
-import { runTelegramCanary } from "./canary.js";
+import { runFakeCanary, runTelegramCanary } from "./canary.js";
 import { resolveHookHarnessVersion, resolveWebEnabled } from "./cli-options.js";
 import { startDaemon } from "./daemon.js";
 import { observeHarnessVersions, runDoctor } from "./doctor.js";
@@ -402,6 +402,16 @@ async function main(): Promise<void> {
         Number(environment("AGENT_RELAY_COALESCE_WINDOW_MS") ?? "60000"),
       ),
       fallbackPath: join(commandStateDir, "fallback-spool.ndjson"),
+      startupBacklogMaxAgeMs: demo
+        ? 0
+        : integerFlag(
+            args,
+            "--startup-backlog-max-age-ms",
+            Number(
+              environment("AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS") ??
+                (transportSelection.selected === "fake" ? "0" : "3600000"),
+            ),
+          ),
       retention: {
         deliveredDays: integerFlag(
           args,
@@ -745,7 +755,7 @@ async function main(): Promise<void> {
       sequence,
       sourceFingerprint: randomUUID(),
     });
-    const result = await client.ingest({
+    const event = {
       schema: "agent-attention.v1",
       eventId,
       occurredAt: new Date().toISOString(),
@@ -765,8 +775,8 @@ async function main(): Promise<void> {
         activeSteer: false,
         permissionDecision: true,
       },
-    });
-    output({ ingest: result, drain: await client.drain() });
+    } as const;
+    output(await runFakeCanary({ client, event }));
     return;
   }
   if (command === "telegram-canary") {

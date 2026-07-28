@@ -8,6 +8,25 @@ import type {
 import { makeProjectRef, makeStableEventId } from "@agent-relay/protocol";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 
+export interface FakeCanaryClient {
+  ingest(event: AgentAttentionEventV1): Promise<IngestResult>;
+  drain(limit?: number): Promise<DrainResult>;
+}
+
+export interface FakeCanaryResult {
+  outcome: "delivered" | "retrying" | "dead-lettered" | "timeout";
+  ingest: IngestResult;
+  drain: DrainResult;
+  verification: IngestResult;
+}
+
+export interface FakeCanaryOptions {
+  client: FakeCanaryClient;
+  event: AgentAttentionEventV1;
+  waitMs?: number;
+  pollIntervalMs?: number;
+}
+
 export interface TelegramCanaryClient {
   ingest(event: AgentAttentionEventV1): Promise<IngestResult>;
   drain(limit?: number): Promise<DrainResult>;
@@ -49,6 +68,52 @@ export interface TelegramCanaryOptions {
 }
 
 export const TELEGRAM_CANARY_REPLY = "relay-canary-ok";
+
+export async function runFakeCanary(
+  options: FakeCanaryOptions,
+): Promise<FakeCanaryResult> {
+  const waitMs = options.waitMs ?? 2_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 25;
+  if (!Number.isSafeInteger(waitMs) || waitMs < 1 || waitMs > 10_000) {
+    throw new Error("Fake canary waitMs must be between 1 and 10000");
+  }
+  if (
+    !Number.isSafeInteger(pollIntervalMs) ||
+    pollIntervalMs < 10 ||
+    pollIntervalMs > 1_000
+  ) {
+    throw new Error("Fake canary pollIntervalMs must be between 10 and 1000");
+  }
+
+  const ingest = await options.client.ingest(options.event);
+  const drain = await options.client.drain();
+  const deadline = Date.now() + waitMs;
+  let verification = await options.client.ingest(options.event);
+  while (
+    (verification.status === "queued" ||
+      verification.status === "delivering") &&
+    Date.now() < deadline
+  ) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, Math.min(pollIntervalMs, deadline - Date.now()));
+    });
+    verification = await options.client.ingest(options.event);
+  }
+
+  return {
+    outcome:
+      verification.status === "delivered"
+        ? "delivered"
+        : verification.status === "retry"
+          ? "retrying"
+          : verification.status === "dead_letter"
+            ? "dead-lettered"
+            : "timeout",
+    ingest,
+    drain,
+    verification,
+  };
+}
 
 async function waitForDeliveryReceipt(
   client: TelegramCanaryClient,

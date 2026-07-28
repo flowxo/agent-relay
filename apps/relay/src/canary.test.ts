@@ -4,12 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { FakeNotificationTransport } from "@agent-relay/core";
+import { makeProjectRef } from "@agent-relay/protocol";
+import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RelayClient } from "./client.js";
 import { startDaemon } from "./daemon.js";
 import type { TelegramCanaryClient } from "./canary.js";
-import { runTelegramCanary } from "./canary.js";
+import { runFakeCanary, runTelegramCanary } from "./canary.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -69,6 +71,109 @@ function client(
     ),
   };
 }
+
+function fakeCanaryEvent(): AgentAttentionEventV1 {
+  return {
+    schema: "agent-attention.v1",
+    eventId: "evt_fake_canary_12345678",
+    occurredAt: "2026-07-24T12:00:00.000Z",
+    sequence: 1,
+    machineId: "machine_fake_canary_12345678",
+    bridgeSessionId: "bridge_fake_canary_12345678",
+    harness: "codex",
+    surface: "cli",
+    harnessVersion: "canary",
+    sessionId: "session_fake_canary_12345678",
+    project: makeProjectRef("/workspace/example"),
+    type: "turn.stopped",
+    summary: "Synthetic local canary",
+    capabilities: {
+      inlineContinue: true,
+      lateResume: true,
+      activeSteer: false,
+      permissionDecision: true,
+    },
+  };
+}
+
+describe("Fake local canary", () => {
+  it("verifies durable delivery when the daemon background drain wins the race", async () => {
+    const event = fakeCanaryEvent();
+    const ingest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        eventId: event.eventId,
+        inserted: true,
+        status: "queued" as const,
+      })
+      .mockResolvedValueOnce({
+        eventId: event.eventId,
+        inserted: false,
+        status: "delivering" as const,
+      })
+      .mockResolvedValueOnce({
+        eventId: event.eventId,
+        inserted: false,
+        status: "delivered" as const,
+      });
+    const result = await runFakeCanary({
+      client: {
+        ingest,
+        drain: vi.fn(async () => ({
+          claimed: 0,
+          delivered: 0,
+          retrying: 0,
+          deadLettered: 0,
+        })),
+      },
+      event,
+      waitMs: 100,
+      pollIntervalMs: 10,
+    });
+
+    expect(result).toMatchObject({
+      outcome: "delivered",
+      ingest: { inserted: true, status: "queued" },
+      drain: { claimed: 0, delivered: 0 },
+      verification: { inserted: false, status: "delivered" },
+    });
+    expect(ingest).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports a durable retry instead of claiming a clean delivery", async () => {
+    const event = fakeCanaryEvent();
+    const ingest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        eventId: event.eventId,
+        inserted: true,
+        status: "queued" as const,
+      })
+      .mockResolvedValueOnce({
+        eventId: event.eventId,
+        inserted: false,
+        status: "retry" as const,
+      });
+    await expect(
+      runFakeCanary({
+        client: {
+          ingest,
+          drain: vi.fn(async () => ({
+            claimed: 1,
+            delivered: 0,
+            retrying: 1,
+            deadLettered: 0,
+          })),
+        },
+        event,
+      }),
+    ).resolves.toMatchObject({
+      outcome: "retrying",
+      verification: { status: "retry" },
+    });
+    expect(ingest).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("Telegram activation canary", () => {
   it("delivers a bounded correlated question and confirms a Telegram reply", async () => {
