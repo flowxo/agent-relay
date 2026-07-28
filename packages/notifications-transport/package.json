@@ -18,11 +18,11 @@
   "dependencies": {
     "@agent-relay/core": "workspace:*",
     "@agent-relay/protocol": "workspace:*",
-    "@flowxo/notifications": "file:../../vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz",
-    "@flowxo/notifications-contracts": "file:../../vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz"
+    "@flowxo/notifications": "file:../../vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz",
+    "@flowxo/notifications-contracts": "file:../../vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
-    "@flowxo/notifications-contract-mock": "file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz"
+    "@flowxo/notifications-contract-mock": "file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz"
   }
 }

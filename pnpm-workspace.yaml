@@ -10,4 +10,4 @@ allowBuilds:
   esbuild: true
 
 overrides:
-  "@flowxo/notifications-contracts@1.0.0-draft.1": "file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz"
+  "@flowxo/notifications-contracts@1.0.0-rc.1": "file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz"

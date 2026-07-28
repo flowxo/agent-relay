@@ -7,80 +7,80 @@
     {
       "owner": "flowxo-notifications",
       "artifact": "@flowxo/notifications-contracts",
-      "version": "1.0.0-draft.1",
+      "version": "1.0.0-rc.1",
       "source_repository": "flowxo/flowxo-notifications",
-      "source_commit": "be00a5db1c94c5606c2b8853ab16a960aef1b593",
-      "sha256": "88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106",
-      "artifact_file": "vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz",
+      "source_commit": "0e0198fc248468ec9f0cd8e06997faee55a2cb25",
+      "sha256": "02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2",
+      "artifact_file": "vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz",
       "fixture_sets": [
         {
           "id": "core-api-bodies",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "core-semantic-scenarios",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "interaction-message-api-bodies",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "interaction-contract-bodies",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "machine-api-bodies",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "provider-capability-bodies",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "interaction-machine-semantic-scenarios",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "customer-event-bodies",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "webhook-signing-vectors",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "webhook-delivery-cases",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         },
         {
           "id": "core-fixture-index",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         }
       ]
     },
     {
       "owner": "flowxo-notifications",
       "artifact": "@flowxo/notifications",
-      "version": "1.0.0-draft.1",
+      "version": "1.0.0-rc.1",
       "source_repository": "flowxo/flowxo-notifications",
-      "source_commit": "be00a5db1c94c5606c2b8853ab16a960aef1b593",
-      "sha256": "4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c",
-      "artifact_file": "vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz",
+      "source_commit": "0e0198fc248468ec9f0cd8e06997faee55a2cb25",
+      "sha256": "82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44",
+      "artifact_file": "vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz",
       "fixture_sets": []
     },
     {
       "owner": "flowxo-notifications",
       "artifact": "@flowxo/notifications-contract-mock",
-      "version": "1.0.0-draft.1",
+      "version": "1.0.0-rc.1",
       "source_repository": "flowxo/flowxo-notifications",
-      "source_commit": "89a6c4d738b9c14d611f3bbf3d114ac99ff90b42",
-      "sha256": "ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e",
-      "artifact_file": "vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz",
+      "source_commit": "0e0198fc248468ec9f0cd8e06997faee55a2cb25",
+      "sha256": "9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e",
+      "artifact_file": "vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz",
       "fixture_sets": [
         {
           "id": "contract-mock-scenarios.v1",
-          "version": "1.0.0-draft.1"
+          "version": "1.0.0-rc.1"
         }
       ]
     }
