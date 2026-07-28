@@ -67,20 +67,16 @@ pnpm check
 pnpm build
 ```
 
-In one terminal, start the local daemon with Telegram credentials removed:
+In one terminal, start the local daemon with an explicit fake override:
 
 ```sh
-env -u AGENT_RELAY_TELEGRAM_TOKEN \
-  -u AGENT_RELAY_TELEGRAM_CHAT_ID \
-  node apps/relay/dist/cli.js daemon --no-web
+node apps/relay/dist/cli.js daemon --transport fake --no-web
 ```
 
 In a second terminal:
 
 ```sh
-env -u AGENT_RELAY_TELEGRAM_TOKEN \
-  -u AGENT_RELAY_TELEGRAM_CHAT_ID \
-  node apps/relay/dist/cli.js canary
+node apps/relay/dist/cli.js canary
 ```
 
 The canary must report a durable fake-Telegram delivery. Stop the daemon with
@@ -99,16 +95,26 @@ Build and prove the exact local artifact:
 
 ```sh
 pnpm package:check
+pnpm package:hosted:check
 pnpm package:lifecycle:check
 ```
 
-That command packs the staged release directory, compares all 11 files to a
+The first command packs the staged release directory, compares all 11 files to a
 reviewed allowlist, enforces compressed and unpacked size budgets, rejects
 workspace/source/private-path leakage, installs with lifecycle scripts disabled
 in an isolated prefix, explicitly rebuilds the approved SQLite native
 dependency, and proves CLI help, the fake canary, static web assets, and the
 authenticated local web API. It publishes nothing and removes its temporary
 artifact.
+
+The hosted package check installs the same release candidate into a clean home,
+configures the exact pinned loopback Notifications mock through the public CLI,
+proves confirm/select/input, crash-before-ack replay, explicit disconnect and
+local state retention, then runs the real direct-Telegram adapter against a
+synthetic Bot API. It also scans the artifact and diagnostics for credential,
+provider identity, prompt, answer, transcript, path, and executable leakage. It
+requires no real bot token or hosted account and emits the package and immutable
+contract lock SHA-256 digests as reproducible evidence.
 
 The lifecycle check then generates the sanitized prior `0.1.0-alpha.0` fixture
 and proves dry run, install, doctor, retained answer/state, forward migration,
@@ -269,9 +275,11 @@ node apps/relay/dist/cli.js uninstall
 
 ## Local loop
 
-The daemon binds to loopback, uses SQLite as the source of truth, and selects
-the fake Telegram transport unless both the Telegram token and chat ID are
-present.
+The daemon binds to loopback, uses SQLite as the source of truth, and defaults
+to `fake`. Credentials never select a transport. Persist a choice with
+`agent-relay transport select <fake|telegram|notifications>`, set the
+`AGENT_RELAY_TRANSPORT` process override, or pass the daemon-only `--transport`
+override. No mode automatically sends or fails over to another.
 
 ```sh
 # Terminal 1
@@ -403,10 +411,15 @@ starts only after the owned process exits.
 ## Real Telegram adapter
 
 Copy the names from [`.env.example`](.env.example) into your secret manager or
-shell environment. Do not commit values. The daemon activates the Bot API
-adapter only when both `AGENT_RELAY_TELEGRAM_TOKEN` and
-`AGENT_RELAY_TELEGRAM_CHAT_ID` exist. Reply routing additionally requires the
-numeric `AGENT_RELAY_TELEGRAM_OPERATOR_ID`.
+shell environment. Do not commit values. Select `telegram` explicitly; token and
+chat credential presence only affects readiness and never activates the adapter.
+Reply routing additionally requires the numeric
+`AGENT_RELAY_TELEGRAM_OPERATOR_ID`.
+
+```sh
+node apps/relay/dist/cli.js transport select telegram
+node apps/relay/dist/cli.js transport status
+```
 
 The default `AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll` uses Bot API long polling,
 so a daemon bound to loopback can receive replies without a public HTTP
@@ -478,9 +491,25 @@ unsupported, Cursor `--print` did not emit Stop on the tested build, and an
 interactive child must exit before its session can be resumed through a new CLI
 process.
 
-The pinned Notifications `1.0.0-draft.1` consumer and compatibility gate are
-also green against the executable mock. They prove the provider-neutral mapping,
-retry, replay, acknowledgement, isolation, and local-authority boundary; they do
-not yet add production Notifications selection, hosted credential persistence,
-or continuous polling. Cross-repository promotion to `1.0.0-rc.1` remains gated
-by [C0-09](https://linear.app/flowxo/issue/FXO-1050).
+The pinned Notifications `1.0.0-rc.1` consumer and compatibility gate are also
+green against the executable mock. They prove the provider-neutral mapping,
+retry, replay, acknowledgement, isolation, and local-authority boundary. The
+mock-backed `agent-relay notifications` setup command additionally proves
+subscriber authorization, locally generated narrow credentials, secure
+persistence, a synthetic canary, rotation, revocation, and explicit erasure. The
+daemon can now select its Notifications adapter explicitly and reports safe
+readiness/runtime state. Selected hosted mode continuously polls the
+authenticated machine stream, commits exact-session answers and durable
+acknowledgement state to local SQLite, and advances its cursor only after
+provider acknowledgement. Terminal presentation is a separate durable,
+idempotent concern; the exact pinned rc.1 contract honestly reports it as
+unsupported because it has no resolved-message update endpoint. Safe status
+includes failure policy and presentation counts, and local disconnect/revocation
+stops new hosted calls without deleting state. A transport-neutral matrix now
+keeps fake, direct Telegram, and Notifications aligned on delivery identity,
+retry, confirm/select/input, expiry, duplicate/race authority, restart, and
+at-most-once resume. The clean-home packed artifact now proves that complete
+mock-backed hosted lifecycle plus an unchanged direct-Telegram canary. C0-09
+approved the exact `1.0.0-rc.1` contract candidate. Real-service dogfood still
+belongs to AR3 and starts only after the Notifications owner supplies an
+approved environment, machine stream, and bounded-canary authorization.

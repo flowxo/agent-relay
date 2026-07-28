@@ -2,9 +2,15 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import {
+  CONTRACT_MOCK_FIXTURE_CREDENTIALS,
+  createNotificationsContractMock,
+} from "@flowxo/notifications-contract-mock";
+import { makeProjectRef } from "@agent-relay/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startDaemon } from "./daemon.js";
+import { notificationsStreamKey } from "./notifications-poller.js";
 import { WebCredentialSchema } from "./web-credential.js";
 
 const temporaryDirectories: string[] = [];
@@ -112,6 +118,473 @@ describe("startDaemon Telegram update mode", () => {
     await daemon.close();
   });
 
+  it("does not select or contact Telegram merely because credentials exist", async () => {
+    const telegramFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(
+        new Error("unselected Telegram must not be contacted"),
+      );
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "fake",
+      telegramToken: "123456:synthetic-token-value",
+      telegramChatId: "10001",
+      telegramFetch,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "evt_explicit_fake_transport_12345678",
+      occurredAt: "2026-07-26T21:00:00.000Z",
+      sequence: 1,
+      machineId: "machine_explicit_fake_12345678",
+      bridgeSessionId: "bridge_explicit_fake_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_explicit_fake_12345678",
+      project: {
+        displayName: "synthetic-explicit-fake",
+        cwdHash: `sha256:${"b".repeat(64)}`,
+      },
+      type: "turn.stopped",
+      summary: "Synthetic explicit fake delivery",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    expect(daemon.service.transport.name).toBe("fake-telegram");
+    expect(telegramFetch).not.toHaveBeenCalled();
+    await daemon.close();
+  });
+
+  it("delivers only through explicitly selected Notifications and reports safe runtime state", async () => {
+    const mock = createNotificationsContractMock();
+    const notificationsFetch = vi.fn<typeof fetch>(
+      async (input, init) => await mock.fetch(new Request(input, init)),
+    );
+    const telegramFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(
+        new Error("unselected Telegram must not be contacted"),
+      );
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "notifications",
+      notifications: {
+        baseUrl: "https://notifications.mock.test",
+        credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+        subscriberId: "agent_relay_operator",
+        notifierId: "default",
+        bindingId: "binding_synthetic_relay",
+        machineClientId: "machine_client_synthetic_001",
+        machineId: "machine_synthetic_a",
+        fetch: notificationsFetch,
+      },
+      telegramToken: "123456:synthetic-token-value",
+      telegramChatId: "10001",
+      telegramFetch,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "evt_explicit_notifications_12345678",
+      occurredAt: "2026-07-26T21:05:00.000Z",
+      sequence: 1,
+      machineId: "machine_explicit_notifications_12345678",
+      bridgeSessionId: "bridge_explicit_notifications_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_explicit_notifications_12345678",
+      project: {
+        displayName: "synthetic-explicit-notifications",
+        cwdHash: `sha256:${"c".repeat(64)}`,
+      },
+      type: "turn.stopped",
+      summary: "Synthetic explicit Notifications delivery",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+      retrying: 0,
+      deadLettered: 0,
+    });
+    expect(mock.inspect().messages).toHaveLength(1);
+    expect(notificationsFetch).toHaveBeenCalled();
+    expect(telegramFetch).not.toHaveBeenCalled();
+
+    const address = daemon.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("daemon did not expose a TCP address");
+    }
+    const status = (await (
+      await fetch(`http://127.0.0.1:${address.port}/v1/status`)
+    ).json()) as Record<string, unknown>;
+    expect(status).toMatchObject({
+      selectedTransport: "notifications",
+      transport: "notifications",
+      transportRuntime: {
+        selection: {
+          configured: true,
+          selected: "notifications",
+          source: "command-line",
+        },
+        notifications: {
+          circuit: { blocked: false },
+          delivery: {
+            lastError: null,
+            lastSuccessfulSendAt: expect.any(String),
+          },
+          polling: {
+            committedCursorRef: null,
+            lastError: null,
+            lastSuccessfulPollAt: expect.any(String),
+            state: "active",
+            unacknowledgedEventCount: 0,
+          },
+          spool: {
+            deadLetter: 0,
+            pending: 0,
+            retrying: 0,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(status)).not.toContain(
+      CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+    );
+    await daemon.close();
+  });
+
+  it("resolves and acknowledges a hosted choice through the running daemon", async () => {
+    const mock = createNotificationsContractMock({
+      scenario: "interaction-select",
+    });
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "notifications",
+      notifications: {
+        baseUrl: "https://notifications.mock.test",
+        credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+        subscriberId: "agent_relay_operator",
+        notifierId: "default",
+        bindingId: "binding_synthetic_relay",
+        machineClientId: "machine_client_synthetic_001",
+        machineId: "machine_synthetic_a",
+        fetch: async (input, init) =>
+          await mock.fetch(new Request(input, init)),
+      },
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    const correlationId = "request_daemon_hosted_choice_12345678";
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "event_daemon_hosted_choice_12345678",
+      occurredAt: "2026-07-25T17:45:00.000Z",
+      sequence: 1,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_hosted_choice_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_hosted_choice_12345678",
+      turnId: "turn_daemon_hosted_choice_12345678",
+      project: makeProjectRef("/workspace/daemon-hosted-choice"),
+      type: "input.required",
+      request: {
+        correlationId,
+        kind: "select",
+        question: "Choose one synthetic path.",
+        options: [
+          { id: "option_daemon_alpha_12345678", label: "Alpha" },
+          { id: "option_daemon_beta_12345678", label: "Beta" },
+        ],
+        expiresAt: "2026-07-25T18:00:00.000Z",
+      },
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    const pending = daemon.service.store.getPendingRequest(correlationId)!;
+    const beta = pending.options.find(
+      (option) => option.optionId === "option_daemon_beta_12345678",
+    );
+    const messageId = mock.inspect().messages[0]?.id;
+    if (beta === undefined || messageId === undefined) {
+      throw new Error("hosted choice identities were not persisted");
+    }
+    await expect(
+      mock.control.submitInteraction({
+        messageId,
+        response: { type: "select", value: beta.token },
+      }),
+    ).resolves.toMatchObject({ eventCreated: true, outcome: "authorized" });
+
+    const streamKey = notificationsStreamKey(
+      "https://notifications.mock.test",
+      "machine_client_synthetic_001",
+    );
+    await vi.waitFor(
+      () => {
+        expect(
+          daemon.service.store.getPendingRequest(correlationId),
+        ).toMatchObject({
+          state: "answered",
+          answer: "option_daemon_beta_12345678",
+          resolvedBy: "notifications",
+        });
+        expect(mock.inspect().cursorCommits).toHaveLength(1);
+        expect(
+          daemon.service.store.hostedPollStatus(streamKey).messageUpdates,
+        ).toMatchObject({
+          blocked: 1,
+          pending: 0,
+          retry: 0,
+          updated: 0,
+        });
+      },
+      { timeout: 2_000 },
+    );
+    const rawCursor =
+      daemon.service.store.hostedPollStatus(streamKey).committedCursor;
+    const address = daemon.server.address();
+    if (
+      rawCursor === undefined ||
+      address === null ||
+      typeof address === "string"
+    ) {
+      throw new Error("hosted daemon cursor/status evidence is unavailable");
+    }
+    const status = await (
+      await fetch(`http://127.0.0.1:${address.port}/v1/status`)
+    ).json();
+    expect(status).toMatchObject({
+      transportRuntime: {
+        notifications: {
+          polling: {
+            committedCursorRef: expect.stringMatching(/^cursor_[a-f0-9]{12}$/u),
+            state: "active",
+            unacknowledgedEventCount: 0,
+          },
+          presentation: {
+            capability: "unsupported",
+            blocked: 1,
+            pending: 0,
+            retrying: 0,
+            updated: 0,
+            lastError: {
+              category: "operator-action",
+              classification: "terminal",
+              code: "notifications-resolution-update-unsupported",
+            },
+          },
+        },
+      },
+    });
+    const serializedStatus = JSON.stringify(status);
+    expect(serializedStatus).not.toContain(rawCursor);
+    expect(serializedStatus).not.toContain(messageId);
+    expect(serializedStatus).not.toContain(correlationId);
+    expect(serializedStatus).not.toContain(beta.token);
+    expect(serializedStatus).not.toContain("binding_synthetic_relay");
+    expect(serializedStatus).not.toContain("machine_synthetic_a");
+    await daemon.close();
+  });
+
+  it("stops hosted calls after disconnect, preserves local authority, and recovers after restart", async () => {
+    const databasePath = await temporaryDatabase();
+    const mock = createNotificationsContractMock();
+    let active = true;
+    const connectionGuard = async () => active;
+    const hostedFetch: typeof fetch = async (input, init) =>
+      await mock.fetch(new Request(input, init));
+    const notifications = {
+      baseUrl: "https://notifications.mock.test",
+      credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+      subscriberId: "agent_relay_operator",
+      notifierId: "default",
+      bindingId: "binding_synthetic_relay",
+      machineClientId: "machine_client_synthetic_001",
+      machineId: "machine_synthetic_a",
+      connectionGuard,
+      fetch: hostedFetch,
+    };
+    const daemon = await startDaemon({
+      databasePath,
+      port: 0,
+      selectedTransport: "notifications",
+      notifications,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    const correlationId = "request_daemon_disconnect_12345678";
+    const eventId = "event_daemon_disconnect_12345678";
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId,
+      occurredAt: "2026-07-25T17:45:00.000Z",
+      sequence: 1,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_disconnect_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_disconnect_12345678",
+      turnId: "turn_daemon_disconnect_12345678",
+      project: makeProjectRef("/workspace/daemon-disconnect"),
+      type: "input.required",
+      request: {
+        correlationId,
+        kind: "confirm",
+        question: "Confirm synthetic disconnect preservation.",
+        expiresAt: "2026-07-25T18:00:00.000Z",
+      },
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    const hostedMessageId = mock.inspect().messages[0]?.id;
+    if (hostedMessageId === undefined) {
+      throw new Error("disconnect fixture did not create a hosted message");
+    }
+    expect(
+      daemon.service.store.resolveRequest({
+        correlationId,
+        answer: "yes_option",
+        resolvedBy: "terminal",
+        now: "2026-07-25T17:46:00.000Z",
+      }),
+    ).toMatchObject({ outcome: "answered" });
+
+    active = false;
+    await vi.waitFor(() => {
+      expect(
+        daemon.service.store.hostedPollStatus(
+          notificationsStreamKey(
+            notifications.baseUrl,
+            notifications.machineClientId,
+          ),
+        ).lastError,
+      ).toMatchObject({ code: "notifications-connection-inactive" });
+    });
+    daemon.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "event_daemon_disconnected_delivery_12345678",
+      occurredAt: "2026-07-25T17:47:00.000Z",
+      sequence: 2,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_disconnect_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_disconnect_12345678",
+      project: makeProjectRef("/workspace/daemon-disconnect"),
+      type: "turn.stopped",
+      summary: "Retain this local event while disconnected.",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(daemon.service.drain()).resolves.toMatchObject({
+      deadLettered: 1,
+      delivered: 0,
+    });
+    expect(mock.inspect().messages).toHaveLength(1);
+    expect(daemon.service.store.getPendingRequest(correlationId)).toMatchObject(
+      {
+        state: "answered",
+        resolvedBy: "terminal",
+      },
+    );
+    expect(
+      daemon.service.store.getHostedDeliveryForMessage(
+        notificationsStreamKey(
+          notifications.baseUrl,
+          notifications.machineClientId,
+        ),
+        hostedMessageId,
+      ),
+    ).toMatchObject({ eventId });
+    await daemon.close();
+
+    active = true;
+    const restarted = await startDaemon({
+      databasePath,
+      port: 0,
+      selectedTransport: "notifications",
+      notifications,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    restarted.service.ingest({
+      schema: "agent-attention.v1",
+      eventId: "event_daemon_reconnected_delivery_12345678",
+      occurredAt: "2026-07-25T17:48:00.000Z",
+      sequence: 3,
+      machineId: "machine_synthetic_a",
+      bridgeSessionId: "bridge_daemon_disconnect_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_daemon_disconnect_12345678",
+      project: makeProjectRef("/workspace/daemon-disconnect"),
+      type: "turn.stopped",
+      summary: "Deliver after explicit reconnect restart.",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    });
+    await expect(restarted.service.drain()).resolves.toMatchObject({
+      delivered: 1,
+    });
+    expect(mock.inspect().messages).toHaveLength(2);
+    expect(
+      restarted.service.store.getPendingRequest(correlationId),
+    ).toMatchObject({
+      state: "answered",
+      resolvedBy: "terminal",
+    });
+    await restarted.close();
+  });
+
   it("starts long polling for a fully configured local Telegram adapter", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -154,6 +627,7 @@ describe("startDaemon Telegram update mode", () => {
     const daemon = await startDaemon({
       databasePath: await temporaryDatabase(),
       port: 0,
+      selectedTransport: "telegram",
       telegramToken: "123456:synthetic-token-value",
       telegramChatId: "10001",
       telegramOperatorUserId: 10002,
@@ -208,6 +682,7 @@ describe("startDaemon Telegram update mode", () => {
     const daemon = await startDaemon({
       databasePath: await temporaryDatabase(),
       port: 0,
+      selectedTransport: "telegram",
       telegramToken: "123456:synthetic-token-value",
       telegramChatId: "10001",
       telegramOperatorUserId: 10002,
@@ -234,6 +709,7 @@ describe("startDaemon Telegram update mode", () => {
       startDaemon({
         databasePath: await temporaryDatabase(),
         port: 0,
+        selectedTransport: "telegram",
         telegramToken: "123456:synthetic-token-value",
         telegramChatId: "-10001",
         telegramOperatorUserId: 10002,
@@ -263,6 +739,7 @@ describe("startDaemon Telegram update mode", () => {
       startDaemon({
         databasePath: await temporaryDatabase(),
         port: 0,
+        selectedTransport: "telegram",
         telegramToken: "123456:synthetic-token-value",
         telegramChatId: "10001",
         telegramOperatorUserId: 10002,

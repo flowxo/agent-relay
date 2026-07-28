@@ -34,12 +34,23 @@ breaking changes and required operator action.
 - A native Apple-silicon Node.js 22.23.1 release-exit gate that verifies the
   exact bundle, installs without workspace links in a temporary home/prefix,
   proves doctor and one fake delivery, and removes owned hooks and the package.
+- An optional hosted Notifications adapter with secret-safe narrow machine
+  bootstrap, explicit transport selection, durable confirm/select/input polling,
+  crash-safe acknowledgement replay, safe diagnosis, explicit revocation, and
+  retained local authority.
+- A common fake/direct-Telegram/Notifications behavior matrix covering delivery
+  identity, retries, answers, expiry, races, restart, and single-owner resume.
+- A clean-home packed hosted proof covering setup, interaction, crash-before-ack
+  replay, disconnect/erasure, retained SQLite state, direct-Telegram canary,
+  owned uninstall, and private-data exclusion.
 
 ### Changed
 
 - Install manifests now record the public package version.
 - Cursor permission decisions now fail closed as `disabled` instead of being
   advertised by a protocol flag while the installer intentionally omits them.
+- Delivery-success diagnostics now hash local event and provider receipt
+  identities instead of logging either raw value.
 - The release candidate version advances to `0.1.0-alpha.1`; it remains private
   and unpublished.
 

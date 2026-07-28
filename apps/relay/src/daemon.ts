@@ -12,12 +12,35 @@ import {
 } from "@agent-relay/core";
 import type { NotificationTransport, RelayLogger } from "@agent-relay/core";
 import type { RetentionOptions, RetentionResult } from "@agent-relay/core";
+import {
+  NotificationsContractTransport,
+  NotificationsMachineInteractionSource,
+  PinnedNotificationsResolutionPresenter,
+  type NotificationsContractTransportOptions,
+  type NotificationsResolutionPresenter,
+} from "@agent-relay/notifications-transport";
 
 import { createRelayHttpServer } from "./http-server.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
 import type { FallbackReplayResult } from "./fallback-spool.js";
 import { TelegramUpdatePoller } from "./telegram-poller.js";
+import type {
+  AgentRelayTransport,
+  ResolvedTransportSelection,
+  TransportReadinessReport,
+} from "./transport-config.js";
+import { buildDaemonTransportStatus } from "./transport-status.js";
 import { loadOrCreateWebCredential } from "./web-credential.js";
+import {
+  notificationsStreamKey,
+  NotificationsInteractionPoller,
+} from "./notifications-poller.js";
+
+export interface DaemonNotificationsOptions extends NotificationsContractTransportOptions {
+  bindingId: string;
+  machineId: string;
+  presenter?: NotificationsResolutionPresenter;
+}
 
 export interface DaemonOptions {
   databasePath: string;
@@ -26,6 +49,9 @@ export interface DaemonOptions {
   host?: string;
   port?: number;
   token?: string;
+  selectedTransport?: AgentRelayTransport;
+  transportSelection?: ResolvedTransportSelection;
+  transportReadiness?: TransportReadinessReport;
   telegramToken?: string;
   telegramChatId?: string;
   telegramOperatorUserId?: number;
@@ -33,6 +59,7 @@ export interface DaemonOptions {
   telegramWebhookSecret?: string;
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
+  notifications?: DaemonNotificationsOptions;
   coalescingWindowMs?: number;
   drainIntervalMs?: number;
   fallbackPath?: string;
@@ -52,26 +79,35 @@ export interface RunningDaemon {
 }
 
 function selectTransport(options: DaemonOptions): NotificationTransport {
-  const hasToken = options.telegramToken !== undefined;
-  const hasChat = options.telegramChatId !== undefined;
-  if (hasToken !== hasChat) {
-    throw new Error(
-      "both AGENT_RELAY_TELEGRAM_TOKEN and AGENT_RELAY_TELEGRAM_CHAT_ID are required",
-    );
+  const selected = options.selectedTransport ?? "fake";
+  switch (selected) {
+    case "fake":
+      return new FakeTelegramTransport();
+    case "telegram": {
+      if (
+        options.telegramToken === undefined ||
+        options.telegramChatId === undefined
+      ) {
+        throw new Error(
+          "selected Telegram transport requires AGENT_RELAY_TELEGRAM_TOKEN and AGENT_RELAY_TELEGRAM_CHAT_ID",
+        );
+      }
+      return new TelegramBotTransport({
+        token: options.telegramToken,
+        chatId: options.telegramChatId,
+        ...(options.telegramFetch === undefined
+          ? {}
+          : { fetch: options.telegramFetch }),
+      });
+    }
+    case "notifications":
+      if (options.notifications === undefined) {
+        throw new Error(
+          "selected Notifications transport requires an active narrow machine connection",
+        );
+      }
+      return new NotificationsContractTransport(options.notifications);
   }
-  if (
-    options.telegramToken !== undefined &&
-    options.telegramChatId !== undefined
-  ) {
-    return new TelegramBotTransport({
-      token: options.telegramToken,
-      chatId: options.telegramChatId,
-      ...(options.telegramFetch === undefined
-        ? {}
-        : { fetch: options.telegramFetch }),
-    });
-  }
-  return new FakeTelegramTransport();
 }
 
 export async function startDaemon(
@@ -93,6 +129,52 @@ export async function startDaemon(
       : await loadOrCreateWebCredential(webCredentialPath);
   const logger = options.logger ?? new JsonLineLogger();
   const transport = selectTransport(options);
+  const selectedTransport = options.selectedTransport ?? "fake";
+  const transportSelection =
+    options.transportSelection ??
+    ({
+      configured: options.selectedTransport !== undefined,
+      selected: selectedTransport,
+      source:
+        options.selectedTransport === undefined ? "default" : "command-line",
+    } satisfies ResolvedTransportSelection);
+  if (transportSelection.selected !== selectedTransport) {
+    throw new Error(
+      "resolved transport selection does not match the daemon transport",
+    );
+  }
+  if (
+    options.transportReadiness !== undefined &&
+    options.transportReadiness.selectedTransport !== selectedTransport
+  ) {
+    throw new Error(
+      "transport readiness does not match the daemon transport selection",
+    );
+  }
+  const notificationsRuntime =
+    transport instanceof NotificationsContractTransport
+      ? options.notifications
+      : undefined;
+  if (
+    transport instanceof NotificationsContractTransport &&
+    notificationsRuntime === undefined
+  ) {
+    throw new Error(
+      "selected Notifications transport requires machine interaction configuration",
+    );
+  }
+  const hostedStreamKey =
+    notificationsRuntime === undefined
+      ? undefined
+      : notificationsStreamKey(
+          notificationsRuntime.baseUrl,
+          notificationsRuntime.machineClientId,
+        );
+  const notificationsPresenter =
+    notificationsRuntime === undefined
+      ? undefined
+      : (notificationsRuntime.presenter ??
+        new PinnedNotificationsResolutionPresenter());
   if (
     telegramUpdateMode === "webhook" &&
     transport instanceof TelegramBotTransport &&
@@ -121,6 +203,7 @@ export async function startDaemon(
   });
   service.recover();
   const replyRouter =
+    transport instanceof NotificationsContractTransport ||
     options.telegramOperatorUserId === undefined ||
     options.telegramReplyChatId === undefined
       ? undefined
@@ -132,11 +215,26 @@ export async function startDaemon(
   const server = createRelayHttpServer(service, {
     ...(options.token === undefined ? {} : { token: options.token }),
     ...(replyRouter === undefined ? {} : { replyRouter }),
-    ...(options.telegramWebhookSecret === undefined
+    ...(options.telegramWebhookSecret === undefined ||
+    transport instanceof NotificationsContractTransport
       ? {}
       : { telegramWebhookSecret: options.telegramWebhookSecret }),
     webEnabled,
     ...(webCredential === undefined ? {} : { webCredential }),
+    statusDetails: () =>
+      buildDaemonTransportStatus({
+        service,
+        selection: transportSelection,
+        ...(hostedStreamKey === undefined ? {} : { hostedStreamKey }),
+        ...(notificationsPresenter === undefined
+          ? {}
+          : {
+              hostedPresentationCapability: notificationsPresenter.capability,
+            }),
+        ...(options.transportReadiness === undefined
+          ? {}
+          : { readiness: options.transportReadiness }),
+      }),
     logger,
   });
 
@@ -255,6 +353,48 @@ export async function startDaemon(
     });
   }
 
+  let notificationsPollingAbort: AbortController | undefined;
+  let notificationsPolling: Promise<void> | undefined;
+  if (
+    transport instanceof NotificationsContractTransport &&
+    notificationsRuntime !== undefined &&
+    hostedStreamKey !== undefined
+  ) {
+    notificationsPollingAbort = new AbortController();
+    notificationsPolling = new NotificationsInteractionPoller({
+      store,
+      source: new NotificationsMachineInteractionSource({
+        baseUrl: notificationsRuntime.baseUrl,
+        credential: notificationsRuntime.credential,
+        ...(notificationsRuntime.connectionGuard === undefined
+          ? {}
+          : { connectionGuard: notificationsRuntime.connectionGuard }),
+        ...(notificationsRuntime.fetch === undefined
+          ? {}
+          : { fetch: notificationsRuntime.fetch }),
+      }),
+      streamKey: hostedStreamKey,
+      ...(notificationsPresenter === undefined
+        ? {}
+        : { presenter: notificationsPresenter }),
+      machineId: notificationsRuntime.machineId,
+      bindingId: notificationsRuntime.bindingId,
+      logger,
+    })
+      .run(notificationsPollingAbort.signal)
+      .catch((error: unknown) => {
+        logger.log({
+          level: "error",
+          code: "notifications.poll-crashed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Notifications polling stopped unexpectedly",
+          at: new Date().toISOString(),
+        });
+      });
+  }
+
   let activeDrain: Promise<void> | undefined;
   const interval = setInterval(() => {
     if (activeDrain !== undefined) {
@@ -310,6 +450,7 @@ export async function startDaemon(
       host: options.host ?? "127.0.0.1",
       port: options.port ?? 4317,
       transport: service.transport.name,
+      selectedTransport,
       telegramUpdateMode:
         transport instanceof TelegramBotTransport
           ? telegramUpdateMode
@@ -324,6 +465,7 @@ export async function startDaemon(
       return closePromise;
     }
     telegramPollingAbort?.abort();
+    notificationsPollingAbort?.abort();
     clearInterval(interval);
     clearInterval(retentionInterval);
     if (fallbackInterval !== undefined) {
@@ -344,6 +486,7 @@ export async function startDaemon(
       activeDrain ?? Promise.resolve(),
       activeFallbackReplay ?? Promise.resolve(),
       telegramPolling ?? Promise.resolve(),
+      notificationsPolling ?? Promise.resolve(),
     ]).then(() => {
       store.close();
     });

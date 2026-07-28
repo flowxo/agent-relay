@@ -104,9 +104,9 @@ that the configured chat is private and that `getWebhookInfo` agrees with
 
 There is no unthreaded real-Telegram compatibility mode. If topics are disabled
 or the chat is not private, startup fails clearly rather than delivering
-different sessions into General. Omitting both Telegram token and chat ID still
-selects the credential-free fake transport for local development and tests; the
-daemon reports that transport as `fake-telegram`.
+different sessions into General. Transport selection is independent of
+credentials: an unset selection defaults to `fake`, while a selected Telegram
+transport fails readiness/startup if its required configuration is absent.
 
 The first attention event for a logical harness session lazily creates one
 topic. Later events for that machine, harness, and session reuse the durable
@@ -155,6 +155,7 @@ chmod 600 .env.activation
 Set at least:
 
 ```dotenv
+AGENT_RELAY_TRANSPORT=telegram
 AGENT_RELAY_TELEGRAM_TOKEN=<bot token>
 AGENT_RELAY_TELEGRAM_CHAT_ID=<private chat id>
 AGENT_RELAY_TELEGRAM_OPERATOR_ID=<authorized user id>
@@ -203,6 +204,19 @@ configuration views.
 compatibility registry, expected hook counts, and installed harness versions.
 Version drift is a `compatible-unverified` warning to recapture evidence before
 claiming compatibility; a known-incompatible version fails.
+
+Before startup, inspect the safe selection/readiness projection:
+
+```sh
+~/.agent-relay/bin/agent-relay transport status
+```
+
+The environment override above selects Telegram for that process. To retain the
+same choice without an environment override, run
+`agent-relay transport select telegram`; the private
+`~/.agent-relay/transport.json` takes effect on the next daemon start. A
+daemon-only `--transport telegram` override takes precedence without rewriting
+that file.
 
 ## 5. Start the daemon
 
@@ -353,8 +367,10 @@ operator is never shown an already-used Details button.
   silently reopening the lane.
 
 Every action is committed before Telegram is acknowledged. Repeated taps return
-the stored result without repeating the action. Session controls are inspectable
-as `sessionControlRecords` in `status`.
+the stored result without repeating the action. `status` exposes aggregate
+control/session counts and safe transport diagnosis; detailed session state is
+available through the authenticated local web companion rather than raw
+identities in CLI output.
 
 Free-text and continuation requests can be answered without Telegram's Reply
 gesture when correlation is unambiguous. Type directly in the session topic when
@@ -367,6 +383,45 @@ answered by ordinary topic chatter. Some Telegram clients attach automatic reply
 metadata to ordinary topic text. When that metadata does not identify a retained
 request, Agent Relay still applies the exact-topic, exactly-one-open request
 rule. A known stale or cross-topic request remains rejected.
+
+### Optional hosted Notifications setup proof
+
+The optional hosted adapter now has a mock-backed setup and explicit full daemon
+lifecycle, documented in the
+[hosted Notifications guide](./hosted-notifications.md). It can authorize a
+subscriber, generate and store a narrow credential, send a synthetic canary,
+rotate, revoke, erase, and deliver normal attention events when `notifications`
+is selected. Selected hosted mode also long-polls confirm/select/input answers,
+commits them to the exact local request before provider acknowledgement, and
+recovers cursor/acknowledgement work after restart. Terminal presentation is a
+separate durable worker; the pinned rc.1 contract reports that optional
+capability as unsupported because it has no resolution-update endpoint. Safe
+status still exposes its queue/block counts and failure category. Local
+disconnect or revocation stops new hosted calls, retains SQLite authority, and
+requires explicit reconnect/rotation plus daemon restart.
+
+Maintainers can prove the complete installed boundary without a real hosted
+account or bot token:
+
+```sh
+pnpm package:hosted:check
+```
+
+The check installs the exact tarball into a clean home, configures the pinned
+loopback mock through the public CLI, resolves confirm/select/input, proves
+crash-before-ack replay, revocation/erasure with retained SQLite authority, and
+an unchanged direct-Telegram canary against a synthetic Bot API. It rejects
+workspace/sibling runtime dependencies and scans packed output and logs for
+private fixture values.
+
+Do not place a broad Notifications project credential in git or pass it as a
+positional argument. Supply it only through the command's stdin, environment
+injection, or hidden prompt. The local setup files are retained by uninstall;
+use `notifications disconnect --revoke` before explicit credential/configuration
+erasure. C0-09 approved the exact `1.0.0-rc.1` candidate, but it did not create
+or authorize a real service environment. Perform this setup only against the
+executable loopback mock until the Notifications owner supplies the approved AR3
+environment and bounded-canary authorization.
 
 ## 6. Prove the Telegram interaction loop
 
@@ -467,8 +522,10 @@ should still be treated as private operational data.
 
 ### The daemon reports `fake-telegram`
 
-Both `AGENT_RELAY_TELEGRAM_TOKEN` and `AGENT_RELAY_TELEGRAM_CHAT_ID` must be
-present in the daemon environment. Restart after correcting the activation file.
+This means `fake` was selected, not that Telegram credentials were missing. Run
+`agent-relay transport status`, then select `telegram` durably or set
+`AGENT_RELAY_TRANSPORT=telegram`. Confirm token/chat readiness without printing
+values and restart. Credentials alone never switch the transport.
 
 ### Threaded mode still reports false
 

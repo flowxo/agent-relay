@@ -28,8 +28,25 @@ import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
+import {
+  NOTIFICATIONS_COMMAND_USAGE,
+  runNotificationsCommand,
+} from "./notifications-command.js";
+import {
+  notificationsConnectionPaths,
+  readNotificationsConnection,
+} from "./notifications-config.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
 import { runSupervisor } from "./supervisor.js";
+import {
+  TRANSPORT_COMMAND_USAGE,
+  runTransportCommand,
+  telegramReadinessInputFromEnvironment,
+} from "./transport-command.js";
+import {
+  inspectTransportReadiness,
+  resolveTransportSelection,
+} from "./transport-config.js";
 import { seedWebDemo } from "./web-demo.js";
 
 const USAGE = `Agent Relay
@@ -53,6 +70,8 @@ Commands:
   capabilities       Print the generated harness capability registry
   canary             Prove the local fake-transport delivery loop
   telegram-canary    Prove a configured direct-Telegram reply loop
+  notifications      Connect, inspect, or disconnect hosted Notifications
+  transport          Select fake, direct Telegram, or hosted Notifications
 
 Run "agent-relay <command> --help" only where the command documents flags in
 the public guides. Agent Relay currently supports macOS on Apple silicon with
@@ -172,6 +191,43 @@ async function main(): Promise<void> {
   if (command === "daemon" || command === "web-demo") {
     const demo = command === "web-demo";
     const commandStateDir = demo ? join(stateDir, "web-demo") : stateDir;
+    const transportFlagCount = args.filter(
+      (argument) => argument === "--transport",
+    ).length;
+    if (transportFlagCount > 1) {
+      throw new Error("--transport may be provided only once");
+    }
+    const transportFlag = flag(args, "--transport");
+    if (
+      transportFlagCount === 1 &&
+      (transportFlag === undefined || transportFlag.startsWith("--"))
+    ) {
+      throw new Error("--transport requires fake, telegram, or notifications");
+    }
+    const transportEnvironment = environment("AGENT_RELAY_TRANSPORT");
+    if (demo && transportFlag !== undefined) {
+      throw new Error("web-demo always uses the fake transport");
+    }
+    const transportSelection = demo
+      ? {
+          configured: true as const,
+          selected: "fake" as const,
+          source: "command-line" as const,
+        }
+      : await resolveTransportSelection({
+          stateDirectory: commandStateDir,
+          ...(transportFlag === undefined
+            ? {}
+            : { commandLineOverride: transportFlag }),
+          ...(transportEnvironment === undefined
+            ? {}
+            : { environmentOverride: transportEnvironment }),
+        });
+    const transportReadiness = await inspectTransportReadiness({
+      selection: transportSelection,
+      stateDirectory: commandStateDir,
+      telegram: telegramReadinessInputFromEnvironment(process.env),
+    });
     const databasePath =
       flag(args, "--db") ?? join(commandStateDir, "relay.sqlite");
     const daemonToken = demo
@@ -193,6 +249,7 @@ async function main(): Promise<void> {
       ? "poll"
       : (environment("AGENT_RELAY_TELEGRAM_UPDATE_MODE") ?? "poll");
     if (
+      transportSelection.selected === "telegram" &&
       configuredTelegramUpdateMode !== "poll" &&
       configuredTelegramUpdateMode !== "webhook"
     ) {
@@ -200,16 +257,41 @@ async function main(): Promise<void> {
         "AGENT_RELAY_TELEGRAM_UPDATE_MODE must be poll or webhook",
       );
     }
-    const telegramOperatorUserId = optionalInteger(
-      telegramOperatorId,
-      "AGENT_RELAY_TELEGRAM_OPERATOR_ID",
-      false,
-    );
-    const telegramReplyChatId = optionalInteger(
-      telegramChatId,
-      "AGENT_RELAY_TELEGRAM_CHAT_ID",
-      true,
-    );
+    const telegramOperatorUserId =
+      transportSelection.selected === "telegram"
+        ? optionalInteger(
+            telegramOperatorId,
+            "AGENT_RELAY_TELEGRAM_OPERATOR_ID",
+            false,
+          )
+        : undefined;
+    const telegramReplyChatId =
+      transportSelection.selected === "telegram"
+        ? optionalInteger(telegramChatId, "AGENT_RELAY_TELEGRAM_CHAT_ID", true)
+        : undefined;
+    let notificationsConnection:
+      Awaited<ReturnType<typeof readNotificationsConnection>> | undefined;
+    if (transportSelection.selected === "notifications") {
+      try {
+        notificationsConnection = await readNotificationsConnection(
+          notificationsConnectionPaths(commandStateDir),
+        );
+      } catch {
+        throw new Error(
+          "selected Notifications transport configuration is invalid; reconnect it before startup",
+        );
+      }
+    }
+    if (
+      transportSelection.selected === "notifications" &&
+      (notificationsConnection === undefined ||
+        notificationsConnection.configuration.status !== "active" ||
+        notificationsConnection.credential === undefined)
+    ) {
+      throw new Error(
+        "selected Notifications transport is not ready; run agent-relay notifications connect",
+      );
+    }
     const stderrLogger = new JsonLineLogger();
     const daemonLogger = new CompositeLogger([
       stderrLogger,
@@ -241,9 +323,18 @@ async function main(): Promise<void> {
           environmentValue: environment("AGENT_RELAY_WEB_ENABLED"),
           disabledByFlag: args.includes("--no-web"),
         });
+    const notificationsMachineId =
+      transportSelection.selected === "notifications"
+        ? await loadOrCreateMachineId(join(commandStateDir, "machine-id"))
+        : undefined;
+    const notificationsCredentialId =
+      notificationsConnection?.credential?.credentialId;
     const daemon = await startDaemon({
       databasePath,
       webEnabled,
+      selectedTransport: transportSelection.selected,
+      transportSelection,
+      transportReadiness,
       host: flag(args, "--host") ?? "127.0.0.1",
       port: Number(flag(args, "--port") ?? (demo ? "4318" : "4317")),
       ...(daemonToken === undefined ? {} : { token: daemonToken }),
@@ -254,7 +345,43 @@ async function main(): Promise<void> {
         : { telegramOperatorUserId }),
       ...(telegramReplyChatId === undefined ? {} : { telegramReplyChatId }),
       ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
-      telegramUpdateMode: configuredTelegramUpdateMode,
+      ...(transportSelection.selected !== "notifications" ||
+      notificationsConnection?.credential === undefined ||
+      notificationsMachineId === undefined
+        ? {}
+        : {
+            notifications: {
+              baseUrl: notificationsConnection.configuration.baseUrl,
+              credential: notificationsConnection.credential.bearerToken,
+              subscriberId: notificationsConnection.configuration.subscriberId,
+              notifierId: notificationsConnection.configuration.notifierId,
+              bindingId: notificationsConnection.configuration.bindingId,
+              machineClientId:
+                notificationsConnection.configuration.machineClientId,
+              machineId: notificationsMachineId,
+              connectionGuard: async () => {
+                try {
+                  const current = await readNotificationsConnection(
+                    notificationsConnectionPaths(commandStateDir),
+                  );
+                  return (
+                    current?.configuration.status === "active" &&
+                    current.configuration.machineClientId ===
+                      notificationsConnection.configuration.machineClientId &&
+                    current.configuration.currentCredentialId ===
+                      notificationsConnection.configuration
+                        .currentCredentialId &&
+                    current.credential?.credentialId ===
+                      notificationsCredentialId
+                  );
+                } catch {
+                  return false;
+                }
+              },
+            },
+          }),
+      telegramUpdateMode:
+        configuredTelegramUpdateMode === "webhook" ? "webhook" : "poll",
       coalescingWindowMs: integerFlag(
         args,
         "--coalesce-window-ms",
@@ -424,12 +551,25 @@ async function main(): Promise<void> {
   }
 
   if (command === "doctor") {
+    const transportEnvironment = environment("AGENT_RELAY_TRANSPORT");
+    const transportSelection = await resolveTransportSelection({
+      stateDirectory: stateDir,
+      ...(transportEnvironment === undefined
+        ? {}
+        : { environmentOverride: transportEnvironment }),
+    });
+    const transportReadiness = await inspectTransportReadiness({
+      selection: transportSelection,
+      stateDirectory: stateDir,
+      telegram: telegramReadinessInputFromEnvironment(process.env),
+    });
     const report = await runDoctor({
       databasePath: flag(args, "--db") ?? ":memory:",
       rootDir: resolve(flag(args, "--root") ?? homedir()),
       packageVersion: AGENT_RELAY_VERSION,
       runtimeEntryPath: installEntryPath(args),
       runtimeNodePath: process.execPath,
+      transportReadiness,
     });
     output(report);
     process.exitCode = report.healthy ? 0 : 1;
@@ -471,6 +611,47 @@ async function main(): Promise<void> {
         dryRun: args.includes("--dry-run"),
       }),
     );
+    return;
+  }
+
+  if (command === "notifications") {
+    const result = await runNotificationsCommand({
+      args,
+      environment: process.env,
+      stateDirectory: stateDir,
+      stdinIsTTY: process.stdin.isTTY,
+      writeDiagnostic: (diagnostic) => {
+        process.stderr.write(`${JSON.stringify(diagnostic)}\n`);
+      },
+    });
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      "help" in result &&
+      result.help === NOTIFICATIONS_COMMAND_USAGE
+    ) {
+      process.stdout.write(NOTIFICATIONS_COMMAND_USAGE);
+    } else {
+      output(result);
+    }
+    return;
+  }
+  if (command === "transport") {
+    const result = await runTransportCommand({
+      args,
+      environment: process.env,
+      stateDirectory: stateDir,
+    });
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      "help" in result &&
+      result.help === TRANSPORT_COMMAND_USAGE
+    ) {
+      process.stdout.write(TRANSPORT_COMMAND_USAGE);
+    } else {
+      output(result);
+    }
     return;
   }
 
@@ -550,7 +731,7 @@ async function main(): Promise<void> {
   }
   if (command === "telegram-canary") {
     const daemonStatus = await client.status();
-    if (daemonStatus.transport !== "telegram") {
+    if (daemonStatus.selectedTransport !== "telegram") {
       throw new Error(
         "telegram-canary requires a daemon using the real Telegram transport",
       );

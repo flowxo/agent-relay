@@ -2,26 +2,155 @@
 
 ## Proven
 
-- The authoritative Open Source V1 candidate line is
-  `codex/fxo-1141-release-baseline`. It preserves the completed multi-session
-  MVP from `codex/initial-mvp` at `a4a6b5b` and descends through the coherent
-  Agent Relay C0 consumer/compatibility history in PR #2: `68b2fbf` → `100c250`
-  → `fee4629` → `76240c4`. It is not yet integrated to `main` or published as a
-  release.
+- GitHub PRs #1/#5 integrated the completed multi-session MVP. PR #2 then
+  integrated the exact Notifications `1.0.0-rc.1` consumer, PR #3 integrated the
+  V1 release baseline, PR #4 integrated AR1 release readiness, and PR #6
+  integrates the reconciled AR2 adapter. Every layer was retargeted to `main`,
+  validated on its exact updated head, and merged with history-preserving merge
+  commits. No package has been published.
 - Linear initiative `Agent Relay — Open Source V1` owns four ordered
   implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
-  all five milestones at 100%; AR2 remains planned and may use executable mocks;
-  AR3 is blocked on AR2 and C0-09; AR4 follows dogfood evidence. Post-V1
-  hosted-fleet explorations remain separate.
-- C0-07 (FXO-1048) and C0-08 (FXO-1049) are Done. Agent Relay pins and verifies
-  the exact three Notifications `1.0.0-draft.1` artifacts, runs a
+  all five milestones at 100%. AR2 is complete with FXO-1150 through FXO-1155
+  green against the executable RC mock and packed artifact. C0-09 is Done with
+  decision `go`; AR3 now waits for the Notifications-owned real machine-client
+  environment and bounded-canary authorization. AR4 follows dogfood evidence.
+  Post-V1 hosted fleet explorations remain separate.
+- C0-07 (FXO-1048), C0-08 (FXO-1049), and C0-09 (FXO-1050) are Done. Agent Relay
+  pins and verifies the exact three Notifications `1.0.0-rc.1` artifacts, runs a
   scripts-disabled clean consumer install, and proves mapping, retry,
   crash-before-ack replay, acknowledgement, quarantine, identity isolation,
   first-writer-wins local authority, and direct-Telegram parity.
-- Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
-  when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
-  all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
-  for `1.0.0-rc.1`; this repository does not claim a cross-product go decision.
+- FXO-1150 implements the mock-backed Notifications setup lifecycle. A bounded
+  administration client creates/reads/revokes machine clients and registers only
+  locally generated credential digests. `agent-relay notifications` connects
+  through a subscriber authorization link, proves exact binding/scope, zero-wait
+  polls the narrow stream, sends a fixed canary, writes strict private `0600`
+  configuration/credential files atomically, reports hashed safe status, rotates
+  after replacement smoke-test, retains failed old-client revocations, and
+  supports idempotent hosted revocation plus explicit local erasure.
+  Twenty-eight focused tests cover environment/stdin/prompt secret input,
+  positional rejection, pending authorization, HTTP/redirect/body bounds,
+  redaction, complete and incomplete provisional cleanup, symlink/permission/
+  mismatch/preflight failures, cross-machine isolation, new-client and
+  same-client rotation, cross-origin refusal, bounded retained cleanup state,
+  local-commit cleanup, revocation, and retained-state erasure. Production
+  daemon selection is implemented by FXO-1151 and durable hosted polling by
+  FXO-1152.
+- FXO-1151 makes transport choice explicit and credential-independent. A strict
+  private `transport.json`, `AGENT_RELAY_TRANSPORT`, and daemon-only
+  `--transport` resolve with documented precedence across exactly `fake`,
+  `telegram`, and `notifications`; default remains fake. Daemon fixtures prove
+  that unselected Telegram credentials cause zero Telegram calls and that a
+  selected hosted adapter alone delivers through the pinned Notifications mock.
+  Switching retains the database and provider setup. Safe transport status and
+  doctor output report selection, Telegram readiness, hashed hosted readiness,
+  last send, local queue/retry/dead-letter counts, classified hosted error, and
+  a terminal circuit without secrets, provider identities, message content, or
+  raw session records. FXO-1152 replaces the former honest `not-started` polling
+  placeholder with durable runtime evidence.
+  Authentication/scope/binding/contract configuration failures suppress repeated
+  remote calls while every affected local event remains durably diagnosed;
+  transient failures keep the stable event identity and bounded SQLite retry
+  policy. The final local gate passed `pnpm check`, including 46 Vitest
+  files/358 tests, contract/distribution/package/lifecycle proof; the
+  independent packed lifecycle rerun, all three Chromium scenarios, and
+  `pnpm audit --prod` with no known vulnerabilities also passed.
+- FXO-1152 implements the selected hosted interaction loop against the exact
+  pinned `1.0.0-rc.1` client and mock. Interactive delivery commits hosted
+  message/interaction/type identity to SQLite. Schema `2` adds hashed machine
+  poll state, immutable hosted event claims, acknowledgement retry state, and
+  message-update retry state. The daemon drains oldest acknowledgement work
+  before bounded long polling, validates cursor continuity plus exact
+  binding/message/request/machine/harness/session/turn/type/option/expiry
+  identity, resolves through the existing first-writer-wins transition in the
+  same transaction as the safe claim, and advances the cursor only after an
+  identity-matching idempotent provider acknowledgement. Event payload digests
+  detect mutation without retaining raw hosted responses. Retryable poll/ack
+  failures back off; crash-before/after-ack recovery cannot duplicate a
+  decision; poison is explicitly quarantined; integrity failures stop without
+  acknowledgement or cursor skip. Focused SQLite, source, validator, poller,
+  status, and running-daemon tests cover confirm/select/input, invalid option,
+  stale/expired/duplicate/terminal races, wrong binding/session/turn, concurrent
+  isolation, bounded timeout, shutdown, retry, restart, and the real mock-backed
+  answer round trip. C0 does not expose a detached poll-response signature, and
+  the implementation records authenticated schema/contract evidence without
+  claiming one. Hosted terminal-message reflection remains FXO-1153. The final
+  local gate passed 49 Vitest files/374 tests, 17 contract-lock and supply-chain
+  tests, the six-test isolated Notifications consumer, the 187,517-byte
+  packed/1,202,168-byte unpacked artifact proof, and the complete
+  schema-1-to-schema-2 packed lifecycle. The focused hosted matrix passed 9
+  files/73 tests, all three Chromium scenarios passed, and `pnpm audit --prod`
+  found no known vulnerability.
+- FXO-1153 makes hosted presentation a separate durable concern after local
+  authority and provider acknowledgement. A supported presenter projects
+  answered, duplicate, expired, cancelled, and unsupported states with one
+  deterministic SHA-256 operation identity; response loss retries only that
+  identity, and explicit provider ambiguity blocks without creating a second
+  message or decision. Interrupted update leases recover from SQLite, while
+  update failure cannot invoke resolution or continuation. The exact pinned rc.1
+  client has no resolved-message update method, so the shipped presenter records
+  `notifications-resolution-update-unsupported` without HTTP or misusing
+  cancellation. Hosted failures now map to retry, terminal-configuration,
+  dead-letter/security, quarantine, or operator-action categories. Status/doctor
+  expose only capability, counts, safe codes, categories, and hashed references.
+  Repeated hosted failures are rate-limited in logs while every event/update
+  remains durable. A runtime connection guard stops new send/poll/ack calls
+  after disconnect, revocation, erase, or rotation; a running-daemon test proves
+  local decisions/mappings survive and explicit reconnect plus restart resumes
+  delivery. The focused matrix passed 10 files/93 tests. The final local gate
+  passed 50 Vitest files/395 tests, 17 contract-lock and supply-chain tests, the
+  six-test isolated Notifications consumer, the 190,583-byte
+  packed/1,220,612-byte unpacked artifact proof, and the complete packed
+  lifecycle. All three Chromium scenarios passed, and `pnpm audit --prod` found
+  no known vulnerability.
+- FXO-1154 adds one transport-neutral matrix that runs unchanged against the
+  in-memory fake, the real direct `TelegramBotTransport`/reply router with a
+  synthetic Bot API, and the exact Notifications transport/mock/poller. Twelve
+  shared scenarios cover bounded delivery, duplicate ingestion, retry with the
+  same event identity, confirm/select/input, local identity rejection, expiry,
+  duplicate answers, both terminal/phone race orders, restart, and exactly one
+  resume claim. All three transports reach equivalent local request/answer/
+  resume outcomes within declared capability: fake/direct Telegram advertise
+  message updates, while the pinned hosted observation advertises only proven
+  confirm, single-select, and free-text with one question/six options. The
+  matrix exposed a contract bug where local duplicate/expired reasons were sent
+  on `processed` acknowledgements; they now remain in SQLite but are omitted
+  from the provider request, as rc.1 requires. The 16-file focused parity,
+  Telegram, hosted-safety, structured-interaction, resume, and canary matrix
+  passed 146 tests. The final local gate passed 51 Vitest files/408 tests, 17
+  contract-lock and supply-chain tests, the six-test isolated Notifications
+  consumer, the 190,951-byte packed/1,221,519-byte unpacked artifact proof, and
+  the complete packed lifecycle. All three Chromium scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability.
+- FXO-1155 proves the complete mock-backed hosted lifecycle from the installed
+  `@flowxo/agent-relay@0.1.0-alpha.1` tarball in a clean home and prefix. The
+  public CLI connects to the exact pinned loopback mock, proves generated
+  narrow-bearer/digest correspondence and private configuration separation,
+  explicitly selects Notifications, resolves confirm/select/input, kills the
+  daemon after local commit but before acknowledgement, and proves restart
+  replays exactly one acknowledgement/cursor commit. Explicit revoke/erasure
+  leaves all local answers authoritative; fake readback, direct Telegram through
+  a synthetic Bot API, owned uninstall with SQLite retention, and package
+  removal all pass. The verifier rejects workspace/sibling runtime resolution
+  and scans provider content, CLI output, logs, status, and package source for
+  credentials, provider identities, prompt/answer text, transcript/path/
+  executable sentinels, and raw cursor/message IDs. That proof exposed raw
+  event/provider receipt IDs in successful-delivery logs; they are now replaced
+  by 12-hex SHA-256 references with a permanent regression test.
+  `pnpm package:hosted:check` emitted package digest
+  `a97ee80dc12ebe08f5e03e0e64738994258efaba891162a02effd829d1ec97f5` and exact
+  contract-lock digest
+  `ec17c566723032e04a4c58fc367ba4c0c9b0b2e161bc5cd286fe0789ec59f30e`. The final
+  `pnpm check` passed 51 Vitest files/409 tests, 17 contract-lock and
+  supply-chain tests, the six-test isolated Notifications consumer, the
+  192,228-byte packed/1,225,124-byte unpacked artifact, the hosted clean-home
+  proof, and the complete packed lifecycle. All three Chromium scenarios passed,
+  and `pnpm audit --prod` found no known vulnerability. AR2 is complete locally;
+  real hosted evidence remains AR3 and waits for the approved service.
+- Agent Relay PR #2 merged the approved C0 candidate into `main` after
+  exact-head CI, packaged Chromium E2E, and GitGuardian passed. C0-09 records
+  `go` for `1.0.0-rc.1`; that decision does not authorize a production
+  deployment or create the Notifications environment AR3 needs.
 - The FXO-1141 baseline passed the release-candidate matrix locally on
   2026-07-26: frozen scripts-disabled install, Notifications artifact preflight,
   approved native rebuild, `pnpm check` (40 Vitest files/305 tests plus 17
@@ -76,8 +205,8 @@
   web credential, prior relay log, explicit retained credential/log fixtures,
   installer backups, and unrelated harness settings survive. Install manifests
   now record package version; doctor validates package/runtime/manifest and
-  launcher agreement; owned paths reject symlinks; SQLite migrates unversioned
-  stores to schema `1`; and schema `2` is refused without modification. The
+  launcher agreement; owned paths reject symlinks; SQLite now migrates prior
+  stores to schema `2`; and schema `3` is refused without modification. The
   lifecycle checker is part of `pnpm check` and publishes nothing. The final
   local gate passed 41 Vitest files/309 tests, 17 contract and supply-chain
   tests, the six-test isolated Notifications consumer, the 102,408-byte
@@ -628,14 +757,27 @@ also remain free of silent delivery, hook, or correlation failures.
   remains private. The policy and exact private-report URL are ready, but
   enabling and verifying the feature is a mandatory part of the later,
   explicitly approved public-promotion step. No security email was invented.
+- The pinned C0 mock authenticates readable machine tokens from startup
+  fixtures; registering a digest does not dynamically add that bearer to its
+  authentication map. FXO-1150 generates the real credential locally, supplies
+  it only to the mock's in-memory auth fixture, and separately asserts that HTTP
+  registration contains only the ID/digest. Real digest verification and human
+  subscription activation remain contract-backed assumptions until AR3 runs
+  against the approved real service.
+- The private pinned Notifications client/contract artifacts declare no
+  distributable license metadata. They are bundled only into an unpublished
+  local candidate today. Public package publication must still resolve the final
+  artifact license/notice boundary.
 
 ## Next action
 
-Begin mock-backed AR2 work against the pinned `1.0.0-draft.1` artifacts and the
-standalone AR1 package boundary. Production hosted dogfood must still wait for
-AR2 and a central C0-09 go disposition. npm scope/publication and the monitored
-public security-contact path remain owner-controlled promotion gates; AR1 does
-not authorize those external actions.
+Begin AR3 real-service dogfood only after the Notifications owner supplies an
+approved environment implementing narrow machine bootstrap and durable poll/ack,
+and authorizes the bounded canary. That phase must confirm production
+retention/privacy terms, real subscriber activation and digest verification,
+live delivery/reply/recovery, and deliberate transport-switch operations. npm
+scope/publication and the monitored public security-contact path remain
+owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

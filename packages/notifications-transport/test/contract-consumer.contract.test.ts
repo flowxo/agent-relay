@@ -174,7 +174,7 @@ function streamProof(): HostedStreamProof {
     authenticatedMachineId: "machine_synthetic_a",
     configuredMachineId: "machine_synthetic_a",
     schemaValidated: true,
-    signatureVerified: true,
+    responseContractVerified: true,
     streamIdentityVerified: true,
   };
 }
@@ -212,6 +212,7 @@ function createTransport(
   return new NotificationsContractTransport({
     baseUrl,
     credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+    machineClientId: "machine_client_synthetic_001",
     subscriberId: "agent_relay_operator",
     notifierId: "default",
     ...(fetchImplementation === undefined

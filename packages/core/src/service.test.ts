@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
-import { makeProjectRef, makeStableEventId } from "@agent-relay/protocol";
+import {
+  makeProjectRef,
+  makeStableEventId,
+  sha256,
+} from "@agent-relay/protocol";
 
 import { FakeTelegramTransport } from "./fake-transport.js";
 import { MemoryLogger } from "./logger.js";
 import { RelayService } from "./service.js";
 import { RelayStore } from "./store.js";
+import { TransportError, type NotificationTransport } from "./transport.js";
 
 function event(
   overrides: Partial<AgentAttentionEventV1> = {},
@@ -81,6 +86,47 @@ describe("RelayService durable delivery loop", () => {
     expect(await service.drain()).toMatchObject({ claimed: 0 });
     expect(transport.deliveries).toHaveLength(1);
     expect(store.status().events.delivered).toBe(1);
+    expect(
+      store.transportDeliverySummary("fake-telegram", "fake-"),
+    ).toMatchObject({
+      lastSuccessfulSendAt: expect.any(String),
+    });
+    store.close();
+  });
+
+  it("logs only hashed delivery identities", async () => {
+    const store = new RelayStore();
+    const logger = new MemoryLogger();
+    const providerMessageId = "message_private_provider_12345678";
+    const transport: NotificationTransport = {
+      name: "notifications",
+      deliver: async () => ({
+        transport: "notifications",
+        messageId: providerMessageId,
+      }),
+    };
+    const service = new RelayService(store, transport, { logger });
+    const input = event({
+      eventId: "event_private_delivery_12345678",
+      sessionId: "session_private_delivery_12345678",
+    });
+    service.ingest(input);
+
+    await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
+
+    const delivered = logger.records.find(
+      (record) => record.code === "delivery.succeeded",
+    );
+    expect(delivered?.details).toEqual({
+      eventRef: sha256(input.eventId).slice(0, 12),
+      transport: "notifications",
+      messageRef: sha256(`notifications\u001f${providerMessageId}`).slice(
+        0,
+        12,
+      ),
+    });
+    expect(JSON.stringify(delivered)).not.toContain(input.eventId);
+    expect(JSON.stringify(delivered)).not.toContain(providerMessageId);
     store.close();
   });
 
@@ -219,6 +265,72 @@ describe("RelayService durable delivery loop", () => {
     expect(
       logger.records.some((record) => record.code === "delivery.dead-lettered"),
     ).toBe(true);
+    expect(store.transportDeliverySummary("fake-telegram", "fake-")).toEqual({
+      lastError: {
+        at: expect.any(String),
+        code: "fake-bad-request",
+      },
+    });
+    store.close();
+  });
+
+  it("rate-limits repeated hosted failure logs while retaining every failed event", async () => {
+    const testClock = clock();
+    const store = new RelayStore();
+    const logger = new MemoryLogger();
+    const transport: NotificationTransport = {
+      name: "notifications",
+      deliver: async () => {
+        throw new TransportError(
+          "Notifications connection is inactive.",
+          "notifications-connection-inactive",
+          false,
+        );
+      },
+    };
+    const service = new RelayService(store, transport, {
+      logger,
+      now: testClock.now,
+      transportFailureLogIntervalMs: 60_000,
+    });
+    const input = (sequence: number) =>
+      event({
+        eventId: `event_hosted_log_limit_${String(sequence)}_12345678`,
+        sequence,
+        type: "input.required",
+        request: {
+          correlationId: `request_hosted_log_limit_${String(sequence)}_12345678`,
+          kind: "input",
+          question: "Synthetic bounded input.",
+          expiresAt: "2026-07-24T12:10:00.000Z",
+        },
+      });
+    service.ingest(input(1));
+    service.ingest(input(2));
+    await expect(service.drain()).resolves.toMatchObject({
+      deadLettered: 2,
+    });
+    expect(
+      logger.records.filter(
+        (record) => record.code === "delivery.dead-lettered",
+      ),
+    ).toHaveLength(1);
+    expect(store.status().events.dead_letter).toBe(2);
+
+    testClock.advance(60_001);
+    service.ingest(input(3));
+    await expect(service.drain()).resolves.toMatchObject({
+      deadLettered: 1,
+    });
+    const failureLogs = logger.records.filter(
+      (record) => record.code === "delivery.dead-lettered",
+    );
+    expect(failureLogs).toHaveLength(2);
+    expect(failureLogs[1]?.details).toMatchObject({
+      errorCode: "notifications-connection-inactive",
+      suppressedSinceLast: 1,
+    });
+    expect(store.status().events.dead_letter).toBe(3);
     store.close();
   });
 

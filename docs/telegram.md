@@ -31,6 +31,7 @@ Copy the variable names into a secret manager or a mode-`0600`, gitignored local
 file:
 
 ```dotenv
+AGENT_RELAY_TRANSPORT=telegram
 AGENT_RELAY_TELEGRAM_TOKEN=<bot token>
 AGENT_RELAY_TELEGRAM_CHAT_ID=<private chat id>
 AGENT_RELAY_TELEGRAM_OPERATOR_ID=<authorized operator id>
@@ -49,6 +50,17 @@ Long polling requires no public callback. Webhook mode is available only when an
 external HTTPS bridge already exists and additionally requires
 `AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET`. Polling and webhooks are mutually
 exclusive; inspect `getWebhookInfo` before removing or changing a webhook.
+
+Transport selection is explicit and credential-independent. Instead of the
+environment override above, persist the choice with:
+
+```sh
+~/.agent-relay/bin/agent-relay transport select telegram
+~/.agent-relay/bin/agent-relay transport status
+```
+
+Restart the daemon after a durable selection change. Direct Telegram never
+automatically receives a second copy when another transport is selected.
 
 ## Start and preflight
 

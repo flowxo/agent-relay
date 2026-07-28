@@ -42,12 +42,19 @@ Redaction is defense in depth. Do not attach the output to a public issue.
 
 ## The daemon selects `fake-telegram`
 
-This is correct when Telegram token and chat ID are absent. If direct Telegram
-was intended, confirm both variables exist in the daemon's environment and
-restart it. Never print the values.
+This means the explicit selection resolved to `fake`; credential presence is
+intentionally irrelevant. Inspect without printing credentials:
 
-A partial Telegram configuration must be treated as an error, not a reason to
-silently route real work to another chat.
+```sh
+agent-relay transport status
+```
+
+If direct Telegram was intended, run `agent-relay transport select telegram` or
+set `AGENT_RELAY_TRANSPORT=telegram`, verify token/chat readiness, and restart.
+A durable selection change never deletes SQLite or request state.
+
+A partial selected configuration fails clearly; it never silently routes real
+work through another provider.
 
 ## Telegram preflight fails
 

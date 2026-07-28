@@ -12,6 +12,8 @@ import {
 } from "./doctor.js";
 import { installAgentRelay } from "./installer.js";
 
+import type { TransportReadinessReport } from "./transport-config.js";
+
 async function executable(directory: string, name: string, version: string) {
   const path = join(directory, name);
   await writeFile(
@@ -148,6 +150,129 @@ describe("doctor version and installation checks", () => {
         level: "fail",
         detail: expect.stringContaining("installer limit"),
       }),
+    );
+  });
+
+  it("reports only safe selected Notifications readiness details", async () => {
+    const readiness = {
+      schema: "agent-relay-transport-readiness.v1",
+      selectedTransport: "notifications",
+      selection: {
+        configured: true,
+        selected: "notifications",
+        source: "durable",
+        updatedAt: "2026-07-26T22:00:00.000Z",
+      },
+      transports: {
+        fake: { ready: true },
+        notifications: {
+          apiOrigin: "https://notifications.example.test",
+          binding: "verified-at-connect",
+          canaryRef: "canary_safe12",
+          configured: true,
+          connectionStatus: "active",
+          contractVersion: "1.0.0-rc.1",
+          credentialPermissions: "pinned-machine-scopes",
+          credentialPresent: true,
+          environment: "test",
+          issueCodes: [],
+          machineClientRef: "client_safe12",
+          pendingRevocations: 0,
+          ready: true,
+          resolutionPresentation: "unsupported-in-pinned-contract",
+        },
+        telegram: {
+          configured: "delivery",
+          deliveryReady: true,
+          issueCodes: [],
+          replyReady: false,
+          ready: true,
+          updateMode: "poll",
+          webhookReady: true,
+        },
+      },
+    } satisfies TransportReadinessReport;
+    const report = await runDoctor({ transportReadiness: readiness });
+    const serialized = JSON.stringify(report);
+
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "transport-selection",
+          level: "pass",
+          detail: "notifications selected from durable configuration",
+        }),
+        expect.objectContaining({
+          name: "selected-transport-readiness",
+          level: "pass",
+        }),
+        expect.objectContaining({
+          name: "notifications-transport",
+          level: "pass",
+          detail: expect.stringContaining("client_safe12"),
+        }),
+        expect.objectContaining({
+          name: "telegram-transport",
+          level: "pass",
+        }),
+      ]),
+    );
+    expect(serialized).not.toContain("bearer");
+    expect(serialized).not.toContain("subscriber");
+    expect(serialized).not.toContain("binding_private");
+  });
+
+  it("fails doctor when the selected hosted credential is revoked", async () => {
+    const readiness = {
+      schema: "agent-relay-transport-readiness.v1",
+      selectedTransport: "notifications",
+      selection: {
+        configured: true,
+        selected: "notifications",
+        source: "durable",
+      },
+      transports: {
+        fake: { ready: true },
+        notifications: {
+          binding: "inactive",
+          configured: true,
+          connectionStatus: "revoked",
+          credentialPermissions: "inactive",
+          credentialPresent: false,
+          issueCodes: [
+            "notifications-revoked",
+            "notifications-credential-missing",
+          ],
+          pendingRevocations: 0,
+          ready: false,
+          resolutionPresentation: "unsupported-in-pinned-contract",
+        },
+        telegram: {
+          configured: "none",
+          deliveryReady: false,
+          issueCodes: [],
+          replyReady: false,
+          ready: false,
+          updateMode: "poll",
+          webhookReady: true,
+        },
+      },
+    } satisfies TransportReadinessReport;
+    const report = await runDoctor({ transportReadiness: readiness });
+
+    expect(report.healthy).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "selected-transport-readiness",
+          level: "fail",
+          detail: expect.stringContaining("notifications-revoked"),
+        }),
+        expect.objectContaining({
+          name: "notifications-transport",
+          level: "fail",
+        }),
+      ]),
     );
   });
 });

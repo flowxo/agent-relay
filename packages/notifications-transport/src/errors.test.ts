@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   asNotificationsDeliveryError,
   NotificationsDeliveryError,
+  notificationsFailurePolicy,
 } from "./errors.js";
 import { NotificationsMappingError } from "./mapping.js";
 
@@ -62,6 +63,24 @@ describe("Notifications error classification", () => {
       expect(mapped.message).not.toContain("/private/path");
     },
   );
+
+  it("classifies the concrete removed-resource code as operator action", () => {
+    expect(
+      notificationsFailurePolicy(
+        new NotificationsDeliveryError(
+          "The hosted resource no longer exists.",
+          "notifications-resource-not-found",
+          false,
+          "terminal",
+          { status: 404 },
+        ),
+      ),
+    ).toEqual({
+      category: "operator-action",
+      retrySameOperation: false,
+      permitNewIdentity: false,
+    });
+  });
 
   it("permits uncertain connection replay only through the same operation", () => {
     const mapped = asNotificationsDeliveryError(
@@ -123,6 +142,74 @@ describe("Notifications error classification", () => {
     expect(`${protocol.message}${unknown.message}`).not.toContain(
       "private-secret",
     );
+  });
+
+  it.each([
+    [401, "terminal-configuration"],
+    [403, "dead-letter-security"],
+    [404, "operator-action"],
+    [409, "dead-letter-security"],
+    [429, "retry"],
+    [503, "retry"],
+  ] as const)(
+    "maps HTTP %s to stable %s diagnosis",
+    (status, expectedCategory) => {
+      const failure = new NotificationsDeliveryError(
+        "Safe synthetic response.",
+        "notifications-protocol-unclassified",
+        status === 429 || status >= 500,
+        status === 429 || status >= 500 ? "retry_same_operation" : "terminal",
+        { status },
+      );
+      expect(notificationsFailurePolicy(failure)).toEqual({
+        category: expectedCategory,
+        retrySameOperation: expectedCategory === "retry",
+        permitNewIdentity: false,
+      });
+    },
+  );
+
+  it("quarantines malformed/schema responses and requires operator action for explicit ambiguity", () => {
+    const schema = asNotificationsDeliveryError(
+      new NotificationsContractError("pollMachineEvents", []),
+    );
+    const malformed = asNotificationsDeliveryError(
+      new NotificationsProtocolError(
+        "pollMachineEvents",
+        "private malformed body",
+        200,
+      ),
+    );
+    const redirect = asNotificationsDeliveryError(
+      new NotificationsProtocolError(
+        "pollMachineEvents",
+        "https://private.example.test",
+        307,
+      ),
+    );
+    const ambiguous = asNotificationsDeliveryError(
+      new NotificationsProblemError(
+        problem("provider_outcome_unknown", false, 502),
+      ),
+    );
+    expect(notificationsFailurePolicy(schema).category).toBe("quarantine");
+    expect(malformed).toMatchObject({
+      code: "notifications-protocol-malformed",
+      retryable: false,
+    });
+    expect(notificationsFailurePolicy(malformed).category).toBe("quarantine");
+    expect(redirect).toMatchObject({
+      code: "notifications-redirect-refused",
+      retryable: false,
+    });
+    expect(notificationsFailurePolicy(redirect).category).toBe(
+      "dead-letter-security",
+    );
+    expect(notificationsFailurePolicy(ambiguous)).toEqual({
+      category: "operator-action",
+      retrySameOperation: false,
+      permitNewIdentity: false,
+    });
   });
 
   it("preserves an already classified local failure", () => {

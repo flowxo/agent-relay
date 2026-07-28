@@ -36,6 +36,7 @@ function transportFor(mock: NotificationsContractMock, fetch = fetchFor(mock)) {
   return new NotificationsContractTransport({
     baseUrl: "https://notifications.mock.test",
     credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+    machineClientId: "machine_client_synthetic_001",
     subscriberId: "agent_relay_operator",
     notifierId: "default",
     fetch,
@@ -43,6 +44,35 @@ function transportFor(mock: NotificationsContractMock, fetch = fetchFor(mock)) {
 }
 
 describe("Notifications contract transport", () => {
+  it("advertises only interaction behavior proven by the pinned contract", () => {
+    const transport = transportFor(createNotificationsContractMock());
+
+    expect(
+      transport.observeInteractionCapabilities("2026-07-25T17:45:00.000Z"),
+    ).toEqual({
+      schema: "agent-interaction-provider-observation.v1",
+      capabilities: {
+        schema: "agent-interaction-capabilities.v1",
+        providerId: "transport_flowxo_notifications",
+        providerKind: "transport",
+        observedAt: "2026-07-25T17:45:00.000Z",
+        features: ["confirm", "single-select", "free-text"],
+        presentationModes: ["buttons", "direct-text"],
+        limits: {
+          maxQuestions: 1,
+          maxOptionsPerQuestion: 6,
+          maxTextLength: 3_000,
+          maxPayloadBytes: 8_192,
+        },
+      },
+      status: "proven",
+      evidence: "official-docs",
+      observedVersion: "@flowxo/notifications@1.0.0-rc.1",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.1",
+      note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
+    });
+  });
+
   it("uses one stable event identity for idempotency and correlation", async () => {
     const mock = createNotificationsContractMock({
       scenario: "repeated-idempotent-message",
@@ -203,6 +233,116 @@ describe("Notifications contract transport", () => {
       });
     }
     expect(keys).toEqual([message.eventId, message.eventId]);
+    expect(transport.circuitState()).toEqual({
+      blocked: false,
+      suppressedDeliveries: 0,
+    });
+  });
+
+  it("blocks repeated network calls after a terminal credential failure", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.redirect).toBe("manual");
+      return new Response(
+        JSON.stringify({
+          type: "https://flowxo.com/notifications/problems/credential_invalid",
+          title: "Credential invalid",
+          status: 401,
+          detail: "synthetic private provider detail",
+          code: "credential_invalid",
+          diagnostic_id: "diagnostic_transport_12345678",
+          retryable: false,
+        }),
+        {
+          headers: { "content-type": "application/problem+json" },
+          status: 401,
+        },
+      );
+    });
+    const transport = transportFor(
+      createNotificationsContractMock(),
+      fetchMock,
+    );
+    const first = delivery();
+    const second = {
+      ...delivery(),
+      eventId: "event_notifications_second_12345678",
+    };
+
+    await expect(
+      transport.deliver(first, { idempotencyKey: first.eventId }),
+    ).rejects.toMatchObject({
+      code: "notifications-credential-invalid",
+      retryable: false,
+    });
+    await expect(
+      transport.deliver(second, { idempotencyKey: second.eventId }),
+    ).rejects.toMatchObject({
+      code: "notifications-credential-invalid",
+      retryable: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(transport.circuitState()).toEqual({
+      blocked: true,
+      errorCode: "notifications-credential-invalid",
+      suppressedDeliveries: 1,
+    });
+  });
+
+  it("stops new hosted sends after the local connection becomes inactive", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const transport = new NotificationsContractTransport({
+      baseUrl: "https://notifications.example.test",
+      credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+      machineClientId: "machine_client_synthetic_001",
+      subscriberId: "agent_relay_operator",
+      connectionGuard: async () => false,
+      fetch: fetchMock,
+    });
+    const message = delivery();
+    await expect(
+      transport.deliver(message, { idempotencyKey: message.eventId }),
+    ).rejects.toMatchObject({
+      code: "notifications-connection-inactive",
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(transport.circuitState()).toEqual({
+      blocked: true,
+      errorCode: "notifications-connection-inactive",
+      suppressedDeliveries: 0,
+    });
+  });
+
+  it("refuses remote HTTP and never follows a credential-bearing redirect", async () => {
+    expect(
+      () =>
+        new NotificationsContractTransport({
+          baseUrl: "http://notifications.example.test",
+          credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
+          machineClientId: "machine_client_synthetic_001",
+          subscriberId: "agent_relay_operator",
+        }),
+    ).toThrow("HTTPS");
+
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.redirect).toBe("manual");
+      return new Response(null, {
+        headers: { location: "https://untrusted.example.test/capture" },
+        status: 307,
+      });
+    });
+    const transport = transportFor(
+      createNotificationsContractMock(),
+      fetchMock,
+    );
+    const message = delivery();
+    await expect(
+      transport.deliver(message, { idempotencyKey: message.eventId }),
+    ).rejects.toMatchObject({
+      code: "notifications-redirect-refused",
+      retryable: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces provider outcome_unknown as terminal for automatic sends", async () => {

@@ -50,7 +50,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 1;
+export const RELAY_STORE_SCHEMA_VERSION = 2;
 
 export interface IngestResult {
   eventId: string;
@@ -193,6 +193,132 @@ export interface StoreStatus {
   resumeCommands: Record<ResumeCommandState, number>;
   diagnostics: Record<RelayDiagnosticV1["level"], number> & { total: number };
   pendingDeliveryCount: number;
+}
+
+export interface TransportDeliverySummary {
+  lastError?: {
+    at: string;
+    code: string;
+  };
+  lastSuccessfulSendAt?: string;
+}
+
+export type HostedInteractionType = "confirm" | "select" | "input";
+export type HostedAcknowledgementDisposition = "processed" | "quarantined";
+export type HostedClaimOutcome =
+  "answered" | "duplicate" | "terminal" | "quarantined" | "stopped";
+
+export interface HostedDeliveryRecord {
+  eventId: string;
+  messageId: string;
+  interactionId: string;
+  interactionType: HostedInteractionType;
+  request: PendingRequestRecord;
+  event: AgentAttentionEventV1;
+}
+
+export interface HostedResolution {
+  correlationId: string;
+  answer: string;
+  resolvedBy: "notifications";
+  now: string;
+  expected: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    turnId?: string;
+  };
+}
+
+export interface RecordHostedClaimInput {
+  streamKey: string;
+  eventId: string;
+  cursor: string;
+  payloadHash: string;
+  messageId: string;
+  interactionId: string;
+  occurredAt: string;
+  handledAt: string;
+  validation:
+    | {
+        outcome: "ready";
+        acknowledgement: "processed";
+        resolution: HostedResolution;
+      }
+    | {
+        outcome: "duplicate" | "terminal";
+        acknowledgement: "processed";
+        reasonCode: string;
+      }
+    | {
+        outcome: "quarantine";
+        acknowledgement: "quarantined";
+        reasonCode: string;
+      }
+    | {
+        outcome: "stop";
+        acknowledgement: "none";
+        reasonCode: string;
+      };
+}
+
+export interface HostedClaimRecord {
+  streamKey: string;
+  eventId: string;
+  cursor: string;
+  payloadHash: string;
+  messageId: string;
+  interactionId: string;
+  outcome: HostedClaimOutcome;
+  disposition?: HostedAcknowledgementDisposition;
+  reasonCode?: string;
+  replayed: boolean;
+  handledAt: string;
+}
+
+export interface HostedAcknowledgementRecord {
+  streamKey: string;
+  eventId: string;
+  cursor: string;
+  disposition: HostedAcknowledgementDisposition;
+  reasonCode?: string;
+  state: "pending" | "acknowledging" | "retry" | "acknowledged" | "blocked";
+  attemptCount: number;
+  nextAttemptAt: string;
+}
+
+export type HostedPresentationOutcome =
+  "answered" | "duplicate" | "expired" | "cancelled" | "unsupported";
+
+export interface HostedMessageUpdateRecord {
+  streamKey: string;
+  eventId: string;
+  messageId: string;
+  interactionId: string;
+  outcome: HostedPresentationOutcome;
+  resolutionSource?: PendingRequestRecord["resolvedBy"];
+  reasonCode?: string;
+  state: "pending" | "updating" | "retry" | "updated" | "blocked";
+  attemptCount: number;
+  nextAttemptAt: string;
+  lastErrorCode?: string;
+}
+
+export interface HostedMessageUpdateSummary {
+  pending: number;
+  updating: number;
+  retry: number;
+  updated: number;
+  blocked: number;
+  lastError?: { at: string; code: string };
+}
+
+export interface HostedPollStatus {
+  committedCursor?: string;
+  lastSuccessfulPollAt?: string;
+  lastError?: { at: string; code: string };
+  unacknowledgedEventCount: number;
+  messageUpdates: HostedMessageUpdateSummary;
 }
 
 export interface DiagnosticIngestResult {
@@ -826,6 +952,25 @@ function assertIsoCutoff(value: string, name: string): void {
   }
 }
 
+function assertHostedOpaque(
+  value: string,
+  name: string,
+  maximumLength = 2_048,
+): void {
+  if (
+    value.length === 0 ||
+    value.length > maximumLength ||
+    [...value].some((character) => {
+      const codePoint = character.codePointAt(0);
+      return (
+        codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)
+      );
+    })
+  ) {
+    throw new Error(`${name} is not a bounded opaque value`);
+  }
+}
+
 function collisionComparable(payloadJson: string): string {
   const event = AgentAttentionEventV1Schema.parse(
     JSON.parse(payloadJson) as unknown,
@@ -1107,6 +1252,115 @@ export class RelayStore {
         FOREIGN KEY (correlation_id)
           REFERENCES pending_requests(correlation_id)
       );
+
+      CREATE TABLE IF NOT EXISTS hosted_delivery_mappings (
+        event_id TEXT PRIMARY KEY,
+        stream_key TEXT NOT NULL,
+        transport_name TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        interaction_id TEXT NOT NULL,
+        interaction_type TEXT NOT NULL
+          CHECK (interaction_type IN ('confirm', 'select', 'input')),
+        created_at TEXT NOT NULL,
+        UNIQUE (stream_key, message_id),
+        UNIQUE (stream_key, interaction_id),
+        FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS hosted_poll_state (
+        stream_key TEXT PRIMARY KEY,
+        committed_cursor TEXT,
+        last_successful_poll_at TEXT,
+        last_error_code TEXT,
+        last_error_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS hosted_event_claims (
+        claim_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_key TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        cursor TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        interaction_id TEXT NOT NULL,
+        outcome TEXT NOT NULL
+          CHECK (
+            outcome IN (
+              'answered', 'duplicate', 'terminal', 'quarantined', 'stopped'
+            )
+          ),
+        disposition TEXT
+          CHECK (disposition IN ('processed', 'quarantined')),
+        reason_code TEXT,
+        received_at TEXT NOT NULL,
+        handled_at TEXT NOT NULL,
+        UNIQUE (stream_key, event_id),
+        UNIQUE (stream_key, cursor)
+      );
+
+      CREATE INDEX IF NOT EXISTS hosted_event_claims_order_idx
+        ON hosted_event_claims(stream_key, claim_id);
+
+      CREATE TABLE IF NOT EXISTS hosted_event_acknowledgements (
+        stream_key TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        cursor TEXT NOT NULL,
+        disposition TEXT NOT NULL
+          CHECK (disposition IN ('processed', 'quarantined')),
+        reason_code TEXT,
+        state TEXT NOT NULL
+          CHECK (
+            state IN (
+              'pending', 'acknowledging', 'retry', 'acknowledged', 'blocked'
+            )
+          ),
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error_code TEXT,
+        acknowledged_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (stream_key, event_id),
+        FOREIGN KEY (stream_key, event_id)
+          REFERENCES hosted_event_claims(stream_key, event_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS hosted_event_ack_due_idx
+        ON hosted_event_acknowledgements(
+          stream_key, state, next_attempt_at
+        );
+
+      CREATE TABLE IF NOT EXISTS hosted_message_updates (
+        stream_key TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        interaction_id TEXT NOT NULL,
+        outcome TEXT NOT NULL
+          CHECK (
+            outcome IN (
+              'answered', 'duplicate', 'terminal', 'quarantined'
+            )
+          ),
+        reason_code TEXT,
+        state TEXT NOT NULL
+          CHECK (
+            state IN (
+              'pending', 'updating', 'retry', 'updated', 'blocked'
+            )
+          ),
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error_code TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (stream_key, event_id),
+        FOREIGN KEY (stream_key, event_id)
+          REFERENCES hosted_event_claims(stream_key, event_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS hosted_message_update_due_idx
+        ON hosted_message_updates(stream_key, state, next_attempt_at);
 
       CREATE TABLE IF NOT EXISTS interaction_drafts (
         correlation_id TEXT PRIMARY KEY,
@@ -2309,6 +2563,11 @@ export class RelayStore {
     transportName: string,
     messageId: string,
     now: string,
+    hostedInteraction?: {
+      id: string;
+      streamKey: string;
+      type: HostedInteractionType;
+    },
   ): number {
     const update = this.database
       .prepare(
@@ -2343,6 +2602,35 @@ export class RelayStore {
         `,
       )
       .run(messageId, eventId);
+    if (hostedInteraction !== undefined) {
+      if (!/^[a-f0-9]{64}$/u.test(hostedInteraction.streamKey)) {
+        throw new Error("hosted stream key must be a full SHA-256 digest");
+      }
+      this.database
+        .prepare(
+          `
+          INSERT INTO hosted_delivery_mappings (
+            event_id, stream_key, transport_name, message_id, interaction_id,
+            interaction_type, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(event_id) DO UPDATE SET
+            stream_key = excluded.stream_key,
+            transport_name = excluded.transport_name,
+            message_id = excluded.message_id,
+            interaction_id = excluded.interaction_id,
+            interaction_type = excluded.interaction_type
+        `,
+        )
+        .run(
+          eventId,
+          hostedInteraction.streamKey,
+          transportName,
+          messageId,
+          hostedInteraction.id,
+          hostedInteraction.type,
+          now,
+        );
+    }
     return update.changes;
   }
 
@@ -2352,6 +2640,11 @@ export class RelayStore {
     transportName: string,
     messageId: string,
     now: string,
+    hostedInteraction?: {
+      id: string;
+      streamKey: string;
+      type: HostedInteractionType;
+    },
   ): void {
     const result = this.database.transaction(() =>
       this.markDeliveredWithinTransaction(
@@ -2360,6 +2653,7 @@ export class RelayStore {
         transportName,
         messageId,
         now,
+        hostedInteraction,
       ),
     )();
     if (result !== 1) {
@@ -6211,6 +6505,932 @@ export class RelayStore {
     );
   }
 
+  public getHostedDeliveryForMessage(
+    streamKey: string,
+    messageId: string,
+  ): HostedDeliveryRecord | undefined {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertHostedOpaque(messageId, "hosted message id");
+    const row = this.database
+      .prepare(
+        `
+        SELECT event_id, message_id, interaction_id, interaction_type
+        FROM hosted_delivery_mappings
+        WHERE stream_key = ?
+          AND transport_name = 'notifications'
+          AND message_id = ?
+      `,
+      )
+      .get(streamKey, messageId) as
+      | {
+          event_id: string;
+          message_id: string;
+          interaction_id: string;
+          interaction_type: HostedInteractionType;
+        }
+      | undefined;
+    if (row === undefined) {
+      return undefined;
+    }
+    const request = this.getPendingForEvent(row.event_id);
+    const storedEvent = this.getEvent(row.event_id);
+    if (request === undefined || storedEvent === undefined) {
+      return undefined;
+    }
+    return {
+      eventId: row.event_id,
+      messageId: row.message_id,
+      interactionId: row.interaction_id,
+      interactionType: row.interaction_type,
+      request,
+      event: storedEvent.event,
+    };
+  }
+
+  private hostedClaim(
+    streamKey: string,
+    eventId: string,
+    replayed: boolean,
+  ): HostedClaimRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          stream_key, event_id, cursor, payload_hash, message_id,
+          interaction_id, outcome, disposition, reason_code, handled_at
+        FROM hosted_event_claims
+        WHERE stream_key = ? AND event_id = ?
+      `,
+      )
+      .get(streamKey, eventId) as
+      | {
+          stream_key: string;
+          event_id: string;
+          cursor: string;
+          payload_hash: string;
+          message_id: string;
+          interaction_id: string;
+          outcome: HostedClaimOutcome;
+          disposition: HostedAcknowledgementDisposition | null;
+          reason_code: string | null;
+          handled_at: string;
+        }
+      | undefined;
+    return row === undefined
+      ? undefined
+      : {
+          streamKey: row.stream_key,
+          eventId: row.event_id,
+          cursor: row.cursor,
+          payloadHash: row.payload_hash,
+          messageId: row.message_id,
+          interactionId: row.interaction_id,
+          outcome: row.outcome,
+          ...(row.disposition === null ? {} : { disposition: row.disposition }),
+          ...(row.reason_code === null ? {} : { reasonCode: row.reason_code }),
+          replayed,
+          handledAt: row.handled_at,
+        };
+  }
+
+  public recordHostedEventClaim(
+    input: RecordHostedClaimInput,
+  ): HostedClaimRecord {
+    if (!/^[a-f0-9]{64}$/u.test(input.streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertHostedOpaque(input.eventId, "hosted event id");
+    assertHostedOpaque(input.cursor, "hosted cursor");
+    if (!/^[a-f0-9]{64}$/u.test(input.payloadHash)) {
+      throw new Error("hosted event payload hash must be a SHA-256 digest");
+    }
+    assertHostedOpaque(input.messageId, "hosted message id");
+    assertHostedOpaque(input.interactionId, "hosted interaction id");
+    assertIsoCutoff(input.occurredAt, "hosted event occurrence");
+    assertIsoCutoff(input.handledAt, "hosted event handling time");
+    if (
+      "reasonCode" in input.validation &&
+      input.validation.reasonCode.length > 128
+    ) {
+      throw new Error("hosted outcome reason is too long");
+    }
+
+    return this.database.transaction((): HostedClaimRecord => {
+      const prior = this.hostedClaim(input.streamKey, input.eventId, true);
+      if (prior !== undefined) {
+        if (
+          prior.cursor !== input.cursor ||
+          prior.payloadHash !== input.payloadHash ||
+          prior.messageId !== input.messageId ||
+          prior.interactionId !== input.interactionId
+        ) {
+          throw new Error(
+            "hosted event identity changed after its durable claim",
+          );
+        }
+        return prior;
+      }
+
+      const delivery = this.getHostedDeliveryForMessage(
+        input.streamKey,
+        input.messageId,
+      );
+      const deliveryMatches =
+        delivery !== undefined &&
+        delivery.interactionId === input.interactionId;
+      let outcome: HostedClaimOutcome;
+      let disposition: HostedAcknowledgementDisposition | undefined;
+      let reasonCode: string | undefined;
+
+      if (delivery === undefined) {
+        outcome = "stopped";
+        reasonCode =
+          input.validation.outcome === "stop"
+            ? input.validation.reasonCode
+            : "request_not_found";
+      } else if (!deliveryMatches) {
+        outcome = "stopped";
+        reasonCode = "correlation_mismatch";
+      } else if (input.validation.outcome === "ready") {
+        if (
+          input.validation.resolution.correlationId !==
+          delivery.request.correlationId
+        ) {
+          outcome = "stopped";
+          reasonCode = "correlation_mismatch";
+        } else {
+          const resolution = this.resolveRequest(input.validation.resolution);
+          switch (resolution.outcome) {
+            case "answered":
+              outcome = "answered";
+              disposition = "processed";
+              break;
+            case "duplicate":
+              outcome = "duplicate";
+              disposition = "processed";
+              reasonCode = "already_resolved";
+              break;
+            case "expired":
+            case "cancelled":
+              outcome = "terminal";
+              disposition = "processed";
+              reasonCode =
+                resolution.outcome === "expired"
+                  ? "locally_expired"
+                  : "locally_cancelled";
+              break;
+            case "failed":
+              outcome = "quarantined";
+              disposition = "quarantined";
+              reasonCode = "local_request_failed";
+              break;
+            case "identity_mismatch":
+              outcome = "stopped";
+              reasonCode = "local_identity_mismatch";
+              break;
+            case "not_found":
+              outcome = "stopped";
+              reasonCode = "request_not_found";
+              break;
+          }
+        }
+      } else {
+        reasonCode = input.validation.reasonCode;
+        switch (input.validation.outcome) {
+          case "duplicate":
+            outcome = "duplicate";
+            disposition = "processed";
+            break;
+          case "terminal":
+            outcome = "terminal";
+            disposition = "processed";
+            break;
+          case "quarantine":
+            outcome = "quarantined";
+            disposition = "quarantined";
+            break;
+          case "stop":
+            outcome = "stopped";
+            break;
+        }
+      }
+
+      this.database
+        .prepare(
+          `
+          INSERT INTO hosted_event_claims (
+            stream_key, event_id, cursor, payload_hash, message_id,
+            interaction_id, outcome, disposition, reason_code, received_at,
+            handled_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          input.streamKey,
+          input.eventId,
+          input.cursor,
+          input.payloadHash,
+          input.messageId,
+          input.interactionId,
+          outcome,
+          disposition ?? null,
+          reasonCode ?? null,
+          input.occurredAt,
+          input.handledAt,
+        );
+
+      this.database
+        .prepare(
+          `
+          INSERT INTO hosted_poll_state (
+            stream_key, updated_at
+          ) VALUES (?, ?)
+          ON CONFLICT(stream_key) DO UPDATE SET updated_at = excluded.updated_at
+        `,
+        )
+        .run(input.streamKey, input.handledAt);
+
+      if (disposition !== undefined) {
+        this.database
+          .prepare(
+            `
+            INSERT INTO hosted_event_acknowledgements (
+              stream_key, event_id, cursor, disposition, reason_code, state,
+              attempt_count, next_attempt_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+          `,
+          )
+          .run(
+            input.streamKey,
+            input.eventId,
+            input.cursor,
+            disposition,
+            reasonCode ?? null,
+            input.handledAt,
+            input.handledAt,
+          );
+        this.database
+          .prepare(
+            `
+            INSERT INTO hosted_message_updates (
+              stream_key, event_id, message_id, interaction_id, outcome,
+              reason_code, state, attempt_count, next_attempt_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+          `,
+          )
+          .run(
+            input.streamKey,
+            input.eventId,
+            input.messageId,
+            input.interactionId,
+            outcome,
+            reasonCode ?? null,
+            input.handledAt,
+            input.handledAt,
+          );
+      }
+      return this.hostedClaim(input.streamKey, input.eventId, false)!;
+    })();
+  }
+
+  private hostedAcknowledgementFromRow(row: {
+    stream_key: string;
+    event_id: string;
+    cursor: string;
+    disposition: HostedAcknowledgementDisposition;
+    reason_code: string | null;
+    state: HostedAcknowledgementRecord["state"];
+    attempt_count: number;
+    next_attempt_at: string;
+  }): HostedAcknowledgementRecord {
+    return {
+      streamKey: row.stream_key,
+      eventId: row.event_id,
+      cursor: row.cursor,
+      disposition: row.disposition,
+      ...(row.reason_code === null ? {} : { reasonCode: row.reason_code }),
+      state: row.state,
+      attemptCount: row.attempt_count,
+      nextAttemptAt: row.next_attempt_at,
+    };
+  }
+
+  public getHostedAcknowledgementBarrier(
+    streamKey: string,
+  ): HostedAcknowledgementRecord | undefined {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          acknowledgement.stream_key, acknowledgement.event_id,
+          acknowledgement.cursor, acknowledgement.disposition,
+          acknowledgement.reason_code, acknowledgement.state,
+          acknowledgement.attempt_count, acknowledgement.next_attempt_at
+        FROM hosted_event_acknowledgements AS acknowledgement
+        JOIN hosted_event_claims AS claim
+          ON claim.stream_key = acknowledgement.stream_key
+          AND claim.event_id = acknowledgement.event_id
+        WHERE acknowledgement.stream_key = ?
+          AND acknowledgement.state <> 'acknowledged'
+        ORDER BY claim.claim_id
+        LIMIT 1
+      `,
+      )
+      .get(streamKey) as
+      | {
+          stream_key: string;
+          event_id: string;
+          cursor: string;
+          disposition: HostedAcknowledgementDisposition;
+          reason_code: string | null;
+          state: HostedAcknowledgementRecord["state"];
+          attempt_count: number;
+          next_attempt_at: string;
+        }
+      | undefined;
+    return row === undefined
+      ? undefined
+      : this.hostedAcknowledgementFromRow(row);
+  }
+
+  public claimHostedAcknowledgement(
+    streamKey: string,
+    now: string,
+  ): HostedAcknowledgementRecord | undefined {
+    assertIsoCutoff(now, "hosted acknowledgement claim time");
+    return this.database.transaction(() => {
+      const barrier = this.getHostedAcknowledgementBarrier(streamKey);
+      if (
+        barrier === undefined ||
+        barrier.state === "blocked" ||
+        barrier.state === "acknowledging" ||
+        barrier.nextAttemptAt > now
+      ) {
+        return undefined;
+      }
+      const update = this.database
+        .prepare(
+          `
+          UPDATE hosted_event_acknowledgements SET
+            state = 'acknowledging',
+            attempt_count = attempt_count + 1,
+            updated_at = ?
+          WHERE stream_key = ? AND event_id = ?
+            AND state IN ('pending', 'retry')
+        `,
+        )
+        .run(now, streamKey, barrier.eventId);
+      if (update.changes !== 1) {
+        return undefined;
+      }
+      return {
+        ...barrier,
+        state: "acknowledging" as const,
+        attemptCount: barrier.attemptCount + 1,
+      };
+    })();
+  }
+
+  private hostedMessageUpdateFromRow(row: {
+    stream_key: string;
+    event_id: string;
+    message_id: string;
+    interaction_id: string;
+    outcome: HostedClaimOutcome;
+    reason_code: string | null;
+    resolved_by: PendingRequestRecord["resolvedBy"] | null;
+    state: HostedMessageUpdateRecord["state"];
+    attempt_count: number;
+    next_attempt_at: string;
+    last_error_code: string | null;
+  }): HostedMessageUpdateRecord {
+    const outcome: HostedPresentationOutcome =
+      row.outcome === "answered"
+        ? "answered"
+        : row.outcome === "duplicate"
+          ? "duplicate"
+          : row.reason_code === "locally_expired" ||
+              row.reason_code === "answer_after_expiry"
+            ? "expired"
+            : row.reason_code === "locally_cancelled"
+              ? "cancelled"
+              : "unsupported";
+    return {
+      streamKey: row.stream_key,
+      eventId: row.event_id,
+      messageId: row.message_id,
+      interactionId: row.interaction_id,
+      outcome,
+      ...(row.resolved_by === null
+        ? {}
+        : { resolutionSource: row.resolved_by }),
+      ...(row.reason_code === null ? {} : { reasonCode: row.reason_code }),
+      state: row.state,
+      attemptCount: row.attempt_count,
+      nextAttemptAt: row.next_attempt_at,
+      ...(row.last_error_code === null
+        ? {}
+        : { lastErrorCode: row.last_error_code }),
+    };
+  }
+
+  public getHostedMessageUpdate(
+    streamKey: string,
+    eventId: string,
+  ): HostedMessageUpdateRecord | undefined {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertHostedOpaque(eventId, "hosted event id");
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          message_update.stream_key, message_update.event_id,
+          message_update.message_id, message_update.interaction_id,
+          message_update.outcome, message_update.reason_code,
+          message_update.state, message_update.attempt_count,
+          message_update.next_attempt_at, message_update.last_error_code,
+          request.resolved_by
+        FROM hosted_message_updates AS message_update
+        JOIN hosted_event_claims AS claim
+          ON claim.stream_key = message_update.stream_key
+          AND claim.event_id = message_update.event_id
+        JOIN hosted_delivery_mappings AS delivery
+          ON delivery.stream_key = message_update.stream_key
+          AND delivery.message_id = claim.message_id
+        LEFT JOIN pending_requests AS request
+          ON request.event_id = delivery.event_id
+        WHERE message_update.stream_key = ?
+          AND message_update.event_id = ?
+      `,
+      )
+      .get(streamKey, eventId) as
+      | {
+          stream_key: string;
+          event_id: string;
+          message_id: string;
+          interaction_id: string;
+          outcome: HostedClaimOutcome;
+          reason_code: string | null;
+          resolved_by: PendingRequestRecord["resolvedBy"] | null;
+          state: HostedMessageUpdateRecord["state"];
+          attempt_count: number;
+          next_attempt_at: string;
+          last_error_code: string | null;
+        }
+      | undefined;
+    return row === undefined ? undefined : this.hostedMessageUpdateFromRow(row);
+  }
+
+  public claimHostedMessageUpdate(
+    streamKey: string,
+    now: string,
+  ): HostedMessageUpdateRecord | undefined {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertIsoCutoff(now, "hosted message update claim time");
+    return this.database.transaction(() => {
+      const row = this.database
+        .prepare(
+          `
+          SELECT message_update.event_id
+          FROM hosted_message_updates AS message_update
+          JOIN hosted_event_claims AS claim
+            ON claim.stream_key = message_update.stream_key
+            AND claim.event_id = message_update.event_id
+          JOIN hosted_event_acknowledgements AS acknowledgement
+            ON acknowledgement.stream_key = message_update.stream_key
+            AND acknowledgement.event_id = message_update.event_id
+          WHERE message_update.stream_key = ?
+            AND message_update.state IN ('pending', 'retry')
+            AND message_update.next_attempt_at <= ?
+            AND acknowledgement.state = 'acknowledged'
+          ORDER BY claim.claim_id
+          LIMIT 1
+        `,
+        )
+        .get(streamKey, now) as { event_id: string } | undefined;
+      if (row === undefined) {
+        return undefined;
+      }
+      const update = this.database
+        .prepare(
+          `
+          UPDATE hosted_message_updates SET
+            state = 'updating',
+            attempt_count = attempt_count + 1,
+            updated_at = ?
+          WHERE stream_key = ? AND event_id = ?
+            AND state IN ('pending', 'retry')
+        `,
+        )
+        .run(now, streamKey, row.event_id);
+      return update.changes === 1
+        ? this.getHostedMessageUpdate(streamKey, row.event_id)
+        : undefined;
+    })();
+  }
+
+  public markHostedMessageUpdateFailed(input: {
+    streamKey: string;
+    eventId: string;
+    errorCode: string;
+    retryAt: string;
+    retryable: boolean;
+    now: string;
+  }): void {
+    assertHostedOpaque(input.errorCode, "hosted message update error", 128);
+    assertIsoCutoff(input.retryAt, "hosted message update retry time");
+    assertIsoCutoff(input.now, "hosted message update failure time");
+    const state = input.retryable ? "retry" : "blocked";
+    const update = this.database
+      .prepare(
+        `
+        UPDATE hosted_message_updates SET
+          state = ?, next_attempt_at = ?, last_error_code = ?, updated_at = ?
+        WHERE stream_key = ? AND event_id = ? AND state = 'updating'
+      `,
+      )
+      .run(
+        state,
+        input.retryAt,
+        input.errorCode,
+        input.now,
+        input.streamKey,
+        input.eventId,
+      );
+    if (update.changes !== 1) {
+      throw new Error("hosted message update is not claimed");
+    }
+  }
+
+  public markHostedMessageUpdateSucceeded(input: {
+    streamKey: string;
+    eventId: string;
+    now: string;
+  }): void {
+    assertIsoCutoff(input.now, "hosted message update completion time");
+    const update = this.database
+      .prepare(
+        `
+        UPDATE hosted_message_updates SET
+          state = 'updated', last_error_code = NULL, updated_at = ?
+        WHERE stream_key = ? AND event_id = ? AND state = 'updating'
+      `,
+      )
+      .run(input.now, input.streamKey, input.eventId);
+    if (update.changes !== 1) {
+      throw new Error("hosted message update is not claimed");
+    }
+  }
+
+  public recoverHostedInteractionWork(now: string): number {
+    assertIsoCutoff(now, "hosted recovery time");
+    return this.database.transaction(() => {
+      const acknowledgements = this.database
+        .prepare(
+          `
+          UPDATE hosted_event_acknowledgements SET
+            state = 'retry',
+            next_attempt_at = ?,
+            last_error_code = 'daemon-interrupted',
+            updated_at = ?
+          WHERE state = 'acknowledging'
+        `,
+        )
+        .run(now, now).changes;
+      const updates = this.database
+        .prepare(
+          `
+          UPDATE hosted_message_updates SET
+            state = 'retry',
+            next_attempt_at = ?,
+            last_error_code = 'daemon-interrupted',
+            updated_at = ?
+          WHERE state = 'updating'
+        `,
+        )
+        .run(now, now).changes;
+      return acknowledgements + updates;
+    })();
+  }
+
+  public requeueBlockedHostedConnectionWork(input: {
+    streamKey: string;
+    errorCodes: readonly string[];
+    now: string;
+  }): number {
+    if (!/^[a-f0-9]{64}$/u.test(input.streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    if (input.errorCodes.length < 1 || input.errorCodes.length > 32) {
+      throw new Error(
+        "hosted reconnect error-code set must contain between 1 and 32 entries",
+      );
+    }
+    const errorCodes = [...new Set(input.errorCodes)];
+    for (const code of errorCodes) {
+      assertHostedOpaque(code, "hosted reconnect error", 128);
+    }
+    assertIsoCutoff(input.now, "hosted reconnect time");
+    const placeholders = errorCodes.map(() => "?").join(", ");
+    return this.database.transaction(() => {
+      const acknowledgements = this.database
+        .prepare(
+          `
+          UPDATE hosted_event_acknowledgements SET
+            state = 'retry',
+            next_attempt_at = ?,
+            updated_at = ?
+          WHERE stream_key = ?
+            AND state = 'blocked'
+            AND last_error_code IN (${placeholders})
+        `,
+        )
+        .run(input.now, input.now, input.streamKey, ...errorCodes).changes;
+      const updates = this.database
+        .prepare(
+          `
+          UPDATE hosted_message_updates SET
+            state = 'retry',
+            next_attempt_at = ?,
+            updated_at = ?
+          WHERE stream_key = ?
+            AND state = 'blocked'
+            AND last_error_code IN (${placeholders})
+        `,
+        )
+        .run(input.now, input.now, input.streamKey, ...errorCodes).changes;
+      return acknowledgements + updates;
+    })();
+  }
+
+  public markHostedAcknowledgementFailed(input: {
+    streamKey: string;
+    eventId: string;
+    errorCode: string;
+    retryAt: string;
+    retryable: boolean;
+    now: string;
+  }): void {
+    assertHostedOpaque(input.errorCode, "hosted acknowledgement error", 128);
+    assertIsoCutoff(input.retryAt, "hosted acknowledgement retry time");
+    assertIsoCutoff(input.now, "hosted acknowledgement failure time");
+    const state = input.retryable ? "retry" : "blocked";
+    const update = this.database
+      .prepare(
+        `
+        UPDATE hosted_event_acknowledgements SET
+          state = ?, next_attempt_at = ?, last_error_code = ?, updated_at = ?
+        WHERE stream_key = ? AND event_id = ? AND state = 'acknowledging'
+      `,
+      )
+      .run(
+        state,
+        input.retryAt,
+        input.errorCode,
+        input.now,
+        input.streamKey,
+        input.eventId,
+      );
+    if (update.changes !== 1) {
+      throw new Error("hosted acknowledgement is not claimed");
+    }
+    this.recordHostedPollFailure(input.streamKey, input.errorCode, input.now);
+  }
+
+  public markHostedAcknowledgementSucceeded(input: {
+    streamKey: string;
+    eventId: string;
+    cursor: string;
+    disposition: HostedAcknowledgementDisposition;
+    committedCursor: string;
+    now: string;
+  }): void {
+    assertIsoCutoff(input.now, "hosted acknowledgement completion time");
+    this.database.transaction(() => {
+      const barrier = this.getHostedAcknowledgementBarrier(input.streamKey);
+      if (
+        barrier === undefined ||
+        barrier.eventId !== input.eventId ||
+        barrier.state !== "acknowledging" ||
+        barrier.cursor !== input.cursor ||
+        barrier.disposition !== input.disposition ||
+        input.committedCursor !== input.cursor
+      ) {
+        throw new Error(
+          "hosted acknowledgement response did not match durable work",
+        );
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE hosted_event_acknowledgements SET
+            state = 'acknowledged',
+            acknowledged_at = ?,
+            last_error_code = NULL,
+            updated_at = ?
+          WHERE stream_key = ? AND event_id = ?
+        `,
+        )
+        .run(input.now, input.now, input.streamKey, input.eventId);
+      this.database
+        .prepare(
+          `
+          INSERT INTO hosted_poll_state (
+            stream_key, committed_cursor, last_successful_poll_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?)
+          ON CONFLICT(stream_key) DO UPDATE SET
+            committed_cursor = excluded.committed_cursor,
+            last_successful_poll_at = excluded.last_successful_poll_at,
+            last_error_code = NULL,
+            last_error_at = NULL,
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(input.streamKey, input.committedCursor, input.now, input.now);
+    })();
+  }
+
+  public recordHostedPollSucceeded(input: {
+    streamKey: string;
+    committedCursor?: string;
+    observedCommittedCursor?: string;
+    now: string;
+  }): void {
+    if (!/^[a-f0-9]{64}$/u.test(input.streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertIsoCutoff(input.now, "hosted poll completion time");
+    if (input.committedCursor !== input.observedCommittedCursor) {
+      throw new Error(
+        "hosted stream committed cursor disagrees with local authority",
+      );
+    }
+    this.database.transaction(() => {
+      const row = this.database
+        .prepare(
+          `
+          SELECT committed_cursor
+          FROM hosted_poll_state
+          WHERE stream_key = ?
+        `,
+        )
+        .get(input.streamKey) as
+        { committed_cursor: string | null } | undefined;
+      const durableCursor = row?.committed_cursor ?? undefined;
+      if (durableCursor !== input.committedCursor) {
+        throw new Error(
+          "hosted stream cursor changed while a poll was in flight",
+        );
+      }
+      this.database
+        .prepare(
+          `
+          INSERT INTO hosted_poll_state (
+            stream_key, committed_cursor, last_successful_poll_at, updated_at
+          ) VALUES (?, ?, ?, ?)
+          ON CONFLICT(stream_key) DO UPDATE SET
+            last_successful_poll_at = excluded.last_successful_poll_at,
+            last_error_code = NULL,
+            last_error_at = NULL,
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(
+          input.streamKey,
+          input.committedCursor ?? null,
+          input.now,
+          input.now,
+        );
+    })();
+  }
+
+  public recordHostedPollFailure(
+    streamKey: string,
+    errorCode: string,
+    now: string,
+  ): void {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    assertHostedOpaque(errorCode, "hosted poll error", 128);
+    assertIsoCutoff(now, "hosted poll failure time");
+    this.database
+      .prepare(
+        `
+        INSERT INTO hosted_poll_state (
+          stream_key, last_error_code, last_error_at, updated_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(stream_key) DO UPDATE SET
+          last_error_code = excluded.last_error_code,
+          last_error_at = excluded.last_error_at,
+          updated_at = excluded.updated_at
+      `,
+      )
+      .run(streamKey, errorCode, now, now);
+  }
+
+  public hostedPollStatus(streamKey: string): HostedPollStatus {
+    if (!/^[a-f0-9]{64}$/u.test(streamKey)) {
+      throw new Error("hosted stream key must be a full SHA-256 digest");
+    }
+    const state = this.database
+      .prepare(
+        `
+        SELECT
+          committed_cursor, last_successful_poll_at, last_error_code,
+          last_error_at
+        FROM hosted_poll_state
+        WHERE stream_key = ?
+      `,
+      )
+      .get(streamKey) as
+      | {
+          committed_cursor: string | null;
+          last_successful_poll_at: string | null;
+          last_error_code: string | null;
+          last_error_at: string | null;
+        }
+      | undefined;
+    const count = this.database
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM hosted_event_acknowledgements
+        WHERE stream_key = ? AND state <> 'acknowledged'
+      `,
+      )
+      .get(streamKey) as { count: number };
+    const messageUpdateCounts = this.database
+      .prepare(
+        `
+        SELECT state AS key, COUNT(*) AS count
+        FROM hosted_message_updates
+        WHERE stream_key = ?
+        GROUP BY state
+      `,
+      )
+      .all(streamKey) as Array<{
+      key: HostedMessageUpdateRecord["state"];
+      count: number;
+    }>;
+    const messageUpdates: HostedMessageUpdateSummary = {
+      pending: 0,
+      updating: 0,
+      retry: 0,
+      updated: 0,
+      blocked: 0,
+    };
+    for (const row of messageUpdateCounts) {
+      messageUpdates[row.key] = row.count;
+    }
+    const lastMessageUpdateError = this.database
+      .prepare(
+        `
+        SELECT last_error_code, updated_at
+        FROM hosted_message_updates
+        WHERE stream_key = ? AND last_error_code IS NOT NULL
+        ORDER BY updated_at DESC, event_id DESC
+        LIMIT 1
+      `,
+      )
+      .get(streamKey) as
+      { last_error_code: string; updated_at: string } | undefined;
+    if (lastMessageUpdateError !== undefined) {
+      messageUpdates.lastError = {
+        at: lastMessageUpdateError.updated_at,
+        code: lastMessageUpdateError.last_error_code,
+      };
+    }
+    return {
+      ...(state?.committed_cursor == null
+        ? {}
+        : { committedCursor: state.committed_cursor }),
+      ...(state?.last_successful_poll_at == null
+        ? {}
+        : { lastSuccessfulPollAt: state.last_successful_poll_at }),
+      ...(state?.last_error_code == null || state.last_error_at == null
+        ? {}
+        : {
+            lastError: {
+              at: state.last_error_at,
+              code: state.last_error_code,
+            },
+          }),
+      unacknowledgedEventCount: count.count,
+      messageUpdates,
+    };
+  }
+
   public status(): StoreStatus {
     const eventCounts = this.database
       .prepare(
@@ -6319,6 +7539,56 @@ export class RelayStore {
       resumeCommands,
       diagnostics,
       pendingDeliveryCount: events.queued + events.retry + events.delivering,
+    };
+  }
+
+  public transportDeliverySummary(
+    transportName: string,
+    errorCodePrefix = `${transportName}-`,
+  ): TransportDeliverySummary {
+    if (
+      !/^[a-z][a-z0-9-]{0,63}$/u.test(transportName) ||
+      !/^[a-z][a-z0-9-]{0,119}$/u.test(errorCodePrefix)
+    ) {
+      throw new Error("transport delivery summary identity is invalid");
+    }
+    const delivered = this.database
+      .prepare(
+        `
+        SELECT MAX(delivered_at) AS delivered_at
+        FROM events
+        WHERE transport_name = ?
+          AND status = 'delivered'
+          AND delivered_at IS NOT NULL
+      `,
+      )
+      .get(transportName) as { delivered_at: string | null };
+    const failed = this.database
+      .prepare(
+        `
+        SELECT error_code, finished_at
+        FROM delivery_attempts
+        WHERE error_code LIKE ?
+          AND error_code IS NOT NULL
+          AND finished_at IS NOT NULL
+        ORDER BY finished_at DESC, id DESC
+        LIMIT 1
+      `,
+      )
+      .get(`${errorCodePrefix}%`) as
+      { error_code: string; finished_at: string } | undefined;
+    return {
+      ...(delivered.delivered_at === null
+        ? {}
+        : { lastSuccessfulSendAt: delivered.delivered_at }),
+      ...(failed === undefined
+        ? {}
+        : {
+            lastError: {
+              at: failed.finished_at,
+              code: failed.error_code,
+            },
+          }),
     };
   }
 }

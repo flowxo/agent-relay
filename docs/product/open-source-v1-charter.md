@@ -61,22 +61,22 @@ architecture or rewrite the product around Notifications.
 
 ### 3.1 Release-candidate baseline
 
-The authoritative Open Source V1 candidate line is
-`codex/fxo-1141-release-baseline`. It descends from the completed multi-session
-MVP on `codex/initial-mvp` at `a4a6b5b`, then consumes the coherent Agent Relay
-C0 history reviewed in [PR #2](https://github.com/flowxo/agent-relay/pull/2):
+The authoritative Open Source V1 candidate is the integrated `main` history. It
+descends from the completed multi-session MVP at `a4a6b5b`, then consumes the
+coherent Agent Relay C0 history reviewed in
+[PR #2](https://github.com/flowxo/agent-relay/pull/2):
 
 1. `68b2fbf` — prove the Notifications contract consumer;
 2. `100c250` — enforce the Notifications contract release gate;
 3. `fee4629` — refresh Notifications routing evidence; and
-4. `76240c4` — restore the C0-07 companion specification.
+4. `76240c4` — restore the C0-07 companion specification; and
+5. `22a85f1` — consume the approved Notifications `1.0.0-rc.1` artifacts.
 
-This lineage deliberately preserves the centrally reviewed commits. It is an
-Agent Relay product baseline, not a C0 release-candidate approval or a public
-release. C0-07 and C0-08 are complete, but
-[C0-09](https://linear.app/flowxo/issue/FXO-1050) remains the cross-repository
-security gate for promotion beyond the pinned `1.0.0-draft.1` artifacts.
-Mainline integration also remains explicit future work.
+This lineage deliberately preserves the centrally reviewed commits. C0-07,
+C0-08, and [C0-09](https://linear.app/flowxo/issue/FXO-1050) are complete; C0-09
+recorded `go`, and Agent Relay now consumes the exact pinned `1.0.0-rc.1`
+artifacts. That approval and mainline integration do not constitute a public
+Agent Relay release or authorize a real Notifications service environment.
 
 ## 4. Target users
 
@@ -329,7 +329,7 @@ Agent Relay is released under the MIT license.
 
 - **Wave:** `wave:0-contracts`
 - **Priority:** Highest
-- **Status:** C0-07 and C0-08 complete; C0-09 in progress
+- **Status:** Complete; C0-09 recorded `go`
 
 Agent Relay supplies a bounded transport-mapping work package to the single
 cross-product Shared Contracts project. It does not create a second Agent
@@ -338,8 +338,9 @@ Relay-owned Linear project for the same seam.
 The canonical cross-product specification lives in the neutral portfolio
 repository at
 `flowxo-portfolio/docs/projects/shared-contracts-and-autonomous-delivery-conventions/project-spec.md`.
-Agent Relay's exact `1.0.0-draft.1` consumer and compatibility gates are green.
-Promotion to `1.0.0-rc.1` remains blocked on the central C0-09 disposition.
+Agent Relay's exact `1.0.0-rc.1` consumer and compatibility gates are green. The
+separately controlled public package and service-environment decisions remain
+outside C0.
 
 ### Completed prerequisite — Prototype evidence baseline
 
@@ -358,7 +359,7 @@ supported Open Source V1 surface.
 - **Priority:** High
 - **Linear:**
   [AR1 — Agent Relay Open Source Release Readiness](https://linear.app/flowxo/project/ar1-agent-relay-open-source-release-readiness-b2b3bf7d5fe3)
-- **Status:** Execution started with FXO-1141
+- **Status:** Completed
 
 Complete licensing, security, privacy, contribution, packaging, provenance,
 compatibility, and release documentation.
@@ -369,12 +370,13 @@ compatibility, and release documentation.
 - **Priority:** High
 - **Linear:**
   [AR2 — FlowXO Notifications Transport Adapter](https://linear.app/flowxo/project/ar2-flowxo-notifications-transport-adapter-89e35890c6d7)
-- **Status:** Planned; mock-backed work may proceed
+- **Status:** Completed against the executable mock and packed artifact
 
 Implement against Shared Contracts mocks, preserve direct Telegram, and cover
 delivery/interaction behavior with the common contract suite. The C0 outbound
 mapping and executable consumer proof are already complete; production dogfood
-remains gated by C0-09.
+waits for an approved Notifications environment and production implementation of
+the narrow machine bootstrap and durable poll/ack stream.
 
 ### AR3 — Hosted Dogfood and Reliability Hardening
 
@@ -382,7 +384,8 @@ remains gated by C0-09.
 - **Priority:** High
 - **Linear:**
   [AR3 — Agent Relay Hosted Dogfood and Reliability Hardening](https://linear.app/flowxo/project/ar3-agent-relay-hosted-dogfood-and-reliability-hardening-96621124993f)
-- **Status:** Planned; blocked by AR1, AR2, and C0-09
+- **Status:** Planned; AR1, AR2, and C0-09 are complete, but no approved real
+  Notifications machine-stream environment exists yet
 
 Route real FlowXO engineering sessions through Notifications, collect evidence,
 and fix reliability or diagnostic gaps in either product.

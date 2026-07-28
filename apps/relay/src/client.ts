@@ -16,12 +16,19 @@ import type {
   ResumeClaimResult,
   ResumeCommandRecord,
   ResolutionResult,
-  SessionControlRecord,
   SessionRecord,
-  SessionTopicRecord,
   StoreStatus,
 } from "@agent-relay/core";
 import type { Harness } from "@agent-relay/protocol";
+
+import type { DaemonTransportStatus } from "./transport-status.js";
+
+export type RelayDaemonStatus = StoreStatus &
+  Partial<DaemonTransportStatus> & {
+    transport: string;
+    webEnabled: boolean;
+    healthy: true;
+  };
 
 export class RelayClientError extends Error {
   public override readonly name = "RelayClientError";
@@ -191,26 +198,8 @@ export class RelayClient {
     });
   }
 
-  public async status(): Promise<
-    StoreStatus & {
-      transport: string;
-      webEnabled: boolean;
-      healthy: true;
-      sessionRecords: SessionRecord[];
-      topicRecords: SessionTopicRecord[];
-      sessionControlRecords: SessionControlRecord[];
-    }
-  > {
-    return await this.request<
-      StoreStatus & {
-        transport: string;
-        webEnabled: boolean;
-        healthy: true;
-        sessionRecords: SessionRecord[];
-        topicRecords: SessionTopicRecord[];
-        sessionControlRecords: SessionControlRecord[];
-      }
-    >("/v1/status");
+  public async status(): Promise<RelayDaemonStatus> {
+    return await this.request<RelayDaemonStatus>("/v1/status");
   }
 
   public async getRequest(

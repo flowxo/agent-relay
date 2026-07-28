@@ -54,7 +54,7 @@ const stream: HostedStreamProof = {
   authenticatedMachineId: local.machineId,
   configuredMachineId: local.machineId,
   schemaValidated: true,
-  signatureVerified: true,
+  responseContractVerified: true,
   streamIdentityVerified: true,
 };
 
@@ -95,6 +95,30 @@ describe("hosted answer validation", () => {
           turnId: local.turnId,
         },
       },
+    });
+  });
+
+  it("stops the stream when the authenticated channel binding changes", () => {
+    expect(
+      validateHostedAnswer({
+        event: {
+          ...event,
+          channel_context: {
+            ...event.channel_context,
+            binding_id: "binding_foreign_12345678",
+          },
+        },
+        localRequest: local,
+        expected: {
+          ...expected,
+          bindingId: event.channel_context.binding_id,
+        },
+        stream,
+      }),
+    ).toEqual({
+      outcome: "stop",
+      acknowledgement: "none",
+      reasonCode: "stream_identity_failure",
     });
   });
 
@@ -190,9 +214,9 @@ describe("hosted answer validation", () => {
       "schema_integrity_failure",
     ],
     [
-      "signature",
-      { stream: { ...stream, signatureVerified: false } },
-      "signature_integrity_failure",
+      "response contract",
+      { stream: { ...stream, responseContractVerified: false } },
+      "contract_integrity_failure",
     ],
     [
       "stream",
