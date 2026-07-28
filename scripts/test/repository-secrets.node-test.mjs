@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   assertSafeTrackedPath,
+  checkTrackedRepository,
   scanTrackedText,
 } from "../check-repository-secrets.mjs";
+
+const runFile = promisify(execFile);
 
 test("accepts ordinary source and blank environment examples", () => {
   assert.doesNotThrow(() =>
@@ -89,4 +97,38 @@ test("rejects credential, database, key, and local-state filenames", () => {
     assert.throws(() => assertSafeTrackedPath(path), /forbidden tracked path/);
   }
   assert.doesNotThrow(() => assertSafeTrackedPath(".env.example"));
+});
+
+test("scans a dirty tree without reopening intentionally deleted files", async () => {
+  const repositoryRoot = await mkdtemp(
+    join(tmpdir(), "agent-relay-secret-scan-"),
+  );
+  try {
+    await runFile("git", ["init", "--quiet"], { cwd: repositoryRoot });
+    await writeFile(
+      join(repositoryRoot, "retired-fixture.json"),
+      '{"synthetic":true}\n',
+    );
+    await runFile("git", ["add", "retired-fixture.json"], {
+      cwd: repositoryRoot,
+    });
+    await unlink(join(repositoryRoot, "retired-fixture.json"));
+    await writeFile(
+      join(repositoryRoot, "replacement-fixture.json"),
+      '{"synthetic":true}\n',
+    );
+
+    const result = await checkTrackedRepository({
+      repositoryRoot,
+      currentHome: "/private/home",
+    });
+
+    assert.deepEqual(result, {
+      binaryFiles: 0,
+      textFiles: 1,
+      trackedFiles: 1,
+    });
+  } finally {
+    await rm(repositoryRoot, { recursive: true, force: true });
+  }
 });
