@@ -110,6 +110,17 @@ export const ProcessExitEvidenceSchema = z
     }
   });
 
+export const BackgroundWorkObservationSchema = z
+  .object({
+    inFlightCount: z.number().int().nonnegative().max(1_000),
+    scheduledCount: z.number().int().nonnegative().max(1_000),
+  })
+  .strict()
+  .refine(
+    ({ inFlightCount, scheduledCount }) => inFlightCount + scheduledCount > 0,
+    "background work requires at least one in-flight or scheduled item",
+  );
+
 export const AttentionRequestSchema = z
   .object({
     correlationId: boundedId,
@@ -269,6 +280,7 @@ export const AgentAttentionEventV1Schema = z
       .strict()
       .optional(),
     processExit: ProcessExitEvidenceSchema.optional(),
+    backgroundWork: BackgroundWorkObservationSchema.optional(),
     request: AttentionRequestSchema.optional(),
     capabilities: CapabilitySetSchema,
   })
@@ -327,6 +339,14 @@ export const AgentAttentionEventV1Schema = z
         message:
           "owned-child exit evidence is only valid for process.exited or session.ended",
         path: ["processExit"],
+      });
+    }
+
+    if (event.backgroundWork !== undefined && event.type !== "turn.activity") {
+      context.addIssue({
+        code: "custom",
+        message: "background work is only valid for turn.activity events",
+        path: ["backgroundWork"],
       });
     }
 
@@ -447,6 +467,9 @@ export type EventType = z.infer<typeof EventTypeSchema>;
 export type CapabilitySet = z.infer<typeof CapabilitySetSchema>;
 export type ProjectRef = z.infer<typeof ProjectRefSchema>;
 export type ProcessExitEvidence = z.infer<typeof ProcessExitEvidenceSchema>;
+export type BackgroundWorkObservation = z.infer<
+  typeof BackgroundWorkObservationSchema
+>;
 export type AttentionRequest = z.infer<typeof AttentionRequestSchema>;
 export type AgentAttentionEventV1 = z.infer<typeof AgentAttentionEventV1Schema>;
 export type AgentCommandV1 = z.infer<typeof AgentCommandV1Schema>;

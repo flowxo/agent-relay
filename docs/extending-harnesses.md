@@ -51,6 +51,13 @@ Do not store or forward `transcript_path`, absolute `cwd`, tool input, or
 process arguments. The project reference keeps a sanitized display name and
 one-way working-directory hash; summaries and questions are bounded.
 
+If a harness supplies structured evidence that work remains active when its main
+Stop hook fires, normalize only the minimum provider-neutral evidence. Claude
+Code's `background_tasks` and `session_crons` currently become bounded counts;
+task IDs, types, status strings, descriptions, commands, agent names,
+server/tool names, workflow names, schedules, and prompts are discarded. Never
+replace a missing structured field with transcript or model-text inference.
+
 ## Declare capabilities narrowly
 
 Each runtime-validated harness + surface entry classifies deterministic Stop,

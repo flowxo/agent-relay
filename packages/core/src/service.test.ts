@@ -59,6 +59,9 @@ function event(
     ...(overrides.processExit === undefined
       ? {}
       : { processExit: overrides.processExit }),
+    ...(overrides.backgroundWork === undefined
+      ? {}
+      : { backgroundWork: overrides.backgroundWork }),
     ...(overrides.request === undefined ? {} : { request: overrides.request }),
   };
 }
@@ -94,6 +97,72 @@ describe("RelayService durable delivery loop", () => {
     ).toMatchObject({
       lastSuccessfulSendAt: expect.any(String),
     });
+    store.close();
+  });
+
+  it("suppresses structured background-work pauses without affecting another session", async () => {
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const logger = new MemoryLogger();
+    const service = new RelayService(store, transport, { logger });
+    const paused = event({
+      eventId: "event_background_pause_12345678",
+      harness: "claude",
+      sessionId: "session_background_pause_12345678",
+      type: "turn.activity",
+      summary: "Background work continues: 1 in flight, 0 scheduled",
+      backgroundWork: {
+        inFlightCount: 1,
+        scheduledCount: 0,
+      },
+    });
+    const idle = event({
+      eventId: "event_concurrent_idle_12345678",
+      harness: "claude",
+      sessionId: "session_concurrent_idle_12345678",
+      sequence: 2,
+    });
+
+    expect(service.ingest(paused).inserted).toBe(true);
+    expect(service.ingest(paused).inserted).toBe(false);
+    expect(service.ingest(idle).inserted).toBe(true);
+    await expect(service.drain()).resolves.toMatchObject({
+      claimed: 2,
+      delivered: 2,
+    });
+
+    expect(transport.deliveries).toHaveLength(1);
+    expect(transport.deliveries[0]?.message.eventId).toBe(idle.eventId);
+    expect(store.getEvent(paused.eventId)).toMatchObject({
+      status: "delivered",
+      event: {
+        backgroundWork: {
+          inFlightCount: 1,
+          scheduledCount: 0,
+        },
+      },
+    });
+    expect(
+      store
+        .listSessions()
+        .find((session) => session.sessionId === paused.sessionId)?.state,
+    ).toBe("active");
+    expect(
+      store
+        .listDiagnostics()
+        .find(
+          (diagnostic) =>
+            diagnostic.code === "notification.suppressed" &&
+            diagnostic.message.includes("background work"),
+        ),
+    ).toBeDefined();
+    expect(
+      logger.records.find(
+        (record) =>
+          record.code === "delivery.suppressed" &&
+          record.details?.["eventId"] === paused.eventId,
+      )?.details,
+    ).toMatchObject({ reason: "background-work" });
     store.close();
   });
 

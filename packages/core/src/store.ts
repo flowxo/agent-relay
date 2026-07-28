@@ -4677,7 +4677,7 @@ export class RelayStore {
 
   public suppressionReason(
     event: AgentAttentionEventV1,
-  ): "muted" | "ended" | undefined {
+  ): "muted" | "ended" | "background-work" | undefined {
     const control = this.getSessionControl(event);
     if (
       event.type !== "session.ended" &&
@@ -4688,6 +4688,9 @@ export class RelayStore {
     }
     if (event.type === "session.ended") {
       return undefined;
+    }
+    if (event.backgroundWork !== undefined) {
+      return "background-work";
     }
     if (
       event.request !== undefined ||
@@ -4703,7 +4706,7 @@ export class RelayStore {
   public markDeliverySuppressed(
     eventId: string,
     attemptNumber: number,
-    reason: "muted" | "ended",
+    reason: "muted" | "ended" | "background-work",
     now: string,
   ): void {
     this.database.transaction(() => {
@@ -4766,7 +4769,10 @@ export class RelayStore {
         source: "daemon",
         level: "info",
         code: "notification.suppressed",
-        message: `notification suppressed because the relay lane is ${reason}`,
+        message:
+          reason === "background-work"
+            ? "routine notification suppressed because structured background work remains active"
+            : `notification suppressed because the relay lane is ${reason}`,
       });
     })();
   }

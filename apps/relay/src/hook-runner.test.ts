@@ -23,6 +23,24 @@ const codexStop = JSON.stringify({
   last_assistant_message: "Synthetic hook completion.",
 });
 
+const claudeBackgroundStop = JSON.stringify({
+  session_id: "claude-hook-session-background-0001",
+  transcript_path: "/workspace/fixtures/synthetic-transcript.jsonl",
+  cwd: "/workspace/example",
+  hook_event_name: "Stop",
+  stop_hook_active: false,
+  last_assistant_message: "Synthetic work is still running.",
+  background_tasks: [
+    {
+      id: "task-synthetic-0001",
+      type: "subagent",
+      status: "running",
+      description: "Synthetic background review",
+    },
+  ],
+  session_crons: [],
+});
+
 function options(fallbackPath: string) {
   return {
     harness: "codex" as const,
@@ -68,6 +86,62 @@ describe("hook entrypoint", () => {
     expect(await service.drain()).toMatchObject({
       delivered: 1,
     });
+    store.close();
+  });
+
+  it("does not offer continuation or notify while structured Claude background work remains", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const service = new RelayService(store, transport);
+    let ingested: Parameters<typeof service.ingest>[0] | undefined;
+    let fetchCalls = 0;
+    const client = new RelayClient({
+      fetch: async (_input, init) => {
+        fetchCalls += 1;
+        ingested = JSON.parse(String(init?.body)) as Parameters<
+          typeof service.ingest
+        >[0];
+        const result = service.ingest(ingested);
+        return new Response(JSON.stringify(result), {
+          status: result.inserted ? 202 : 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    const result = await runHook({
+      harness: "claude",
+      surface: "cli",
+      harnessVersion: "2.1.220 (Claude Code)",
+      raw: claudeBackgroundStop,
+      machineId: "machine_hook_12345678",
+      bridgeSessionId: "bridge_hook_12345678",
+      sequence: 2,
+      occurredAt: "2026-07-28T12:00:00.000Z",
+      fallbackPath: join(directory, "fallback.ndjson"),
+      client,
+      waitMs: 100,
+      lateResume: true,
+      lateResumeTtlMs: 60_000,
+    });
+
+    expect(result).toMatchObject({
+      stdout: "{}\n",
+      daemonAccepted: true,
+    });
+    expect(fetchCalls).toBe(1);
+    expect(ingested).toMatchObject({
+      type: "turn.activity",
+      backgroundWork: {
+        inFlightCount: 1,
+        scheduledCount: 0,
+      },
+    });
+    expect(ingested?.request).toBeUndefined();
+    await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
+    expect(transport.deliveries).toHaveLength(0);
+    expect(store.listSessions()[0]?.state).toBe("active");
     store.close();
   });
 

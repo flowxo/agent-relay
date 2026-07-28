@@ -2,6 +2,27 @@
 
 ## Proven
 
+- FXO-1348 classifies a Claude Code `Stop` with non-empty structured
+  `background_tasks` or `session_crons` as `turn.activity`, retains only the two
+  bounded collection counts, keeps the lane active, and durably suppresses
+  operator delivery and continuation. Empty or missing collections preserve the
+  ordinary deterministic Stop path; malformed and oversized collections fail
+  into a bounded parser diagnostic instead of falling back to model prose or
+  transcript inference. The official-contract-derived fixture contains synthetic
+  task and cron detail specifically to prove that identity, description,
+  command, agent, schedule, prompt, transcript path, working path, and
+  assistant-message content do not survive normalization. Focused tests prove
+  duplicate idempotence, durable diagnosis, safe hook stdout, no continuation
+  request, no transport delivery, and concurrent-session isolation. On
+  2026-07-28 the complete `pnpm check` passed 68 Vitest files/488 tests, 24
+  contract and supply-chain tests, the six-test isolated Notifications consumer,
+  all workspace builds, the 216,712-byte packed/1,349,875-byte unpacked 11-file
+  artifact, hosted proof digest
+  `8da7c1d724a3d5e0658c944edb8acfd2f94ee20262a0258601ec6f49aadd1417`, and the
+  complete packed lifecycle. All three Chromium scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability. Natural suppression on the
+  installed `2.1.220` Claude Code build remains explicitly unclaimed until the
+  next background-work dogfood Stop occurs.
 - Direct-Telegram baseline dogfood began on 2026-07-28 with explicit transport
   selection and healthy Bot API private-topic preflight. It immediately exposed
   a historical fallback hazard: first activation replayed 395 bounded records
@@ -823,6 +844,15 @@ also remain free of silent delivery, hook, or correlation failures.
   yet claimed. The operator must inspect and confirm the exact `/cleanup`
   preview; age, inactivity, crash, process exit, and stopped turns never make a
   topic eligible.
+- Claude Code's structured background-work fields are official-contract and
+  fixture proven on the locally installed `2.1.220` build, but the natural
+  private-session suppression and later truly-idle Stop are not yet live
+  claimed. Native hook events also currently derive a retry-stable nominal
+  sequence from their source fingerprint rather than a genuinely monotonic
+  bridge counter. Delivery/suppression classification is event-local and
+  unaffected, but an unlucky cross-event hash order can leave the displayed
+  session lane state stale; that ordering reliability work is tracked separately
+  from FXO-1348.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.
@@ -858,12 +888,17 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Finish FXO-1343 through the complete repository gate, merge it, install that
-exact candidate, and restart the direct-Telegram daemon with the one-hour guard
-active. Then implement FXO-1345 as a separate destructive-operation slice:
-preview the explicitly ended topic set, require an expiring authorized
-confirmation, revalidate each candidate, and retry/diagnose partial provider
-failure.
+Merge FXO-1348, reinstall that exact candidate, and restart the direct-Telegram
+daemon. The next natural Claude Code Stop with structured background work should
+create a local `background-work` suppression diagnostic and no operator card;
+the later Stop with empty collections should create the ordinary waiting card.
+Separately, resolve the native-hook monotonic ordering gap before relying on
+lane state as an ordering proof.
+
+FXO-1345 is merged and locally proven. When convenient, send `/cleanup` in
+Telegram General, inspect the bounded exact-set preview, and confirm it to close
+the remaining live `deleteForumTopic` evidence gap. Do not infer cleanup
+eligibility from age or inactivity.
 
 Continue bounded local direct-Telegram dogfood while the Notifications owner
 prepares the approved hosted environment. Hosted AR3 evidence begins only after

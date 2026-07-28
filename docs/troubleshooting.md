@@ -143,6 +143,23 @@ only for an intentional full historical replay; inspect `status` first, because
 external transports do not provide a caller-controlled idempotency key for every
 provider operation.
 
+## Claude reports waiting while background work still runs
+
+Claude Code can emit its main `Stop` hook while background tasks or scheduled
+wakeups remain. On Claude Code 2.1.145 or newer, Agent Relay reads the official
+`background_tasks` and `session_crons` arrays. A non-empty collection keeps the
+lane active and produces a local `notification.suppressed` diagnostic with
+reason `background-work`; it must not create a Telegram/Notifications card or a
+continuation request.
+
+Agent Relay uses only the collection counts. It does not inspect the assistant
+message, terminal status text, task descriptions, commands, prompts, or
+transcript. Missing fields retain ordinary Stop behavior because absence is not
+proof of background work. If a current Claude payload contains non-empty arrays
+but a waiting card still arrives, run `doctor`, confirm the installed hook
+launcher points to the current package, rebuild/reinstall, and inspect the
+bounded daemon diagnostic before retrying.
+
 ## Stop arrives but late resume does not
 
 Late resume requires a process launched by `agent-relay run`. A native hook in

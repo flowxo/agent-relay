@@ -67,6 +67,75 @@ describe.each([
   });
 });
 
+describe("Claude structured background-work Stop contract", () => {
+  it("keeps the lane active and retains only bounded counts", () => {
+    const raw = fixture("claude/stop-background-work.json");
+    const result = parseHarnessJson("claude", raw, context());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event).toMatchObject({
+        type: "turn.activity",
+        summary: "Background work continues: 1 in flight, 1 scheduled",
+        backgroundWork: {
+          inFlightCount: 1,
+          scheduledCount: 1,
+        },
+      });
+      expect(result.event).not.toHaveProperty("lastAssistantMessage");
+      const normalized = JSON.stringify(result.event);
+      expect(normalized).not.toContain("task-synthetic-0001");
+      expect(normalized).not.toContain("synthetic-reviewer");
+      expect(normalized).not.toContain("synthetic scheduled check");
+      expect(normalized).not.toContain("A final review is still running");
+    }
+  });
+
+  it("preserves ordinary Stop behavior for empty or missing collections", () => {
+    const withEmptyCollections = JSON.parse(
+      fixture("claude/stop.json"),
+    ) as Record<string, unknown>;
+    withEmptyCollections["background_tasks"] = [];
+    withEmptyCollections["session_crons"] = [];
+
+    for (const raw of [
+      fixture("claude/stop.json"),
+      JSON.stringify(withEmptyCollections),
+    ]) {
+      const result = parseHarnessJson("claude", raw, context());
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event.type).toBe("turn.stopped");
+        expect(result.event.backgroundWork).toBeUndefined();
+      }
+    }
+  });
+
+  it("diagnoses malformed or oversized collections instead of guessing", () => {
+    const base = JSON.parse(fixture("claude/stop.json")) as Record<
+      string,
+      unknown
+    >;
+    for (const background_tasks of [
+      "not-an-array",
+      Array.from({ length: 1_001 }, () => null),
+    ]) {
+      const result = parseHarnessJson(
+        "claude",
+        JSON.stringify({ ...base, background_tasks }),
+        context(),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.diagnostic).toMatchObject({
+          code: "malformed-payload",
+          safeBehavior: "native-prompt",
+        });
+      }
+    }
+  });
+});
+
 describe("failure and diagnostic contracts", () => {
   it("normalizes Claude StopFailure without claiming a process crash", () => {
     const result = parseHarnessJson(

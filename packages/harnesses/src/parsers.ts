@@ -46,6 +46,8 @@ const claudeStopSchema = z
     hook_event_name: z.literal("Stop"),
     stop_hook_active: z.boolean(),
     last_assistant_message: z.string().nullable(),
+    background_tasks: z.array(z.unknown()).max(1_000).optional(),
+    session_crons: z.array(z.unknown()).max(1_000).optional(),
   })
   .passthrough();
 
@@ -294,16 +296,33 @@ function parseClaude(
     if (!parsed.success) {
       return malformed("claude", "invalid Claude Stop payload", parsed.error);
     }
+    const inFlightCount = parsed.data.background_tasks?.length ?? 0;
+    const scheduledCount = parsed.data.session_crons?.length ?? 0;
+    const backgroundWorkContinues = inFlightCount + scheduledCount > 0;
     return eventFromAdapter(
       "claude",
       {
         cwd: parsed.data.cwd,
         sessionId: parsed.data.session_id,
-        type: "turn.stopped",
-        summary: parsed.data.last_assistant_message?.slice(0, 500),
-        ...(parsed.data.last_assistant_message === null
-          ? {}
-          : { lastAssistantMessage: parsed.data.last_assistant_message }),
+        type: backgroundWorkContinues ? "turn.activity" : "turn.stopped",
+        ...(backgroundWorkContinues
+          ? {
+              summary: `Background work continues: ${String(
+                inFlightCount,
+              )} in flight, ${String(scheduledCount)} scheduled`,
+              backgroundWork: {
+                inFlightCount,
+                scheduledCount,
+              },
+            }
+          : {
+              summary: parsed.data.last_assistant_message?.slice(0, 500),
+              ...(parsed.data.last_assistant_message === null
+                ? {}
+                : {
+                    lastAssistantMessage: parsed.data.last_assistant_message,
+                  }),
+            }),
         stopHookActive: parsed.data.stop_hook_active,
       },
       context,

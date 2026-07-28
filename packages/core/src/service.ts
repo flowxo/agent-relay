@@ -1371,7 +1371,7 @@ export class RelayService {
           this.logger.log({
             level: "info",
             code: "delivery.suppressed",
-            message: "routine notification suppressed by session control",
+            message: "routine notification suppressed by delivery policy",
             at: this.now().toISOString(),
             details: {
               eventId: item.event.eventId,
