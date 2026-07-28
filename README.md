@@ -8,7 +8,13 @@ and keeps continuation capabilities explicit.
 The implementation follows
 [`docs/implementation-brief.md`](docs/implementation-brief.md). Current
 evidence, risks, and the next action are tracked in
-[`docs/progress.md`](docs/progress.md).
+[`docs/progress.md`](docs/progress.md). The product boundary and public-release
+outcome are defined in the
+[`Open Source V1 product charter`](docs/product/open-source-v1-charter.md). The
+first release-planning specification is
+[`Open Source Release Readiness`](docs/projects/open-source-release-readiness/project-spec.md).
+The hosted transport is specified in
+[`FlowXO Notifications Transport Adapter`](docs/projects/notifications-transport-adapter/project-spec.md).
 
 ## Development
 
@@ -290,3 +296,10 @@ still do not prove crashes, Cursor IDE late resume remains explicitly
 unsupported, Cursor `--print` did not emit Stop on the tested build, and an
 interactive child must exit before its session can be resumed through a new CLI
 process.
+
+The pinned Notifications `1.0.0-draft.1` consumer and compatibility gate are
+also green against the executable mock. They prove the provider-neutral mapping,
+retry, replay, acknowledgement, isolation, and local-authority boundary; they do
+not yet add production Notifications selection, hosted credential persistence,
+or continuous polling. Cross-repository promotion to `1.0.0-rc.1` remains gated
+by [C0-09](https://linear.app/flowxo/issue/FXO-1050).

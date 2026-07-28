@@ -2,7 +2,33 @@
 
 ## Proven
 
-- Repository ownership branch is `codex/initial-mvp`.
+- The authoritative Open Source V1 candidate line is
+  `codex/fxo-1141-release-baseline`. It preserves the completed multi-session
+  MVP from `codex/initial-mvp` at `a4a6b5b` and descends through the coherent
+  Agent Relay C0 consumer/compatibility history in PR #2: `68b2fbf` → `100c250`
+  → `fee4629` → `76240c4`. It is not yet integrated to `main` or published as a
+  release.
+- Linear initiative `Agent Relay — Open Source V1` now owns four ordered
+  implementation projects. AR1 has started with FXO-1141; AR2 remains planned
+  and may use executable mocks; AR3 is blocked on AR1, AR2, and C0-09; AR4
+  follows dogfood evidence. Post-V1 hosted-fleet explorations remain separate.
+- C0-07 (FXO-1048) and C0-08 (FXO-1049) are Done. Agent Relay pins and verifies
+  the exact three Notifications `1.0.0-draft.1` artifacts, runs a
+  scripts-disabled clean consumer install, and proves mapping, retry,
+  crash-before-ack replay, acknowledgement, quarantine, identity isolation,
+  first-writer-wins local authority, and direct-Telegram parity.
+- Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
+  when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
+  all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
+  for `1.0.0-rc.1`; this repository does not claim a cross-product go decision.
+- The FXO-1141 baseline passed the release-candidate matrix locally on
+  2026-07-26: frozen scripts-disabled install, Notifications artifact preflight,
+  approved native rebuild, `pnpm check` (40 Vitest files/305 tests plus 17
+  contract-lock/supply-chain tests and the six-test separate-process consumer
+  proof), three packaged Chromium scenarios, and `pnpm audit --prod` with no
+  known vulnerability. Repository scans found no tracked activation file,
+  database, log, actual machine path, Telegram-token shape, or credential value;
+  the local `.env.activation` remained gitignored and mode `0600`.
 - Linear project `Agent Relay — Multi-Session Operator Experience` is marked
   Completed after all Phase 1-3 milestones reached 100%. Phase 4 hosted, Mini
   App, and multi-operator stories remain explicit deferred backlog outside the
@@ -449,8 +475,11 @@ also remain free of silent delivery, hook, or correlation failures.
 - The supervisor never labels inactivity as a hang. `suspected_stalled` exists
   as a distinct state, but emission remains disabled until a harness-specific
   health probe supplies evidence.
-- Branch `codex/initial-mvp` is published in
-  [PR #1](https://github.com/flowxo/agent-relay/pull/1).
+- [PR #1](https://github.com/flowxo/agent-relay/pull/1) merged an earlier
+  `codex/initial-mvp` slice to `main` on 2026-07-25. The later multi-session
+  completion, Agent Relay C0 history, and FXO-1141 release-baseline work are not
+  yet on `main`; branch and PR state must not be mistaken for a published
+  release.
 - Activation values remain only in a mode-`0600`, gitignored local environment
   file. Credential values, numeric account identifiers, private messages,
   harness session IDs, and machine-specific paths are not recorded in git.
@@ -460,6 +489,13 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-The current multi-session operator MVP is complete. Do not begin the deferred
-Phase 4 hosted, Mini App, or multi-operator work until product demand, privacy,
-threat-model, cost, and hosting evidence support an explicit go decision.
+Land the reviewable FXO-1141 baseline without rewriting its preserved C0 commit
+line, then start AR1 governance and public-product work with FXO-1142 and
+FXO-1143. AR1 packaging begins at FXO-1144. Mock-backed AR2 work may proceed
+against the pinned `1.0.0-draft.1` artifacts, but production hosted dogfood must
+wait for AR1, AR2, and a central C0-09 go disposition.
+
+The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
+explorations remain post-V1 backlog. They require separate product demand,
+privacy, threat-model, cost, and hosting evidence rather than being folded into
+AR2 or AR3.
