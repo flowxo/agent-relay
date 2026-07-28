@@ -294,7 +294,8 @@ adoption, ownership, and restart-reconciliation suites.
 - [Codex App Server](https://developers.openai.com/codex/app-server) documents
   `thread/resume`, `turn/start`, and `turn/steer`.
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks) documents `Stop`,
-  `StopFailure`, `Notification`, and permission wire contracts.
+  its `background_tasks` and `session_crons` pause evidence, `StopFailure`,
+  `Notification`, and permission wire contracts.
 - [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
   documents programmatic hooks, permissions, streaming input, and session
   resume.
@@ -320,3 +321,10 @@ installed user hooks, and private-chat transport tested. Cursor permission
 automation remains fixture-backed and disabled by default. Native hooks still do
 not prove process crashes; the delivered crash notifications were produced only
 because Agent Relay owned and observed the child processes.
+
+The Claude background-work fixture is official-contract-derived, not a retained
+private Stop payload. It proves the parser keeps only in-flight and scheduled
+counts and discards task identity, description, command, agent type, schedule,
+prompt, transcript path, working path, and the assistant message. The exact
+installed `2.1.220` build is contract-compatible but a natural live suppression
+and later truly-idle Stop remain pending dogfood evidence.

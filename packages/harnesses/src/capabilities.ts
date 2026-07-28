@@ -269,12 +269,13 @@ export const HARNESS_COMPATIBILITY = CompatibilityRegistrySchema.parse({
         verifiedAt: "2026-07-25",
         fixturePaths: [
           "packages/harnesses/fixtures/claude/stop.json",
+          "packages/harnesses/fixtures/claude/stop-background-work.json",
           "packages/harnesses/fixtures/claude/stop-failure.json",
         ],
         record: "docs/harness-evidence.md#live-harness-activation",
         officialSources: ["https://code.claude.com/docs/en/hooks"],
       },
-      note: "Stop and plan-mode late resume are live-proven; StopFailure remains fixture-proven.",
+      note: "Stop and plan-mode late resume are live-proven; structured background-work suppression and StopFailure remain fixture-proven.",
     },
     {
       harness: "claude",

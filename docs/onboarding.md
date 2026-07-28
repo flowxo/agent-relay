@@ -349,6 +349,14 @@ cannot be supplied by model text. Full long content remains in the local durable
 event record and receives a Details action. Question-choice buttons and card
 actions are active:
 
+Claude Code `Stop` events with a non-empty structured `background_tasks` or
+`session_crons` collection are not operator attention. Agent Relay retains only
+the two bounded counts, keeps the lane running, and records a durable
+`background-work` suppression. It does not inspect assistant prose, task
+descriptions, commands, scheduled prompts, or transcripts. A later Stop with
+both collections empty produces the ordinary waiting card. Missing fields retain
+the older deterministic Stop behavior.
+
 Exact-equivalent `turn.started`, `turn.activity`, and request-free
 `turn.stopped` events reuse one visible card during a rolling 60-second window.
 The edited card shows the durable event count and latest event timestamp. Set

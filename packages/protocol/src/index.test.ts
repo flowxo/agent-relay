@@ -62,6 +62,48 @@ describe("AgentAttentionEventV1Schema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts bounded background-work activity and rejects invalid placement or empty evidence", () => {
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "turn.activity",
+        backgroundWork: {
+          inFlightCount: 1,
+          scheduledCount: 0,
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        backgroundWork: {
+          inFlightCount: 1,
+          scheduledCount: 0,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "turn.activity",
+        backgroundWork: {
+          inFlightCount: 0,
+          scheduledCount: 0,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentAttentionEventV1Schema.safeParse({
+        ...validEvent(),
+        type: "turn.activity",
+        backgroundWork: {
+          inFlightCount: 1_001,
+          scheduledCount: 0,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("requires owned-child evidence before accepting a process crash", () => {
     expect(
       AgentAttentionEventV1Schema.safeParse({

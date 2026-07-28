@@ -15,14 +15,15 @@ an official continuation contract.
 
 ## What it can prove
 
-| Signal or action    | Evidence and boundary                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------- |
-| Stop or question    | Native runtime-validated hook payload from the exact harness session                  |
-| Inline continuation | The original hook remains open for a bounded reply and returns native harness JSON    |
-| Late CLI resume     | An Agent Relay-owned supervisor exits, claims one answer, and invokes official resume |
-| Process crash       | Reported only from the exit status of a child process Agent Relay owns                |
-| Silent hang         | Never inferred from inactivity; no automatic hang restart is claimed                  |
-| Cursor IDE resume   | Unsupported; an IDE Stop hook cannot safely become a new Cursor CLI process           |
+| Signal or action    | Evidence and boundary                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| Stop or question    | Native runtime-validated hook payload from the exact harness session                     |
+| Background pause    | Claude structured Stop task/cron counts suppress a false waiting alert; prose is ignored |
+| Inline continuation | The original hook remains open for a bounded reply and returns native harness JSON       |
+| Late CLI resume     | An Agent Relay-owned supervisor exits, claims one answer, and invokes official resume    |
+| Process crash       | Reported only from the exit status of a child process Agent Relay owns                   |
+| Silent hang         | Never inferred from inactivity; no automatic hang restart is claimed                     |
+| Cursor IDE resume   | Unsupported; an IDE Stop hook cannot safely become a new Cursor CLI process              |
 
 Native hooks do not prove that a process crashed. Installing hooks alone gives
 stop/question notifications and bounded inline replies. Use
@@ -48,7 +49,7 @@ Exact versions are snapshots, not ranges.
 | ----------------- | ----------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Codex CLI         | `codex-cli 0.145.0`     | `verified`              | Stop and read-only late resume are live-proven; crash proof requires supervision.                                                |
 | Codex App Server  | `codex-cli 0.145.0`     | `verified`              | The owned stdio driver, durable correlation, and local adoption recovery are exact-version proven behind the default-off bridge. |
-| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; StopFailure remains fixture-proven.                                              |
+| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; structured background-work suppression and StopFailure remain fixture-proven.    |
 | Claude Agent SDK  | —                       | `compatible-unverified` | The streaming SDK contract is understood but is not the installed V1 user path.                                                  |
 | Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.                                     |
 | Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                    |

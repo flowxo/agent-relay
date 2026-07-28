@@ -212,6 +212,7 @@ young integration surface, not evidence that the concept is unsound.
 | Active-turn steering API               | App Server `turn/steer`                                             | Agent SDK input stream              | Not publicly documented                                         | Not publicly documented                           |
 | API failure event                      | Infer from turn status/supervisor; no Pushary `StopFailure` adapter | `StopFailure`                       | Stop status and stream result                                   | Stop/status hooks                                 |
 | Process crash detection by hooks alone | No                                                                  | No                                  | No                                                              | No                                                |
+| Structured background-work pause       | No main-Stop field currently documented                             | `background_tasks`, `session_crons` | Not currently documented                                        | Not currently documented                          |
 
 ### 3.2 Codex
 
@@ -250,6 +251,9 @@ Claude Code exposes the broadest hook event set:
   `agent_needs_input`, and `agent_completed`.
 - `Stop` fires when Claude finishes a response and may block the stop to
   continue with a reason.
+- `Stop.background_tasks` and `Stop.session_crons` distinguish a truly idle
+  session from one paused until background work or a scheduled wakeup resumes
+  it. Agent Relay uses only bounded counts from these fields.
 - `StopFailure` covers API failures.
 - `PermissionRequest` and `PreToolUse` can enforce approvals.
 - `SessionEnd` reports terminal session termination.
@@ -509,6 +513,10 @@ interface AgentAttentionEventV1 {
   summary?: string;
   lastAssistantMessage?: string;
   failure?: { class: string; message: string };
+  backgroundWork?: {
+    inFlightCount: number;
+    scheduledCount: number;
+  };
   request?: {
     correlationId: string;
     kind: "confirm" | "select" | "input" | "permission" | "continuation";

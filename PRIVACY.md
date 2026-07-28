@@ -39,6 +39,13 @@ labels, failure summary, and operator answer needed to notify and continue a
 session. Those values can still contain private source or conversation content.
 Treat the state directory as sensitive.
 
+For a Claude Code Stop that reports active background work, Agent Relay retains
+only the in-flight and scheduled item counts. It discards task and cron IDs,
+types, status strings, descriptions, commands, agent names, server/tool names,
+workflow names, schedules, prompts, transcript paths, and the assistant message
+from that paused observation. The resulting event is suppressed locally and is
+not sent to a notification transport.
+
 The experimental runner bridge is not a notification transport and does not send
 through Telegram or Notifications. When explicitly composed later, it initiates
 its own versioned outbound connection. Its status and doctor output exclude

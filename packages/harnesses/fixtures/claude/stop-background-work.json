@@ -1,0 +1,26 @@
+{
+  "session_id": "claude-session-background-0001",
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl",
+  "cwd": "/workspace/example",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "A final review is still running.",
+  "background_tasks": [
+    {
+      "id": "task-synthetic-0001",
+      "type": "subagent",
+      "status": "running",
+      "description": "Review the synthetic contract",
+      "agent_type": "synthetic-reviewer"
+    }
+  ],
+  "session_crons": [
+    {
+      "id": "cron-synthetic-0001",
+      "schedule": "0 9 * * 1-5",
+      "recurring": true,
+      "prompt": "Run the synthetic scheduled check"
+    }
+  ]
+}
