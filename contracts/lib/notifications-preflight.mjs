@@ -33,10 +33,10 @@ export const CANONICAL_POLICY_SHA256 =
 export const CONTRACT_CHECK_RESULT_SCHEMA_SHA256 =
   "a28b5432904413bdef7d88af1818f0c31c210ceb1103d0391e193930700f8688";
 export const NOTIFICATIONS_BASE_SOURCE_COMMIT =
-  "be00a5db1c94c5606c2b8853ab16a960aef1b593";
+  "0e0198fc248468ec9f0cd8e06997faee55a2cb25";
 export const NOTIFICATIONS_MOCK_SOURCE_COMMIT =
-  "89a6c4d738b9c14d611f3bbf3d114ac99ff90b42";
-export const NOTIFICATIONS_VERSION = "1.0.0-draft.1";
+  "0e0198fc248468ec9f0cd8e06997faee55a2cb25";
+export const NOTIFICATIONS_VERSION = "1.0.0-rc.1";
 
 const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
 const MAX_UNCOMPRESSED_ARCHIVE_BYTES = 64 * 1024 * 1024;
@@ -49,9 +49,9 @@ const EXPECTED_DEPENDENCIES = [
   {
     artifact: "@flowxo/notifications-contracts",
     artifact_file:
-      "vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz",
+      "vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz",
     source_commit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
-    sha256: "88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106",
+    sha256: "02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2",
     fixture_sets: [
       "core-api-bodies",
       "core-semantic-scenarios",
@@ -69,17 +69,17 @@ const EXPECTED_DEPENDENCIES = [
   {
     artifact: "@flowxo/notifications",
     artifact_file:
-      "vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz",
+      "vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz",
     source_commit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
-    sha256: "4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c",
+    sha256: "82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44",
     fixture_sets: [],
   },
   {
     artifact: "@flowxo/notifications-contract-mock",
     artifact_file:
-      "vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz",
+      "vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz",
     source_commit: NOTIFICATIONS_MOCK_SOURCE_COMMIT,
-    sha256: "ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e",
+    sha256: "9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e",
     fixture_sets: ["contract-mock-scenarios.v1"],
   },
 ];
