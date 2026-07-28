@@ -183,7 +183,7 @@ describe("Notifications machine bootstrap", () => {
     });
     expect(result.configuration).toMatchObject({
       baseUrl: "https://notifications.mock.test/",
-      contractVersion: "1.0.0-draft.1",
+      contractVersion: "1.0.0-rc.1",
       environment: "test",
       machineClientId,
       notifierId,
@@ -279,7 +279,7 @@ describe("Notifications machine bootstrap", () => {
         status: "pending",
         url: expect.stringMatching(/^https:\/\//u),
       },
-      contractVersion: "1.0.0-draft.1",
+      contractVersion: "1.0.0-rc.1",
       status: "authorization_pending",
     });
     expect(createCredential).not.toHaveBeenCalled();

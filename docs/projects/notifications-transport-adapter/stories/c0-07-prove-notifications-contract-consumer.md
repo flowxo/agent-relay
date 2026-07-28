@@ -1,6 +1,6 @@
 # Story specification: Prove Agent Relay against the Notifications contract
 
-- **Status:** Complete against `1.0.0-draft.1`; release promotion gated by C0-09
+- **Status:** Complete against `1.0.0-rc.1`; C0-09 recorded `go`
 - **Story code:** C0-07
 - **Product:** Agent Relay
 - **Project:** Shared Contracts and Autonomous Delivery Conventions
@@ -308,21 +308,21 @@ The implementation agent must stop before:
 
 ## Completion evidence
 
-- `contracts/contract-lock.json` pins exact `1.0.0-draft.1` artifacts:
+- `contracts/contract-lock.json` pins exact `1.0.0-rc.1` artifacts:
   `@flowxo/notifications-contracts` at
-  `88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106`,
+  `02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2`,
   `@flowxo/notifications` at
-  `4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c`, and
+  `82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44`, and
   `@flowxo/notifications-contract-mock` at
-  `ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e`.
+  `9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e`.
 - `pnpm contracts:notifications` verifies artifact safety and identity, mapping,
   schema compatibility, SQLite-to-separate-process-mock delivery, equivalent
   retry, crash-before-ack replay, acknowledgement, quarantine, cross-identity
   rejection, first-writer-wins behavior, and direct-Telegram parity.
 - C0-08 adds canonical lock/policy digests, an additive-compatibility gate,
   fresh scripts-disabled installation, and deterministic generated evidence.
-- The exact `76240c4` PR #2 head passed CI, packaged browser E2E, and secret
-  scanning when this status was reconciled.
+- The RC consumer commit `22a85f1` and exact PR #2 head `8315ed6` passed CI,
+  packaged browser E2E, and secret scanning before merging to `main`.
 - No production daemon transport selection, hosted credential persistence, or
   continuous poller is claimed by this story.
 

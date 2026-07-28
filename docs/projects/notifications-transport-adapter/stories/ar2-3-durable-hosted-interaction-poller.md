@@ -5,7 +5,7 @@
 - **Project:** AR2 — FlowXO Notifications Transport Adapter
 - **Milestone:** Durable hosted interaction loop
 - **Branch:** `codex/ar2-notifications-adapter`
-- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-draft.1`
+- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-rc.1`
 - **Last reviewed:** 2026-07-26
 
 ## Outcome
@@ -151,7 +151,7 @@ audit found no known vulnerability.
 - FXO-1154 runs the shared behavior matrix across fake, Telegram, and hosted
   transports.
 - FXO-1155 proves the packaged end-to-end hosted path and release handoff.
-- Production dogfood remains gated by C0-09 and AR3.
+- Production dogfood remains owned by AR3 and awaits the approved real service.
 
 ## References
 

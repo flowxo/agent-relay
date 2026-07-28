@@ -1,7 +1,8 @@
 # Project specification: FlowXO Notifications Transport Adapter
 
-- **Status:** Complete locally against the pinned executable mock; C0-09 gates
-  production promotion and AR3 dogfood
+- **Status:** Complete against the pinned executable mock and packed artifact;
+  C0-09 approved `1.0.0-rc.1`, while AR3 awaits an approved real service
+  environment
 - **Product:** Agent Relay
 - **Initiative:**
   [Agent Relay — Open Source V1](https://linear.app/flowxo/initiative/agent-relay-open-source-v1-664f633c9408)
@@ -10,7 +11,7 @@
 - **Linear project:**
   [AR2 — FlowXO Notifications Transport Adapter](https://linear.app/flowxo/project/ar2-flowxo-notifications-transport-adapter-89e35890c6d7)
 - **Owning repository:** `agent-relay`
-- **Last reviewed:** 2026-07-26
+- **Last reviewed:** 2026-07-28
 
 ## 1. Why this project exists
 
@@ -33,8 +34,8 @@ independence.
 
 The executable boundary is no longer an assumption. C0-07 is complete in
 `68b2fbf`; C0-08 adds the immutable lock, compatibility policy, safe install,
-and repository-native gate in `100c250`; and the exact Agent Relay
-`1.0.0-draft.1` candidate through `76240c4` is green in
+and repository-native gate in `100c250`; and the exact Agent Relay `1.0.0-rc.1`
+consumer commit `22a85f1` is green and merged through
 [PR #2](https://github.com/flowxo/agent-relay/pull/2). That evidence covers
 provider-neutral mapping and mock-backed consumer behavior. AR2.1–AR2.6 now add
 private narrow-credential persistence, explicit daemon selection, durable hosted
@@ -44,9 +45,10 @@ transport parity. A scripts-disabled clean-home install from the exact packed
 artifact proves setup, confirm/select/input, crash-before-ack replay,
 disconnect/erasure with retained local authority, and unchanged direct Telegram.
 The centrally owned
-[C0-09 security review](https://linear.app/flowxo/issue/FXO-1050) still gates
-promotion to `1.0.0-rc.1` and production dogfood; AR3 owns real-service
-evidence.
+[C0-09 security review](https://linear.app/flowxo/issue/FXO-1050) recorded `go`
+for the exact `1.0.0-rc.1` candidate. AR3 owns real-service evidence and starts
+only when the Notifications owner supplies the approved environment, narrow
+machine bootstrap, durable poll/ack stream, and bounded-canary authorization.
 
 ## 2. Outcome
 
@@ -601,7 +603,7 @@ scenario runs unchanged against the in-memory fake, the real
 `TelegramBotTransport` plus reply router and a synthetic Bot API, and the exact
 Notifications transport/mock plus durable poller. Provider observations make the
 one intentional difference explicit: fake/direct Telegram advertise message
-updates; draft.1 Notifications does not.
+updates; rc.1 Notifications does not.
 
 The matrix exposed and now prevents a cursor-blocking projection bug:
 duplicate/expired local reasons remain durable, while a normal `processed`
@@ -690,12 +692,12 @@ rate-limited.
 
 ### 16.1 Hosted resolved-message update
 
-**Resolved for draft.1:** the exact pinned client has no resolved-message update
+**Resolved for rc.1:** the exact pinned client has no resolved-message update
 method. AR2 implements the bounded idempotent presentation worker and supported
-fake contract, while the shipped draft.1 presenter records the optional
-capability as unsupported. It does not misuse message cancellation and never
-blocks local resolution. A later exact contract can implement the existing
-interface without changing SQLite authority.
+fake contract, while the shipped rc.1 presenter records the optional capability
+as unsupported. It does not misuse message cancellation and never blocks local
+resolution. A later exact contract can implement the existing interface without
+changing SQLite authority.
 
 ## 17. Delivery slices
 

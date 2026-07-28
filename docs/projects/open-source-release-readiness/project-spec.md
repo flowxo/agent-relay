@@ -1,6 +1,6 @@
 # Project specification: Open Source Release Readiness
 
-- **Status:** In progress; FXO-1141 through FXO-1147 complete
+- **Status:** Complete; FXO-1141 through FXO-1149 are Done
 - **Product:** Agent Relay
 - **Initiative:**
   [Agent Relay — Open Source V1](https://linear.app/flowxo/initiative/agent-relay-open-source-v1-664f633c9408)
@@ -9,7 +9,7 @@
 - **Linear project:**
   [AR1 — Agent Relay Open Source Release Readiness](https://linear.app/flowxo/project/ar1-agent-relay-open-source-release-readiness-b2b3bf7d5fe3)
 - **Owning repository:** `agent-relay`
-- **Last reviewed:** 2026-07-26
+- **Last reviewed:** 2026-07-28
 
 ## 1. Why this project exists
 
@@ -68,14 +68,13 @@ Canonical details:
 - `docs/capability-matrix.md`
 - `docs/implementation-brief.md`
 
-The Open Source V1 candidate line is `codex/fxo-1141-release-baseline`. It
-preserves the completed multi-session MVP and descends through the coherent
-Agent Relay C0 consumer/compatibility history reviewed in
-[PR #2](https://github.com/flowxo/agent-relay/pull/2), whose exact `76240c4`
-head was green when this baseline was established. That proves the pinned
-`1.0.0-draft.1` consumer boundary; it does not claim the centrally owned C0-09
-security disposition, `1.0.0-rc.1` promotion, mainline integration, or public
-release.
+The Open Source V1 candidate preserves the completed multi-session MVP and
+descends through the coherent Agent Relay C0 consumer/compatibility history.
+[PR #2](https://github.com/flowxo/agent-relay/pull/2) integrated the approved
+`1.0.0-rc.1` contract candidate, and PRs #3 and #4 integrated the release
+baseline and AR1 evidence. C0-09 recorded `go`; none of those actions
+constitutes a public Agent Relay package release or a production Notifications
+deployment.
 
 Cursor permission automation remains disabled until a current sanitized live
 payload is captured. This is an explicit limitation, not unfinished V1 work.

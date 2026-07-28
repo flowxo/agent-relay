@@ -493,8 +493,8 @@ unsupported, Cursor `--print` did not emit Stop on the tested build, and an
 interactive child must exit before its session can be resumed through a new CLI
 process.
 
-The pinned Notifications `1.0.0-draft.1` consumer and compatibility gate are
-also green against the executable mock. They prove the provider-neutral mapping,
+The pinned Notifications `1.0.0-rc.1` consumer and compatibility gate are also
+green against the executable mock. They prove the provider-neutral mapping,
 retry, replay, acknowledgement, isolation, and local-authority boundary. The
 mock-backed `agent-relay notifications` setup command additionally proves
 subscriber authorization, locally generated narrow credentials, secure
@@ -504,13 +504,14 @@ readiness/runtime state. Selected hosted mode continuously polls the
 authenticated machine stream, commits exact-session answers and durable
 acknowledgement state to local SQLite, and advances its cursor only after
 provider acknowledgement. Terminal presentation is a separate durable,
-idempotent concern; the exact pinned draft.1 contract honestly reports it as
+idempotent concern; the exact pinned rc.1 contract honestly reports it as
 unsupported because it has no resolved-message update endpoint. Safe status
 includes failure policy and presentation counts, and local disconnect/revocation
 stops new hosted calls without deleting state. A transport-neutral matrix now
 keeps fake, direct Telegram, and Notifications aligned on delivery identity,
 retry, confirm/select/input, expiry, duplicate/race authority, restart, and
 at-most-once resume. The clean-home packed artifact now proves that complete
-mock-backed hosted lifecycle plus an unchanged direct-Telegram canary. Real
-service dogfood belongs to AR3; cross-repository promotion to `1.0.0-rc.1`
-remains gated by [C0-09](https://linear.app/flowxo/issue/FXO-1050).
+mock-backed hosted lifecycle plus an unchanged direct-Telegram canary. C0-09
+approved the exact `1.0.0-rc.1` contract candidate. Real-service dogfood still
+belongs to AR3 and starts only after the Notifications owner supplies an
+approved environment, machine stream, and bounded-canary authorization.

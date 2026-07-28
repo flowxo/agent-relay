@@ -5,7 +5,7 @@
 - **Project:** AR2 — FlowXO Notifications Transport Adapter
 - **Milestone:** Safe setup and explicit transport selection
 - **Branch:** `codex/ar2-notifications-adapter`
-- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-draft.1`
+- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-rc.1`
 - **Last reviewed:** 2026-07-26
 
 ## Outcome
@@ -145,7 +145,7 @@ Final local gate on 2026-07-26:
 - hosted resolution reflection and extended diagnosis (FXO-1153);
 - common three-transport behavior suite (FXO-1154);
 - packed end-to-end hosted proof and release handoff (FXO-1155); and
-- production dogfood, still gated by C0-09 and AR3.
+- production dogfood, still owned by AR3 and waiting for the approved service.
 
 ## References
 

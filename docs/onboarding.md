@@ -394,7 +394,7 @@ rotate, revoke, erase, and deliver normal attention events when `notifications`
 is selected. Selected hosted mode also long-polls confirm/select/input answers,
 commits them to the exact local request before provider acknowledgement, and
 recovers cursor/acknowledgement work after restart. Terminal presentation is a
-separate durable worker; the pinned draft.1 contract reports that optional
+separate durable worker; the pinned rc.1 contract reports that optional
 capability as unsupported because it has no resolution-update endpoint. Safe
 status still exposes its queue/block counts and failure category. Local
 disconnect or revocation stops new hosted calls, retains SQLite authority, and
@@ -418,8 +418,10 @@ Do not place a broad Notifications project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment
 injection, or hidden prompt. The local setup files are retained by uninstall;
 use `notifications disconnect --revoke` before explicit credential/configuration
-erasure. Until the central C0-09 promotion gate completes, perform this setup
-only against the executable loopback mock.
+erasure. C0-09 approved the exact `1.0.0-rc.1` candidate, but it did not create
+or authorize a real service environment. Perform this setup only against the
+executable loopback mock until the Notifications owner supplies the approved AR3
+environment and bounded-canary authorization.
 
 ## 6. Prove the Telegram interaction loop
 

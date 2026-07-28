@@ -950,7 +950,7 @@ if (process.platform !== "darwin") {
       "utf8",
     );
     assert(
-      cliSource.includes("1.0.0-draft.1") &&
+      cliSource.includes("1.0.0-rc.1") &&
         cliSource.includes("notifications connect") &&
         !cliSource.includes("@flowxo/notifications-contract-mock"),
       "packed CLI omitted the hosted adapter or bundled the test-only mock",
@@ -1536,7 +1536,7 @@ if (process.platform !== "darwin") {
       notificationArtifacts.length === 3 &&
         notificationArtifacts.every(
           (artifact) =>
-            artifact.version === "1.0.0-draft.1" &&
+            artifact.version === "1.0.0-rc.1" &&
             /^[a-f0-9]{64}$/u.test(artifact.sha256) &&
             /^[a-f0-9]{40}$/u.test(artifact.source_commit),
         ),
@@ -1554,7 +1554,7 @@ if (process.platform !== "darwin") {
           sha256: packageSha256,
         },
         notifications: {
-          contractVersion: "1.0.0-draft.1",
+          contractVersion: "1.0.0-rc.1",
           contractLockSha256: lockSha256,
           exactArtifacts: notificationArtifacts.length,
           setup: "narrow-credential-proven",

@@ -171,7 +171,7 @@ describe("doctor version and installation checks", () => {
           canaryRef: "canary_safe12",
           configured: true,
           connectionStatus: "active",
-          contractVersion: "1.0.0-draft.1",
+          contractVersion: "1.0.0-rc.1",
           credentialPermissions: "pinned-machine-scopes",
           credentialPresent: true,
           environment: "test",

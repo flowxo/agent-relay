@@ -2,19 +2,21 @@
 
 ## Proven
 
-- GitHub PR #5 integrated the completed multi-session root `codex/initial-mvp`
-  at `a4a6b5b` to `main` as merge commit `157006a`. The ordered C0,
-  release-baseline, and AR1 heads remain reviewable draft PRs #2, #3, and #4;
-  AR2 development starts from exact AR1 head `7624eb5` on
-  `codex/ar2-notifications-adapter`. No package has been published.
+- GitHub PRs #1/#5 integrated the completed multi-session MVP. PR #2 then
+  integrated the exact Notifications `1.0.0-rc.1` consumer, PR #3 integrated the
+  V1 release baseline, PR #4 integrated AR1 release readiness, and PR #6
+  integrates the reconciled AR2 adapter. Every layer was retargeted to `main`,
+  validated on its exact updated head, and merged with history-preserving merge
+  commits. No package has been published.
 - Linear initiative `Agent Relay — Open Source V1` owns four ordered
   implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
-  all five milestones at 100%. AR2 is complete locally with FXO-1150 through
-  FXO-1155 green against executable mocks; AR3 remains blocked on C0-09 and owns
-  real-service dogfood. AR4 follows dogfood evidence. Post-V1 hosted fleet
-  explorations remain separate.
-- C0-07 (FXO-1048) and C0-08 (FXO-1049) are Done. Agent Relay pins and verifies
-  the exact three Notifications `1.0.0-draft.1` artifacts, runs a
+  all five milestones at 100%. AR2 is complete with FXO-1150 through FXO-1155
+  green against the executable RC mock and packed artifact. C0-09 is Done with
+  decision `go`; AR3 now waits for the Notifications-owned real machine-client
+  environment and bounded-canary authorization. AR4 follows dogfood evidence.
+  Post-V1 hosted fleet explorations remain separate.
+- C0-07 (FXO-1048), C0-08 (FXO-1049), and C0-09 (FXO-1050) are Done. Agent Relay
+  pins and verifies the exact three Notifications `1.0.0-rc.1` artifacts, runs a
   scripts-disabled clean consumer install, and proves mapping, retry,
   crash-before-ack replay, acknowledgement, quarantine, identity isolation,
   first-writer-wins local authority, and direct-Telegram parity.
@@ -54,7 +56,7 @@
   independent packed lifecycle rerun, all three Chromium scenarios, and
   `pnpm audit --prod` with no known vulnerabilities also passed.
 - FXO-1152 implements the selected hosted interaction loop against the exact
-  pinned `1.0.0-draft.1` client and mock. Interactive delivery commits hosted
+  pinned `1.0.0-rc.1` client and mock. Interactive delivery commits hosted
   message/interaction/type identity to SQLite. Schema `2` adds hashed machine
   poll state, immutable hosted event claims, acknowledgement retry state, and
   message-update retry state. The daemon drains oldest acknowledgement work
@@ -85,9 +87,9 @@
   deterministic SHA-256 operation identity; response loss retries only that
   identity, and explicit provider ambiguity blocks without creating a second
   message or decision. Interrupted update leases recover from SQLite, while
-  update failure cannot invoke resolution or continuation. The exact pinned
-  draft.1 client has no resolved-message update method, so the shipped presenter
-  records `notifications-resolution-update-unsupported` without HTTP or misusing
+  update failure cannot invoke resolution or continuation. The exact pinned rc.1
+  client has no resolved-message update method, so the shipped presenter records
+  `notifications-resolution-update-unsupported` without HTTP or misusing
   cancellation. Hosted failures now map to retry, terminal-configuration,
   dead-letter/security, quarantine, or operator-action categories. Status/doctor
   expose only capability, counts, safe codes, categories, and hashed references.
@@ -113,7 +115,7 @@
   confirm, single-select, and free-text with one question/six options. The
   matrix exposed a contract bug where local duplicate/expired reasons were sent
   on `processed` acknowledgements; they now remain in SQLite but are omitted
-  from the provider request, as draft.1 requires. The 16-file focused parity,
+  from the provider request, as rc.1 requires. The 16-file focused parity,
   Telegram, hosted-safety, structured-interaction, resume, and canary matrix
   passed 146 tests. The final local gate passed 51 Vitest files/408 tests, 17
   contract-lock and supply-chain tests, the six-test isolated Notifications
@@ -136,19 +138,19 @@
   event/provider receipt IDs in successful-delivery logs; they are now replaced
   by 12-hex SHA-256 references with a permanent regression test.
   `pnpm package:hosted:check` emitted package digest
-  `e3a46c4cee9d676edd0a78ecc053693606971898177bd6f47decff56de6ea7e2` and exact
+  `a97ee80dc12ebe08f5e03e0e64738994258efaba891162a02effd829d1ec97f5` and exact
   contract-lock digest
-  `922d26e4a4aa9ce8ed9ce1b6bf24a66b4454cc93d7d53303e210ef6f6e3ea214`. The final
+  `ec17c566723032e04a4c58fc367ba4c0c9b0b2e161bc5cd286fe0789ec59f30e`. The final
   `pnpm check` passed 51 Vitest files/409 tests, 17 contract-lock and
   supply-chain tests, the six-test isolated Notifications consumer, the
-  192,227-byte packed/1,225,217-byte unpacked artifact, the hosted clean-home
+  192,228-byte packed/1,225,124-byte unpacked artifact, the hosted clean-home
   proof, and the complete packed lifecycle. All three Chromium scenarios passed,
   and `pnpm audit --prod` found no known vulnerability. AR2 is complete locally;
-  real hosted evidence remains AR3 and centrally gated by C0-09.
-- Agent Relay PR #2 was open, draft, clean, and green at exact head `76240c4`
-  when the V1 baseline was selected: CI, packaged Chromium E2E, and GitGuardian
-  all passed. Central C0-09 (FXO-1050) remains In Progress and is still the gate
-  for `1.0.0-rc.1`; this repository does not claim a cross-product go decision.
+  real hosted evidence remains AR3 and waits for the approved service.
+- Agent Relay PR #2 merged the approved C0 candidate into `main` after
+  exact-head CI, packaged Chromium E2E, and GitGuardian passed. C0-09 records
+  `go` for `1.0.0-rc.1`; that decision does not authorize a production
+  deployment or create the Notifications environment AR3 needs.
 - The FXO-1141 baseline passed the release-candidate matrix locally on
   2026-07-26: frozen scripts-disabled install, Notifications artifact preflight,
   approved native rebuild, `pnpm check` (40 Vitest files/305 tests plus 17
@@ -760,20 +762,22 @@ also remain free of silent delivery, hook, or correlation failures.
   authentication map. FXO-1150 generates the real credential locally, supplies
   it only to the mock's in-memory auth fixture, and separately asserts that HTTP
   registration contains only the ID/digest. Real digest verification and human
-  subscription activation remain contract-backed assumptions until C0-09/AR3
-  production dogfood.
+  subscription activation remain contract-backed assumptions until AR3 runs
+  against the approved real service.
 - The private pinned Notifications client/contract artifacts declare no
   distributable license metadata. They are bundled only into an unpublished
-  local candidate today. C0 release promotion must resolve the final artifact
-  license/notice boundary before public package publication.
+  local candidate today. Public package publication must still resolve the final
+  artifact license/notice boundary.
 
 ## Next action
 
-Begin AR3 real-service dogfood only after the central C0-09 go disposition. That
-phase must confirm production retention/privacy terms, real subscriber
-activation and digest verification, live delivery/reply/recovery, and deliberate
-transport-switch operations. npm scope/publication and the monitored public
-security-contact path remain owner-controlled promotion gates.
+Begin AR3 real-service dogfood only after the Notifications owner supplies an
+approved environment implementing narrow machine bootstrap and durable poll/ack,
+and authorizes the bounded canary. That phase must confirm production
+retention/privacy terms, real subscriber activation and digest verification,
+live delivery/reply/recovery, and deliberate transport-switch operations. npm
+scope/publication and the monitored public security-contact path remain
+owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

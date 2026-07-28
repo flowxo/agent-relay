@@ -5,7 +5,7 @@
 - **Project:** AR2 — FlowXO Notifications Transport Adapter
 - **Milestone:** Safe setup and explicit transport selection
 - **Branch:** `codex/ar2-notifications-adapter`
-- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-draft.1`
+- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-rc.1`
 - **Last reviewed:** 2026-07-26
 
 ## Outcome
@@ -180,8 +180,9 @@ in-memory authentication fixture, and independently asserts that the
 registration request sends only `credential_id` and `secret_sha256`. This is a
 test-harness accommodation, not a production credential path.
 
-Production dogfood remains gated by central C0-09 and AR3. No production account
-or credential is required for this story.
+Production dogfood remains owned by AR3 and awaits an approved Notifications
+environment and machine-client implementation. No production account or
+credential is required for this story.
 
 ## Explicitly deferred
 

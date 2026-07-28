@@ -46,7 +46,7 @@ export function notificationsResolutionOperationId(eventId: string): string {
 }
 
 /**
- * The exact pinned Notifications 1.0.0-draft.1 client has no resolved-message
+ * The exact pinned Notifications 1.0.0-rc.1 client has no resolved-message
  * update method. Keeping that absence behind the same bounded interface lets a
  * later exact contract add the capability without changing local authority.
  */
