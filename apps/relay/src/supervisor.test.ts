@@ -69,6 +69,9 @@ function childResult(overrides: ChildResultOverrides = {}): OwnedChildResult {
 }
 
 async function setup() {
+  const directory = await mkdtemp(
+    join(tmpdir(), "agent-relay-supervisor-runtime-"),
+  );
   const store = new RelayStore();
   const transport = new FakeNotificationTransport();
   const service = new RelayService(store, transport, {
@@ -96,6 +99,7 @@ async function setup() {
     client: new RelayClient({
       baseUrl: `http://127.0.0.1:${address.port}`,
     }),
+    fallbackPath: join(directory, "fallback.ndjson"),
     close,
   };
 }
@@ -336,6 +340,7 @@ describe("opt-in harness supervisor", () => {
           bridgeSessionId,
           occurredAt: "2026-07-24T12:00:00.000Z",
           client: runtime.client,
+          fallbackPath: runtime.fallbackPath,
           lateResume: true,
           lateResumeTtlMs: 60_000,
         });
@@ -452,6 +457,7 @@ describe("opt-in harness supervisor", () => {
           bridgeSessionId,
           occurredAt: "2026-07-24T12:00:00.000Z",
           client: runtime.client,
+          fallbackPath: runtime.fallbackPath,
           lateResume: true,
           lateResumeTtlMs: 60_000,
         });
@@ -532,6 +538,7 @@ describe("opt-in harness supervisor", () => {
           bridgeSessionId,
           occurredAt: "2026-07-24T12:00:00.000Z",
           client: runtime.client,
+          fallbackPath: runtime.fallbackPath,
           lateResume: true,
           lateResumeTtlMs: 60_000,
         });
