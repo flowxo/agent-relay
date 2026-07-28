@@ -160,6 +160,19 @@ and doctor reports `refusing unsafe downgrade`; use the newer package or restore
 a database backup instead of forcing the older binary. Arbitrary downgrade
 safety is not claimed.
 
+Runner-protocol vendor updates are source changes, not a substitute for this
+installed-package reconciliation. Check a producer candidate with
+`pnpm contracts:runner:update -- --artifacts <absolute-directory>` and use
+explicit `--apply` only on a review branch. The updater never edits installed
+state, hooks, credentials, notification configuration, or either SQLite
+database.
+
+Reverting a vendor/lock update does not establish runtime downgrade safety. If
+the newer package wrote a later bridge or core schema, retain that package or
+restore a reviewed backup; do not edit `user_version`. A product-managed
+adoption also remains product-managed until a future explicit reverse-transfer
+policy exists.
+
 ## Uninstall safely
 
 Uninstall hooks before removing the source checkout, local prefix, or future

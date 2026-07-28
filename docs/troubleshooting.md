@@ -178,6 +178,37 @@ newer schema than this package supports. Stop the older package and use the
 newer release or restore an appropriate backup. Do not edit SQLite
 `user_version` to bypass the refusal.
 
+## Experimental runner adoption requires recovery
+
+Runner status may report a claimed or blocked-recovery adoption. That means
+standalone interaction has already been disabled for the exact local session,
+but the product binding was not yet proven complete. Do not delete either SQLite
+file, restart the session through a standalone surface, or manually change
+ownership rows. Restart the same bridge composition so it can inspect the
+durable receipt and complete the original adoption ID.
+
+An `outcome_unknown` approval or command is deliberately not retryable. Inspect
+the native session locally and start a new product operation if appropriate;
+never re-send the old native approval response.
+
+## Runner contract candidate differs or apply is interrupted
+
+Run the candidate command without `--apply` first. A `changed: true` result is a
+review requirement, not an automatic upgrade. Confirm the exact producer commit,
+two artifact digests, 33 fixtures, and `internal-until-gate-5` commitment before
+using a dedicated update branch.
+
+Apply refuses dirty lock/vendor targets. If replacement is interrupted, the
+updater restores and re-verifies the prior complete set before returning a
+failure. Do not copy one archive or edit the lock manually. If recovery itself
+cannot be proven, stop and retain the checkout for inspection; do not run
+package lifecycle scripts or the daemon against a mixed set.
+
+A cross-repository canary failure reports only the failed stage. Re-run that
+fixed command directly with synthetic data and use safe doctor/contract fields;
+do not attach its raw stderr, local paths, Codex output, SQLite files,
+credentials, or environment.
+
 ## Preparing a public report
 
 Reproduce with the fake transport and synthetic data if possible. Include only

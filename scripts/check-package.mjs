@@ -287,10 +287,10 @@ try {
     )
   ).join("\n");
   for (const [pattern, label] of [
-    [/workspace:/, "workspace dependency"],
+    [/workspace:(?:\*|\^|~|\.\.?\/)/, "workspace dependency"],
     [/@agent-relay\//, "private workspace package import"],
     [
-      /(?:apps\/relay|packages\/(?:core|protocol)|packages\/harnesses\/(?!fixtures\/))/,
+      /(?:apps\/relay|packages\/(?:core|protocol|runner-bridge)|packages\/harnesses\/(?!fixtures\/))/,
       "repository implementation path",
     ],
     [/\/Users\/[^/\s]+/, "machine-specific macOS path"],

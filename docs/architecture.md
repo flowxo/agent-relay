@@ -3,7 +3,7 @@
 > **Audience:** prospective users, operators, security reviewers, and
 > contributors
 >
-> **Last verified:** 2026-07-26
+> **Last verified:** 2026-07-27
 
 Agent Relay is a local Node.js control layer between coding harness lifecycle
 events and replaceable notification surfaces. It is not an agent runtime, a
@@ -34,20 +34,36 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 
 ## Components
 
-| Component              | Responsibility                                                                      |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| Protocol               | Strict event, request, answer, command, session, and diagnostic contracts           |
-| Harness adapters       | Parse native payloads and emit only the native continuation JSON a harness supports |
-| Hook runner            | Read one bounded stdin payload, contact the daemon, or write a redacted fallback    |
-| Local daemon           | Own HTTP ingress, scheduling, transport delivery, reply routing, and retention      |
-| SQLite store           | Persist identity, events, attempts, requests, answers, topics, and resume ownership |
-| Notification transport | Deliver bounded cards; it cannot directly resume a harness                          |
-| Supervisor             | Own a CLI child, observe its exit, and execute an officially supported late resume  |
-| Web companion          | Present authenticated projections and submit typed decisions to the same store      |
+| Component              | Responsibility                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| Protocol               | Strict event, request, answer, command, session, and diagnostic contracts               |
+| Harness adapters       | Parse native payloads or implement one exact structured driver without channel coupling |
+| Hook runner            | Read one bounded stdin payload, contact the daemon, or write a redacted fallback        |
+| Local daemon           | Own HTTP ingress, scheduling, transport delivery, reply routing, and retention          |
+| SQLite store           | Persist identity, events, attempts, requests, answers, topics, and resume ownership     |
+| Notification transport | Deliver bounded cards; it cannot directly resume a harness                              |
+| Supervisor             | Own a CLI child, observe its exit, and execute an officially supported late resume      |
+| Web companion          | Present authenticated projections and submit typed decisions to the same store          |
+| Runner bridge          | Optional outbound session protocol, separate state, typed local harness actuation       |
 
 The packages remain ordinary Node.js/macOS code. A transport may call a hosted
 service, but protocol, hooks, SQLite, the installer, the daemon, and
 continuation logic do not require Cloudflare or another hosted runtime.
+
+The experimental [outbound runner bridge](runner-bridge.md) is an orthogonal,
+default-off component. It owns a separate SQLite spool/effect ledger and a typed
+structured-harness port. The app composition exposes one narrow core-store
+ownership adapter for explicit local session adoption; neither bridge package
+imports core. The bridge does not extend `NotificationTransport` or route runner
+frames through Telegram, Notifications, or the web companion.
+
+The first implementation of that port is the exact-version Codex app-server
+driver. It owns a stdio child and exposes only typed lifecycle, turn, and
+approval operations plus content-free observations. Local project/path and turn
+material resolution remains outside the wire command. Durable adoption and
+product/native event correlation are bridge-owned and remain separate from the
+notification system. Existing hooks use an observation-only profile whose
+advertised capabilities cannot be widened into product actuation.
 
 ## Evidence is deliberately separated
 
@@ -147,6 +163,7 @@ different payload reusing an operation ID conflicts.
 | Hosted Notifications | Optional bounded transport contract; local SQLite retains decision authority     |
 | Resume process       | Discrete argv, exact session, fail-closed initial authority, at-most-once claim  |
 | Public diagnostics   | Synthetic reproduction only; no databases, raw logs, credentials, or transcripts |
+| Runner bridge        | Outbound versioned frames; local binding and execution authority; no generic RPC |
 
 See [PRIVACY.md](../PRIVACY.md) for exact local files, outbound fields,
 retention, and erasure, and [SECURITY.md](../SECURITY.md) for private reporting.

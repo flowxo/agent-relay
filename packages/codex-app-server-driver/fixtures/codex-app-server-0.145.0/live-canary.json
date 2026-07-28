@@ -1,0 +1,23 @@
+{
+  "schema": "agent-relay-codex-app-server-live-canary.v1",
+  "codexVersion": "codex-cli 0.145.0",
+  "schemaSha256": "1bc09dedc506075562d4d49b702ecab6d947dd5a8c2a9014a5cde592a0938efb",
+  "transport": "stdio-jsonl",
+  "initialized": true,
+  "sessionStarted": true,
+  "turnStarted": true,
+  "turnCompleted": true,
+  "observationKinds": [
+    "item.completed",
+    "item.started",
+    "process.exited",
+    "session.started",
+    "turn.completed",
+    "turn.started"
+  ],
+  "itemKinds": ["agentMessage", "userMessage"],
+  "processExitObserved": true,
+  "stopped": true,
+  "generatedAt": "2026-07-28",
+  "content": "sanitized-counts-and-enums-only"
+}

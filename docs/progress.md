@@ -5,9 +5,26 @@
 - GitHub PRs #1/#5 integrated the completed multi-session MVP. PR #2 then
   integrated the exact Notifications `1.0.0-rc.1` consumer, PR #3 integrated the
   V1 release baseline, PR #4 integrated AR1 release readiness, and PR #6
-  integrates the reconciled AR2 adapter. Every layer was retargeted to `main`,
+  integrated the reconciled AR2 adapter. Every layer was retargeted to `main`,
   validated on its exact updated head, and merged with history-preserving merge
   commits. No package has been published.
+- FXO-1104 through FXO-1107 complete the approved Phase 3 external-harness
+  boundary as four preserved commits: the default-off runner bridge (`47d1c49`),
+  exact Codex app-server driver (`d8aa326`), durable adoption and reconciliation
+  (`5be5dbf`), and cross-repository evidence (`1039e5a`). The integrated
+  candidate merges current `main` at `bc07927` without rewriting those
+  evidence-bearing commits. Against Notifications `1.0.0-rc.1`, the full gate
+  passes 64 Vitest files/454 tests, the 24-test combined contract and
+  supply-chain matrix, the six-test isolated Notifications consumer, the 33/33
+  runner-protocol corpus, a 208,164-byte packed/1,304,827-byte unpacked
+  artifact, hosted proof digest
+  `543cb30a7ced7157126c5cc65eed1906ef5e6af72460433846d2fd51d57cc1c4`, and the
+  schema-2-to-schema-3 lifecycle with schema-4 downgrade refusal. The three
+  Chromium scenarios and production dependency audit pass, and the exact
+  `codex-cli 0.145.0` app-server canary again proves initialization, ephemeral
+  session/turn completion, content-safe item observations, owned process exit,
+  and cleanup. The bridge remains disabled by default and no service,
+  publication, release, or public protocol promise was created.
 - Linear initiative `Agent Relay — Open Source V1` owns four ordered
   implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
   all five milestones at 100%. AR2 is complete with FXO-1150 through FXO-1155
@@ -145,8 +162,9 @@
   supply-chain tests, the six-test isolated Notifications consumer, the
   192,228-byte packed/1,225,124-byte unpacked artifact, the hosted clean-home
   proof, and the complete packed lifecycle. All three Chromium scenarios passed,
-  and `pnpm audit --prod` found no known vulnerability. AR2 is complete locally;
-  real hosted evidence remains AR3 and waits for the approved service.
+  and `pnpm audit --prod` found no known vulnerability. AR2 is complete and
+  integrated; real hosted evidence remains AR3 and waits for the approved
+  service.
 - Agent Relay PR #2 merged the approved C0 candidate into `main` after
   exact-head CI, packaged Chromium E2E, and GitGuardian passed. C0-09 records
   `go` for `1.0.0-rc.1`; that decision does not authorize a production
@@ -742,11 +760,6 @@ also remain free of silent delivery, hook, or correlation failures.
 - The supervisor never labels inactivity as a hang. `suspected_stalled` exists
   as a distinct state, but emission remains disabled until a harness-specific
   health probe supplies evidence.
-- [PR #1](https://github.com/flowxo/agent-relay/pull/1) merged an earlier
-  `codex/initial-mvp` slice to `main` on 2026-07-25. The later multi-session
-  completion, Agent Relay C0 history, and FXO-1141 release-baseline work are not
-  yet on `main`; branch and PR state must not be mistaken for a published
-  release.
 - Activation values remain only in a mode-`0600`, gitignored local environment
   file. Credential values, numeric account identifiers, private messages,
   harness session IDs, and machine-specific paths are not recorded in git.
@@ -768,8 +781,18 @@ also remain free of silent delivery, hook, or correlation failures.
   distributable license metadata. They are bundled only into an unpublished
   local candidate today. Public package publication must still resolve the final
   artifact license/notice boundary.
+- The runner bridge remains an internal, default-off Gate 3 component. Its
+  `runner.protocol/v1` artifacts are immutable development inputs with an
+  `internal-until-gate-5` commitment, and the actuator claim covers only exact
+  `codex-cli 0.145.0`. Public adoption UX and reverse ownership
+  transfer/recovery remain explicitly owned by FXO-1122.
 
 ## Next action
+
+Keep the Phase 3 runner bridge default-off until a product composition root
+supplies the typed transport, identity, project-material, and adoption runtime.
+The next user-facing runner work is FXO-1122 rather than implicit activation of
+this internal bridge.
 
 Begin AR3 real-service dogfood only after the Notifications owner supplies an
 approved environment implementing narrow machine bootstrap and durable poll/ack,

@@ -37,6 +37,14 @@ import {
   readNotificationsConnection,
 } from "./notifications-config.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
+import {
+  RUNNER_BRIDGE_COMMAND_USAGE,
+  runRunnerBridgeCommand,
+} from "./runner-bridge-command.js";
+import {
+  readRunnerBridgeConfiguration,
+  runnerBridgePaths,
+} from "./runner-bridge-config.js";
 import { runSupervisor } from "./supervisor.js";
 import {
   TRANSPORT_COMMAND_USAGE,
@@ -71,6 +79,7 @@ Commands:
   canary             Prove the local fake-transport delivery loop
   telegram-canary    Prove a configured direct-Telegram reply loop
   notifications      Connect, inspect, or disconnect hosted Notifications
+  runner-bridge      Inspect or select the experimental runner bridge
   transport          Select fake, direct Telegram, or hosted Notifications
 
 Run "agent-relay <command> --help" only where the command documents flags in
@@ -230,6 +239,11 @@ async function main(): Promise<void> {
     });
     const databasePath =
       flag(args, "--db") ?? join(commandStateDir, "relay.sqlite");
+    const runnerBridgeConfiguration = demo
+      ? undefined
+      : await readRunnerBridgeConfiguration(
+          runnerBridgePaths(commandStateDir).configuration,
+        );
     const daemonToken = demo
       ? undefined
       : environment("AGENT_RELAY_DAEMON_TOKEN");
@@ -406,6 +420,7 @@ async function main(): Promise<void> {
         ),
       },
       logger: daemonLogger,
+      runnerBridgeEnabled: runnerBridgeConfiguration?.enabled ?? false,
     });
     if (demo) {
       try {
@@ -563,6 +578,9 @@ async function main(): Promise<void> {
       stateDirectory: stateDir,
       telegram: telegramReadinessInputFromEnvironment(process.env),
     });
+    const runnerBridgeConfiguration = await readRunnerBridgeConfiguration(
+      runnerBridgePaths(stateDir).configuration,
+    );
     const report = await runDoctor({
       databasePath: flag(args, "--db") ?? ":memory:",
       rootDir: resolve(flag(args, "--root") ?? homedir()),
@@ -570,6 +588,11 @@ async function main(): Promise<void> {
       runtimeEntryPath: installEntryPath(args),
       runtimeNodePath: process.execPath,
       transportReadiness,
+      runnerBridge: {
+        configured: runnerBridgeConfiguration !== undefined,
+        enabled: runnerBridgeConfiguration?.enabled ?? false,
+        adapterAvailable: false,
+      },
     });
     output(report);
     process.exitCode = report.healthy ? 0 : 1;
@@ -631,6 +654,23 @@ async function main(): Promise<void> {
       result.help === NOTIFICATIONS_COMMAND_USAGE
     ) {
       process.stdout.write(NOTIFICATIONS_COMMAND_USAGE);
+    } else {
+      output(result);
+    }
+    return;
+  }
+  if (command === "runner-bridge") {
+    const result = await runRunnerBridgeCommand({
+      args,
+      stateDirectory: stateDir,
+    });
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      "help" in result &&
+      result.help === RUNNER_BRIDGE_COMMAND_USAGE
+    ) {
+      process.stdout.write(RUNNER_BRIDGE_COMMAND_USAGE);
     } else {
       output(result);
     }

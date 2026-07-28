@@ -18,6 +18,7 @@ const focusedDocuments = [
   "docs/extending-transports.md",
   "docs/extending-harnesses.md",
   "docs/hosted-notifications.md",
+  "docs/runner-bridge.md",
 ];
 
 const checkedDocuments = [
@@ -164,6 +165,28 @@ for (const pattern of [
   );
 }
 
+const runnerBridge = await text("docs/runner-bridge.md");
+for (const pattern of [
+  /default-off/,
+  /not a notification transport/i,
+  /StructuredHarnessDriver/,
+  /no generic executable/,
+  /runner-bridge\.sqlite/,
+  /outcome_unknown/,
+  /exact clean source commit/,
+  /release_eligible: true/,
+  /contracts:runner:update/,
+  /default check mode does not write/i,
+  /internal Gate 3 evidence/i,
+  /never erases `relay\.sqlite`/,
+]) {
+  requireText(
+    runnerBridge,
+    pattern,
+    `runner bridge guide is missing boundary: ${String(pattern)}`,
+  );
+}
+
 const compatibility = await text("docs/compatibility.md");
 for (const pattern of [
   /agent-relay-compatibility\.v1/,
@@ -172,6 +195,8 @@ for (const pattern of [
   /records that exact version as incompatible|known-incompatible/,
   /fail\s+closed/,
   /capabilities:generate/,
+  /Runner-bridge compatibility evidence/,
+  /internal-until-gate-5/,
 ]) {
   requireText(
     compatibility,

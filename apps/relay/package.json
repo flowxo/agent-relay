@@ -25,6 +25,7 @@
     "@agent-relay/harnesses": "workspace:*",
     "@agent-relay/notifications-transport": "workspace:*",
     "@agent-relay/protocol": "workspace:*",
+    "@agent-relay/runner-bridge": "workspace:*",
     "zod": "4.4.3"
   },
   "devDependencies": {

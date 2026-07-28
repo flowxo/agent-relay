@@ -1,11 +1,13 @@
 # Harness contract evidence
 
-Recorded on 2026-07-24 through 2026-07-26 on macOS arm64. The fixture corpus
-under `packages/harnesses/fixtures` contains only synthetic identifiers, paths,
-and messages. Primary Codex, Claude Code, Cursor, and Telegram documentation was
-rechecked on 2026-07-26 for the public guides; no support claim was widened
-without new fixture and canary evidence. The generated compatibility matrix is
-the authoritative support summary; this ledger provides its linked provenance.
+Recorded on 2026-07-24 through 2026-07-27 on macOS arm64. The fixture corpora
+under `packages/harnesses/fixtures` and
+`packages/codex-app-server-driver/fixtures` contain only synthetic identifiers,
+paths, and messages. Primary Codex, Claude Code, Cursor, and Telegram
+documentation was rechecked through 2026-07-27 for the public guides; no support
+claim was widened without new fixture and canary evidence. The generated
+compatibility matrix is the authoritative support summary; this ledger provides
+its linked provenance.
 
 ## Local observations
 
@@ -234,6 +236,53 @@ session. Cursor workspace trust is distinct from `--force`. A terminal interrupt
 that a child normalizes to status 130 or 143 is expected only when it matches
 the signal observed and forwarded by the owning supervisor; unrelated non-zero
 exits remain crash evidence.
+
+## Codex app-server structured profile
+
+The exact installed `codex-cli 0.145.0` app-server profile was verified on
+2026-07-27 through the isolated `@agent-relay/codex-app-server-driver` package.
+The adapter launches `codex app-server` directly over stdio JSON lines, performs
+`initialize` / `initialized` with experimental API access, owns the resulting
+child, and shuts down only that process.
+
+The generated v2 schema bundle has a stable canonical SHA-256 of
+`1bc09dedc506075562d4d49b702ecab6d947dd5a8c2a9014a5cde592a0938efb`. The
+generator emits definitions in nondeterministic object-key order, so raw file
+bytes are deliberately not the lock. The contract recursively sorts object keys
+and compacts JSON before hashing; two independent generations produced the same
+canonical digest and 326,909-byte canonical representation.
+
+Sanitized fixtures and deterministic fake-app-server tests cover:
+
+- exact version mismatch and schema drift;
+- initialize ordering and malformed, oversized, unknown, duplicate, timed-out,
+  and error responses;
+- thread start/resume and turn start/follow-up;
+- active-turn steering and exact turn interruption;
+- command-execution and file-change approval responses;
+- thread, turn, item, terminal failure, approval, and native-error observations;
+  and
+- intentional shutdown, unexpected exit, pending-request rejection, and bounded
+  termination escalation.
+
+The model-backed canary used an ephemeral thread in a generated temporary
+read-only project with approvals disabled. It initialized, started one thread
+and one turn, observed user and agent message item lifecycles, observed a
+completed turn, stopped its owned process, and removed the temporary project and
+generated schemas. The committed evidence contains only booleans, enums, the
+public version, and schema digest. No prompt, response, transcript, native
+identifier, credential, account value, or machine path was retained. The same
+bounded canary passed again on 2026-07-28 after merging the current
+Notifications RC.1 and release-readiness baseline into the Phase 3 integration
+candidate.
+
+The verified structured-driver capabilities are deterministic interrupt,
+follow-up turn, approval decision, resume, active steer, terminal failure, and
+owned-process exit observation. Project/artifact operations and session pause
+remain absent from the driver capability list. The driver profile does not infer
+durable adoption or product/native correlation from app-server method
+availability; those semantics are proven separately by the runner-bridge
+adoption, ownership, and restart-reconciliation suites.
 
 ## Official contract sources
 

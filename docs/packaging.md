@@ -18,14 +18,20 @@ approved release commit can make the staged artifact registry-eligible.
 
 ## Why one package
 
-The TypeScript workspace keeps protocol, harness, core, and relay boundaries for
-development. Publishing those as separately versioned packages would expose
-internal APIs and workspace coordination without helping an operator.
+The TypeScript workspace keeps protocol, harness, core, runner-bridge, and relay
+boundaries for development. Publishing those as separately versioned packages
+would expose internal APIs and workspace coordination without helping an
+operator.
 
 The release build bundles all internal runtime TypeScript into one executable
 JavaScript file. Only `better-sqlite3` and `zod` remain runtime dependencies.
 The packed manifest contains no `workspace:*` links, development dependencies,
 lifecycle scripts, TypeScript source, or repository-relative imports.
+
+The experimental runner bridge CLI/status code is bundled, but the bridge is
+disabled by default and the candidate contains no native structured-harness
+adapter or remote service configuration. The vendored development protocol
+archives and contract lock are repository test inputs, not package contents.
 
 This alpha is deliberately CLI-only. It has no `exports` field and therefore no
 supported programmatic JavaScript API. Type declarations are not included
@@ -143,8 +149,9 @@ before reconciliation, then proves:
 
 - install dry runs do not mutate configuration;
 - an install followed by a repeat install is idempotent;
-- SQLite migrates an unversioned or schema-`1` prior store to schema `2`;
-- a schema newer than `2` is refused without modification;
+- SQLite migrates an unversioned, schema-`1`, or schema-`2` prior store to
+  schema `3`;
+- a schema newer than `3` is refused without modification;
 - the answer, web credential, diagnostic log, explicit retained files, and
   installer backups survive;
 - unrelated Codex, Claude, and Cursor configuration survives;
@@ -168,3 +175,19 @@ follow the [prerelease guide](releasing.md).
 The final native Apple-silicon/Node 22 installed-artifact proof is separate:
 follow the [release-readiness evaluation](release-readiness.md) after building
 the exact clean-commit bundle.
+
+## External-harness Gate 3 evidence
+
+The session-product repository owns an explicit cross-repository compatibility
+canary. From one clean commit in each checkout it:
+
+- rebuilds the runner artifacts twice and compares them with this repository's
+  lock/vendor bytes;
+- runs this repository's full check and 33-case consumer;
+- runs the exact Codex contract and live canary;
+- builds and verifies the local release bundle without publication; and
+- writes one mode-`0600`, path-free, ignored evidence record.
+
+The command does not tag, publish, deploy, push, enable the bridge, configure a
+hosted account, or change a notification transport. Final release installation,
+signed provenance, and public compatibility remain later gates.

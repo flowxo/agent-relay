@@ -226,7 +226,7 @@ describe("late resume capability", () => {
 });
 
 describe("capability declarations", () => {
-  it("covers every supported harness and distinguishes Cursor surfaces", () => {
+  it("covers every supported harness and distinguishes structured surfaces", () => {
     expect(new Set(HARNESS_CAPABILITIES.map((entry) => entry.harness))).toEqual(
       new Set(["codex", "claude", "cursor"]),
     );
@@ -240,9 +240,13 @@ describe("capability declarations", () => {
         .permissionDecision,
     ).toBe("disabled");
     expect(
-      HARNESS_CAPABILITIES.every(
-        (entry) => entry.processExitObservation === false,
-      ),
+      capabilityFor("codex", "app-server")?.detail.processExitObservation,
+    ).toBe(true);
+    expect(
+      HARNESS_CAPABILITIES.filter(
+        ({ harness, surface }) =>
+          harness !== "codex" || surface !== "app-server",
+      ).every((entry) => entry.processExitObservation === false),
     ).toBe(true);
     expect(HARNESS_COMPATIBILITY.schema).toBe("agent-relay-compatibility.v1");
     expect(PUBLIC_COMPATIBILITY_RECORD.records).toHaveLength(6);

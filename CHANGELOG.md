@@ -43,6 +43,12 @@ breaking changes and required operator action.
 - A clean-home packed hosted proof covering setup, interaction, crash-before-ack
   replay, disconnect/erasure, retained SQLite state, direct-Telegram canary,
   owned uninstall, and private-data exclusion.
+- A default-off outbound runner bridge with immutable `runner.protocol/v1`
+  artifacts, a separate durable effect ledger, exact command authority,
+  reconnect/reconciliation, and standalone-transport isolation.
+- An isolated exact-version Codex app-server driver with owned stdio lifecycle,
+  typed thread/turn/approval operations, content-free observations, canonical
+  schema locking, sanitized fixtures, and a bounded model-backed canary.
 
 ### Changed
 

@@ -1,0 +1,25 @@
+{
+  "schema": "agent-relay-codex-app-server-negative.v1",
+  "cases": [
+    {
+      "name": "malformed-json",
+      "line": "{not-json",
+      "safeCode": "native_json_malformed"
+    },
+    {
+      "name": "missing-method-and-id",
+      "line": "{\"params\":{}}",
+      "safeCode": "native_envelope_malformed"
+    },
+    {
+      "name": "ambiguous-response",
+      "line": "{\"id\":1,\"result\":{},\"error\":{\"code\":-1,\"message\":\"synthetic\"}}",
+      "safeCode": "native_envelope_malformed"
+    },
+    {
+      "name": "unknown-envelope-field",
+      "line": "{\"method\":\"thread/started\",\"params\":{},\"unexpected\":true}",
+      "safeCode": "native_envelope_malformed"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schema": "agent-relay-codex-app-server-transcript.v1",
+  "codexVersion": "codex-cli 0.145.0",
+  "messages": [
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"thread/started\",\"params\":{\"thread\":{\"id\":\"00000000-0000-7000-8000-000000000001\",\"preview\":\"\",\"ephemeral\":false,\"modelProvider\":\"openai\",\"createdAt\":0,\"updatedAt\":0,\"status\":{\"type\":\"idle\"},\"path\":null,\"cwd\":\"/synthetic/project\",\"cliVersion\":\"0.145.0\",\"source\":\"appServer\",\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"turns\":[]}}}"
+    },
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turn\":{\"id\":\"00000000-0000-7000-8000-000000000002\",\"items\":[],\"itemsView\":{\"type\":\"full\"},\"status\":\"inProgress\",\"error\":null,\"startedAt\":0,\"completedAt\":null,\"durationMs\":null}}}"
+    },
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"00000000-0000-7000-8000-000000000003\",\"text\":\"synthetic fixture\",\"phase\":null,\"memoryCitation\":null},\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turnId\":\"00000000-0000-7000-8000-000000000002\",\"startedAtMs\":0}}"
+    },
+    {
+      "kind": "request",
+      "line": "{\"method\":\"item/commandExecution/requestApproval\",\"id\":7,\"params\":{\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turnId\":\"00000000-0000-7000-8000-000000000002\",\"itemId\":\"00000000-0000-7000-8000-000000000004\",\"startedAtMs\":0,\"approvalId\":null,\"environmentId\":null,\"reason\":\"synthetic fixture\",\"command\":\"fixture-command\",\"cwd\":\"/synthetic/project\",\"commandActions\":[],\"additionalPermissions\":null,\"proposedExecpolicyAmendment\":null,\"proposedNetworkPolicyAmendments\":null,\"availableDecisions\":[\"accept\",\"decline\"]}}"
+    },
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"00000000-0000-7000-8000-000000000003\",\"text\":\"synthetic fixture\",\"phase\":null,\"memoryCitation\":null},\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turnId\":\"00000000-0000-7000-8000-000000000002\",\"completedAtMs\":1}}"
+    },
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turn\":{\"id\":\"00000000-0000-7000-8000-000000000002\",\"items\":[],\"itemsView\":{\"type\":\"full\"},\"status\":\"completed\",\"error\":null,\"startedAt\":0,\"completedAt\":1,\"durationMs\":1000}}}"
+    }
+  ]
+}
