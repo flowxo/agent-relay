@@ -5,7 +5,7 @@
 - **Project:** AR2 — FlowXO Notifications Transport Adapter
 - **Milestone:** Transport parity and packaged handoff
 - **Branch:** `codex/ar2-notifications-adapter`
-- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-draft.1`
+- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-rc.1`
 - **Last reviewed:** 2026-07-26
 
 ## Outcome
@@ -45,14 +45,14 @@ Telegram and `notifications` for hosted answers.
 
 Every transport now returns a runtime-validated provider observation.
 
-| Capability                       | Fake | Direct Telegram | Notifications draft.1 |
-| -------------------------------- | ---- | --------------- | --------------------- |
-| confirm/select/input             | yes  | yes             | yes                   |
-| message updates                  | yes  | yes             | no                    |
-| durable multi-question drafts    | yes  | yes             | no                    |
-| ordered or multi-select sets     | yes  | yes             | no                    |
-| maximum hosted question count    | 10   | 10              | 1                     |
-| maximum hosted select option set | 20   | 20              | 6                     |
+| Capability                       | Fake | Direct Telegram | Notifications rc.1 |
+| -------------------------------- | ---- | --------------- | ------------------ |
+| confirm/select/input             | yes  | yes             | yes                |
+| message updates                  | yes  | yes             | no                 |
+| durable multi-question drafts    | yes  | yes             | no                 |
+| ordered or multi-select sets     | yes  | yes             | no                 |
+| maximum hosted question count    | 10   | 10              | 1                  |
+| maximum hosted select option set | 20   | 20              | 6                  |
 
 The hosted record is proven by the exact pinned contract and fixture. It does
 not claim resolved-message updates merely because the adapter contains a future
@@ -61,7 +61,7 @@ presenter interface.
 ## Contract issue found by parity
 
 The local store retains `already_resolved`, `locally_expired`, and
-`locally_cancelled` reasons for diagnosis. The draft.1 acknowledgement schema
+`locally_cancelled` reasons for diagnosis. The rc.1 acknowledgement schema
 allows `reason_code` only when disposition is `quarantined`.
 
 The shared exact-mock sequence proved that forwarding a local reason with
@@ -128,7 +128,7 @@ The compact cumulative ledger remains in
 
 - FXO-1155 proves the installed packed artifact end to end and completes the
   AR3-ready operational handoff.
-- Production dogfood remains gated by C0-09 and AR3.
+- Production dogfood remains owned by AR3 and awaits the approved real service.
 - A real hosted resolution update remains a future exact Notifications
   capability.
 

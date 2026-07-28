@@ -71,8 +71,8 @@ importers:
         version: 4.4.3
     devDependencies:
       "@flowxo/notifications-contract-mock":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
 
   packages/core:
     dependencies:

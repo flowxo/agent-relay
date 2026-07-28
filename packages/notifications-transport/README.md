@@ -61,9 +61,9 @@ copied into Agent Relay.
 - Multi-select, ordered sets, and select requests wider than the pinned hosted
   capability fail before HTTP. Their negotiated local fallback is retained; they
   are never flattened.
-- `observeInteractionCapabilities` publishes the exact draft.1 boundary:
-  confirm, single-select, and free-text; one question; at most six options; no
-  durable drafts, ordered/multi-select sets, or message updates.
+- `observeInteractionCapabilities` publishes the exact rc.1 boundary: confirm,
+  single-select, and free-text; one question; at most six options; no durable
+  drafts, ordered/multi-select sets, or message updates.
 - Explicit availability failures retry only with the unchanged event ID.
   Authentication, scope, validation, unbound subscriber, terminal provider, and
   idempotency-conflict failures are terminal. A provider `outcome_unknown`
@@ -108,7 +108,7 @@ is acknowledged. Retry uses `resolution_${sha256(hostedEventId)}` every time;
 update failure cannot call `resolveRequest`, create a message, or claim
 continuation.
 
-The exact pinned `@flowxo/notifications@1.0.0-draft.1` client has no
+The exact pinned `@flowxo/notifications@1.0.0-rc.1` client has no
 resolved-message update method. `PinnedNotificationsResolutionPresenter`
 therefore reports `unsupported`, and the daemon marks that job terminally with
 `notifications-resolution-update-unsupported`. Tests inject a supported fake

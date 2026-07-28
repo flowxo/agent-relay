@@ -5,7 +5,7 @@
 - **Project:** AR2 — FlowXO Notifications Transport Adapter
 - **Milestone:** Presentation and diagnosis
 - **Branch:** `codex/ar2-notifications-adapter`
-- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-draft.1`
+- **Contract:** exact pinned `@flowxo/notifications*` `1.0.0-rc.1`
 - **Last reviewed:** 2026-07-26
 
 ## Outcome
@@ -15,7 +15,7 @@ provider acknowledgement. A supported presenter can mark the originating
 interaction answered, duplicate, expired, cancelled, or unsupported. Failure
 cannot resolve a request again, create another message, or claim continuation.
 
-The exact pinned draft.1 client has no resolved-message update method. The
+The exact pinned rc.1 client has no resolved-message update method. The
 production adapter therefore records the optional capability as unsupported
 without making HTTP or pretending that message cancellation is an edit.
 
@@ -111,7 +111,7 @@ production dependency audit found no known vulnerability.
 - FXO-1155 proves the packaged mock-backed end-to-end path and release handoff.
 - A real resolved-message update remains a Notifications contract capability,
   not an Agent Relay-local API invention.
-- Production dogfood remains gated by C0-09 and AR3.
+- Production dogfood remains owned by AR3 and awaits the approved real service.
 
 ## References
 

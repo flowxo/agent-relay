@@ -67,8 +67,8 @@ describe("Notifications contract transport", () => {
       },
       status: "proven",
       evidence: "official-docs",
-      observedVersion: "@flowxo/notifications@1.0.0-draft.1",
-      fixture: "interaction-machine-semantic-scenarios@1.0.0-draft.1",
+      observedVersion: "@flowxo/notifications@1.0.0-rc.1",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.1",
       note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
     });
   });

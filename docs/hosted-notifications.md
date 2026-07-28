@@ -51,11 +51,12 @@ Credential presence never selects a transport.
 There is no dual send or automatic failover.
 
 Switching retains SQLite and request state. The terminal-presentation worker is
-implemented, but the exact pinned draft.1 client does not expose a
-resolved-message update endpoint. Agent Relay records that optional capability
-as unsupported instead of misusing message cancellation. Release-ready C0
-promotion is still pending. Until C0-09 approves a release candidate, use the
-executable C0 mock—not a production account—as the integration source of truth.
+implemented, but the exact pinned rc.1 client does not expose a resolved-message
+update endpoint. Agent Relay records that optional capability as unsupported
+instead of misusing message cancellation. C0-09 approved the exact `1.0.0-rc.1`
+candidate. Continue using the executable C0 mock—not a production account—as the
+integration source of truth until the Notifications owner supplies and
+authorizes an AR3 service environment.
 
 ## Mock-backed setup command
 
@@ -173,7 +174,7 @@ category into a bounded presenter. A retry always reuses
 `resolution_${sha256(hostedEventId)}`. It never sends a new message, re-runs the
 decision, or touches continuation authority.
 
-The executable draft.1 presenter returns `unsupported` without HTTP because the
+The executable rc.1 presenter returns `unsupported` without HTTP because the
 pinned client has no resolution-update method. The job becomes durably blocked
 with a safe capability code while polling and local authority continue. A future
 exact contract may implement the same interface; supported-fake tests already

@@ -516,7 +516,7 @@ describe("Notifications CLI lifecycle", () => {
         schema: "agent-relay-notifications-config.v1",
         status: "active",
         baseUrl: "https://notifications.mock.test/",
-        contractVersion: "1.0.0-draft.1",
+        contractVersion: "1.0.0-rc.1",
         environment: "test",
         projectId: "project_synthetic",
         machineClientId: "machine_client_retained_current",
