@@ -2,10 +2,12 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
+import { z } from "zod";
 
 import {
   AgentAttentionEventV1Schema,
   encodeInteractionAnswer,
+  HarnessSchema,
   InteractionPresentationModeSchema,
   InteractionQuestionAnswerSchema,
   ProjectRefSchema,
@@ -49,7 +51,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 3;
+export const RELAY_STORE_SCHEMA_VERSION = 4;
 
 export interface SessionProductOwnershipClaim {
   adoptionId: string;
@@ -188,6 +190,82 @@ export interface SessionControlRecord {
   updatedAt: string;
 }
 
+export type TopicCleanupCandidateState =
+  | "pending"
+  | "deleting"
+  | "retry"
+  | "deleted"
+  | "already-missing"
+  | "skipped"
+  | "failed";
+
+export interface TopicCleanupCandidateRecord {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+  topicId: string;
+  repository: string;
+  shortSessionId: string;
+  state: TopicCleanupCandidateState;
+  attemptCount: number;
+  nextAttemptAt: string;
+  lastErrorCode?: string;
+}
+
+export type TopicCleanupOperationState =
+  | "previewed"
+  | "claimed"
+  | "completed"
+  | "completed-with-errors"
+  | "cancelled"
+  | "expired"
+  | "superseded"
+  | "preview-failed";
+
+export interface TopicCleanupOperationRecord {
+  operationId: string;
+  transportName: string;
+  transportScope: string;
+  state: TopicCleanupOperationState;
+  eligibleCount: number;
+  candidates: TopicCleanupCandidateRecord[];
+  previewMessageId?: string;
+  decisionUpdateId?: number;
+  createdAt: string;
+  expiresAt: string;
+  claimedAt?: string;
+  finishedAt?: string;
+  updatedAt: string;
+  lastErrorCode?: string;
+}
+
+export type TopicCleanupDecisionResult =
+  | {
+      outcome: "claimed" | "cancelled" | "duplicate";
+      operation: TopicCleanupOperationRecord;
+    }
+  | {
+      outcome: "not-found" | "message-mismatch" | "expired" | "not-ready";
+      operation?: TopicCleanupOperationRecord;
+    };
+
+export type TopicCleanupClaimResult =
+  | {
+      outcome: "claimed";
+      operation: TopicCleanupOperationRecord;
+      candidate: TopicCleanupCandidateRecord;
+    }
+  | {
+      outcome: "terminal";
+      operation: TopicCleanupOperationRecord;
+    }
+  | { outcome: "none" };
+
+export interface TopicCleanupCompletionResult {
+  operation: TopicCleanupOperationRecord;
+  becameTerminal: boolean;
+}
+
 export type CardActionExecutionResult =
   | { outcome: "not_found" | "kind_mismatch"; action?: CardActionRecord }
   | { outcome: "blocked"; action: CardActionRecord; reason: string }
@@ -236,6 +314,7 @@ export interface StoreStatus {
   events: Record<DeliveryStatus, number>;
   sessions: Record<SessionRecord["state"], number>;
   topics: Record<TopicProvisioningStatus, number>;
+  topicCleanups: Record<TopicCleanupOperationState, number>;
   resumeCommands: Record<ResumeCommandState, number>;
   diagnostics: Record<RelayDiagnosticV1["level"], number> & { total: number };
   pendingDeliveryCount: number;
@@ -378,6 +457,7 @@ export interface RetentionCutoffs {
   requestBefore: string;
   diagnosticBefore: string;
   telegramUpdateBefore: string;
+  topicCleanupBefore: string;
   sessionBefore: string;
   webChangeBefore: string;
   browserCommandBefore: string;
@@ -394,6 +474,7 @@ export interface RetentionResult {
   deliveryAttempts: number;
   diagnostics: number;
   telegramUpdates: number;
+  topicCleanupOperations: number;
   sessions: number;
   webChanges: number;
   browserCommands: number;
@@ -846,6 +927,24 @@ interface SessionControlRow {
   updated_at: string;
 }
 
+interface TopicCleanupOperationRow {
+  operation_id: string;
+  transport_name: string;
+  transport_scope: string;
+  state: TopicCleanupOperationState;
+  eligible_count: number;
+  candidates_json: string;
+  preview_message_id: string | null;
+  decision_update_id: number | null;
+  created_at: string;
+  expires_at: string;
+  claimed_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+  last_error_code: string | null;
+  last_error_message: string | null;
+}
+
 interface CountRow {
   key: string;
   count: number;
@@ -959,6 +1058,42 @@ interface SessionTimelineRow {
   event_id: string | null;
   correlation_id: string | null;
   detail_code: string | null;
+}
+
+const TopicCleanupCandidateSchema = z
+  .object({
+    machineId: z.string().min(1).max(512),
+    harness: HarnessSchema,
+    sessionId: z.string().min(1).max(512),
+    topicId: z.string().min(1).max(128),
+    repository: z.string().min(1).max(120),
+    shortSessionId: z.string().min(1).max(120),
+    state: z.enum([
+      "pending",
+      "deleting",
+      "retry",
+      "deleted",
+      "already-missing",
+      "skipped",
+      "failed",
+    ]),
+    attemptCount: z.number().int().nonnegative(),
+    nextAttemptAt: z.iso.datetime({ offset: true }),
+    lastErrorCode: z.string().min(1).max(160).optional(),
+  })
+  .strict();
+
+const TopicCleanupCandidatesSchema = z
+  .array(TopicCleanupCandidateSchema)
+  .max(100);
+
+function topicCleanupIsTerminal(state: TopicCleanupCandidateState): boolean {
+  return (
+    state === "deleted" ||
+    state === "already-missing" ||
+    state === "skipped" ||
+    state === "failed"
+  );
 }
 
 function stateForEvent(
@@ -1237,6 +1372,27 @@ export class RelayStore {
           REFERENCES sessions(machine_id, harness, session_id)
           ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS topic_cleanup_operations (
+        operation_id TEXT PRIMARY KEY,
+        transport_name TEXT NOT NULL,
+        transport_scope TEXT NOT NULL,
+        state TEXT NOT NULL,
+        eligible_count INTEGER NOT NULL,
+        candidates_json TEXT NOT NULL,
+        preview_message_id TEXT,
+        decision_update_id INTEGER,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        claimed_at TEXT,
+        finished_at TEXT,
+        updated_at TEXT NOT NULL,
+        last_error_code TEXT,
+        last_error_message TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS topic_cleanup_due_idx
+        ON topic_cleanup_operations(state, updated_at, created_at);
 
       CREATE TABLE IF NOT EXISTS delivery_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3802,6 +3958,721 @@ export class RelayStore {
       )
       .all() as SessionControlRow[];
     return rows.map((row) => this.controlFromRow(row));
+  }
+
+  private topicCleanupFromRow(
+    row: TopicCleanupOperationRow,
+  ): TopicCleanupOperationRecord {
+    const candidates = TopicCleanupCandidatesSchema.parse(
+      JSON.parse(row.candidates_json) as unknown,
+    ).map((candidate): TopicCleanupCandidateRecord => ({
+      machineId: candidate.machineId,
+      harness: candidate.harness,
+      sessionId: candidate.sessionId,
+      topicId: candidate.topicId,
+      repository: candidate.repository,
+      shortSessionId: candidate.shortSessionId,
+      state: candidate.state,
+      attemptCount: candidate.attemptCount,
+      nextAttemptAt: candidate.nextAttemptAt,
+      ...(candidate.lastErrorCode === undefined
+        ? {}
+        : { lastErrorCode: candidate.lastErrorCode }),
+    }));
+    return {
+      operationId: row.operation_id,
+      transportName: row.transport_name,
+      transportScope: row.transport_scope,
+      state: row.state,
+      eligibleCount: row.eligible_count,
+      candidates,
+      ...(row.preview_message_id === null
+        ? {}
+        : { previewMessageId: row.preview_message_id }),
+      ...(row.decision_update_id === null
+        ? {}
+        : { decisionUpdateId: row.decision_update_id }),
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      ...(row.claimed_at === null ? {} : { claimedAt: row.claimed_at }),
+      ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
+      updatedAt: row.updated_at,
+      ...(row.last_error_code === null
+        ? {}
+        : { lastErrorCode: row.last_error_code }),
+    };
+  }
+
+  private getTopicCleanupRow(
+    operationId: string,
+  ): TopicCleanupOperationRow | undefined {
+    return this.database
+      .prepare(
+        `
+        SELECT *
+        FROM topic_cleanup_operations
+        WHERE operation_id = ?
+      `,
+      )
+      .get(operationId) as TopicCleanupOperationRow | undefined;
+  }
+
+  public getTopicCleanupOperation(
+    operationId: string,
+  ): TopicCleanupOperationRecord | undefined {
+    const row = this.getTopicCleanupRow(operationId);
+    return row === undefined ? undefined : this.topicCleanupFromRow(row);
+  }
+
+  public listTopicCleanupOperations(): TopicCleanupOperationRecord[] {
+    const rows = this.database
+      .prepare(
+        `
+        SELECT *
+        FROM topic_cleanup_operations
+        ORDER BY created_at, operation_id
+      `,
+      )
+      .all() as TopicCleanupOperationRow[];
+    return rows.map((row) => this.topicCleanupFromRow(row));
+  }
+
+  private topicCleanupEligibilityWhere(): string {
+    return `
+      topics.transport_name = @transportName
+      AND topics.transport_scope = @transportScope
+      AND topics.provisioning_status = 'ready'
+      AND topics.topic_id IS NOT NULL
+      AND (
+        controls.ended_at IS NOT NULL
+        OR sessions.last_event_type = 'session.ended'
+      )
+      AND sessions.state <> 'active'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pending_requests AS pending
+        WHERE pending.machine_id = topics.machine_id
+          AND pending.harness = topics.harness
+          AND pending.session_id = topics.session_id
+          AND pending.state = 'open'
+          AND pending.expires_at > @now
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM resume_commands AS resume
+        WHERE resume.machine_id = topics.machine_id
+          AND resume.harness = topics.harness
+          AND resume.session_id = topics.session_id
+          AND resume.state IN ('claimed', 'running')
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM events AS event
+        WHERE event.machine_id = topics.machine_id
+          AND event.harness = topics.harness
+          AND event.session_id = topics.session_id
+          AND event.status IN ('queued', 'retry', 'delivering')
+      )
+    `;
+  }
+
+  public createTopicCleanupPreview(input: {
+    operationId: string;
+    transportName: string;
+    transportScope: string;
+    now: string;
+    expiresAt: string;
+    limit?: number;
+  }): TopicCleanupOperationRecord {
+    assertIsoCutoff(input.now, "topic cleanup preview time");
+    assertIsoCutoff(input.expiresAt, "topic cleanup preview expiry");
+    if (input.expiresAt <= input.now) {
+      throw new Error("topic cleanup preview expiry must be in the future");
+    }
+    if (
+      input.operationId.length < 16 ||
+      input.operationId.length > 64 ||
+      !/^[A-Za-z0-9_-]+$/u.test(input.operationId)
+    ) {
+      throw new Error("topic cleanup operation id is outside supported bounds");
+    }
+    if (
+      input.transportName.trim().length === 0 ||
+      input.transportName.length > 120 ||
+      input.transportScope.trim().length === 0 ||
+      input.transportScope.length > 160
+    ) {
+      throw new Error("topic cleanup transport identity is invalid");
+    }
+    const limit = input.limit ?? 50;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("topic cleanup preview limit must be between 1 and 100");
+    }
+    return this.database.transaction(() => {
+      this.database
+        .prepare(
+          `
+          UPDATE topic_cleanup_operations SET
+            state = 'superseded',
+            finished_at = @now,
+            updated_at = @now,
+            last_error_code = 'topic-cleanup-superseded',
+            last_error_message =
+              'A newer cleanup preview replaced this confirmation'
+          WHERE transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND state = 'previewed'
+        `,
+        )
+        .run(input);
+      const from = `
+        FROM session_topics AS topics
+        JOIN sessions
+          ON sessions.machine_id = topics.machine_id
+          AND sessions.harness = topics.harness
+          AND sessions.session_id = topics.session_id
+        LEFT JOIN session_controls AS controls
+          ON controls.machine_id = topics.machine_id
+          AND controls.harness = topics.harness
+          AND controls.session_id = topics.session_id
+        WHERE ${this.topicCleanupEligibilityWhere()}
+      `;
+      const eligibleCount = (
+        this.database
+          .prepare(`SELECT COUNT(*) AS count ${from}`)
+          .get(input) as { count: number }
+      ).count;
+      const rows = this.database
+        .prepare(
+          `
+          SELECT
+            topics.machine_id,
+            topics.harness,
+            topics.session_id,
+            topics.topic_id,
+            topics.repository,
+            topics.short_session_id
+          ${from}
+          ORDER BY topics.updated_at, topics.machine_id, topics.harness,
+            topics.session_id
+          LIMIT @limit
+        `,
+        )
+        .all({ ...input, limit }) as Array<{
+        machine_id: string;
+        harness: Harness;
+        session_id: string;
+        topic_id: string;
+        repository: string;
+        short_session_id: string;
+      }>;
+      const candidates: TopicCleanupCandidateRecord[] = rows.map((row) => ({
+        machineId: row.machine_id,
+        harness: row.harness,
+        sessionId: row.session_id,
+        topicId: row.topic_id,
+        repository: row.repository,
+        shortSessionId: row.short_session_id,
+        state: "pending",
+        attemptCount: 0,
+        nextAttemptAt: input.now,
+      }));
+      TopicCleanupCandidatesSchema.parse(candidates);
+      this.database
+        .prepare(
+          `
+          INSERT INTO topic_cleanup_operations (
+            operation_id, transport_name, transport_scope, state,
+            eligible_count, candidates_json, created_at, expires_at,
+            finished_at, updated_at
+          ) VALUES (
+            @operationId, @transportName, @transportScope, @state,
+            @eligibleCount, @candidatesJson, @now, @expiresAt,
+            @finishedAt, @now
+          )
+        `,
+        )
+        .run({
+          ...input,
+          state: candidates.length === 0 ? "completed" : "previewed",
+          eligibleCount,
+          candidatesJson: JSON.stringify(candidates),
+          finishedAt: candidates.length === 0 ? input.now : null,
+        });
+      return this.getTopicCleanupOperation(input.operationId)!;
+    })();
+  }
+
+  public attachTopicCleanupPreview(input: {
+    operationId: string;
+    messageId: string;
+    now: string;
+  }): TopicCleanupOperationRecord {
+    assertIsoCutoff(input.now, "topic cleanup preview attachment time");
+    if (input.messageId.length < 1 || input.messageId.length > 128) {
+      throw new Error("topic cleanup preview message id is invalid");
+    }
+    return this.database.transaction(() => {
+      const row = this.getTopicCleanupRow(input.operationId);
+      if (row === undefined) {
+        throw new Error("topic cleanup preview does not exist");
+      }
+      if (
+        row.preview_message_id !== null &&
+        row.preview_message_id !== input.messageId
+      ) {
+        throw new Error("topic cleanup preview message id changed");
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE topic_cleanup_operations SET
+            preview_message_id = @messageId,
+            updated_at = @now
+          WHERE operation_id = @operationId
+        `,
+        )
+        .run(input);
+      return this.getTopicCleanupOperation(input.operationId)!;
+    })();
+  }
+
+  public failTopicCleanupPreview(input: {
+    operationId: string;
+    errorCode: string;
+    errorMessage: string;
+    now: string;
+  }): TopicCleanupOperationRecord {
+    assertIsoCutoff(input.now, "topic cleanup preview failure time");
+    this.database
+      .prepare(
+        `
+        UPDATE topic_cleanup_operations SET
+          state = 'preview-failed',
+          finished_at = @now,
+          updated_at = @now,
+          last_error_code = @errorCode,
+          last_error_message = @errorMessage
+        WHERE operation_id = @operationId
+          AND preview_message_id IS NULL
+          AND state IN ('previewed', 'completed')
+      `,
+      )
+      .run({
+        ...input,
+        errorMessage: input.errorMessage.slice(0, 2_000),
+      });
+    const operation = this.getTopicCleanupOperation(input.operationId);
+    if (operation === undefined) {
+      throw new Error("topic cleanup preview does not exist");
+    }
+    return operation;
+  }
+
+  public expireTopicCleanupPreviews(now: string): number {
+    assertIsoCutoff(now, "topic cleanup expiry time");
+    return this.database
+      .prepare(
+        `
+        UPDATE topic_cleanup_operations SET
+          state = 'expired',
+          finished_at = @now,
+          updated_at = @now,
+          last_error_code = 'topic-cleanup-expired',
+          last_error_message = 'Cleanup confirmation expired'
+        WHERE state = 'previewed'
+          AND expires_at <= @now
+      `,
+      )
+      .run({ now }).changes;
+  }
+
+  public decideTopicCleanup(input: {
+    operationId: string;
+    action: "confirm" | "cancel";
+    messageId: string;
+    updateId: number;
+    now: string;
+  }): TopicCleanupDecisionResult {
+    assertIsoCutoff(input.now, "topic cleanup decision time");
+    if (!Number.isSafeInteger(input.updateId) || input.updateId < 0) {
+      throw new Error("topic cleanup update id is invalid");
+    }
+    return this.database.transaction((): TopicCleanupDecisionResult => {
+      let operation = this.getTopicCleanupOperation(input.operationId);
+      if (operation === undefined) {
+        return { outcome: "not-found" };
+      }
+      if (operation.previewMessageId !== input.messageId) {
+        return { outcome: "message-mismatch", operation };
+      }
+      if (operation.state === "previewed" && operation.expiresAt <= input.now) {
+        this.expireTopicCleanupPreviews(input.now);
+        operation = this.getTopicCleanupOperation(input.operationId)!;
+        return { outcome: "expired", operation };
+      }
+      if (
+        operation.state === "claimed" ||
+        operation.state === "completed" ||
+        operation.state === "completed-with-errors"
+      ) {
+        return { outcome: "duplicate", operation };
+      }
+      if (operation.state !== "previewed") {
+        return {
+          outcome: operation.state === "expired" ? "expired" : "not-ready",
+          operation,
+        };
+      }
+      const state = input.action === "confirm" ? "claimed" : "cancelled";
+      this.database
+        .prepare(
+          `
+          UPDATE topic_cleanup_operations SET
+            state = @state,
+            decision_update_id = @updateId,
+            claimed_at = @claimedAt,
+            finished_at = @finishedAt,
+            updated_at = @now
+          WHERE operation_id = @operationId
+            AND state = 'previewed'
+        `,
+        )
+        .run({
+          ...input,
+          state,
+          claimedAt: input.action === "confirm" ? input.now : null,
+          finishedAt: input.action === "cancel" ? input.now : null,
+        });
+      operation = this.getTopicCleanupOperation(input.operationId)!;
+      return {
+        outcome: input.action === "confirm" ? "claimed" : "cancelled",
+        operation,
+      };
+    })();
+  }
+
+  private topicCleanupCandidateEligible(
+    operation: TopicCleanupOperationRecord,
+    candidate: TopicCleanupCandidateRecord,
+    now: string,
+  ): boolean {
+    return (
+      this.database
+        .prepare(
+          `
+          SELECT 1
+          FROM session_topics AS topics
+          JOIN sessions
+            ON sessions.machine_id = topics.machine_id
+            AND sessions.harness = topics.harness
+            AND sessions.session_id = topics.session_id
+          LEFT JOIN session_controls AS controls
+            ON controls.machine_id = topics.machine_id
+            AND controls.harness = topics.harness
+            AND controls.session_id = topics.session_id
+          WHERE ${this.topicCleanupEligibilityWhere()}
+            AND topics.machine_id = @machineId
+            AND topics.harness = @harness
+            AND topics.session_id = @sessionId
+            AND topics.topic_id = @topicId
+        `,
+        )
+        .get({
+          ...candidate,
+          transportName: operation.transportName,
+          transportScope: operation.transportScope,
+          now,
+        }) !== undefined
+    );
+  }
+
+  private saveTopicCleanupCandidates(input: {
+    operationId: string;
+    candidates: TopicCleanupCandidateRecord[];
+    now: string;
+  }): void {
+    TopicCleanupCandidatesSchema.parse(input.candidates);
+    this.database
+      .prepare(
+        `
+        UPDATE topic_cleanup_operations SET
+          candidates_json = @candidatesJson,
+          updated_at = @now
+        WHERE operation_id = @operationId
+      `,
+      )
+      .run({
+        ...input,
+        candidatesJson: JSON.stringify(input.candidates),
+      });
+  }
+
+  private finalizeTopicCleanupOperation(
+    operationId: string,
+    candidates: TopicCleanupCandidateRecord[],
+    now: string,
+  ): { operation: TopicCleanupOperationRecord; becameTerminal: boolean } {
+    if (
+      !candidates.every((candidate) => topicCleanupIsTerminal(candidate.state))
+    ) {
+      this.saveTopicCleanupCandidates({ operationId, candidates, now });
+      return {
+        operation: this.getTopicCleanupOperation(operationId)!,
+        becameTerminal: false,
+      };
+    }
+    const prior = this.getTopicCleanupOperation(operationId)!;
+    const state = candidates.some((candidate) => candidate.state === "failed")
+      ? "completed-with-errors"
+      : "completed";
+    this.database
+      .prepare(
+        `
+        UPDATE topic_cleanup_operations SET
+          state = @state,
+          candidates_json = @candidatesJson,
+          finished_at = @now,
+          updated_at = @now
+        WHERE operation_id = @operationId
+          AND state = 'claimed'
+      `,
+      )
+      .run({
+        operationId,
+        state,
+        candidatesJson: JSON.stringify(candidates),
+        now,
+      });
+    return {
+      operation: this.getTopicCleanupOperation(operationId)!,
+      becameTerminal: prior.state === "claimed",
+    };
+  }
+
+  public recoverInterruptedTopicCleanups(now: string): number {
+    assertIsoCutoff(now, "topic cleanup recovery time");
+    return this.database.transaction(() => {
+      this.expireTopicCleanupPreviews(now);
+      const rows = this.database
+        .prepare(
+          `
+          SELECT *
+          FROM topic_cleanup_operations
+          WHERE state = 'claimed'
+          ORDER BY created_at, operation_id
+        `,
+        )
+        .all() as TopicCleanupOperationRow[];
+      let recovered = 0;
+      for (const row of rows) {
+        const operation = this.topicCleanupFromRow(row);
+        const candidates = operation.candidates.map((candidate) => {
+          if (candidate.state !== "deleting") {
+            return candidate;
+          }
+          recovered += 1;
+          return {
+            ...candidate,
+            state: "retry" as const,
+            nextAttemptAt: now,
+            lastErrorCode: "topic-cleanup-interrupted",
+          };
+        });
+        this.saveTopicCleanupCandidates({
+          operationId: operation.operationId,
+          candidates,
+          now,
+        });
+      }
+      return recovered;
+    })();
+  }
+
+  public claimNextTopicCleanupCandidate(now: string): TopicCleanupClaimResult {
+    assertIsoCutoff(now, "topic cleanup claim time");
+    return this.database.transaction((): TopicCleanupClaimResult => {
+      this.expireTopicCleanupPreviews(now);
+      const rows = this.database
+        .prepare(
+          `
+          SELECT *
+          FROM topic_cleanup_operations
+          WHERE state = 'claimed'
+          ORDER BY created_at, operation_id
+        `,
+        )
+        .all() as TopicCleanupOperationRow[];
+      for (const row of rows) {
+        const operation = this.topicCleanupFromRow(row);
+        const candidates = [...operation.candidates];
+        for (const [index, candidate] of candidates.entries()) {
+          if (
+            candidate.state !== "pending" &&
+            !(candidate.state === "retry" && candidate.nextAttemptAt <= now)
+          ) {
+            continue;
+          }
+          if (!this.topicCleanupCandidateEligible(operation, candidate, now)) {
+            candidates[index] = {
+              ...candidate,
+              state: "skipped",
+              nextAttemptAt: now,
+              lastErrorCode: "topic-cleanup-state-changed",
+            };
+            continue;
+          }
+          const { lastErrorCode: _lastErrorCode, ...candidateWithoutError } =
+            candidate;
+          const claimed: TopicCleanupCandidateRecord = {
+            ...candidateWithoutError,
+            state: "deleting",
+            attemptCount: candidate.attemptCount + 1,
+            nextAttemptAt: now,
+          };
+          candidates[index] = claimed;
+          this.saveTopicCleanupCandidates({
+            operationId: operation.operationId,
+            candidates,
+            now,
+          });
+          return {
+            outcome: "claimed",
+            operation: this.getTopicCleanupOperation(operation.operationId)!,
+            candidate: claimed,
+          };
+        }
+        const finalized = this.finalizeTopicCleanupOperation(
+          operation.operationId,
+          candidates,
+          now,
+        );
+        if (finalized.becameTerminal) {
+          return { outcome: "terminal", operation: finalized.operation };
+        }
+      }
+      return { outcome: "none" };
+    })();
+  }
+
+  public completeTopicCleanupCandidate(input: {
+    operationId: string;
+    topicId: string;
+    attemptNumber: number;
+    outcome: "deleted" | "already-missing";
+    now: string;
+  }): TopicCleanupCompletionResult {
+    assertIsoCutoff(input.now, "topic cleanup completion time");
+    return this.database.transaction(() => {
+      const operation = this.getTopicCleanupOperation(input.operationId);
+      if (operation === undefined || operation.state !== "claimed") {
+        throw new Error("cannot complete an inactive topic cleanup");
+      }
+      const candidates = [...operation.candidates];
+      const index = candidates.findIndex(
+        (candidate) => candidate.topicId === input.topicId,
+      );
+      const candidate = candidates[index];
+      if (
+        candidate === undefined ||
+        candidate.state !== "deleting" ||
+        candidate.attemptCount !== input.attemptNumber
+      ) {
+        throw new Error("cannot complete an unclaimed topic deletion");
+      }
+      this.database
+        .prepare(
+          `
+          DELETE FROM session_topics
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND topic_id = @topicId
+        `,
+        )
+        .run({
+          ...candidate,
+          transportName: operation.transportName,
+          transportScope: operation.transportScope,
+        });
+      const { lastErrorCode: _lastErrorCode, ...candidateWithoutError } =
+        candidate;
+      candidates[index] = {
+        ...candidateWithoutError,
+        state: input.outcome === "deleted" ? "deleted" : "already-missing",
+        nextAttemptAt: input.now,
+      };
+      return this.finalizeTopicCleanupOperation(
+        operation.operationId,
+        candidates,
+        input.now,
+      );
+    })();
+  }
+
+  public failTopicCleanupCandidate(
+    input: {
+      operationId: string;
+      topicId: string;
+      attemptNumber: number;
+      errorCode: string;
+      errorMessage: string;
+      retryable: boolean;
+      now: string;
+    },
+    policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  ): TopicCleanupCompletionResult {
+    assertIsoCutoff(input.now, "topic cleanup failure time");
+    return this.database.transaction(() => {
+      const operation = this.getTopicCleanupOperation(input.operationId);
+      if (operation === undefined || operation.state !== "claimed") {
+        throw new Error("cannot fail an inactive topic cleanup");
+      }
+      const candidates = [...operation.candidates];
+      const index = candidates.findIndex(
+        (candidate) => candidate.topicId === input.topicId,
+      );
+      const candidate = candidates[index];
+      if (
+        candidate === undefined ||
+        candidate.state !== "deleting" ||
+        candidate.attemptCount !== input.attemptNumber
+      ) {
+        throw new Error("cannot fail an unclaimed topic deletion");
+      }
+      const exhausted = candidate.attemptCount >= policy.maxAttempts;
+      const retryable = input.retryable && !exhausted;
+      candidates[index] = {
+        ...candidate,
+        state: retryable ? "retry" : "failed",
+        nextAttemptAt: new Date(
+          Date.parse(input.now) +
+            retryDelay(policy, Math.max(1, candidate.attemptCount)),
+        ).toISOString(),
+        lastErrorCode: input.errorCode.slice(0, 160),
+      };
+      this.database
+        .prepare(
+          `
+          UPDATE topic_cleanup_operations SET
+            last_error_code = @errorCode,
+            last_error_message = @errorMessage,
+            updated_at = @now
+          WHERE operation_id = @operationId
+        `,
+        )
+        .run({
+          ...input,
+          errorMessage: input.errorMessage.slice(0, 2_000),
+        });
+      return this.finalizeTopicCleanupOperation(
+        operation.operationId,
+        candidates,
+        input.now,
+      );
+    })();
   }
 
   public suppressionReason(
@@ -6563,6 +7434,7 @@ export class RelayStore {
         deliveryAttempts: 0,
         diagnostics: 0,
         telegramUpdates: 0,
+        topicCleanupOperations: 0,
         sessions: 0,
         webChanges: 0,
         browserCommands: 0,
@@ -6690,6 +7562,27 @@ export class RelayStore {
         `,
         )
         .run(cutoffs.telegramUpdateBefore, limit).changes;
+      result.topicCleanupOperations = this.database
+        .prepare(
+          `
+          DELETE FROM topic_cleanup_operations
+          WHERE operation_id IN (
+            SELECT operation_id FROM topic_cleanup_operations
+            WHERE finished_at IS NOT NULL
+              AND finished_at < @topicCleanupBefore
+              AND state IN (
+                'completed', 'completed-with-errors', 'cancelled', 'expired',
+                'superseded', 'preview-failed'
+              )
+            ORDER BY finished_at, operation_id
+            LIMIT @limit
+          )
+        `,
+        )
+        .run({
+          topicCleanupBefore: cutoffs.topicCleanupBefore,
+          limit,
+        }).changes;
       result.sessions = this.database
         .prepare(
           `
@@ -7749,6 +8642,14 @@ export class RelayStore {
       `,
       )
       .all() as CountRow[];
+    const topicCleanupCounts = this.database
+      .prepare(
+        `
+        SELECT state AS key, COUNT(*) AS count
+        FROM topic_cleanup_operations GROUP BY state
+      `,
+      )
+      .all() as CountRow[];
     const diagnosticCounts = this.database
       .prepare(
         `
@@ -7785,6 +8686,16 @@ export class RelayStore {
       failed: 0,
       unsupported: 0,
     };
+    const topicCleanups: StoreStatus["topicCleanups"] = {
+      previewed: 0,
+      claimed: 0,
+      completed: 0,
+      "completed-with-errors": 0,
+      cancelled: 0,
+      expired: 0,
+      superseded: 0,
+      "preview-failed": 0,
+    };
     const diagnostics: StoreStatus["diagnostics"] = {
       info: 0,
       warn: 0,
@@ -7811,6 +8722,11 @@ export class RelayStore {
         resumeCommands[row.key as ResumeCommandState] = row.count;
       }
     }
+    for (const row of topicCleanupCounts) {
+      if (row.key in topicCleanups) {
+        topicCleanups[row.key as TopicCleanupOperationState] = row.count;
+      }
+    }
     for (const row of diagnosticCounts) {
       if (row.key === "info" || row.key === "warn" || row.key === "error") {
         diagnostics[row.key] = row.count;
@@ -7821,6 +8737,7 @@ export class RelayStore {
       events,
       sessions,
       topics,
+      topicCleanups,
       resumeCommands,
       diagnostics,
       pendingDeliveryCount: events.queued + events.retry + events.delivering,

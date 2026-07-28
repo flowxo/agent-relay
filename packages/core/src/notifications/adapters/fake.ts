@@ -3,8 +3,14 @@ import type {
   DeliveryMessage,
   DeliveryReceipt,
   InteractiveNotificationTransport,
+  OperatorControlContext,
+  OperatorControlMessage,
+  OperatorControlTransport,
   TopicCreation,
   TopicCreationContext,
+  TopicDeletionContext,
+  TopicDeletionReceipt,
+  TopicDeletionTransport,
   TopicNotificationTransport,
   TopicReceipt,
 } from "@agent-relay/notification-contracts";
@@ -39,8 +45,18 @@ export interface FakeTopic {
   receipt: TopicReceipt;
 }
 
+export interface FakeOperatorControl {
+  message: OperatorControlMessage;
+  context: OperatorControlContext;
+  receipt: DeliveryReceipt;
+}
+
 export class FakeNotificationTransport
-  implements InteractiveNotificationTransport, TopicNotificationTransport
+  implements
+    InteractiveNotificationTransport,
+    OperatorControlTransport,
+    TopicDeletionTransport,
+    TopicNotificationTransport
 {
   // Retain the pre-refactor durable transport identity so existing local
   // delivery summaries remain continuous across this code-ownership change.
@@ -90,10 +106,24 @@ export class FakeNotificationTransport
     idempotencyKey: string;
     outcome: "created" | "failed" | "deduplicated";
   }> = [];
+  public readonly topicDeletionAttempts: Array<{
+    idempotencyKey: string;
+    topicId: string;
+    outcome: "deleted" | "already-missing" | "failed" | "deduplicated";
+  }> = [];
   private readonly deliveriesByKey = new Map<string, FakeDelivery>();
+  private readonly operatorControlsByKey = new Map<
+    string,
+    FakeOperatorControl
+  >();
   private readonly topicsByKey = new Map<string, FakeTopic>();
+  private readonly topicDeletionsByKey = new Map<
+    string,
+    TopicDeletionReceipt
+  >();
   private readonly failures: PlannedFailure[] = [];
   private readonly topicFailures: PlannedFailure[] = [];
+  private readonly topicDeletionFailures: PlannedFailure[] = [];
   private readonly closedTopicIds = new Set<string>();
   private nextMessageId = 1;
   private nextTopicId = 1_000;
@@ -106,6 +136,10 @@ export class FakeNotificationTransport
   public readonly deliveryMessageEdits: Array<{
     messageId: string;
     message: DeliveryMessage;
+  }> = [];
+  public readonly operatorControlEdits: Array<{
+    messageId: string;
+    message: OperatorControlMessage;
   }> = [];
 
   public setOnline(online: boolean): void {
@@ -138,6 +172,19 @@ export class FakeNotificationTransport
     }
   }
 
+  public failNextTopicDeletion(
+    count: number,
+    failure: PlannedFailure = {
+      code: "fake-topic-delete-timeout",
+      message: "fake topic deletion timed out",
+      retryable: true,
+    },
+  ): void {
+    for (let index = 0; index < count; index += 1) {
+      this.topicDeletionFailures.push(failure);
+    }
+  }
+
   public get deliveries(): readonly FakeDelivery[] {
     return [...this.deliveriesByKey.values()];
   }
@@ -146,14 +193,18 @@ export class FakeNotificationTransport
     return [...this.topicsByKey.values()];
   }
 
-  public deleteTopic(topicId: string): boolean {
+  public get operatorControls(): readonly FakeOperatorControl[] {
+    return [...this.operatorControlsByKey.values()];
+  }
+
+  public simulateTopicDeletion(topicId: string): boolean {
     const entry = [...this.topicsByKey.entries()].find(
       ([, topic]) => topic.receipt.topicId === topicId,
     );
     return entry === undefined ? false : this.topicsByKey.delete(entry[0]);
   }
 
-  public closeTopic(topicId: string): boolean {
+  public simulateTopicClosure(topicId: string): boolean {
     const entry = [...this.topicsByKey.entries()].find(
       ([, topic]) => topic.receipt.topicId === topicId,
     );
@@ -163,6 +214,62 @@ export class FakeNotificationTransport
     this.closedTopicIds.add(topicId);
     this.topicsByKey.delete(entry[0]);
     return true;
+  }
+
+  public async deleteTopic(
+    topicId: string,
+    context: TopicDeletionContext,
+  ): Promise<TopicDeletionReceipt> {
+    const existing = this.topicDeletionsByKey.get(context.idempotencyKey);
+    if (existing !== undefined) {
+      this.topicDeletionAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        topicId,
+        outcome: "deduplicated",
+      });
+      return existing;
+    }
+    if (!this.online) {
+      this.topicDeletionAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        topicId,
+        outcome: "failed",
+      });
+      throw new TransportError(
+        "fake Telegram is offline",
+        "fake-offline",
+        true,
+      );
+    }
+    const failure = this.topicDeletionFailures.shift();
+    if (failure !== undefined) {
+      this.topicDeletionAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        topicId,
+        outcome: "failed",
+      });
+      throw new TransportError(
+        failure.message,
+        failure.code,
+        failure.retryable,
+      );
+    }
+    const entry = [...this.topicsByKey.entries()].find(
+      ([, topic]) => topic.receipt.topicId === topicId,
+    );
+    const outcome =
+      entry === undefined ? ("already-missing" as const) : ("deleted" as const);
+    if (entry !== undefined) {
+      this.topicsByKey.delete(entry[0]);
+    }
+    const receipt = { transport: this.name, outcome };
+    this.topicDeletionsByKey.set(context.idempotencyKey, receipt);
+    this.topicDeletionAttempts.push({
+      idempotencyKey: context.idempotencyKey,
+      topicId,
+      outcome,
+    });
+    return receipt;
   }
 
   public async createTopic(
@@ -291,6 +398,41 @@ export class FakeNotificationTransport
     return receipt;
   }
 
+  public async deliverOperatorControl(
+    message: OperatorControlMessage,
+    context: OperatorControlContext,
+  ): Promise<DeliveryReceipt> {
+    const existing = this.operatorControlsByKey.get(context.idempotencyKey);
+    if (existing !== undefined) {
+      return existing.receipt;
+    }
+    if (!this.online) {
+      throw new TransportError(
+        "fake Telegram is offline",
+        "fake-offline",
+        true,
+      );
+    }
+    const failure = this.failures.shift();
+    if (failure !== undefined) {
+      throw new TransportError(
+        failure.message,
+        failure.code,
+        failure.retryable,
+      );
+    }
+    const receipt = {
+      transport: this.name,
+      messageId: String(this.nextMessageId++),
+    };
+    this.operatorControlsByKey.set(context.idempotencyKey, {
+      message,
+      context,
+      receipt,
+    });
+    return receipt;
+  }
+
   public async acknowledgeCallback(
     callbackId: string,
     text: string,
@@ -325,5 +467,27 @@ export class FakeNotificationTransport
     text: string,
   ): Promise<void> {
     this.messageEdits.push({ messageId, text });
+  }
+
+  public async editOperatorControl(
+    messageId: string,
+    message: OperatorControlMessage,
+  ): Promise<void> {
+    if (!this.online) {
+      throw new TransportError(
+        "fake Telegram is offline",
+        "fake-offline",
+        true,
+      );
+    }
+    const failure = this.failures.shift();
+    if (failure !== undefined) {
+      throw new TransportError(
+        failure.message,
+        failure.code,
+        failure.retryable,
+      );
+    }
+    this.operatorControlEdits.push({ messageId, message });
   }
 }

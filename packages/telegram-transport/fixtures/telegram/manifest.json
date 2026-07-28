@@ -1,6 +1,6 @@
 {
   "schema": "agent-relay-telegram-fixtures.v1",
-  "capturedAt": "2026-07-25",
+  "capturedAt": "2026-07-28",
   "botApiVersion": "10.2",
   "source": "https://core.telegram.org/bots/api",
   "evidence": "sanitized-live-and-fake-transport-observation",
@@ -37,6 +37,27 @@
         "chat ID replaced",
         "message, question, and option content replaced",
         "decision and navigation tokens replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
+      "file": "topic-cleanup-control.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Sanitized Bot API 10.2 operator-control projection exercised against the fake HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "session metadata replaced",
+        "cleanup operation identifier replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
+      "file": "delete-forum-topic.v10.2.json",
+      "method": "deleteForumTopic",
+      "evidence": "Bot API 10.2 request and response shape verified against the official method contract and fake HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "message thread ID replaced",
         "bot token excluded because it is carried only in the URL"
       ]
     }

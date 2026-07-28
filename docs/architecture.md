@@ -34,19 +34,19 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 
 ## Components
 
-| Component                 | Responsibility                                                                          |
-| ------------------------- | --------------------------------------------------------------------------------------- |
-| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts               |
-| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling |
-| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback        |
-| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention      |
-| SQLite store              | Persist identity, events, attempts, requests, answers, topics, and resume ownership     |
-| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts |
-| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core            |
-| Provider adapters         | Project cards to Telegram, Notifications, or a fake without owning request state        |
-| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume      |
-| Web companion             | Present authenticated projections and submit typed decisions to the same store          |
-| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation       |
+| Component                 | Responsibility                                                                               |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                    |
+| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling      |
+| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback             |
+| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention           |
+| SQLite store              | Persist identity, events, attempts, requests, answers, topics, cleanup, and resume ownership |
+| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts      |
+| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core                 |
+| Provider adapters         | Project cards to Telegram, Notifications, or a fake without owning request state             |
+| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume           |
+| Web companion             | Present authenticated projections and submit typed decisions to the same store               |
+| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation            |
 
 ## Notification dependency direction
 
@@ -176,6 +176,9 @@ different payload reusing an operation ID conflicts.
   replayed.
 - Telegram topic mappings survive restarts and are reconciled when the provider
   proves a topic is unavailable.
+- Destructive topic cleanup requires a durable exact-set preview and authorized
+  confirmation, then revalidates each explicit terminal tombstone immediately
+  before provider deletion.
 - Telegram has no caller-supplied send idempotency key. A crash after Telegram
   accepts a message but before its receipt commits leaves a narrow at-least-once
   duplicate window.

@@ -22,6 +22,8 @@ import {
   type RelayLogger,
   type RelayStore,
   type ResolutionResult,
+  type TopicCleanupDecisionResult,
+  type TopicCleanupOperationRecord,
 } from "@agent-relay/core";
 import type { NotificationTransport } from "@agent-relay/notification-contracts";
 import {
@@ -46,6 +48,11 @@ import {
   parseQuestionSetCallbackData,
   type ParsedQuestionSetCallback,
 } from "./callbacks/question-set.js";
+import {
+  parseTopicCleanupCallbackData,
+  topicCleanupCallbackData,
+  type ParsedTopicCleanupCallback,
+} from "./callbacks/topic-cleanup.js";
 
 const userSchema = z
   .object({
@@ -114,7 +121,13 @@ export type ReplyRouteOutcome =
   | "action-failed"
   | "draft-updated"
   | "draft-unchanged"
-  | "draft-rejected";
+  | "draft-rejected"
+  | "cleanup-previewed"
+  | "cleanup-confirmed"
+  | "cleanup-cancelled"
+  | "cleanup-duplicate"
+  | "cleanup-expired"
+  | "cleanup-rejected";
 
 export interface ReplyRouteResult {
   outcome: ReplyRouteOutcome;
@@ -124,9 +137,32 @@ export interface ReplyRouteResult {
 
 type TelegramCallback = NonNullable<TelegramUpdate["callback_query"]>;
 
+export interface TopicCleanupController {
+  supportsTopicCleanup(): boolean;
+  createTopicCleanupPreview(options?: {
+    ttlMs?: number;
+    limit?: number;
+  }): TopicCleanupOperationRecord;
+  deliverTopicCleanupPreview(input: {
+    operationId: string;
+    confirmCallbackData: string;
+    cancelCallbackData: string;
+  }): Promise<TopicCleanupOperationRecord>;
+  decideTopicCleanup(input: {
+    operationId: string;
+    action: "confirm" | "cancel";
+    messageId: string;
+    updateId: number;
+  }): TopicCleanupDecisionResult;
+  syncTopicCleanupPresentation(
+    operation: TopicCleanupOperationRecord,
+  ): Promise<boolean>;
+}
+
 export interface TelegramReplyRouterOptions {
   operatorUserId: number;
   chatId: number;
+  topicCleanup?: TopicCleanupController;
   now?: () => Date;
   logger?: RelayLogger;
   callbackAcknowledgementAttempts?: number;
@@ -170,6 +206,10 @@ function cardResolutionState(
     case "identity_mismatch":
       return "failed";
   }
+}
+
+function isTopicCleanupCommand(text: string): boolean {
+  return /^\/cleanup(?:@[A-Za-z0-9_]+)?$/iu.test(text.trim());
 }
 
 export class TelegramReplyRouter {
@@ -543,6 +583,124 @@ export class TelegramReplyRouter {
     this.diagnoseCardCallback(updateId, code, response);
     await this.acknowledge(callback.id, response);
     return { outcome: "uncorrelated", updateId };
+  }
+
+  private async handleTopicCleanupCommand(
+    updateId: number,
+  ): Promise<ReplyRouteResult> {
+    const controller = this.options.topicCleanup;
+    if (controller === undefined || !controller.supportsTopicCleanup()) {
+      this.diagnoseCardCallback(
+        updateId,
+        "telegram.topic-cleanup-unsupported",
+        "The active transport does not support confirmed topic deletion",
+      );
+      return { outcome: "cleanup-rejected", updateId };
+    }
+    try {
+      const operation = controller.createTopicCleanupPreview();
+      await controller.deliverTopicCleanupPreview({
+        operationId: operation.operationId,
+        confirmCallbackData: topicCleanupCallbackData(
+          "confirm",
+          operation.operationId,
+        ),
+        cancelCallbackData: topicCleanupCallbackData(
+          "cancel",
+          operation.operationId,
+        ),
+      });
+      return { outcome: "cleanup-previewed", updateId };
+    } catch (error) {
+      const transportError = asTransportError(error);
+      this.diagnoseCardCallback(
+        updateId,
+        "telegram.topic-cleanup-preview-failed",
+        `Topic cleanup preview failed: ${transportError.code}`,
+        "error",
+      );
+      this.logger.log({
+        level: "error",
+        code: "telegram.topic-cleanup-preview-failed",
+        message: transportError.message,
+        at: this.now().toISOString(),
+        details: {
+          updateId,
+          errorCode: transportError.code,
+          retryable: transportError.retryable,
+        },
+      });
+      return { outcome: "failed", updateId };
+    }
+  }
+
+  private async rejectTopicCleanupCallback(
+    callback: TelegramCallback,
+    updateId: number,
+    code: string,
+    response: string,
+  ): Promise<ReplyRouteResult> {
+    this.diagnoseCardCallback(updateId, code, response);
+    await this.acknowledge(callback.id, response);
+    return { outcome: "cleanup-rejected", updateId };
+  }
+
+  private async handleTopicCleanupCallback(
+    callback: TelegramCallback,
+    parsed: ParsedTopicCleanupCallback,
+    updateId: number,
+  ): Promise<ReplyRouteResult> {
+    const controller = this.options.topicCleanup;
+    if (
+      controller === undefined ||
+      callback.message === undefined ||
+      callback.message.message_thread_id !== undefined
+    ) {
+      return await this.rejectTopicCleanupCallback(
+        callback,
+        updateId,
+        "telegram.topic-cleanup-context-mismatch",
+        "This cleanup control is stale or in the wrong conversation",
+      );
+    }
+    const decision = controller.decideTopicCleanup({
+      operationId: parsed.operationId,
+      action: parsed.action,
+      messageId: String(callback.message.message_id),
+      updateId,
+    });
+    const acknowledgement = {
+      claimed: "Cleanup started",
+      cancelled: "Cleanup canceled",
+      duplicate: "Already handled",
+      expired: "Confirmation expired",
+      "not-found": "Unknown cleanup request",
+      "message-mismatch": "Stale cleanup control",
+      "not-ready": "Cleanup is no longer available",
+    }[decision.outcome];
+    await this.acknowledge(callback.id, acknowledgement);
+    if (decision.operation !== undefined) {
+      await controller.syncTopicCleanupPresentation(decision.operation);
+    }
+    switch (decision.outcome) {
+      case "claimed":
+        return { outcome: "cleanup-confirmed", updateId };
+      case "cancelled":
+        return { outcome: "cleanup-cancelled", updateId };
+      case "duplicate":
+        return { outcome: "cleanup-duplicate", updateId };
+      case "expired":
+        return { outcome: "cleanup-expired", updateId };
+      case "not-found":
+      case "message-mismatch":
+      case "not-ready":
+        this.diagnoseCardCallback(
+          updateId,
+          `telegram.topic-cleanup-${decision.outcome}`,
+          `Topic cleanup callback outcome: ${decision.outcome}`,
+        );
+        return { outcome: "cleanup-rejected", updateId };
+    }
   }
 
   private async handleChoiceCallback(
@@ -1738,7 +1896,8 @@ export class TelegramReplyRouter {
           callback.data?.startsWith("relay-card:") === true ||
           callback.data?.startsWith("relay:") === true ||
           callback.data?.startsWith("relay-m:") === true ||
-          callback.data?.startsWith("relay-w:") === true
+          callback.data?.startsWith("relay-w:") === true ||
+          callback.data?.startsWith("relay-c:") === true
         ) {
           this.diagnoseCardCallback(
             update.update_id,
@@ -1748,12 +1907,29 @@ export class TelegramReplyRouter {
                 ? "telegram.multi-select-unauthorized"
                 : callback.data.startsWith("relay-w:")
                   ? "telegram.question-set-unauthorized"
-                  : "telegram.choice-unauthorized",
+                  : callback.data.startsWith("relay-c:")
+                    ? "telegram.topic-cleanup-unauthorized"
+                    : "telegram.choice-unauthorized",
             "Unauthorized Telegram callback",
           );
         }
         await this.acknowledge(callback.id, "Not authorized");
         route = { outcome: "unauthorized", updateId: update.update_id };
+      } else if (callback.data?.startsWith("relay-c:") === true) {
+        const cleanup = parseTopicCleanupCallbackData(callback.data);
+        route =
+          cleanup === undefined
+            ? await this.rejectTopicCleanupCallback(
+                callback,
+                update.update_id,
+                "telegram.topic-cleanup-malformed",
+                "Malformed or stale cleanup control",
+              )
+            : await this.handleTopicCleanupCallback(
+                callback,
+                cleanup,
+                update.update_id,
+              );
       } else if (callback.data?.startsWith("relay-card:") === true) {
         const cardAction = parseCardActionCallbackData(callback.data);
         route =
@@ -1832,6 +2008,8 @@ export class TelegramReplyRouter {
         route = { outcome: "unauthorized", updateId: update.update_id };
       } else if (message.text === undefined) {
         route = { outcome: "unsupported", updateId: update.update_id };
+      } else if (isTopicCleanupCommand(message.text)) {
+        route = await this.handleTopicCleanupCommand(update.update_id);
       } else if (isTopicTransport(this.transport)) {
         const topicId =
           message.message_thread_id === undefined
@@ -2008,7 +2186,11 @@ export class TelegramReplyRouter {
         route.outcome === "answered" ||
         route.outcome === "action-completed" ||
         route.outcome === "draft-updated" ||
-        route.outcome === "draft-unchanged"
+        route.outcome === "draft-unchanged" ||
+        route.outcome === "cleanup-previewed" ||
+        route.outcome === "cleanup-confirmed" ||
+        route.outcome === "cleanup-cancelled" ||
+        route.outcome === "cleanup-duplicate"
           ? "info"
           : "warn",
       code: `telegram.reply-${route.outcome}`,

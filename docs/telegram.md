@@ -136,6 +136,35 @@ Available controls depend on durable event state:
 End does not claim to terminate an unowned harness process, and it does not
 delete the Telegram topic or its message history.
 
+### Delete proven-dead topics
+
+Send `/cleanup` from the configured operator account in General or any session
+topic. Agent Relay posts a bounded preview in General; nothing is deleted until
+the operator taps **Delete topics**. The confirmation expires after ten minutes,
+and a newer preview supersedes an older one.
+
+A topic qualifies only when the local store proves all of the following:
+
+- the session received an explicit **End** action or native `session.ended`
+  event;
+- the session is not active;
+- no unexpired request is open;
+- no continuation is claimed or running;
+- no event for that session is queued, retrying, or being delivered; and
+- the topic mapping is ready in the current transport scope.
+
+A crash, stale heartbeat, process exit, stopped turn, or age alone never
+qualifies. Agent Relay snapshots at most twenty candidates in one preview and
+rechecks every candidate immediately before deletion. A changed session is
+skipped and retains its mapping.
+
+Telegram's `deleteForumTopic` permanently removes the topic and every message in
+it. Agent Relay treats an already-absent topic as successful, retries bounded
+transient failures from SQLite, and removes the local mapping only after
+Telegram confirms deletion or absence. Permanent failures and control-message
+edit failures remain visible in diagnostics. `/v1/status` exposes safe aggregate
+counts under `topicCleanups`. Re-run `/cleanup` for additional eligible topics.
+
 Confirmations, selections, permissions, and ordered question sets use buttons.
 Free text can be typed directly in a session topic only when exactly one
 compatible request is open there. With zero candidates, Agent Relay posts
@@ -164,6 +193,9 @@ duplicate window.
 If Telegram proves a stored topic is unavailable, Agent Relay invalidates only
 that mapping, records `topic.reconciliation-required`, retries the owning event,
 and creates a replacement. It never sends that event into General.
+
+Confirmed topic cleanup is a separate durable worker. Its exact preview,
+operator decision, per-topic attempts, and terminal result survive restart.
 
 See [troubleshooting](troubleshooting.md) for provider codes and
 [PRIVACY.md](../PRIVACY.md) for outbound fields and erasure.

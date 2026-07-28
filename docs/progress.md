@@ -23,12 +23,25 @@
   209,539-byte packed/1,309,669-byte unpacked 11-file artifact, hosted proof
   digest `97db3397191a4cc14695b2515427f6f1239723709612235d97a0e9da53b409be`, and
   the complete packed lifecycle.
-- Telegram topic lifecycle is now explicit. End creates a local durable lane
-  tombstone and suppresses later relay work, but it does not remove the Telegram
-  topic. Current official Bot API documentation permits `deleteForumTopic` in a
-  private chat and deletes the topic with all of its messages. Agent Relay does
-  not yet call that destructive method; FXO-1345 owns previewed, confirmed,
-  exactly-once cleanup for proven-dead topics.
+- FXO-1345 makes Telegram topic cleanup explicit and confirmation-gated. End
+  still creates only a local durable lane tombstone; the authorized operator can
+  now send `/cleanup` to receive a bounded exact-set preview in General and
+  confirm permanent provider deletion. Eligibility requires an explicit End or
+  native `session.ended`, excludes active sessions, open requests, in-flight
+  resumes, and queued/retrying deliveries, and is revalidated before every
+  deletion. Operations, retries, expiry, supersession, candidate skips, and
+  restart recovery are durable; the local mapping is removed only after Telegram
+  reports deletion or prior absence. Provider-neutral optional deletion/control
+  contracts preserve the Notifications boundary. Sanitized Bot API 10.2 fixtures
+  record the observed request/response shapes. On 2026-07-28 the complete
+  `pnpm check` passed 68 Vitest files/482 tests, 24 contract and supply-chain
+  tests, the six-test isolated Notifications consumer, all workspace builds, the
+  216,376-byte packed/1,348,531-byte unpacked 11-file artifact, hosted proof
+  digest `b78978008e544abf74de094e445cff49221f23b1485d5573ddcf91043d39bffd`, and
+  the schema-3-to-schema-4 packed lifecycle. All three Chromium scenarios
+  passed, and `pnpm audit --prod` found no known vulnerability. Direct
+  `deleteForumTopic` against the private activation chat remains deliberately
+  unclaimed until an operator confirms a bounded live preview.
 - FXO-1340 separates notification ownership without changing the end-user
   package or runtime contract. The private `@agent-relay/notification-contracts`
   package now owns provider-neutral delivery, topic, interaction, capability,
@@ -805,10 +818,11 @@ also remain free of silent delivery, hook, or correlation failures.
   fixtures rather than induced failures against the live account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
-- Ended Telegram topics currently remain visible. Cleanup must use explicit
-  terminal relay state rather than age or inactivity, exclude open requests and
-  in-flight resumes, revalidate at deletion time, and preserve local diagnostic
-  evidence even though Telegram deletes the provider message history.
+- Telegram cleanup is locally proven through the fake transport and sanitized
+  Bot API fixtures, but live deletion against the private activation chat is not
+  yet claimed. The operator must inspect and confirm the exact `/cleanup`
+  preview; age, inactivity, crash, process exit, and stopped turns never make a
+  topic eligible.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.

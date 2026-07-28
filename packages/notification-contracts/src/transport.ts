@@ -92,6 +92,30 @@ export interface TopicReceipt {
   topicId: string;
 }
 
+export interface TopicDeletionContext {
+  idempotencyKey: string;
+}
+
+export interface TopicDeletionReceipt {
+  transport: string;
+  outcome: "deleted" | "already-missing";
+}
+
+export interface OperatorControlButton {
+  label: string;
+  callbackData: string;
+}
+
+export interface OperatorControlMessage {
+  text: string;
+  buttons: OperatorControlButton[][];
+}
+
+export interface OperatorControlContext {
+  idempotencyKey: string;
+  topicId?: string;
+}
+
 export interface NotificationTransport {
   readonly name: string;
   deliver(
@@ -114,6 +138,13 @@ export interface TopicNotificationTransport extends NotificationTransport {
   ): Promise<TopicReceipt>;
 }
 
+export interface TopicDeletionTransport extends TopicNotificationTransport {
+  deleteTopic(
+    topicId: string,
+    context: TopicDeletionContext,
+  ): Promise<TopicDeletionReceipt>;
+}
+
 export interface InteractiveNotificationTransport extends NotificationTransport {
   acknowledgeCallback(callbackId: string, text: string): Promise<void>;
   editDeliveryMessage(
@@ -121,6 +152,17 @@ export interface InteractiveNotificationTransport extends NotificationTransport 
     message: DeliveryMessage,
   ): Promise<void>;
   editResolvedMessage(messageId: string, text: string): Promise<void>;
+}
+
+export interface OperatorControlTransport extends NotificationTransport {
+  deliverOperatorControl(
+    message: OperatorControlMessage,
+    context: OperatorControlContext,
+  ): Promise<DeliveryReceipt>;
+  editOperatorControl(
+    messageId: string,
+    message: OperatorControlMessage,
+  ): Promise<void>;
 }
 
 export function isTopicTransport(
@@ -144,6 +186,27 @@ export function isInteractiveTransport(
     typeof transport.editDeliveryMessage === "function" &&
     "editResolvedMessage" in transport &&
     typeof transport.editResolvedMessage === "function"
+  );
+}
+
+export function isTopicDeletionTransport(
+  transport: NotificationTransport,
+): transport is TopicDeletionTransport {
+  return (
+    isTopicTransport(transport) &&
+    "deleteTopic" in transport &&
+    typeof transport.deleteTopic === "function"
+  );
+}
+
+export function isOperatorControlTransport(
+  transport: NotificationTransport,
+): transport is OperatorControlTransport {
+  return (
+    "deliverOperatorControl" in transport &&
+    typeof transport.deliverOperatorControl === "function" &&
+    "editOperatorControl" in transport &&
+    typeof transport.editOperatorControl === "function"
   );
 }
 

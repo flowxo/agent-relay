@@ -557,11 +557,11 @@ if (process.platform !== "darwin") {
     const { default: Database } = await import("better-sqlite3");
     const priorDatabase = new Database(databasePath);
     assert(
-      priorDatabase.pragma("user_version", { simple: true }) === 3,
+      priorDatabase.pragma("user_version", { simple: true }) === 4,
       "prior fixture database did not start at the known schema",
     );
     priorDatabase.exec("DROP TABLE session_product_ownership");
-    priorDatabase.pragma("user_version = 2");
+    priorDatabase.pragma("user_version = 3");
     priorDatabase.close();
 
     await installTarball(prefix, currentTarball, temporaryRoot);
@@ -685,7 +685,7 @@ if (process.platform !== "darwin") {
 
     const migratedDatabase = new Database(databasePath);
     assert(
-      migratedDatabase.pragma("user_version", { simple: true }) === 3,
+      migratedDatabase.pragma("user_version", { simple: true }) === 4,
       "current package did not migrate the prior schema forward",
     );
     migratedDatabase.pragma("wal_checkpoint(TRUNCATE)");
@@ -694,7 +694,7 @@ if (process.platform !== "darwin") {
     const futureDatabasePath = resolve(stateDir, "future.sqlite");
     await copyFile(databasePath, futureDatabasePath);
     const futureDatabase = new Database(futureDatabasePath);
-    futureDatabase.pragma("user_version = 4");
+    futureDatabase.pragma("user_version = 5");
     futureDatabase.close();
     const downgradeDoctor = parseJson(
       (
@@ -723,7 +723,7 @@ if (process.platform !== "darwin") {
       readonly: true,
     });
     assert(
-      futureUnchanged.pragma("user_version", { simple: true }) === 4,
+      futureUnchanged.pragma("user_version", { simple: true }) === 5,
       "downgrade refusal changed the future schema",
     );
     futureUnchanged.close();

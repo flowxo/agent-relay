@@ -298,6 +298,174 @@ describe("TelegramBotTransport", () => {
     });
   });
 
+  it("deletes a private topic and treats an already-missing topic as success", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, result: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: "Bad Request: message thread not found",
+          }),
+          {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: "Bad Request: TOPIC_ID_INVALID",
+          }),
+          {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await expect(
+      transport.deleteTopic("77", {
+        idempotencyKey: "cleanup_first_12345678",
+      }),
+    ).resolves.toEqual({ transport: "telegram", outcome: "deleted" });
+    await expect(
+      transport.deleteTopic("78", {
+        idempotencyKey: "cleanup_second_12345678",
+      }),
+    ).resolves.toEqual({
+      transport: "telegram",
+      outcome: "already-missing",
+    });
+    await expect(
+      transport.deleteTopic("79", {
+        idempotencyKey: "cleanup_third_12345678",
+      }),
+    ).resolves.toEqual({
+      transport: "telegram",
+      outcome: "already-missing",
+    });
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+    ).toMatchObject({
+      chat_id: "10001",
+      message_thread_id: 77,
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("deleteForumTopic");
+  });
+
+  it("classifies a transient topic deletion failure for durable retry", async () => {
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 429,
+            description: "Too Many Requests",
+          }),
+          { status: 429 },
+        ),
+      ),
+    });
+
+    await expect(
+      transport.deleteTopic("77", {
+        idempotencyKey: "cleanup_retry_12345678",
+      }),
+    ).rejects.toMatchObject({
+      code: "telegram-http-429",
+      retryable: true,
+      status: 429,
+    });
+  });
+
+  it("sends and edits bounded operator controls in the General conversation", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, result: { message_id: 91 } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, result: { message_id: 91 } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+    const control = {
+      text: "2 proven-dead topics are ready for cleanup.",
+      buttons: [
+        [
+          {
+            label: "Delete 2 topics",
+            callbackData: "relay-c:v1:y:cleanup_0123456789abcdef",
+          },
+          {
+            label: "Cancel",
+            callbackData: "relay-c:v1:n:cleanup_0123456789abcdef",
+          },
+        ],
+      ],
+    };
+
+    await expect(
+      transport.deliverOperatorControl(control, {
+        idempotencyKey: "cleanup_preview_12345678",
+      }),
+    ).resolves.toEqual({ transport: "telegram", messageId: "91" });
+    await transport.editOperatorControl("91", {
+      text: "Cleanup complete.",
+      buttons: [],
+    });
+
+    const sent = JSON.parse(
+      String(fetchMock.mock.calls[0]?.[1]?.body),
+    ) as Record<string, unknown>;
+    expect(sent).not.toHaveProperty("message_thread_id");
+    expect(sent).toMatchObject({
+      chat_id: "10001",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "Delete 2 topics",
+              callback_data: "relay-c:v1:y:cleanup_0123456789abcdef",
+            },
+            {
+              text: "Cancel",
+              callback_data: "relay-c:v1:n:cleanup_0123456789abcdef",
+            },
+          ],
+        ],
+      },
+    });
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("editMessageText");
+  });
+
   it("verifies private topic capability and matching polling mode", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
