@@ -162,6 +162,9 @@ AGENT_RELAY_TELEGRAM_OPERATOR_ID=<authorized user id>
 AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll
 # Optional; defaults to 60000. Use 0 to disable.
 AGENT_RELAY_COALESCE_WINDOW_MS=60000
+# Optional safety bound for real transports; defaults to one hour. Use 0 only
+# when every queued fallback event should be delivered regardless of age.
+AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS=3600000
 # Optional local companion; defaults to 1. Set to 0 to disable.
 AGENT_RELAY_WEB_ENABLED=1
 ```
@@ -246,6 +249,15 @@ Expected startup evidence includes:
 - `daemon.started`;
 - loopback host and port `127.0.0.1:4317`; and
 - transport `telegram`, not `fake-telegram`.
+
+Before a real transport begins automatic drain, the installed daemon marks
+queued/retrying events older than `AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS` as
+visible dead letters. Still-open, unexpired requests and proven `owned-child`
+process exits are exempt. A quarantine emits
+`delivery.stale-backlog-quarantined` with a bounded count and no event content.
+The same guard runs after later fallback replay. Set the value to `0` only when
+intentionally replaying every historical event; a large spool can otherwise
+create a burst of obsolete provider messages.
 
 Startup also creates a private local-web credential beside the SQLite database,
 normally `~/.agent-relay/web-credential.json`. It must remain a regular
@@ -556,10 +568,12 @@ The same deterministic replacement path handles a provider response proving that
 a stored topic is closed or otherwise unavailable. Telegram Bot API 10.2
 documents private-chat topic creation, editing, and deletion, but its
 `closeForumTopic` method is documented for forum supergroups rather than private
-bot topics. Agent Relay therefore does not pretend it can close a private topic:
-End is a durable local relay-lane state, and unavailable-topic responses trigger
-reconciliation. Interrupted topic creations are recovered in bounded retry
-batches at daemon startup.
+bot topics. Its `deleteForumTopic` method does support private chats, but
+deletion also removes every message in the topic. Agent Relay does not currently
+call either method: End is a durable local relay-lane state and leaves the
+Telegram topic intact. Unavailable-topic responses trigger reconciliation.
+Interrupted topic creations are recovered in bounded retry batches at daemon
+startup.
 
 ### Telegram startup or delivery reports a provider code
 
@@ -612,11 +626,18 @@ multiple eligible requests it posts `choose a request` guidance. Decisions and
 guidance-delivery failures are retained as bounded diagnostics without copying
 the rejected message text.
 
-### A batch of old notifications appears after startup
+### Historical fallback work is quarantined at startup
 
-The fallback spool replays events captured while the daemon was unavailable.
-Inspect `status` to confirm there are no queued, retrying, or dead-letter
-records after delivery completes.
+The fallback spool still replays every valid record into local SQLite, but a
+real transport does not automatically send obsolete routine/failure cards.
+Events older than the one-hour default become `dead_letter` with
+`delivery-stale-backlog`; open unexpired requests and proven supervised crashes
+remain deliverable. Inspect `status` and the bounded
+`delivery.stale-backlog-quarantined` diagnostic locally.
+
+If the age guard was explicitly disabled and a historical burst begins, stop the
+daemon, preserve a private database backup, and diagnose the queued work before
+restarting. Do not erase SQLite or publish its contents.
 
 ### The daemon port is already in use
 

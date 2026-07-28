@@ -30,6 +30,15 @@ afterEach(async () => {
 });
 
 describe("startDaemon Telegram update mode", () => {
+  it("rejects an invalid startup backlog age before opening the daemon", async () => {
+    await expect(
+      startDaemon({
+        databasePath: await temporaryDatabase(),
+        startupBacklogMaxAgeMs: -1,
+      }),
+    ).rejects.toThrow("startup backlog max age");
+  });
+
   it("creates and reports only the path to a private web credential", async () => {
     const databasePath = await temporaryDatabase();
     const daemon = await startDaemon({

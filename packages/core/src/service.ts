@@ -80,6 +80,14 @@ export interface RetentionOptions {
   limit?: number;
 }
 
+export interface StaleBacklogQuarantineResult {
+  enabled: boolean;
+  maxAgeMs: number;
+  quarantined: number;
+  requestsExpired: number;
+  cutoff?: string;
+}
+
 export type BrowserSurfaceSyncResult =
   "updated" | "not-applicable" | "transport-unavailable" | "failed";
 
@@ -128,6 +136,8 @@ function notificationFingerprint(
 function safeLogRef(value: string): string {
   return sha256(value).slice(0, 12);
 }
+
+const MAX_STALE_BACKLOG_AGE_MS = 365 * 24 * 60 * 60_000;
 
 export class RelayService {
   private readonly retryPolicy: RetryPolicy;
@@ -233,6 +243,68 @@ export class RelayService {
       });
     }
     return recovered;
+  }
+
+  public quarantineStaleBacklog(
+    maxAgeMs: number,
+  ): StaleBacklogQuarantineResult {
+    if (
+      !Number.isSafeInteger(maxAgeMs) ||
+      maxAgeMs < 0 ||
+      maxAgeMs > MAX_STALE_BACKLOG_AGE_MS
+    ) {
+      throw new Error(
+        `stale backlog max age must be a safe integer between 0 and ${String(
+          MAX_STALE_BACKLOG_AGE_MS,
+        )} ms`,
+      );
+    }
+    if (maxAgeMs === 0) {
+      return {
+        enabled: false,
+        maxAgeMs,
+        quarantined: 0,
+        requestsExpired: 0,
+      };
+    }
+    const now = this.now();
+    const nowIso = now.toISOString();
+    const cutoff = new Date(now.getTime() - maxAgeMs).toISOString();
+    const requestsExpired = this.store.expireRequests(nowIso);
+    const quarantined = this.store.quarantineStaleBacklog({
+      cutoff,
+      now: nowIso,
+    });
+    if (quarantined > 0) {
+      this.logger.log({
+        level: "warn",
+        code: "delivery.stale-backlog-quarantined",
+        message:
+          "stale queued events were quarantined before transport delivery",
+        at: nowIso,
+        details: { quarantined, maxAgeMs, requestsExpired },
+      });
+      this.reportDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_stale_backlog_${sha256(
+          `${cutoff}\u001f${nowIso}\u001f${String(quarantined)}`,
+        ).slice(0, 36)}`,
+        recordedAt: nowIso,
+        source: "daemon",
+        level: "warn",
+        code: "delivery.stale-backlog-quarantined",
+        message: `${String(
+          quarantined,
+        )} stale queued events were quarantined before transport delivery`,
+      });
+    }
+    return {
+      enabled: true,
+      maxAgeMs,
+      quarantined,
+      requestsExpired,
+      cutoff,
+    };
   }
 
   public registerSession(session: SessionRegistrationV1): void {

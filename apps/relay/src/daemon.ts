@@ -8,7 +8,10 @@ import {
   RelayService,
   RelayStore,
 } from "@agent-relay/core";
-import type { RelayLogger } from "@agent-relay/core";
+import type {
+  RelayLogger,
+  StaleBacklogQuarantineResult,
+} from "@agent-relay/core";
 import type { NotificationTransport } from "@agent-relay/notification-contracts";
 import type { RetentionOptions, RetentionResult } from "@agent-relay/core";
 import {
@@ -80,6 +83,7 @@ export interface DaemonOptions {
   drainIntervalMs?: number;
   fallbackPath?: string;
   fallbackReplayIntervalMs?: number;
+  startupBacklogMaxAgeMs?: number;
   retention?: RetentionOptions;
   retentionIntervalMs?: number;
   logger?: RelayLogger;
@@ -90,9 +94,12 @@ export interface RunningDaemon {
   service: RelayService;
   webCredentialPath?: string;
   initialFallbackReplay?: FallbackReplayResult;
+  initialStaleBacklogQuarantine?: StaleBacklogQuarantineResult;
   initialRetention: RetentionResult;
   close(): Promise<void>;
 }
+
+const MAX_STARTUP_BACKLOG_AGE_MS = 365 * 24 * 60 * 60_000;
 
 function selectTransport(options: DaemonOptions): NotificationTransport {
   const selected = options.selectedTransport ?? "fake";
@@ -129,6 +136,18 @@ function selectTransport(options: DaemonOptions): NotificationTransport {
 export async function startDaemon(
   options: DaemonOptions,
 ): Promise<RunningDaemon> {
+  if (
+    options.startupBacklogMaxAgeMs !== undefined &&
+    (!Number.isSafeInteger(options.startupBacklogMaxAgeMs) ||
+      options.startupBacklogMaxAgeMs < 0 ||
+      options.startupBacklogMaxAgeMs > MAX_STARTUP_BACKLOG_AGE_MS)
+  ) {
+    throw new Error(
+      `startup backlog max age must be a safe integer between 0 and ${String(
+        MAX_STARTUP_BACKLOG_AGE_MS,
+      )} ms`,
+    );
+  }
   const runnerBridgeEnabled = options.runnerBridgeEnabled ?? false;
   if (runnerBridgeEnabled !== (options.runnerBridge !== undefined)) {
     throw new Error(
@@ -335,8 +354,28 @@ export async function startDaemon(
     return activeFallbackReplay;
   };
   const initialFallbackReplay = await replayFallback();
+  let staleBacklogGuardHealthy = true;
+  const applyStaleBacklogGuard = ():
+    StaleBacklogQuarantineResult | undefined => {
+    if (options.startupBacklogMaxAgeMs === undefined) {
+      staleBacklogGuardHealthy = true;
+      return undefined;
+    }
+    try {
+      const result = service.quarantineStaleBacklog(
+        options.startupBacklogMaxAgeMs,
+      );
+      staleBacklogGuardHealthy = true;
+      return result;
+    } catch (error) {
+      staleBacklogGuardHealthy = false;
+      throw error;
+    }
+  };
+  let initialStaleBacklogQuarantine: StaleBacklogQuarantineResult | undefined;
   let initialRetention: RetentionResult;
   try {
+    initialStaleBacklogQuarantine = applyStaleBacklogGuard();
     initialRetention = service.maintainRetention(options.retention);
   } catch (error) {
     await options.runnerBridge?.stop().catch(() => undefined);
@@ -439,7 +478,11 @@ export async function startDaemon(
 
   let activeDrain: Promise<void> | undefined;
   const interval = setInterval(() => {
-    if (activeDrain !== undefined) {
+    if (
+      activeDrain !== undefined ||
+      activeFallbackReplay !== undefined ||
+      !staleBacklogGuardHealthy
+    ) {
       return;
     }
     activeDrain = service
@@ -462,7 +505,21 @@ export async function startDaemon(
     options.fallbackPath === undefined
       ? undefined
       : setInterval(() => {
-          void replayFallback();
+          void replayFallback()
+            .then(() => {
+              applyStaleBacklogGuard();
+            })
+            .catch((error: unknown) => {
+              logger.log({
+                level: "error",
+                code: "delivery.stale-backlog-guard-failed",
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "stale backlog guard failed",
+                at: new Date().toISOString(),
+              });
+            });
         }, options.fallbackReplayIntervalMs ?? 5_000);
   const retentionInterval = setInterval(
     () => {
@@ -541,6 +598,9 @@ export async function startDaemon(
     service,
     ...(webCredentialPath === undefined ? {} : { webCredentialPath }),
     ...(initialFallbackReplay === undefined ? {} : { initialFallbackReplay }),
+    ...(initialStaleBacklogQuarantine === undefined
+      ? {}
+      : { initialStaleBacklogQuarantine }),
     initialRetention,
     close,
   };

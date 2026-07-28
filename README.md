@@ -325,8 +325,12 @@ Codex and Claude answers emit `decision: "block"` plus `reason`; Cursor emits
 Fallback records are redacted, capped, and rotated into lossless segments. The
 daemon atomically claims and replays those segments at startup and every five
 seconds; event and diagnostic IDs make crash retries harmless. Failed lines stay
-in a pending segment while successful lines are removed. Replay can also be run
-and inspected explicitly:
+in a pending segment while successful lines are removed. Before a real transport
+drains replayed work, the installed daemon dead-letters queued events older than
+one hour with a bounded diagnostic; still-open unexpired requests and proven
+owned-child exits are exempt. Set `AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS=0`
+only for an intentional full historical replay. Replay can also be run and
+inspected explicitly:
 
 ```sh
 pnpm relay replay-fallback

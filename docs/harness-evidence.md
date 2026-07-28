@@ -118,11 +118,12 @@ A second fixture classifies a scoped `400` response proving that a message
 thread is closed and runs the same replacement path. Bot API 10.2 documents
 `closeForumTopic` and `reopenForumTopic` for forum supergroups, while its
 private-chat topic support explicitly covers creation, editing, deletion, and
-unpinning. Agent Relay does not call the supergroup-only close method for the
-current private-chat transport. Fake restart fixtures recover interrupted topic
-creation with an explicit batch limit. Ended lanes suppress all later events and
-cancel delayed requests; both a native `session.ended` event and the End button
-are covered.
+unpinning. Agent Relay does not call the supergroup-only close method or the
+destructive private-chat-capable `deleteForumTopic` method. Fake restart
+fixtures recover interrupted topic creation with an explicit batch limit. Ended
+lanes suppress all later events and cancel delayed requests; both a native
+`session.ended` event and the End button are covered. Their Telegram topics
+currently remain visible.
 
 Real-Telegram daemon startup calls `getMe`, `getChat`, and `getWebhookInfo`
 before opening the local service. Sanitized fixtures require

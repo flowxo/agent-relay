@@ -133,7 +133,8 @@ Available controls depend on durable event state:
 - **Mute** suppresses routine cards but not questions or proven failures; and
 - **End** closes only the Agent Relay lane after open questions are resolved.
 
-End does not claim to terminate an unowned harness process.
+End does not claim to terminate an unowned harness process, and it does not
+delete the Telegram topic or its message history.
 
 Confirmations, selections, permissions, and ordered question sets use buttons.
 Free text can be typed directly in a session topic only when exactly one
