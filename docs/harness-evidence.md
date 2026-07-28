@@ -271,15 +271,18 @@ and one turn, observed user and agent message item lifecycles, observed a
 completed turn, stopped its owned process, and removed the temporary project and
 generated schemas. The committed evidence contains only booleans, enums, the
 public version, and schema digest. No prompt, response, transcript, native
-identifier, credential, account value, or machine path was retained.
+identifier, credential, account value, or machine path was retained. The same
+bounded canary passed again on 2026-07-28 after merging the current
+Notifications RC.1 and release-readiness baseline into the Phase 3 integration
+candidate.
 
 The verified structured-driver capabilities are deterministic interrupt,
 follow-up turn, approval decision, resume, active steer, terminal failure, and
 owned-process exit observation. Project/artifact operations and session pause
-remain absent from the driver capability list. Durable adoption plus
-product/native turn and approval correlation across restart remains Phase 3
-follow-up work; this profile does not infer those semantics from app-server
-method availability.
+remain absent from the driver capability list. The driver profile does not infer
+durable adoption or product/native correlation from app-server method
+availability; those semantics are proven separately by the runner-bridge
+adoption, ownership, and restart-reconciliation suites.
 
 ## Official contract sources
 
