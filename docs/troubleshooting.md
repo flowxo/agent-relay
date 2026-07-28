@@ -160,6 +160,21 @@ but a waiting card still arrives, run `doctor`, confirm the installed hook
 launcher points to the current package, rebuild/reinstall, and inspect the
 bounded daemon diagnostic before retrying.
 
+## Native hook ordering is degraded
+
+`hook-sequence-allocation-failed` means a valid native hook could not open or
+write the local SQLite ordering allocator. Agent Relay still sends or spools the
+event with retry-stable reduced-fidelity ordering, so the attention signal is
+not silently discarded, but a later event may leave the displayed session lane
+stale. `hook-sequence-store-close-failed` means the allocation committed and was
+retained, but SQLite cleanup failed.
+
+Stop supervised processes and the daemon before upgrading. Confirm the exact
+state directory is writable and private, run `doctor`, reconcile the installed
+launcher, then restart one daemon. Do not delete the sequence tables or edit
+`user_version`; retained mappings are what make fallback replay and duplicate
+hooks safe across restarts.
+
 ## Stop arrives but late resume does not
 
 Late resume requires a process launched by `agent-relay run`. A native hook in

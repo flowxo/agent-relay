@@ -51,7 +51,34 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 4;
+export const RELAY_STORE_SCHEMA_VERSION = 5;
+
+const NativeHookSequenceAllocationInputSchema = z
+  .object({
+    machineId: z
+      .string()
+      .min(8)
+      .max(128)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+    harness: HarnessSchema,
+    sessionId: z
+      .string()
+      .min(8)
+      .max(128)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+    eventId: z
+      .string()
+      .min(8)
+      .max(128)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+    sourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    allocatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export type NativeHookSequenceAllocationInput = z.infer<
+  typeof NativeHookSequenceAllocationInputSchema
+>;
 
 export interface SessionProductOwnershipClaim {
   adoptionId: string;
@@ -475,6 +502,8 @@ export interface RetentionResult {
   diagnostics: number;
   telegramUpdates: number;
   topicCleanupOperations: number;
+  nativeHookSequenceAllocations: number;
+  nativeHookSequenceCounters: number;
   sessions: number;
   webChanges: number;
   browserCommands: number;
@@ -1266,6 +1295,32 @@ export class RelayStore {
         updated_at TEXT NOT NULL,
         PRIMARY KEY (machine_id, harness, session_id)
       );
+
+      CREATE TABLE IF NOT EXISTS native_hook_sequence_counters (
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        last_sequence INTEGER NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (machine_id, harness, session_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS native_hook_sequence_allocations (
+        machine_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        source_fingerprint TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        allocated_at TEXT NOT NULL,
+        PRIMARY KEY (
+          machine_id, harness, session_id, source_fingerprint
+        ),
+        UNIQUE(event_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS native_hook_sequence_allocations_retention_idx
+        ON native_hook_sequence_allocations(allocated_at, event_id);
 
       CREATE TABLE IF NOT EXISTS session_product_ownership (
         adoption_id TEXT PRIMARY KEY,
@@ -2497,6 +2552,161 @@ export class RelayStore {
       )
       .all() as SessionTopicRow[];
     return rows.map((row) => this.topicFromRow(row));
+  }
+
+  public allocateNativeHookSequence(
+    inputValue: NativeHookSequenceAllocationInput,
+  ): number {
+    const input = NativeHookSequenceAllocationInputSchema.parse(inputValue);
+    const allocate = this.database.transaction((): number => {
+      const existing = this.database
+        .prepare(
+          `
+          SELECT event_id, sequence
+          FROM native_hook_sequence_allocations
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND source_fingerprint = @sourceFingerprint
+        `,
+        )
+        .get(input) as
+        | {
+            event_id: string;
+            sequence: number;
+          }
+        | undefined;
+      if (existing !== undefined) {
+        if (existing.event_id !== input.eventId) {
+          throw new Error(
+            "native hook fingerprint is already bound to another event",
+          );
+        }
+        return existing.sequence;
+      }
+
+      const existingEventAllocation = this.database
+        .prepare(
+          `
+          SELECT machine_id, harness, session_id, source_fingerprint
+          FROM native_hook_sequence_allocations
+          WHERE event_id = @eventId
+        `,
+        )
+        .get(input) as
+        | {
+            machine_id: string;
+            harness: Harness;
+            session_id: string;
+            source_fingerprint: string;
+          }
+        | undefined;
+      if (existingEventAllocation !== undefined) {
+        throw new Error(
+          "native hook event identity is already bound to another source",
+        );
+      }
+
+      const retainedEvent = this.database
+        .prepare(
+          `
+          SELECT machine_id, harness, session_id, payload_json
+          FROM events
+          WHERE event_id = @eventId
+        `,
+        )
+        .get(input) as
+        | {
+            machine_id: string;
+            harness: Harness;
+            session_id: string;
+            payload_json: string;
+          }
+        | undefined;
+      let retainedSequence: number | undefined;
+      if (retainedEvent !== undefined) {
+        if (
+          retainedEvent.machine_id !== input.machineId ||
+          retainedEvent.harness !== input.harness ||
+          retainedEvent.session_id !== input.sessionId
+        ) {
+          throw new Error(
+            "native hook event identity is already bound to another session",
+          );
+        }
+        retainedSequence = AgentAttentionEventV1Schema.parse(
+          JSON.parse(retainedEvent.payload_json) as unknown,
+        ).sequence;
+      }
+
+      const counter = this.database
+        .prepare(
+          `
+          SELECT last_sequence
+          FROM native_hook_sequence_counters
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+        `,
+        )
+        .get(input) as { last_sequence: number } | undefined;
+      const session = this.database
+        .prepare(
+          `
+          SELECT last_sequence
+          FROM sessions
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+        `,
+        )
+        .get(input) as { last_sequence: number } | undefined;
+      const priorSequence = Math.max(
+        counter?.last_sequence ?? 0,
+        session?.last_sequence ?? 0,
+        retainedSequence ?? 0,
+      );
+      const sequence = retainedSequence ?? priorSequence + 1;
+      if (!Number.isSafeInteger(sequence) || sequence < 0) {
+        throw new Error("native hook sequence space is exhausted");
+      }
+
+      this.database
+        .prepare(
+          `
+          INSERT INTO native_hook_sequence_counters (
+            machine_id, harness, session_id, last_sequence, updated_at
+          ) VALUES (
+            @machineId, @harness, @sessionId, @sequence, @allocatedAt
+          )
+          ON CONFLICT(machine_id, harness, session_id) DO UPDATE SET
+            last_sequence = MAX(
+              native_hook_sequence_counters.last_sequence,
+              excluded.last_sequence
+            ),
+            updated_at = MAX(
+              native_hook_sequence_counters.updated_at,
+              excluded.updated_at
+            )
+        `,
+        )
+        .run({ ...input, sequence });
+      this.database
+        .prepare(
+          `
+          INSERT INTO native_hook_sequence_allocations (
+            machine_id, harness, session_id, source_fingerprint, event_id,
+            sequence, allocated_at
+          ) VALUES (
+            @machineId, @harness, @sessionId, @sourceFingerprint, @eventId,
+            @sequence, @allocatedAt
+          )
+        `,
+        )
+        .run({ ...input, sequence });
+      return sequence;
+    });
+    return allocate.immediate();
   }
 
   public heartbeat(heartbeatInput: SessionHeartbeatV1): boolean {
@@ -7441,6 +7651,8 @@ export class RelayStore {
         diagnostics: 0,
         telegramUpdates: 0,
         topicCleanupOperations: 0,
+        nativeHookSequenceAllocations: 0,
+        nativeHookSequenceCounters: 0,
         sessions: 0,
         webChanges: 0,
         browserCommands: 0,
@@ -7609,6 +7821,55 @@ export class RelayStore {
         `,
         )
         .run(cutoffs.sessionBefore, limit).changes;
+      result.nativeHookSequenceAllocations = this.database
+        .prepare(
+          `
+          DELETE FROM native_hook_sequence_allocations
+          WHERE rowid IN (
+            SELECT allocation.rowid
+            FROM native_hook_sequence_allocations AS allocation
+            LEFT JOIN events
+              ON events.event_id = allocation.event_id
+            WHERE allocation.allocated_at < @deadLetterBefore
+              AND events.event_id IS NULL
+            ORDER BY allocation.allocated_at, allocation.rowid
+            LIMIT @limit
+          )
+        `,
+        )
+        .run({
+          deadLetterBefore: cutoffs.deadLetterBefore,
+          limit,
+        }).changes;
+      result.nativeHookSequenceCounters = this.database
+        .prepare(
+          `
+          DELETE FROM native_hook_sequence_counters
+          WHERE rowid IN (
+            SELECT counter.rowid
+            FROM native_hook_sequence_counters AS counter
+            LEFT JOIN sessions
+              ON sessions.machine_id = counter.machine_id
+              AND sessions.harness = counter.harness
+              AND sessions.session_id = counter.session_id
+            WHERE counter.updated_at < @sessionBefore
+              AND sessions.session_id IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM native_hook_sequence_allocations AS allocation
+                WHERE allocation.machine_id = counter.machine_id
+                  AND allocation.harness = counter.harness
+                  AND allocation.session_id = counter.session_id
+              )
+            ORDER BY counter.updated_at, counter.rowid
+            LIMIT @limit
+          )
+        `,
+        )
+        .run({
+          sessionBefore: cutoffs.sessionBefore,
+          limit,
+        }).changes;
       result.webChanges = this.database
         .prepare(
           `

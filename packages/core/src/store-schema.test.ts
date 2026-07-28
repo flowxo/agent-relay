@@ -110,6 +110,41 @@ describe("SQLite schema compatibility", () => {
     upgraded.close();
   });
 
+  it("migrates a version-four store to durable native hook ordering", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+    const prior = new Database(databasePath);
+    prior.exec(`
+      DROP TABLE native_hook_sequence_allocations;
+      DROP TABLE native_hook_sequence_counters;
+    `);
+    prior.pragma("user_version = 4");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare(
+          `
+          SELECT name
+          FROM sqlite_master
+          WHERE type = 'table' AND name LIKE 'native_hook_sequence_%'
+          ORDER BY name
+        `,
+        )
+        .pluck()
+        .all(),
+    ).toEqual([
+      "native_hook_sequence_allocations",
+      "native_hook_sequence_counters",
+    ]);
+    upgraded.close();
+  });
+
   it("refuses to open a newer schema and leaves it untouched", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");

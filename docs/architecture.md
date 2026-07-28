@@ -34,19 +34,19 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 
 ## Components
 
-| Component                 | Responsibility                                                                               |
-| ------------------------- | -------------------------------------------------------------------------------------------- |
-| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                    |
-| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling      |
-| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback             |
-| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention           |
-| SQLite store              | Persist identity, events, attempts, requests, answers, topics, cleanup, and resume ownership |
-| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts      |
-| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core                 |
-| Provider adapters         | Project cards to Telegram, Notifications, or a fake without owning request state             |
-| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume           |
-| Web companion             | Present authenticated projections and submit typed decisions to the same store               |
-| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation            |
+| Component                 | Responsibility                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                         |
+| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling           |
+| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback                  |
+| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention                |
+| SQLite store              | Persist identity, event order, attempts, requests, answers, topics, cleanup, and resume ownership |
+| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts           |
+| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core                      |
+| Provider adapters         | Project cards to Telegram, Notifications, or a fake without owning request state                  |
+| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume                |
+| Web companion             | Present authenticated projections and submit typed decisions to the same store                    |
+| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation                 |
 
 ## Notification dependency direction
 
@@ -118,6 +118,20 @@ official structured signal.
 Malformed, oversized, or unknown input produces a bounded diagnostic. The raw
 payload is not copied into SQLite, logs, the fallback spool, or a transport.
 
+Native hook retries use two separate durable identities. The source fingerprint
+keeps the event ID stable, while a per-machine/harness/session SQLite allocator
+assigns a monotonic sequence. Retrying the same fingerprint reuses its original
+allocation; distinct hooks advance under an immediate transaction across hook
+processes and restarts. On first use after an upgrade, the allocator seeds from
+retained event and session sequence state, including the earlier hash-derived
+values, so a new event cannot rewind the displayed lane.
+
+If the ordering store cannot be opened or written, the hook still preserves the
+attention event in its ordinary daemon/fallback path using the former
+retry-stable sequence and emits a bounded `hook-sequence-allocation-failed`
+diagnostic. That is an explicit reduced-fidelity mode, not a claim of monotonic
+ordering.
+
 ### Supervised exit evidence
 
 `agent-relay run` starts and owns a CLI child. Only this owning process can
@@ -180,6 +194,8 @@ different payload reusing an operation ID conflicts.
 ## Reliability boundary
 
 - Event IDs make ingestion idempotent.
+- Native hook sequence allocations are durable and monotonic per local session;
+  exact retries reuse their first allocation.
 - Delivery attempts use leases, retries, and visible dead letters.
 - Fallback files are redacted, bounded, rotated, atomically claimed, and
   replayed.

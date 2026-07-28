@@ -11,6 +11,7 @@ import {
 } from "@agent-relay/core";
 
 import { RelayClient } from "./client.js";
+import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 
 const codexStop = JSON.stringify({
@@ -38,6 +39,17 @@ const claudeBackgroundStop = JSON.stringify({
       description: "Synthetic background review",
     },
   ],
+  session_crons: [],
+});
+
+const claudeIdleStop = JSON.stringify({
+  session_id: "claude-hook-session-background-0001",
+  transcript_path: "/workspace/fixtures/synthetic-transcript.jsonl",
+  cwd: "/workspace/example",
+  hook_event_name: "Stop",
+  stop_hook_active: false,
+  last_assistant_message: "Synthetic background work is complete.",
+  background_tasks: [],
   session_crons: [],
 });
 
@@ -142,6 +154,199 @@ describe("hook entrypoint", () => {
     await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
     expect(transport.deliveries).toHaveLength(0);
     expect(store.listSessions()[0]?.state).toBe("active");
+    store.close();
+  });
+
+  it("orders distinct native hooks durably and cannot rewind on a later duplicate", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
+    const fallbackPath = join(directory, "fallback.ndjson");
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const service = new RelayService(store, transport);
+    const events: Array<Parameters<typeof service.ingest>[0]> = [];
+    const inserted: boolean[] = [];
+    const client = new RelayClient({
+      fetch: async (_input, init) => {
+        const event = JSON.parse(String(init?.body)) as Parameters<
+          typeof service.ingest
+        >[0];
+        events.push(event);
+        const result = service.ingest(event);
+        inserted.push(result.inserted);
+        return new Response(JSON.stringify(result), {
+          status: result.inserted ? 202 : 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    const shared = {
+      harness: "claude" as const,
+      surface: "cli" as const,
+      harnessVersion: "2.1.220 (Claude Code)",
+      machineId: "machine_hook_ordering_12345678",
+      bridgeSessionId: "bridge_hook_ordering_12345678",
+      fallbackPath,
+      client,
+    };
+
+    await runHook({
+      ...shared,
+      raw: claudeBackgroundStop,
+      occurredAt: "2026-07-28T12:00:00.000Z",
+    });
+    await runHook({
+      ...shared,
+      raw: claudeIdleStop,
+      occurredAt: "2026-07-28T12:00:01.000Z",
+    });
+    await runHook({
+      ...shared,
+      raw: claudeBackgroundStop,
+      occurredAt: "2026-07-28T12:00:02.000Z",
+    });
+
+    expect(events.map((event) => event.sequence)).toEqual([1, 2, 1]);
+    expect(inserted).toEqual([true, true, false]);
+    expect(store.listSessions()[0]).toMatchObject({
+      state: "waiting",
+      lastSequence: 2,
+      lastEventType: "turn.stopped",
+    });
+    await expect(service.drain()).resolves.toMatchObject({
+      claimed: 2,
+      delivered: 2,
+    });
+    expect(transport.deliveries).toHaveLength(1);
+    expect(transport.deliveries[0]?.message.eventId).toBe(events[1]?.eventId);
+    store.close();
+  });
+
+  it("preserves allocated order when an older fallback event replays after a newer Stop", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
+    const fallbackPath = join(directory, "fallback.ndjson");
+    const unavailable = new RelayClient({
+      fetch: async () => {
+        throw new TypeError("synthetic connection refused");
+      },
+    });
+    const first = await runHook({
+      harness: "claude",
+      surface: "cli",
+      harnessVersion: "2.1.220 (Claude Code)",
+      raw: claudeBackgroundStop,
+      machineId: "machine_hook_replay_12345678",
+      bridgeSessionId: "bridge_hook_replay_12345678",
+      occurredAt: "2026-07-28T12:00:00.000Z",
+      fallbackPath,
+      client: unavailable,
+    });
+    expect(first).toMatchObject({
+      daemonAccepted: false,
+      diagnostic: { code: "daemon-ingest-failed" },
+    });
+
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const service = new RelayService(store, transport);
+    const client = new RelayClient({
+      fetch: async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path === "/v1/events") {
+          const result = service.ingest(
+            JSON.parse(String(init?.body)) as Parameters<
+              typeof service.ingest
+            >[0],
+          );
+          return new Response(JSON.stringify(result), {
+            status: result.inserted ? 202 : 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const diagnostic = service.reportDiagnostic(
+          JSON.parse(String(init?.body)) as Parameters<
+            typeof service.reportDiagnostic
+          >[0],
+        );
+        return new Response(JSON.stringify(diagnostic), {
+          status: diagnostic.inserted ? 201 : 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    const second = await runHook({
+      harness: "claude",
+      surface: "cli",
+      harnessVersion: "2.1.220 (Claude Code)",
+      raw: claudeIdleStop,
+      machineId: "machine_hook_replay_12345678",
+      bridgeSessionId: "bridge_hook_replay_12345678",
+      occurredAt: "2026-07-28T12:00:01.000Z",
+      fallbackPath,
+      client,
+    });
+    expect(second.daemonAccepted).toBe(true);
+    expect(store.listSessions()[0]).toMatchObject({
+      state: "waiting",
+      lastSequence: 2,
+    });
+
+    await expect(
+      replayFallbackSpool(fallbackPath, client),
+    ).resolves.toMatchObject({
+      events: 1,
+      failures: [],
+    });
+    expect(store.listSessions()[0]).toMatchObject({
+      state: "waiting",
+      lastSequence: 2,
+    });
+    await service.drain();
+    expect(transport.deliveries).toHaveLength(1);
+    store.close();
+  });
+
+  it("reports allocator degradation while preserving the attention event", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
+    const fallbackPath = join(directory, "fallback.ndjson");
+    const store = new RelayStore();
+    const service = new RelayService(store, new FakeNotificationTransport());
+    const client = new RelayClient({
+      fetch: async (_input, init) => {
+        const result = service.ingest(
+          JSON.parse(String(init?.body)) as Parameters<
+            typeof service.ingest
+          >[0],
+        );
+        return new Response(JSON.stringify(result), {
+          status: result.inserted ? 202 : 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    const result = await runHook({
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "0.145.0",
+      raw: codexStop,
+      machineId: "machine_hook_degraded_12345678",
+      bridgeSessionId: "bridge_hook_degraded_12345678",
+      occurredAt: "2026-07-28T12:00:00.000Z",
+      fallbackPath,
+      sequenceStorePath: directory,
+      client,
+    });
+
+    expect(result).toMatchObject({
+      daemonAccepted: true,
+      diagnostic: {
+        code: "hook-sequence-allocation-failed",
+        fallbackRecorded: true,
+      },
+    });
+    const fallback = await readFile(fallbackPath, "utf8");
+    expect(fallback).toContain("retry-stable reduced-fidelity ordering");
+    expect(fallback).not.toContain(directory);
+    expect(store.status().events.queued).toBe(1);
     store.close();
   });
 

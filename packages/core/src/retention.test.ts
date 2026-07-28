@@ -201,6 +201,8 @@ describe("durable retention controls", () => {
       diagnostics: 0,
       telegramUpdates: 0,
       topicCleanupOperations: 0,
+      nativeHookSequenceAllocations: 0,
+      nativeHookSequenceCounters: 0,
       sessions: 0,
       webChanges: 0,
       browserCommands: 0,
