@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  "@flowxo/notifications-contracts@1.0.0-draft.1": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz
+  "@flowxo/notifications-contracts@1.0.0-rc.1": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
 
 importers:
   .:
@@ -101,15 +101,15 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       "@flowxo/notifications":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz
       "@flowxo/notifications-contracts":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
     devDependencies:
       "@flowxo/notifications-contract-mock":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz
+        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
+        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
       "@types/node":
         specifier: 24.13.3
         version: 24.13.3
@@ -418,32 +418,32 @@ packages:
       }
     engines: { node: ^20.19.0 || ^22.13.0 || >=24 }
 
-  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz":
+  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz":
     resolution:
       {
-        integrity: sha512-v1YMKSGdwCJCLt/VTMBjSSNUNE5kQ9ObevAgcnRLRXtq5ZX6jkT4esMykzKL0qLAZ6uP9HP/QwhScBpO3hD/4w==,
-        tarball: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz,
+        integrity: sha512-w8jMpSlgDU6ZG8Xv7wDRGAXpzMU0orhRLAT4BGM5vGsDmrUVbi5J3tfjatHa6/y8VMt6rrxh3od7EJho+5diHw==,
+        tarball: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz,
       }
-    version: 1.0.0-draft.1
+    version: 1.0.0-rc.1
     engines: { node: ">=22.13.0 <23" }
     hasBin: true
 
-  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz":
+  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz":
     resolution:
       {
-        integrity: sha512-8c2EuDVvKzyKA/vRRBj7FIdDX4xqscL87STBvkSf4RoQUK3qD0u9Zwz1z/sSIZ3Dq45uAfyVYjSoDOsaNFBYBw==,
-        tarball: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz,
+        integrity: sha512-TLCNNfgB+jvnSg/ItvcncbmlUi1hW4RgY89tzVtvDZ9WX5nyPOSagZLKPp2b8T49NTPUnNyzcpViigN7JoPYfg==,
+        tarball: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz,
       }
-    version: 1.0.0-draft.1
+    version: 1.0.0-rc.1
     engines: { node: ">=22.13.0 <23" }
 
-  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz":
+  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz":
     resolution:
       {
-        integrity: sha512-nndLXrF+q4wQ5o/FFmAJS8tapv/CdWrGj/vmnjzUGQFkL6ce3oR2tSJjgodgnyyoAVkUL6pVDMvQHIZTvOZy+A==,
-        tarball: file:vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz,
+        integrity: sha512-VOcIIal9q7ffYt+6Gi7X5U4ZyZ3HAbSAXXzObFHJLtjYM0RSMhbXbU5/XAjxVovl90mMVnfSE1DTY7U0OiAmoA==,
+        tarball: file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz,
       }
-    version: 1.0.0-draft.1
+    version: 1.0.0-rc.1
     engines: { node: ">=22.13.0 <23" }
 
   "@humanfs/core@0.19.2":
@@ -1830,17 +1830,17 @@ snapshots:
       "@eslint/core": 1.2.1
       levn: 0.4.1
 
-  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-draft.1.tgz":
+  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz":
     dependencies:
-      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz
+      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
       hono: 4.12.32
 
-  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz":
+  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz":
     {}
 
-  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-draft.1.tgz":
+  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz":
     dependencies:
-      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-draft.1.tgz
+      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
 
   "@humanfs/core@0.19.2":
     dependencies:

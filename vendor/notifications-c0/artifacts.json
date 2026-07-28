@@ -1,21 +1,21 @@
 {
   "schema": "agent-relay.notifications-c0-artifacts.v1",
-  "contractVersion": "1.0.0-draft.1",
+  "contractVersion": "1.0.0-rc.1",
   "artifacts": [
     {
       "package": "@flowxo/notifications-contracts",
-      "file": "flowxo-notifications-contracts-1.0.0-draft.1.tgz",
-      "sha256": "88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106"
+      "file": "flowxo-notifications-contracts-1.0.0-rc.1.tgz",
+      "sha256": "02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2"
     },
     {
       "package": "@flowxo/notifications",
-      "file": "flowxo-notifications-1.0.0-draft.1.tgz",
-      "sha256": "4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c"
+      "file": "flowxo-notifications-1.0.0-rc.1.tgz",
+      "sha256": "82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44"
     },
     {
       "package": "@flowxo/notifications-contract-mock",
-      "file": "flowxo-notifications-contract-mock-1.0.0-draft.1.tgz",
-      "sha256": "ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e"
+      "file": "flowxo-notifications-contract-mock-1.0.0-rc.1.tgz",
+      "sha256": "9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e"
     }
   ]
 }

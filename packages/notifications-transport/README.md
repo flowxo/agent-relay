@@ -10,11 +10,11 @@ selection, or fallback.
 
 Agent Relay consumes immutable tarballs from `vendor/notifications-c0`:
 
-| Package                               | Version         | SHA-256                                                            |
-| ------------------------------------- | --------------- | ------------------------------------------------------------------ |
-| `@flowxo/notifications-contracts`     | `1.0.0-draft.1` | `88fae08ed3e84954bd4f4b371a604fcd10c3e94bf6eb547fe98fc6ccebed9106` |
-| `@flowxo/notifications`               | `1.0.0-draft.1` | `4ccf06d000fc36c7bcf4d74f5427c12950675fb5a661c1f9d146fc872545278c` |
-| `@flowxo/notifications-contract-mock` | `1.0.0-draft.1` | `ebdbe0ac3537e43cf8a1980c5f663fca9ae888a099e48e0533a287c676a6f39e` |
+| Package                               | Version      | SHA-256                                                            |
+| ------------------------------------- | ------------ | ------------------------------------------------------------------ |
+| `@flowxo/notifications-contracts`     | `1.0.0-rc.1` | `02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2` |
+| `@flowxo/notifications`               | `1.0.0-rc.1` | `82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44` |
+| `@flowxo/notifications-contract-mock` | `1.0.0-rc.1` | `9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e` |
 
 The C0-08 source of truth is
 [`contracts/contract-lock.json`](../../contracts/contract-lock.json). The
