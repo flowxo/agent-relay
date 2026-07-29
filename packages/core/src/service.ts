@@ -178,12 +178,12 @@ function formatTopicInactivity(milliseconds: number): string {
 
 function topicCleanupTitle(mode: TopicCleanupMode): string {
   return mode === "inactive"
-    ? "Agent Relay inactive-topic prune"
+    ? "Agent Relay inactive-topic purge"
     : "Agent Relay topic cleanup";
 }
 
-function topicCleanupCommand(mode: TopicCleanupMode): "/prune" | "/cleanup" {
-  return mode === "inactive" ? "/prune" : "/cleanup";
+function topicCleanupCommand(mode: TopicCleanupMode): "/purge" | "/cleanup" {
+  return mode === "inactive" ? "/purge" : "/cleanup";
 }
 
 export class RelayService {
@@ -411,7 +411,7 @@ export class RelayService {
         };
       }
       return {
-        text: `${title}\n\nNo proven-dead session topics are ready for deletion. Only an explicit End action or native session-ended event qualifies.\n\nTo review inactive topics without marking their sessions ended, use /prune.`,
+        text: `${title}\n\nNo proven-dead session topics are ready for deletion. Only an explicit End action or native session-ended event qualifies.\n\nTo review inactive topics without marking their sessions ended, use /purge.`,
         buttons:
           pruneCallbackData === undefined
             ? []
@@ -461,7 +461,7 @@ export class RelayService {
     );
     const prompt =
       operation.mode === "inactive"
-        ? `Prune ${String(
+        ? `Purge ${String(
             operation.candidates.length,
           )} session topic(s) inactive for at least ${threshold ?? "the selected duration"}? Inactivity does not prove that a session ended. Your confirmation permanently removes each provider topic and its messages; a later event recreates a fresh topic.`
         : `Delete ${String(
@@ -475,7 +475,7 @@ export class RelayService {
         [
           {
             label: `${
-              operation.mode === "inactive" ? "Prune" : "Delete"
+              operation.mode === "inactive" ? "Purge" : "Delete"
             } ${String(operation.candidates.length)} topic${
               operation.candidates.length === 1 ? "" : "s"
             }`,

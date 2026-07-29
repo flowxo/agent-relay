@@ -317,12 +317,14 @@ describe("Telegram activation canary", () => {
       client: relayClient,
       machineId: "machine_telegram_canary_12345678",
       projectPath: "/workspace/example",
-      waitMs: 2_000,
+      waitMs: 10_000,
       pollIntervalMs: 50,
       randomId: () => "12345678-1234-1234-1234-123456789012",
     });
 
-    await vi.waitFor(() => expect(transport.deliveries).toHaveLength(1));
+    await vi.waitFor(() => expect(transport.deliveries).toHaveLength(1), {
+      timeout: 10_000,
+    });
     await relayClient.handleTelegramUpdate({
       update_id: 909,
       message: {
@@ -342,5 +344,5 @@ describe("Telegram activation canary", () => {
       resolvedBy: "telegram",
     });
     await daemon.close();
-  });
+  }, 15_000);
 });

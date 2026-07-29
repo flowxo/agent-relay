@@ -399,13 +399,17 @@ Telegram permanently deletes the topic and all of its messages. Cleanup is
 limited to twenty topics per confirmation; re-run the command for another batch.
 
 For abandoned or otherwise unneeded topics whose sessions were never explicitly
-ended, send `/prune`. It defaults to topics with no relay activity for 24 hours;
-use forms such as `/prune 12h` or `/prune 7d` for a one-hour-to-thirty-day
-window. The exact preview returns to the invocation topic, requires **Prune
-topics** confirmation, and revalidates the same active-work guards. Pruning
+ended, send `/purge`. It defaults to topics with no relay activity for 24 hours;
+use forms such as `/purge 12h` or `/purge 7d` for a one-hour-to-thirty-day
+window. The exact preview returns to the invocation topic, requires **Purge
+topics** confirmation, and revalidates the same active-work guards. Purging
 deletes the Telegram topic but does not mark the session ended, so later session
 activity creates a fresh topic. An empty `/cleanup` result also includes a
-one-tap 24-hour prune preview in that same topic.
+one-tap 24-hour purge preview in that same topic.
+
+Agent Relay installs `/purge` and `/cleanup` into the configured private chat's
+Telegram command menu on every daemon start and verifies the result. The older
+`/prune` spelling remains accepted for compatibility.
 
 Telegram may continue to show an ordinary private bot command as unread after
 the daemon consumes it. Standard Bot API polling confirms an update by advancing
@@ -618,10 +622,11 @@ bot topics. Its `deleteForumTopic` method does support private chats, but
 deletion also removes every message in the topic. End remains a durable local
 relay-lane state and leaves the topic intact; the separate `/cleanup` command
 previews and requires confirmation before calling the destructive method.
-`/prune` uses that same destructive method for an operator-confirmed inactive
+`/purge` uses that same destructive method for an operator-confirmed inactive
 set without adding a terminal tombstone; a later event creates a replacement
-topic. Unavailable-topic responses trigger reconciliation. Interrupted topic
-creations are recovered in bounded retry batches at daemon startup.
+topic. The older `/prune` spelling remains accepted. Unavailable-topic responses
+trigger reconciliation. Interrupted topic creations are recovered in bounded
+retry batches at daemon startup.
 
 ### Telegram startup or delivery reports a provider code
 
