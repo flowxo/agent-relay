@@ -27,7 +27,9 @@
   packed/1,391,665-byte unpacked 11-file artifact, hosted proof digest
   `567d68e4a9191f975dde362db6600791d84de0799b1b784f88cb43410458cdb0`, and the
   complete packed lifecycle. All three Chromium scenarios passed, and
-  `pnpm audit --prod` found no known vulnerability. FXO-1365 separately owns
+  `pnpm audit --prod` found no known vulnerability. PR #20 passed the exact-head
+  CI, browser, and secret checks and merged as `170d7b2`; the live
+  direct-Telegram selection was not changed. FXO-1365 separately owns
   post-release design of an authenticated inbound response API; V1 does not
   expose the daemon's local hook or browser routes as a public integration API.
 - The public README now follows the developer journey: the product experience,
@@ -1031,10 +1033,10 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Merge the green FXO-1364 outbound-webhook candidate without changing the live
-direct-Telegram selection, then continue bounded dogfood. Treat custom receiver
-delivery as V1-ready and keep FXO-1365 inbound responses in the post-release
-design backlog until its threat model and API contract are approved.
+Treat custom receiver delivery as V1-ready and continue bounded dogfood without
+changing the live direct-Telegram selection. Keep FXO-1365 inbound responses in
+the post-release design backlog until its threat model and API contract are
+approved.
 
 Continue bounded direct-Telegram dogfood. If any pruned session emits another
 event, verify that it provisions a fresh topic without changing its retained
