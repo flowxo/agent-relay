@@ -2,6 +2,27 @@
 
 ## Proven
 
+- FXO-1122 adds the approved private local session-adoption peer without
+  changing Agent Relay's standalone transports or default-off runner bridge.
+  Core candidate queries return only exact active/waiting Codex CLI checkpoints
+  for one cwd hash and verified version, excluding terminal, pending-
+  interaction, active-resume, and product-owned sessions. Human-visible
+  responses contain only a process-local handle and bounded display metadata;
+  every hidden checkpoint is reloaded and compared before commit. The bridge
+  validates its own runner authority and writes an observation-only binding,
+  then the existing core compare-and-set claim commits before product actuation
+  becomes usable. Strict `runner.session-adoption/local-v1` stdio framing
+  rejects malformed, oversized, invalid-UTF-8, trailing, substituted, expired,
+  and stale input. A stored exact claim can recover forward after offer expiry,
+  while a new expired claim remains rejected. The command opens no listener,
+  makes no provider call, adds no product dependency, and offers no reverse
+  ownership transfer. On 2026-07-28 the complete serial `pnpm check` passed with
+  71 Vitest files/518 tests, immutable runner-protocol verification, 33/33
+  bridge contract cases, package isolation, and packed install/upgrade/
+  uninstall lifecycle proof. The product-owned built-CLI canary also passed
+  against real temporary Agent Relay core and bridge stores, proving readiness,
+  numbered selection, monotonic ownership, a usable exact-profile binding,
+  content-safe output, unchanged standalone transports, and exact cleanup.
 - FXO-1364 adds a fourth explicit notification transport for developers who want
   Agent Relay alerts in their own tools without maintaining an in-repo adapter.
   `@agent-relay/webhook-transport` sends one strict `agent-relay-webhook.v1`
@@ -1021,8 +1042,9 @@ also remain free of silent delivery, hook, or correlation failures.
 - The runner bridge remains an internal, default-off Gate 3 component. Its
   `runner.protocol/v1` artifacts are immutable development inputs with an
   `internal-until-gate-5` commitment, and the actuator claim covers only exact
-  `codex-cli 0.145.0`. Public adoption UX and reverse ownership
-  transfer/recovery remain explicitly owned by FXO-1122.
+  `codex-cli 0.145.0`. Public promotion remains a Gate 5 decision; reverse
+  ownership transfer remains unsupported under the monotonic policy delivered by
+  FXO-1122.
 - The generic webhook is deliberately outbound-only. Its local-web handoff is a
   credential-free locator and still requires browser authentication; when a
   receiver runs on another machine, loopback in that link refers to the Agent

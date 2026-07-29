@@ -152,6 +152,22 @@ export interface SessionRecord {
   lastSequence: number;
 }
 
+export interface SessionAdoptionCandidateCheckpoint {
+  readonly machineId: string;
+  readonly bridgeSessionId: string;
+  readonly harness: "codex";
+  readonly surface: "cli";
+  readonly harnessVersion: string;
+  readonly nativeSessionReference: string;
+  readonly expectedSequence: number;
+  readonly projectName: string;
+  readonly projectCwdHash: string;
+  readonly projectAuthorityDigest: string;
+  readonly standaloneCapabilityDigest: string;
+  readonly state: "active" | "waiting";
+  readonly lastSeenAt: string;
+}
+
 export type SessionLaneState =
   "running" | "waiting" | "muted" | "crashed" | "ended" | "stale";
 
@@ -916,6 +932,18 @@ interface SessionRow {
   project_json: string;
   state: SessionRecord["state"];
   last_event_type: EventType | null;
+  last_seen_at: string;
+  last_sequence: number;
+}
+
+interface SessionAdoptionCandidateRow {
+  machine_id: string;
+  bridge_session_id: string;
+  harness_version: string;
+  session_id: string;
+  project_json: string;
+  capabilities_json: string;
+  state: "active" | "waiting";
   last_seen_at: string;
   last_sequence: number;
 }
@@ -3063,6 +3091,159 @@ export class RelayStore {
       : undefined;
   }
 
+  public listSessionAdoptionCandidates(input: {
+    projectCwdHash: string;
+    harnessVersion: string;
+    limit?: number;
+  }): SessionAdoptionCandidateCheckpoint[] {
+    const limit = input.limit ?? 20;
+    if (
+      !/^sha256:[a-f0-9]{64}$/u.test(input.projectCwdHash) ||
+      input.harnessVersion.length < 1 ||
+      input.harnessVersion.length > 120 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 20
+    ) {
+      throw new TypeError("Session adoption candidate query is malformed.");
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT
+           sessions.machine_id, sessions.bridge_session_id,
+           sessions.harness_version, sessions.session_id,
+           sessions.project_json, sessions.capabilities_json,
+           sessions.state, sessions.last_seen_at, sessions.last_sequence
+         FROM sessions
+         LEFT JOIN session_controls AS controls
+           ON controls.machine_id = sessions.machine_id
+           AND controls.harness = sessions.harness
+           AND controls.session_id = sessions.session_id
+         WHERE sessions.harness = 'codex'
+           AND sessions.surface = 'cli'
+           AND sessions.harness_version = @harnessVersion
+           AND sessions.state IN ('active', 'waiting')
+           AND json_extract(sessions.project_json, '$.cwdHash')
+             = @projectCwdHash
+           AND controls.ended_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM session_product_ownership AS ownership
+             WHERE ownership.machine_id = sessions.machine_id
+               AND ownership.harness = sessions.harness
+               AND ownership.session_id = sessions.session_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM pending_requests AS pending
+             WHERE pending.machine_id = sessions.machine_id
+               AND pending.harness = sessions.harness
+               AND pending.session_id = sessions.session_id
+               AND pending.state = 'open'
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM resume_commands AS resume
+             WHERE resume.machine_id = sessions.machine_id
+               AND resume.harness = sessions.harness
+               AND resume.session_id = sessions.session_id
+               AND resume.state IN ('claimed', 'running')
+           )
+         ORDER BY sessions.last_seen_at DESC, sessions.machine_id,
+                  sessions.session_id
+         LIMIT @limit`,
+      )
+      .all({
+        projectCwdHash: input.projectCwdHash,
+        harnessVersion: input.harnessVersion,
+        limit,
+      }) as SessionAdoptionCandidateRow[];
+    return rows.map((row) => this.sessionAdoptionCandidateFromRow(row));
+  }
+
+  public inspectSessionAdoptionCandidate(input: {
+    machineId: string;
+    nativeSessionReference: string;
+    projectCwdHash: string;
+    harnessVersion: string;
+  }): SessionAdoptionCandidateCheckpoint | undefined {
+    if (
+      !boundedOwnershipIdentifier(input.machineId) ||
+      !boundedOwnershipIdentifier(input.nativeSessionReference) ||
+      !/^sha256:[a-f0-9]{64}$/u.test(input.projectCwdHash) ||
+      input.harnessVersion.length < 1 ||
+      input.harnessVersion.length > 120
+    ) {
+      throw new TypeError("Session adoption candidate identity is malformed.");
+    }
+    const row = this.database
+      .prepare(
+        `SELECT
+           sessions.machine_id, sessions.bridge_session_id,
+           sessions.harness_version, sessions.session_id,
+           sessions.project_json, sessions.capabilities_json,
+           sessions.state, sessions.last_seen_at, sessions.last_sequence
+         FROM sessions
+         LEFT JOIN session_controls AS controls
+           ON controls.machine_id = sessions.machine_id
+           AND controls.harness = sessions.harness
+           AND controls.session_id = sessions.session_id
+         WHERE sessions.machine_id = @machineId
+           AND sessions.harness = 'codex'
+           AND sessions.surface = 'cli'
+           AND sessions.session_id = @nativeSessionReference
+           AND sessions.harness_version = @harnessVersion
+           AND sessions.state IN ('active', 'waiting')
+           AND json_extract(sessions.project_json, '$.cwdHash')
+             = @projectCwdHash
+           AND controls.ended_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM session_product_ownership AS ownership
+             WHERE ownership.machine_id = sessions.machine_id
+               AND ownership.harness = sessions.harness
+               AND ownership.session_id = sessions.session_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM pending_requests AS pending
+             WHERE pending.machine_id = sessions.machine_id
+               AND pending.harness = sessions.harness
+               AND pending.session_id = sessions.session_id
+               AND pending.state = 'open'
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM resume_commands AS resume
+             WHERE resume.machine_id = sessions.machine_id
+               AND resume.harness = sessions.harness
+               AND resume.session_id = sessions.session_id
+               AND resume.state IN ('claimed', 'running')
+           )`,
+      )
+      .get(input) as SessionAdoptionCandidateRow | undefined;
+    return row === undefined
+      ? undefined
+      : this.sessionAdoptionCandidateFromRow(row);
+  }
+
+  private sessionAdoptionCandidateFromRow(
+    row: SessionAdoptionCandidateRow,
+  ): SessionAdoptionCandidateCheckpoint {
+    const project = ProjectRefSchema.parse(
+      JSON.parse(row.project_json) as unknown,
+    );
+    return {
+      machineId: row.machine_id,
+      bridgeSessionId: row.bridge_session_id,
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: row.harness_version,
+      nativeSessionReference: row.session_id,
+      expectedSequence: row.last_sequence,
+      projectName: project.displayName,
+      projectCwdHash: project.cwdHash,
+      projectAuthorityDigest: `sha256:${sha256(row.project_json)}`,
+      standaloneCapabilityDigest: sha256(row.capabilities_json),
+      state: row.state,
+      lastSeenAt: row.last_seen_at,
+    };
+  }
+
   public claimSessionForProduct(
     claim: SessionProductOwnershipClaim,
   ): SessionProductOwnershipResult {
@@ -3155,6 +3336,16 @@ export class RelayStore {
           .get(claim.productSessionId) !== undefined
       ) {
         return { outcome: "rejected", safeCode: "session_owner_conflict" };
+      }
+      const controls = this.database
+        .prepare(
+          `SELECT ended_at FROM session_controls
+           WHERE machine_id = ? AND harness = ? AND session_id = ?`,
+        )
+        .get(claim.machineId, claim.harness, claim.sessionId) as
+        { ended_at: string | null } | undefined;
+      if (controls?.ended_at !== null && controls?.ended_at !== undefined) {
+        return { outcome: "rejected", safeCode: "session_ineligible" };
       }
       const pending = this.database
         .prepare(

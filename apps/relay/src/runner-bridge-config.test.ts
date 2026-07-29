@@ -120,4 +120,39 @@ describe("runner bridge configuration", () => {
       "standalone-state\n",
     );
   });
+
+  test("routes the private adoption stdio command to an exact state directory", async () => {
+    const defaultDirectory = await temporaryDirectory();
+    const selectedDirectory = await temporaryDirectory();
+    await writeRunnerBridgeConfiguration(
+      runnerBridgePaths(selectedDirectory).configuration,
+      false,
+    );
+    const output: string[] = [];
+    const statusRequest = `${JSON.stringify({
+      schema: "runner.session-adoption/local-v1",
+      requestId: "request_adoption_status",
+      type: "adoption.status",
+      payload: {},
+    })}\n`;
+    await expect(
+      runRunnerBridgeCommand({
+        args: ["adoption", "--stdio", "--state-dir", selectedDirectory],
+        stateDirectory: defaultDirectory,
+        input: (async function* () {
+          yield statusRequest;
+        })(),
+        write: (value) => {
+          output.push(value);
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(JSON.parse(output[0] ?? "")).toMatchObject({
+      type: "adoption.status",
+      payload: {
+        status: "unavailable",
+        safeCode: "agent_relay_bridge_disabled",
+      },
+    });
+  });
 });

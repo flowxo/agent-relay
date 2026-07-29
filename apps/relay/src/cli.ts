@@ -719,7 +719,14 @@ async function main(): Promise<void> {
     const result = await runRunnerBridgeCommand({
       args,
       stateDirectory: stateDir,
+      input: process.stdin,
+      write: (value) => {
+        process.stdout.write(value);
+      },
     });
+    if (result === undefined) {
+      return;
+    }
     if (
       typeof result === "object" &&
       result !== null &&

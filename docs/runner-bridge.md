@@ -79,6 +79,7 @@ The experimental local selection commands are:
 agent-relay runner-bridge status
 agent-relay runner-bridge enable
 agent-relay runner-bridge disable
+agent-relay runner-bridge adoption --stdio [--state-dir PATH]
 agent-relay runner-bridge erase --confirm
 ```
 
@@ -88,6 +89,14 @@ configuration. `enable` records intent but still reports
 runner identity, project material resolver, transport, and durable adoption
 runtime are installed together at the composition root. This command is for
 integration development, not current end-user onboarding.
+
+`adoption --stdio` is not an interactive shell command. An authorized local
+product runner spawns it directly, without a shell, and exchanges strict
+`runner.session-adoption/local-v1` newline-delimited JSON over the child
+process's stdin/stdout. The process opens no listener, makes no provider call,
+and cannot change Telegram, Notifications, web, hook, or resume configuration.
+Its optional state-directory argument exists for an owner-only integration
+composition and tests; normal operators do not copy IDs or hashes into it.
 
 ## Local state and privacy
 
@@ -148,18 +157,32 @@ ownership. Absence of a row in the standalone core store means
 authority.
 
 The local adoption service can claim one exact eligible Codex CLI checkpoint for
-the verified Codex app-server profile. The request binds machine, surface,
-native session, bridge session, sequence, project/capability digests, harness
-version, product scope, revision, profile, issue time, and expiry. The core
+the verified `hpf_codex_app_server_0_145_0` Codex app-server profile. The
+request binds machine, surface, native session, bridge session, sequence,
+project/capability digests, exact compatibility evidence, harness version,
+product scope, revision, profile, issue time, and expiry. The core
 compare-and-set rejects changed, terminal, unknown, competing, or interactive
 sessions. After the claim commits, standalone event ingestion for that session
 fails closed.
 
+Candidate enumeration returns at most twenty bounded display records. Each
+contains a random process-local selection handle, project display name,
+Codex/CLI version, lifecycle state, and last-seen timestamp. Machine, bridge,
+native session, checkpoint, cwd, capability, request, topic, provider, and
+credential identifiers remain inside owner-only state. Commit consumes the
+handle and reloads the exact live checkpoint before writing an intent or
+claiming ownership. Substituted, expired, stale, wrong-project, pending-
+interaction, competing-owner, and changed-checkpoint selections fail closed.
+
 The bridge writes its intent before the core claim. If the process stops after
 the core commit but before the bridge binding, restart inspects the same durable
-receipt and completes only that request. It never implicitly restores standalone
-ownership. Public adoption UX and reverse transfer are intentionally not
-implemented in this experimental component.
+receipt and completes only that request. Recovery may finish the stored exact
+request after its short-lived offer expires; expiry still prevents a new claim.
+It never implicitly restores standalone ownership. The local peer reports only
+bounded readiness/recovery state and safe codes. Public Agent Relay adoption UX
+and reverse transfer are intentionally not implemented in this experimental
+component; the separate product operator owns human-readable selection,
+confirmation, status, and recovery.
 
 ## Pinned contract
 

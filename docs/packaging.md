@@ -30,10 +30,12 @@ JavaScript file. Only `better-sqlite3` and `zod` remain runtime dependencies.
 The packed manifest contains no `workspace:*` links, development dependencies,
 lifecycle scripts, TypeScript source, or repository-relative imports.
 
-The experimental runner bridge CLI/status code is bundled, but the bridge is
-disabled by default and the candidate contains no native structured-harness
-adapter or remote service configuration. The vendored development protocol
-archives and contract lock are repository test inputs, not package contents.
+The experimental runner bridge CLI/status and private local-adoption peer are
+bundled, but the bridge is disabled by default and the candidate contains no
+native structured-harness adapter or remote service configuration. The adoption
+peer opens no listener and makes no provider call. The vendored development
+protocol archives and contract lock are repository test inputs, not package
+contents.
 
 This alpha is deliberately CLI-only. It has no `exports` field and therefore no
 supported programmatic JavaScript API. Type declarations are not included
