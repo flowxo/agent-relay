@@ -104,9 +104,10 @@ that the configured chat is private and that `getWebhookInfo` agrees with
 
 There is no unthreaded real-Telegram compatibility mode. If topics are disabled
 or the chat is not private, startup fails clearly rather than delivering
-different sessions into General. Transport selection is independent of
-credentials: an unset selection defaults to `fake`, while a selected Telegram
-transport fails readiness/startup if its required configuration is absent.
+different sessions into one unthreaded conversation. Transport selection is
+independent of credentials: an unset selection defaults to `fake`, while a
+selected Telegram transport fails readiness/startup if its required
+configuration is absent.
 
 The first attention event for a logical harness session lazily creates one
 topic. Later events for that machine, harness, and session reuse the durable
@@ -387,21 +388,28 @@ operator is never shown an already-used Details button.
   silently reopening the lane.
 
 End intentionally leaves the Telegram topic intact. To remove ended-session
-topics, send `/cleanup` in General or any topic. Agent Relay posts the exact
-proven-dead candidate set in General and requires a ten-minute **Delete topics**
-confirmation. Crashes, process exits, stale sessions, stopped turns, and age do
-not qualify without an explicit End or native `session.ended` event. Every
-candidate is revalidated before Telegram permanently deletes the topic and all
-of its messages. Cleanup is limited to twenty topics per confirmation; re-run
-the command for another batch.
+topics, start **New Chat** and send `/cleanup`, or send it in any existing
+topic. Agent Relay posts the exact proven-dead candidate set back into that same
+topic and requires a ten-minute **Delete topics** confirmation. Crashes, process
+exits, stale sessions, stopped turns, and age do not qualify without an explicit
+End or native `session.ended` event. Every candidate is revalidated before
+Telegram permanently deletes the topic and all of its messages. Cleanup is
+limited to twenty topics per confirmation; re-run the command for another batch.
 
 For abandoned or otherwise unneeded topics whose sessions were never explicitly
 ended, send `/prune`. It defaults to topics with no relay activity for 24 hours;
 use forms such as `/prune 12h` or `/prune 7d` for a one-hour-to-thirty-day
-window. The exact General preview requires **Prune topics** confirmation and
-revalidates the same active-work guards. Pruning deletes the Telegram topic but
-does not mark the session ended, so later session activity creates a fresh
-topic. An empty `/cleanup` result also includes a one-tap 24-hour prune preview.
+window. The exact preview returns to the invocation topic, requires **Prune
+topics** confirmation, and revalidates the same active-work guards. Pruning
+deletes the Telegram topic but does not mark the session ended, so later session
+activity creates a fresh topic. An empty `/cleanup` result also includes a
+one-tap 24-hour prune preview in that same topic.
+
+Telegram may continue to show an ordinary private bot command as unread after
+the daemon consumes it. Standard Bot API polling confirms an update by advancing
+the `getUpdates` offset; only business-connection messages have a Bot API
+read-marking method. Treat the same-topic control card as the user-visible
+acknowledgement.
 
 Every action is committed before Telegram is acknowledged. Repeated taps return
 the stored result without repeating the action. `status` exposes aggregate
@@ -582,12 +590,12 @@ tail -n 100 ~/.agent-relay/relay.ndjson
 The status output distinguishes `pending`, `creating`, `ready`, `retry`, and
 `failed` topic records. A retryable Bot API or network failure remains attached
 to the queued event. A rejected topic request is dead-lettered rather than
-silently delivering into the General conversation.
+silently delivering into an unthreaded or newly invented conversation.
 
 If an existing topic was deleted, Agent Relay records
 `topic.reconciliation-required`, invalidates only that session's stale mapping,
 and retries the event before creating a replacement topic. It never silently
-falls back to the General conversation.
+falls back to a different conversation.
 
 The same deterministic replacement path handles a provider response proving that
 a stored topic is closed or otherwise unavailable. Telegram Bot API 10.2

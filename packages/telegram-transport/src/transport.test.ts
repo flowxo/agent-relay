@@ -396,7 +396,7 @@ describe("TelegramBotTransport", () => {
     });
   });
 
-  it("sends and edits bounded operator controls in the General conversation", async () => {
+  it("sends and edits bounded operator controls in the requested private topic", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -435,6 +435,7 @@ describe("TelegramBotTransport", () => {
     await expect(
       transport.deliverOperatorControl(control, {
         idempotencyKey: "cleanup_preview_12345678",
+        topicId: "77",
       }),
     ).resolves.toEqual({ transport: "telegram", messageId: "91" });
     await transport.editOperatorControl("91", {
@@ -445,9 +446,9 @@ describe("TelegramBotTransport", () => {
     const sent = JSON.parse(
       String(fetchMock.mock.calls[0]?.[1]?.body),
     ) as Record<string, unknown>;
-    expect(sent).not.toHaveProperty("message_thread_id");
     expect(sent).toMatchObject({
       chat_id: "10001",
+      message_thread_id: 77,
       reply_markup: {
         inline_keyboard: [
           [

@@ -204,6 +204,10 @@ different payload reusing an operation ID conflicts.
 - Destructive topic cleanup requires a durable exact-set preview and authorized
   confirmation, then revalidates each explicit terminal tombstone immediately
   before provider deletion.
+- Telegram maintenance controls echo the authenticated command's private-topic
+  ID. Callback authority remains bound to the configured operator and chat,
+  opaque operation token, and exact retained control message rather than an
+  assumed General channel.
 - Inactive-topic pruning is a distinct operator-authorized selection mode. Its
   durable cutoff never implies session death; successful deletion removes only
   the transport mapping so later activity provisions a fresh topic.

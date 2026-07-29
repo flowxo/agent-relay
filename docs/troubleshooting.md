@@ -74,8 +74,8 @@ Common stable provider codes:
 | `telegram-polling-conflict`        | Another process is consuming `getUpdates`; stop the unintended consumer    |
 | `telegram-topic-unavailable`       | A stored topic disappeared; allow the durable replacement path to complete |
 
-Real Telegram fails closed and never falls back to General. See the
-[Telegram guide](telegram.md) for setup and preflight behavior.
+Real Telegram fails closed and never falls back to an unthreaded conversation.
+See the [Telegram guide](telegram.md) for setup and preflight behavior.
 
 ## `/cleanup` or `/prune` finds nothing, or deletion fails
 
@@ -85,12 +85,15 @@ heartbeats, and age are deliberately insufficient. Open requests, active
 continuations, queued deliveries, and sessions that became active again also
 exclude or skip a candidate.
 
-The confirmation expires after ten minutes and is bound to the exact General
-message. A permanent failure records `topic-cleanup.delete-failed`; a permission
-failure uses `telegram-topic-delete-permission`. Correct the Bot API access and
-run `/cleanup` again. Never manually remove the SQLite mapping to force success:
-Agent Relay removes it only after Telegram confirms deletion or reports the
-topic already absent.
+Start the command from **New Chat** or an existing topic. The preview returns to
+that same topic, expires after ten minutes, and is bound to the exact control
+message. Telegram may leave an ordinary private bot command visually unread; the
+returned control card and `telegram.reply-cleanup-previewed` log are the
+acknowledgement. A permanent failure records `topic-cleanup.delete-failed`; a
+permission failure uses `telegram-topic-delete-permission`. Correct the Bot API
+access and run `/cleanup` again. Never manually remove the SQLite mapping to
+force success: Agent Relay removes it only after Telegram confirms deletion or
+reports the topic already absent.
 
 `/prune` is the separate path for inactive topics that are not proven dead. It
 defaults to 24 hours and accepts a duration from one hour through thirty days,

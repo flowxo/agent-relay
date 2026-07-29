@@ -158,6 +158,7 @@ export interface TopicCleanupController {
     confirmCallbackData: string;
     cancelCallbackData: string;
     pruneCallbackData?: string;
+    topicId?: string;
   }): Promise<TopicCleanupOperationRecord>;
   decideTopicCleanup(input: {
     operationId: string;
@@ -625,6 +626,7 @@ export class TelegramReplyRouter {
     options: {
       mode?: TopicCleanupMode;
       inactiveForMs?: number;
+      topicId?: string;
     } = {},
   ): Promise<ReplyRouteResult> {
     const controller = this.options.topicCleanup;
@@ -655,6 +657,7 @@ export class TelegramReplyRouter {
               ),
             }
           : {}),
+        ...(options.topicId === undefined ? {} : { topicId: options.topicId }),
       });
       return { outcome: "cleanup-previewed", updateId };
     } catch (error) {
@@ -683,12 +686,14 @@ export class TelegramReplyRouter {
   private async handleTopicPruneCommand(
     updateId: number,
     text: string,
+    topicId?: string,
   ): Promise<ReplyRouteResult> {
     const inactiveForMs = parseTopicPruneDuration(text);
     if (inactiveForMs !== undefined) {
       return await this.handleTopicCleanupCommand(updateId, {
         mode: "inactive",
         inactiveForMs,
+        ...(topicId === undefined ? {} : { topicId }),
       });
     }
     const message = {
@@ -706,6 +711,7 @@ export class TelegramReplyRouter {
     try {
       await this.transport.deliverOperatorControl(message, {
         idempotencyKey: `topic_prune_usage:${String(updateId)}`,
+        ...(topicId === undefined ? {} : { topicId }),
       });
       this.diagnoseCardCallback(
         updateId,
@@ -742,11 +748,7 @@ export class TelegramReplyRouter {
     updateId: number,
   ): Promise<ReplyRouteResult> {
     const controller = this.options.topicCleanup;
-    if (
-      controller === undefined ||
-      callback.message === undefined ||
-      callback.message.message_thread_id !== undefined
-    ) {
+    if (controller === undefined || callback.message === undefined) {
       return await this.rejectTopicCleanupCallback(
         callback,
         updateId,
@@ -799,10 +801,7 @@ export class TelegramReplyRouter {
     parsed: ParsedTopicPruneStartCallback,
     updateId: number,
   ): Promise<ReplyRouteResult> {
-    if (
-      callback.message === undefined ||
-      callback.message.message_thread_id !== undefined
-    ) {
+    if (callback.message === undefined) {
       return await this.rejectTopicCleanupCallback(
         callback,
         updateId,
@@ -813,6 +812,9 @@ export class TelegramReplyRouter {
     const route = await this.handleTopicCleanupCommand(updateId, {
       mode: "inactive",
       inactiveForMs: parsed.inactiveForMs,
+      ...(callback.message.message_thread_id === undefined
+        ? {}
+        : { topicId: String(callback.message.message_thread_id) }),
     });
     await this.acknowledge(
       callback.id,
@@ -2147,11 +2149,18 @@ export class TelegramReplyRouter {
       } else if (message.text === undefined) {
         route = { outcome: "unsupported", updateId: update.update_id };
       } else if (isTopicCleanupCommand(message.text)) {
-        route = await this.handleTopicCleanupCommand(update.update_id);
+        route = await this.handleTopicCleanupCommand(update.update_id, {
+          ...(message.message_thread_id === undefined
+            ? {}
+            : { topicId: String(message.message_thread_id) }),
+        });
       } else if (isTopicPruneCommand(message.text)) {
         route = await this.handleTopicPruneCommand(
           update.update_id,
           message.text,
+          message.message_thread_id === undefined
+            ? undefined
+            : String(message.message_thread_id),
         );
       } else if (isTopicTransport(this.transport)) {
         const topicId =

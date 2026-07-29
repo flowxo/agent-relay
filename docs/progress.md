@@ -5,29 +5,32 @@
 - FXO-1357 adds a separate operator-authorized inactive-topic prune without
   weakening proven-dead `/cleanup`. `/prune` defaults to 24 hours, accepts
   bounded hour/day thresholds from one hour through thirty days, and produces a
-  bounded exact-set preview in General with permanent-history warning and
-  Confirm/Cancel buttons. An empty `/cleanup` result offers the default preview
-  with one tap. Inactivity only selects candidates: active sessions, unexpired
-  requests, claimed/running resumes, and queued/retrying/delivering events
-  remain excluded, and each candidate is revalidated immediately before provider
-  deletion. Successful prune removes only the topic mapping—never a session or
-  End tombstone—so later activity provisions a fresh topic. Schema `6` durably
-  retains the selection mode, exact cutoff, bounded transcript-free candidate
-  metadata, decisions, and retry state; schema-5 cleanup records migrate as
-  `proven-dead`. Fake-transport tests prove threshold parsing, malformed input
-  guidance, one-tap discovery, authorization/context checks, safety exclusions,
-  mixed skip/delete accounting, claimed-delete/new-delivery isolation,
+  bounded exact-set preview with permanent-history warning and Confirm/Cancel
+  buttons. The preview is returned to the exact authenticated private topic
+  where the command arrived; an empty `/cleanup` result offers the default
+  preview with one tap in that same topic. Inactivity only selects candidates:
+  active sessions, unexpired requests, claimed/running resumes, and
+  queued/retrying/delivering events remain excluded, and each candidate is
+  revalidated immediately before provider deletion. Successful prune removes
+  only the topic mapping—never a session or End tombstone—so later activity
+  provisions a fresh topic. Schema `6` durably retains the selection mode, exact
+  cutoff, bounded transcript-free candidate metadata, decisions, and retry
+  state; schema-5 cleanup records migrate as `proven-dead`. Fake-transport tests
+  prove threshold parsing, malformed input guidance, same-topic one-tap
+  discovery, threaded confirmation, authorization, safety exclusions, mixed
+  skip/delete accounting, claimed-delete/new-delivery isolation,
   concurrent-session isolation, restart/retry recovery, no transcript retention,
   and later-topic recreation. Telegram Bot API 10.2 documentation confirms that
-  `deleteForumTopic` supports private chats and deletes all topic messages,
-  while `closeForumTopic` remains forum-supergroup-only. A sanitized prune
-  control fixture records the outbound shape; no live topic has been deleted
-  without an exact operator confirmation. On 2026-07-28 the complete
-  `pnpm check` passed 69 Vitest files/506 tests, 24 contract and supply-chain
-  tests, the six-test isolated Notifications consumer, all workspace builds, the
-  220,032-byte packed/1,366,493-byte unpacked 11-file artifact, hosted proof
-  digest `2d5f52cd51fca994d9e2dbf741e25ba841151d6b841a87d80d7fa01e5dbc51c1`, and
-  the schema-5-to-schema-6 packed lifecycle with schema-7 downgrade refusal. All
+  `message_thread_id` targets private-chat topics, while `deleteForumTopic`
+  supports private chats and deletes all topic messages. Sanitized
+  inbound-command and outbound-control fixtures record the threaded shapes; no
+  live topic has been deleted without an exact operator confirmation. On
+  2026-07-28 the complete `pnpm check` passed 69 Vitest files/506 tests, 24
+  contract and supply-chain tests, the six-test isolated Notifications consumer,
+  all workspace builds, the 220,032-byte packed/1,366,493-byte unpacked 11-file
+  artifact, hosted proof digest
+  `2d5f52cd51fca994d9e2dbf741e25ba841151d6b841a87d80d7fa01e5dbc51c1`, and the
+  schema-5-to-schema-6 packed lifecycle with schema-7 downgrade refusal. All
   three Chromium scenarios passed, and `pnpm audit --prod` found no known
   vulnerability. PR #15 merged the candidate as `1f25869`; the checkout-backed
   install reconciled unchanged, credentialed doctor was healthy, and one
@@ -38,7 +41,18 @@
   while the daemon was unavailable replayed visibly: four valid events delivered
   and four malformed payloads produced diagnostics. Live provider deletion
   remains unclaimed until the operator reviews and confirms an exact `/prune`
-  preview.
+  preview. The first live **New Chat** invocation then exposed that the command
+  was durably consumed but the control response omitted its `message_thread_id`,
+  causing Telegram to create a different topic; Telegram's ordinary Bot API also
+  provides no read-marking method for standard private bot messages. The
+  follow-up now echoes the invocation topic and accepts authorized
+  message-correlated callbacks inside private topics. The follow-up `pnpm check`
+  passed 69 Vitest files/506 tests, 24 contract and supply-chain tests, the
+  six-test isolated Notifications consumer, all workspace builds, the
+  220,067-byte packed/1,366,853-byte unpacked 11-file artifact, hosted proof
+  digest `809dc9e81331aea85ea4588decd3a29763ea08e83667d99ac8e406db5f3cb8c8`, and
+  the complete packed lifecycle. All three Chromium scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability.
 - FXO-1350 replaces native-hook fingerprint pseudo-sequences with a durable
   per-machine/harness/session allocator in the authoritative local SQLite store.
   Exact source-fingerprint retries reuse one event sequence; distinct hooks
@@ -117,21 +131,23 @@
   the complete packed lifecycle.
 - FXO-1345 makes Telegram topic cleanup explicit and confirmation-gated. End
   still creates only a local durable lane tombstone; the authorized operator can
-  now send `/cleanup` to receive a bounded exact-set preview in General and
-  confirm permanent provider deletion. Eligibility requires an explicit End or
-  native `session.ended`, excludes active sessions, open requests, in-flight
-  resumes, and queued/retrying deliveries, and is revalidated before every
-  deletion. Operations, retries, expiry, supersession, candidate skips, and
-  restart recovery are durable; the local mapping is removed only after Telegram
-  reports deletion or prior absence. Provider-neutral optional deletion/control
+  now send `/cleanup` to receive a bounded exact-set preview and confirm
+  permanent provider deletion. Eligibility requires an explicit End or native
+  `session.ended`, excludes active sessions, open requests, in-flight resumes,
+  and queued/retrying deliveries, and is revalidated before every deletion.
+  Operations, retries, expiry, supersession, candidate skips, and restart
+  recovery are durable; the local mapping is removed only after Telegram reports
+  deletion or prior absence. Provider-neutral optional deletion/control
   contracts preserve the Notifications boundary. Sanitized Bot API 10.2 fixtures
-  record the observed request/response shapes. On 2026-07-28 the complete
-  `pnpm check` passed 68 Vitest files/482 tests, 24 contract and supply-chain
-  tests, the six-test isolated Notifications consumer, all workspace builds, the
-  216,376-byte packed/1,348,531-byte unpacked 11-file artifact, hosted proof
-  digest `b78978008e544abf74de094e445cff49221f23b1485d5573ddcf91043d39bffd`, and
-  the schema-3-to-schema-4 packed lifecycle. All three Chromium scenarios
-  passed, and `pnpm audit --prod` found no known vulnerability. Direct
+  record the observed request/response shapes. The original unthreaded control
+  placement was corrected by the later FXO-1357 private-topic dogfood follow-up.
+  On 2026-07-28 the complete `pnpm check` passed 68 Vitest files/482 tests, 24
+  contract and supply-chain tests, the six-test isolated Notifications consumer,
+  all workspace builds, the 216,376-byte packed/1,348,531-byte unpacked 11-file
+  artifact, hosted proof digest
+  `b78978008e544abf74de094e445cff49221f23b1485d5573ddcf91043d39bffd`, and the
+  schema-3-to-schema-4 packed lifecycle. All three Chromium scenarios passed,
+  and `pnpm audit --prod` found no known vulnerability. Direct
   `deleteForumTopic` against the private activation chat remains deliberately
   unclaimed until an operator confirms a bounded live preview.
 - FXO-1340 separates notification ownership without changing the end-user
@@ -590,16 +606,16 @@
 - FXO-1058 is green locally. Real-Telegram daemon startup now verifies
   `getMe.has_topics_enabled`, private-chat scope, and update-mode/webhook
   agreement before opening the service. Disabled topics and non-private chats
-  fail closed instead of pretending General provides session isolation. Invalid
-  tokens/chats, blocked bots, topic permission/mode failures, deleted/closed
-  topics, webhook mismatch, concurrent polling, and transient failures have
-  stable actionable codes. The living guide covers BotFather enablement, ID
-  discovery, private environment activation, preflight, verification, recovery,
-  and the explicit fake-only credential-free fallback.
+  fail closed instead of pretending unthreaded delivery provides session
+  isolation. Invalid tokens/chats, blocked bots, topic permission/mode failures,
+  deleted/closed topics, webhook mismatch, concurrent polling, and transient
+  failures have stable actionable codes. The living guide covers BotFather
+  enablement, ID discovery, private environment activation, preflight,
+  verification, recovery, and the explicit fake-only credential-free fallback.
 - FXO-1059's fake acceptance matrix is green. The SQLite-backed fake transport
   suite proves two-session isolation, event and update deduplication, retry,
   daemon lease/restart recovery, malformed callbacks, timeout, stale-answer
-  rejection, deleted-topic replacement without General fallback, and
+  rejection, deleted-topic replacement without unthreaded fallback, and
   supervisor-proven crash delivery. The evidence is spread across the focused
   service, topic registry, card action, reply router, canary, and supervisor
   tests so each failure boundary can be reproduced independently.
@@ -910,6 +926,11 @@ also remain free of silent delivery, hook, or correlation failures.
   fixtures rather than induced failures against the live account.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
+- Standard Bot API polling confirms ordinary private-chat updates by advancing
+  `getUpdates.offset`; it cannot mark those messages read. Only messages
+  received through a Telegram business connection have a Bot API read-marking
+  method. The same-topic control response and durable update outcome are
+  therefore the acknowledgement boundary.
 - Telegram deletion is locally proven through the fake transport and sanitized
   Bot API fixtures, but live deletion against the private activation chat is not
   yet claimed. `/cleanup` still requires an explicit End or native
@@ -964,11 +985,12 @@ card; the later Stop with empty collections should create the ordinary waiting
 card. Confirm both events retain monotonic sequence and lane state after the
 schema-5 live upgrade.
 
-The merged schema-6 dogfood daemon is ready for the FXO-1357 live canary. Send
-`/prune` in Telegram General, inspect the bounded exact set, and confirm only
-the topics whose Telegram history may be permanently removed. A later event for
-any pruned session should create a fresh topic without changing that session's
-lane state. `/cleanup` remains available for explicitly ended sessions.
+After the FXO-1357 same-topic follow-up is merged and the single schema-6
+dogfood daemon is restarted, start **New Chat**, send `/prune`, and verify that
+the bounded exact set returns inside that exact new topic. Confirm only the
+topics whose Telegram history may be permanently removed. A later event for any
+pruned session should create a fresh topic without changing that session's lane
+state. `/cleanup` remains available for explicitly ended sessions.
 
 Continue bounded local direct-Telegram dogfood while the Notifications owner
 prepares the approved hosted environment. Hosted AR3 evidence begins only after

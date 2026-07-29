@@ -138,6 +138,7 @@ async function preview(
   runtime: ReturnType<typeof setup>,
   updateId = 100,
   text = "/cleanup",
+  messageThreadId?: number,
 ) {
   const result = await runtime.router.handle({
     update_id: updateId,
@@ -146,6 +147,9 @@ async function preview(
       from: { id: 7001 },
       chat: { id: 9001 },
       text,
+      ...(messageThreadId === undefined
+        ? {}
+        : { message_thread_id: messageThreadId }),
     },
   });
   const control = runtime.transport.operatorControls.at(-1);
@@ -173,8 +177,9 @@ describe("Telegram proven-dead topic cleanup", () => {
       "session.ended",
     );
 
-    const shown = await preview(runtime);
+    const shown = await preview(runtime, 100, "/cleanup", 4_100);
     expect(shown.result).toMatchObject({ outcome: "cleanup-previewed" });
+    expect(shown.control.context.topicId).toBe("4100");
     expect(shown.control.message.text).toContain(
       "Delete 1 proven-dead session topic",
     );
@@ -188,6 +193,7 @@ describe("Telegram proven-dead topic cleanup", () => {
         data: callbackData(shown.control, 0),
         message: {
           message_id: Number(shown.control.receipt.messageId),
+          message_thread_id: 4_100,
           chat: { id: 9001 },
         },
       },
@@ -227,6 +233,7 @@ describe("Telegram proven-dead topic cleanup", () => {
           data: callbackData(shown.control, 0),
           message: {
             message_id: Number(shown.control.receipt.messageId),
+            message_thread_id: 4_100,
             chat: { id: 9001 },
           },
         },
@@ -463,7 +470,8 @@ describe("Telegram inactive-topic pruning", () => {
     );
 
     runtime.testClock.advance(24 * 60 * 60_000 + 1);
-    const shown = await preview(runtime, 201, "/prune");
+    const shown = await preview(runtime, 201, "/prune", 4_201);
+    expect(shown.control.context.topicId).toBe("4201");
     expect(shown.control.message.text).toContain(
       "Prune 1 session topic(s) inactive for at least 1 day",
     );
@@ -480,6 +488,7 @@ describe("Telegram inactive-topic pruning", () => {
         data: callbackData(shown.control, 0),
         message: {
           message_id: Number(shown.control.receipt.messageId),
+          message_thread_id: 4_201,
           chat: { id: 9001 },
         },
       },
@@ -523,6 +532,7 @@ describe("Telegram inactive-topic pruning", () => {
       update_id: 205,
       message: {
         message_id: 1_205,
+        message_thread_id: 4_205,
         from: { id: 7001 },
         chat: { id: 9001 },
         text: "/prune 31d",
@@ -531,6 +541,9 @@ describe("Telegram inactive-topic pruning", () => {
     expect(malformed).toMatchObject({ outcome: "cleanup-rejected" });
     expect(runtime.transport.operatorControls.at(-1)?.message.text).toContain(
       "between 1 hour and 30 days",
+    );
+    expect(runtime.transport.operatorControls.at(-1)?.context.topicId).toBe(
+      "4205",
     );
     expect(runtime.store.listDiagnostics()).toContainEqual(
       expect.objectContaining({
@@ -545,7 +558,8 @@ describe("Telegram inactive-topic pruning", () => {
     await createWaitingTopic(runtime, "session_prune_discovery");
     runtime.testClock.advance(24 * 60 * 60_000 + 1);
 
-    const cleanup = await preview(runtime, 206);
+    const cleanup = await preview(runtime, 206, "/cleanup", 4_206);
+    expect(cleanup.control.context.topicId).toBe("4206");
     expect(cleanup.control.message.text).toContain(
       "To review inactive topics without marking their sessions ended",
     );
@@ -561,6 +575,7 @@ describe("Telegram inactive-topic pruning", () => {
           data: startData,
           message: {
             message_id: Number(cleanup.control.receipt.messageId),
+            message_thread_id: 4_206,
             chat: { id: 9001 },
           },
         },
@@ -568,6 +583,9 @@ describe("Telegram inactive-topic pruning", () => {
     ).resolves.toMatchObject({ outcome: "cleanup-previewed" });
     expect(runtime.transport.operatorControls.at(-1)?.message.text).toContain(
       "session_prune_discovery",
+    );
+    expect(runtime.transport.operatorControls.at(-1)?.context.topicId).toBe(
+      "4206",
     );
     expect(runtime.transport.callbackAcknowledgements.at(-1)).toEqual({
       callbackId: "callback_prune_start",
@@ -836,7 +854,7 @@ describe("Telegram inactive-topic pruning", () => {
     restarted.store.close();
   });
 
-  it("rejects unauthorized and wrong-context prune-start controls", async () => {
+  it("rejects unauthorized and accepts authorized threaded prune-start controls", async () => {
     const runtime = setup();
     await expect(
       runtime.router.handle({
@@ -853,7 +871,7 @@ describe("Telegram inactive-topic pruning", () => {
       runtime.router.handle({
         update_id: 212,
         callback_query: {
-          id: "callback_prune_wrong_context",
+          id: "callback_prune_threaded",
           from: { id: 7001 },
           data: "relay-p:v1:24h",
           message: {
@@ -863,14 +881,14 @@ describe("Telegram inactive-topic pruning", () => {
           },
         },
       }),
-    ).resolves.toMatchObject({ outcome: "cleanup-rejected" });
+    ).resolves.toMatchObject({ outcome: "cleanup-previewed" });
+    expect(runtime.transport.operatorControls.at(-1)?.context.topicId).toBe(
+      "123",
+    );
     expect(runtime.store.listDiagnostics()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "telegram.topic-prune-unauthorized",
-        }),
-        expect.objectContaining({
-          code: "telegram.topic-prune-context-mismatch",
         }),
       ]),
     );

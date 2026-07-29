@@ -84,10 +84,10 @@ Before listening, the daemon calls Telegram `getMe`, `getChat`, and
 - private topics are enabled; and
 - poll/webhook configuration agrees with Telegram.
 
-Real Telegram never falls back to General or silently switches to the fake
-transport. Expected structured evidence includes `telegram.preflight-succeeded`,
-`telegram.poll-started` in poll mode, and `daemon.started` with transport
-`telegram`.
+Real Telegram never falls back to an unthreaded conversation or silently
+switches to the fake transport. Expected structured evidence includes
+`telegram.preflight-succeeded`, `telegram.poll-started` in poll mode, and
+`daemon.started` with transport `telegram`.
 
 ## Run the bounded activation canary
 
@@ -138,10 +138,12 @@ delete the Telegram topic or its message history.
 
 ### Delete proven-dead topics
 
-Send `/cleanup` from the configured operator account in General or any session
-topic. Agent Relay posts a bounded preview in General; nothing is deleted until
-the operator taps **Delete topics**. The confirmation expires after ten minutes,
-and a newer preview supersedes an older one.
+Start a private-chat topic with Telegram's **New Chat** surface and send
+`/cleanup`, or send it in any existing topic. **New Chat** is an entry surface,
+not a persistent General channel. Agent Relay posts the bounded preview back
+into the exact topic where the command arrived; nothing is deleted until the
+operator taps **Delete topics**. The confirmation expires after ten minutes, and
+a newer preview supersedes an older one.
 
 A topic qualifies only when the local store proves all of the following:
 
@@ -169,9 +171,10 @@ counts under `topicCleanups`. Re-run `/cleanup` for additional eligible topics.
 
 Use `/prune` when a topic is no longer useful but the relay cannot prove that
 its session ended. `/prune` defaults to 24 hours; `/prune 12h` and `/prune 7d`
-select other inactivity windows from one hour through thirty days. Commands may
-be sent in General or a session topic. When `/cleanup` finds no proven-dead
-topics, its result also offers a **Review topics inactive 24h** button.
+select other inactivity windows from one hour through thirty days. Start the
+command from **New Chat** or send it in an existing topic. The preview returns
+to that same topic. When `/cleanup` finds no proven-dead topics, its result also
+offers a **Review topics inactive 24h** button in the same topic.
 
 Inactivity scopes the exact preview; it never becomes evidence that the session
 ended. A prune candidate must have had no relay topic activity since the
@@ -179,12 +182,20 @@ selected cutoff and must satisfy the same active-session, open-request,
 continuation, pending-delivery, ready-mapping, and per-candidate revalidation
 guards as `/cleanup`.
 
-The preview states the inactivity threshold and lists at most twenty candidates
-in General. Tapping **Prune topics** authorizes permanent Telegram deletion of
-that exact set. Successful pruning removes only the transport topic mapping. It
-does not create an End tombstone or change the retained session state. If that
-session emits another event later, Agent Relay creates a fresh Telegram topic.
-The deleted topic's Telegram message history cannot be recovered.
+The preview states the inactivity threshold and lists at most twenty candidates.
+Tapping **Prune topics** authorizes permanent Telegram deletion of that exact
+set. Successful pruning removes only the transport topic mapping. It does not
+create an End tombstone or change the retained session state. If that session
+emits another event later, Agent Relay creates a fresh Telegram topic. The
+deleted topic's Telegram message history cannot be recovered.
+
+Telegram's ordinary Bot API polling acknowledgement is the next
+`getUpdates.offset`, not a private-chat read receipt. The API exposes
+`readBusinessMessage` only for messages received through a business connection,
+so a standard bot command can remain visually unread even after Agent Relay has
+durably processed it. The control card returned in the same topic is the visible
+acknowledgement; `telegram.reply-cleanup-previewed` and the retained
+`telegram_updates` outcome provide local evidence.
 
 While a deletion is claimed, normal delivery cannot reuse that exact mapping.
 New work queued before the provider call makes revalidation skip the prune; work
@@ -218,7 +229,8 @@ duplicate window.
 
 If Telegram proves a stored topic is unavailable, Agent Relay invalidates only
 that mapping, records `topic.reconciliation-required`, retries the owning event,
-and creates a replacement. It never sends that event into General.
+and creates a replacement. It never sends that event into an unthreaded or
+unrelated conversation.
 
 Confirmed cleanup and inactive pruning share a durable deletion worker. The
 selection mode, inactivity cutoff, exact preview, operator decision, per-topic
