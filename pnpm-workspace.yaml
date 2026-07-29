@@ -10,6 +10,6 @@ allowBuilds:
   esbuild: true
 
 overrides:
-  "@flowxo/notifications-contracts@1.0.0-rc.1": "file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz"
+  "@whooshbang/contracts@1.0.0-rc.4": "file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz"
   "@session/contracts@0.0.0": "file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz"
   "@session/protocol-runner@0.0.0": "file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz"

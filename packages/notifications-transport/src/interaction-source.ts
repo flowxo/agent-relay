@@ -1,5 +1,5 @@
 import { sha256 } from "@agent-relay/protocol";
-import { NotificationsClient } from "@flowxo/notifications";
+import { WhooshBangClient } from "@whooshbang/sdk";
 
 import { normalizeNotificationsBaseUrl } from "./bootstrap.js";
 import {
@@ -11,14 +11,14 @@ import type {
   InteractionEvent,
   MachineEventAckResponse,
   MachineEventPollResponse,
-} from "@flowxo/notifications-contracts";
-import type { NotificationsFetch } from "@flowxo/notifications";
+} from "@whooshbang/contracts";
+import type { WhooshBangFetch } from "@whooshbang/sdk";
 
 export type HostedInteractionEvent = InteractionEvent;
 
 function noRedirectFetch(
-  fetchImplementation: NotificationsFetch | undefined,
-): NotificationsFetch {
+  fetchImplementation: WhooshBangFetch | undefined,
+): WhooshBangFetch {
   const runtimeFetch = fetchImplementation ?? globalThis.fetch;
   if (typeof runtimeFetch !== "function") {
     throw new TypeError("A Fetch-compatible implementation is required.");
@@ -32,7 +32,7 @@ export interface NotificationsInteractionSourceOptions {
   baseUrl: string | URL;
   credential: string;
   connectionGuard?: () => boolean | Promise<boolean>;
-  fetch?: NotificationsFetch;
+  fetch?: WhooshBangFetch;
 }
 
 export interface PollHostedEventsOptions {
@@ -58,12 +58,12 @@ export interface NotificationsInteractionSource {
 }
 
 export class NotificationsMachineInteractionSource implements NotificationsInteractionSource {
-  private readonly client: NotificationsClient;
+  private readonly client: WhooshBangClient;
   private readonly connectionGuard:
     (() => boolean | Promise<boolean>) | undefined;
 
   public constructor(options: NotificationsInteractionSourceOptions) {
-    this.client = new NotificationsClient({
+    this.client = new WhooshBangClient({
       baseUrl: normalizeNotificationsBaseUrl(options.baseUrl),
       credential: options.credential,
       fetch: noRedirectFetch(options.fetch),

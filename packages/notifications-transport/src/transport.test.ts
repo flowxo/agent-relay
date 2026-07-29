@@ -1,16 +1,16 @@
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
-  createNotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
-import { NotificationsClient } from "@flowxo/notifications";
+  createWhooshBangContractMock,
+} from "@whooshbang/contract-mock";
+import { WhooshBangClient } from "@whooshbang/sdk";
 import { describe, expect, it, vi } from "vitest";
 
 import { NotificationsContractTransport } from "./index.js";
 
 import type { DeliveryMessage } from "@agent-relay/notification-contracts";
-import type { NotificationsContractMock } from "@flowxo/notifications-contract-mock";
+import type { WhooshBangContractMock } from "@whooshbang/contract-mock";
 
-function fetchFor(mock: NotificationsContractMock): typeof fetch {
+function fetchFor(mock: WhooshBangContractMock): typeof fetch {
   return async (input, init) => mock.fetch(new Request(input, init));
 }
 
@@ -32,7 +32,7 @@ function delivery(text = "Waiting"): DeliveryMessage {
   };
 }
 
-function transportFor(mock: NotificationsContractMock, fetch = fetchFor(mock)) {
+function transportFor(mock: WhooshBangContractMock, fetch = fetchFor(mock)) {
   return new NotificationsContractTransport({
     baseUrl: "https://notifications.mock.test",
     credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
@@ -45,7 +45,7 @@ function transportFor(mock: NotificationsContractMock, fetch = fetchFor(mock)) {
 
 describe("Notifications contract transport", () => {
   it("advertises only interaction behavior proven by the pinned contract", () => {
-    const transport = transportFor(createNotificationsContractMock());
+    const transport = transportFor(createWhooshBangContractMock());
 
     expect(
       transport.observeInteractionCapabilities("2026-07-25T17:45:00.000Z"),
@@ -67,14 +67,14 @@ describe("Notifications contract transport", () => {
       },
       status: "proven",
       evidence: "official-docs",
-      observedVersion: "@flowxo/notifications@1.0.0-rc.1",
-      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.1",
+      observedVersion: "@whooshbang/sdk@1.0.0-rc.4",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.4",
       note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
     });
   });
 
   it("uses one stable event identity for idempotency and correlation", async () => {
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       scenario: "repeated-idempotent-message",
     });
     const transport = transportFor(mock);
@@ -100,7 +100,7 @@ describe("Notifications contract transport", () => {
   });
 
   it("ignores unknown optional response fields while retaining known identity", async () => {
-    const mock = createNotificationsContractMock();
+    const mock = createWhooshBangContractMock();
     const additiveFetch: typeof fetch = async (input, init) => {
       const response = await fetchFor(mock)(input, init);
       const body = (await response.json()) as Record<string, unknown>;
@@ -137,7 +137,7 @@ describe("Notifications contract transport", () => {
 
   it("tolerates additive fields on a known machine event", async () => {
     const additiveEvent = {
-      schema: "notifications.interaction-event.v1",
+      schema: "whooshbang.interaction-event.v1",
       id: "event_additive_12345678",
       cursor: "mcur_additive_12345678",
       type: "interaction.received",
@@ -159,13 +159,13 @@ describe("Notifications contract transport", () => {
       expires_at: "2026-07-25T18:00:00.000Z",
       future_event_evidence: "synthetic",
     };
-    const client = new NotificationsClient({
+    const client = new WhooshBangClient({
       baseUrl: "https://notifications.mock.test",
       credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
       fetch: async () =>
         new Response(
           JSON.stringify({
-            schema: "notifications.machine-events.v1",
+            schema: "whooshbang.machine-events.v1",
             events: [additiveEvent],
             committed_cursor: null,
             server_time: "2026-07-25T17:50:00.000Z",
@@ -195,7 +195,7 @@ describe("Notifications contract transport", () => {
   });
 
   it("rejects a changed payload under the same event identity", async () => {
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       scenario: "idempotency-conflict",
     });
     const transport = transportFor(mock);
@@ -219,7 +219,7 @@ describe("Notifications contract transport", () => {
       keys.push(new Headers(init?.headers).get("idempotency-key") ?? "");
       throw new Error("synthetic connection loss");
     });
-    const mock = createNotificationsContractMock();
+    const mock = createWhooshBangContractMock();
     const transport = transportFor(mock, fetchMock);
     const message = delivery();
 
@@ -244,7 +244,7 @@ describe("Notifications contract transport", () => {
       expect(init?.redirect).toBe("manual");
       return new Response(
         JSON.stringify({
-          type: "https://flowxo.com/notifications/problems/credential_invalid",
+          type: "https://whooshbang.flowxo.com/problems/credential_invalid",
           title: "Credential invalid",
           status: 401,
           detail: "synthetic private provider detail",
@@ -259,7 +259,7 @@ describe("Notifications contract transport", () => {
       );
     });
     const transport = transportFor(
-      createNotificationsContractMock(),
+      createWhooshBangContractMock(),
       fetchMock,
     );
     const first = delivery();
@@ -332,7 +332,7 @@ describe("Notifications contract transport", () => {
       });
     });
     const transport = transportFor(
-      createNotificationsContractMock(),
+      createWhooshBangContractMock(),
       fetchMock,
     );
     const message = delivery();
@@ -346,7 +346,7 @@ describe("Notifications contract transport", () => {
   });
 
   it("surfaces provider outcome_unknown as terminal for automatic sends", async () => {
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       scenario: "ambiguous-provider-outcome",
     });
     const transport = transportFor(mock);
@@ -367,7 +367,7 @@ describe("Notifications contract transport", () => {
   });
 
   it("rejects any idempotency key other than the stable event ID before fetch", async () => {
-    const mock = createNotificationsContractMock();
+    const mock = createWhooshBangContractMock();
     const fetchMock = vi.fn(fetchFor(mock));
     const transport = transportFor(mock, fetchMock);
     await expect(
@@ -382,7 +382,7 @@ describe("Notifications contract transport", () => {
   });
 
   it("rejects an unsupported local projection as terminal before fetch", async () => {
-    const mock = createNotificationsContractMock();
+    const mock = createWhooshBangContractMock();
     const fetchMock = vi.fn(fetchFor(mock));
     const transport = transportFor(mock, fetchMock);
     const message = delivery();

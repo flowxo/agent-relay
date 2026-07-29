@@ -68,13 +68,13 @@ function archive(packageJson, extraFiles = []) {
 
 function sdkPin(bytes, overrides = {}) {
   return {
-    owner: "flowxo-notifications",
-    artifact: "@flowxo/notifications",
+    owner: "whooshbang",
+    artifact: "@whooshbang/sdk",
     version: "1.0.0-draft.1",
-    source_repository: "flowxo/flowxo-notifications",
+    source_repository: "flowxo/whooshbang",
     source_commit: "b".repeat(40),
     sha256: createHash("sha256").update(bytes).digest("hex"),
-    artifact_file: "vendor/notifications-sdk.tgz",
+    artifact_file: "vendor/whooshbang-sdk.tgz",
     fixture_sets: [],
     ...overrides,
   };
@@ -91,7 +91,7 @@ function syntheticLock(pin) {
   };
 }
 
-describe("Notifications artifact preflight", () => {
+describe("WhooshBang artifact preflight", () => {
   it("accepts the three exact vendored artifacts and fixture identities", async () => {
     const { lock } = await loadNotificationsContractLock();
     for (const pin of lock.dependencies) {
@@ -119,7 +119,7 @@ describe("Notifications artifact preflight", () => {
 
   it("rejects lifecycle scripts before invoking the installer", async () => {
     const bytes = archive({
-      name: "@flowxo/notifications",
+      name: "@whooshbang/sdk",
       version: "1.0.0-draft.1",
       scripts: {
         postinstall: "node malicious-lifecycle.js",
@@ -145,7 +145,7 @@ describe("Notifications artifact preflight", () => {
     const marker = "synthetic-secret-value-that-must-not-be-logged";
     const bytes = archive(
       {
-        name: "@flowxo/notifications",
+        name: "@whooshbang/sdk",
         version: "1.0.0-draft.1",
       },
       [{ path: "package/.env.production", content: marker }],
@@ -163,7 +163,7 @@ describe("Notifications artifact preflight", () => {
 
   it("rejects mutable transitive dependency pins", () => {
     const bytes = archive({
-      name: "@flowxo/notifications",
+      name: "@whooshbang/sdk",
       version: "1.0.0-draft.1",
       dependencies: {
         hono: "latest",
@@ -173,6 +173,36 @@ describe("Notifications artifact preflight", () => {
     assert.throws(
       () => inspectLockedArtifact({ bytes, lock: syntheticLock(pin), pin }),
       /mutable transitive dependency/u,
+    );
+  });
+
+  it("rejects a retired FlowXO Notifications transitive dependency", () => {
+    const bytes = archive({
+      name: "@whooshbang/sdk",
+      version: "1.0.0-draft.1",
+      dependencies: {
+        "@flowxo/notifications-contracts": "1.0.0-rc.1",
+      },
+    });
+    const pin = sdkPin(bytes);
+    assert.throws(
+      () => inspectLockedArtifact({ bytes, lock: syntheticLock(pin), pin }),
+      /retired FlowXO package identity/u,
+    );
+  });
+
+  it("rejects an unpinned WhooshBang transitive dependency", () => {
+    const bytes = archive({
+      name: "@whooshbang/sdk",
+      version: "1.0.0-draft.1",
+      dependencies: {
+        "@whooshbang/contracts": "1.0.0-rc.3",
+      },
+    });
+    const pin = sdkPin(bytes);
+    assert.throws(
+      () => inspectLockedArtifact({ bytes, lock: syntheticLock(pin), pin }),
+      /unpinned WhooshBang dependency/u,
     );
   });
 
@@ -212,6 +242,7 @@ describe("Agent Relay contract evidence", () => {
     for (const source of [
       'import { RelayStore } from "@agent-relay/core";',
       'import { open } from "node:fs";',
+      'import { adapter } from "../../whooshbang/src/adapter.js";',
       'import { adapter } from "../../flowxo-notifications/src/adapter.js";',
       'import { poll } from "./telegram-poller.js";',
       'import { query } from "./sqlite-store.js";',

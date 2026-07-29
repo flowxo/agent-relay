@@ -1,10 +1,10 @@
 import {
-  NotificationsClient,
-  NotificationsContractError,
-  NotificationsProblemError,
-  NotificationsProtocolError,
-  NotificationsTransportError,
-} from "@flowxo/notifications";
+  WhooshBangClient,
+  WhooshBangContractError,
+  WhooshBangProblemError,
+  WhooshBangProtocolError,
+  WhooshBangTransportError,
+} from "@whooshbang/sdk";
 import {
   contractValidationErrors,
   contractVersion,
@@ -15,7 +15,7 @@ import {
   validateMachineCredentialBearer,
   validateProblem,
   validateRegisterMachineCredentialRequest,
-} from "@flowxo/notifications-contracts";
+} from "@whooshbang/contracts";
 
 import type {
   MachineClient,
@@ -25,8 +25,8 @@ import type {
   SubscriptionLink,
   ContractValidator,
   CreateMachineClientRequest,
-} from "@flowxo/notifications-contracts";
-import type { NotificationsFetch } from "@flowxo/notifications";
+} from "@whooshbang/contracts";
+import type { WhooshBangFetch } from "@whooshbang/sdk";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_PROBLEM_BYTES = 64 * 1024;
@@ -83,29 +83,28 @@ export class NotificationsSetupError extends Error {
 
 const SAFE_PROBLEM_MESSAGES = {
   authentication_required:
-    "Notifications requires a valid project bootstrap credential.",
+    "WhooshBang requires a valid project bootstrap credential.",
   cancellation_too_late:
-    "The Notifications setup resource can no longer be cancelled.",
+    "The WhooshBang setup resource can no longer be cancelled.",
   credential_invalid:
-    "The Notifications project bootstrap credential is invalid or revoked.",
+    "The WhooshBang project bootstrap credential is invalid or revoked.",
   environment_mismatch:
-    "The Notifications project credential targets another environment.",
-  idempotency_conflict: "Notifications rejected a conflicting setup operation.",
+    "The WhooshBang project credential targets another environment.",
+  idempotency_conflict: "WhooshBang rejected a conflicting setup operation.",
   idempotency_key_required:
-    "Notifications rejected the setup operation identity.",
+    "WhooshBang rejected the setup operation identity.",
+  project_slug_conflict: "WhooshBang rejected the requested project slug.",
   provider_outcome_unknown:
-    "Notifications could not prove the setup canary outcome.",
-  provider_retryable:
-    "Notifications reported a temporary setup canary failure.",
-  provider_terminal: "Notifications rejected the setup canary.",
-  rate_limited: "Notifications rate limited setup.",
-  request_invalid: "Notifications rejected the setup request contract.",
-  resource_expired: "The Notifications setup resource has expired.",
-  resource_not_found: "The Notifications setup resource was not found.",
-  scope_forbidden:
-    "The Notifications project credential lacks setup permission.",
+    "WhooshBang could not prove the setup canary outcome.",
+  provider_retryable: "WhooshBang reported a temporary setup canary failure.",
+  provider_terminal: "WhooshBang rejected the setup canary.",
+  rate_limited: "WhooshBang rate limited setup.",
+  request_invalid: "WhooshBang rejected the setup request contract.",
+  resource_expired: "The WhooshBang setup resource has expired.",
+  resource_not_found: "The WhooshBang setup resource was not found.",
+  scope_forbidden: "The WhooshBang project credential lacks setup permission.",
   subscriber_unbound:
-    "The Notifications subscriber is not authorized for this notifier.",
+    "The WhooshBang subscriber is not authorized for this notifier.",
 } as const;
 
 function setupProblemCode(
@@ -123,6 +122,9 @@ function setupProblemCode(
     case "idempotency_conflict":
     case "idempotency_key_required":
       return "idempotency-conflict";
+    // Agent Relay never creates a WhooshBang project. The RC.4 code is mapped
+    // exhaustively so an unexpected response stays a safe terminal rejection.
+    case "project_slug_conflict":
     case "request_invalid":
       return "request-invalid";
     case "subscriber_unbound":
@@ -162,7 +164,7 @@ export function asNotificationsSetupError(
     }
     return error;
   }
-  if (error instanceof NotificationsProblemError) {
+  if (error instanceof WhooshBangProblemError) {
     return new NotificationsSetupError(
       SAFE_PROBLEM_MESSAGES[error.problem.code],
       `notifications-${setupProblemCode(error.problem.code)}`,
@@ -176,7 +178,7 @@ export function asNotificationsSetupError(
       },
     );
   }
-  if (error instanceof NotificationsContractError) {
+  if (error instanceof WhooshBangContractError) {
     return new NotificationsSetupError(
       "Notifications returned data outside the pinned setup contract.",
       "notifications-contract-invalid",
@@ -188,7 +190,7 @@ export function asNotificationsSetupError(
       },
     );
   }
-  if (error instanceof NotificationsProtocolError) {
+  if (error instanceof WhooshBangProtocolError) {
     return new NotificationsSetupError(
       "Notifications returned an invalid setup protocol response.",
       "notifications-protocol-invalid",
@@ -201,7 +203,7 @@ export function asNotificationsSetupError(
       },
     );
   }
-  if (error instanceof NotificationsTransportError) {
+  if (error instanceof WhooshBangTransportError) {
     return new NotificationsSetupError(
       "The Notifications setup request could not be completed.",
       "notifications-transport-unavailable",
@@ -268,8 +270,8 @@ export function normalizeNotificationsBaseUrl(value: string | URL): URL {
 }
 
 function noRedirectFetch(
-  fetchImplementation: NotificationsFetch | undefined,
-): NotificationsFetch {
+  fetchImplementation: WhooshBangFetch | undefined,
+): WhooshBangFetch {
   const runtimeFetch = fetchImplementation ?? globalThis.fetch;
   if (typeof runtimeFetch !== "function") {
     throw new TypeError("A Fetch-compatible implementation is required.");
@@ -348,7 +350,7 @@ async function readBoundedJson(
       !Number.isSafeInteger(Number(declaredLength)) ||
       Number(declaredLength) > limit)
   ) {
-    throw new NotificationsProtocolError(
+    throw new WhooshBangProtocolError(
       operation,
       "The Notifications setup response exceeded the client safety limit.",
       response.status,
@@ -365,7 +367,7 @@ async function readBoundedJson(
         try {
           result = await reader.read();
         } catch {
-          throw new NotificationsProtocolError(
+          throw new WhooshBangProtocolError(
             operation,
             "The Notifications setup response body could not be read safely.",
             response.status,
@@ -381,7 +383,7 @@ async function readBoundedJson(
           } catch {
             // The bounded public error intentionally redacts reader failures.
           }
-          throw new NotificationsProtocolError(
+          throw new WhooshBangProtocolError(
             operation,
             "The Notifications setup response exceeded the client safety limit.",
             response.status,
@@ -409,7 +411,7 @@ async function readBoundedJson(
       new TextDecoder("utf-8", { fatal: true }).decode(bytes),
     ) as unknown;
   } catch {
-    throw new NotificationsProtocolError(
+    throw new WhooshBangProtocolError(
       operation,
       "The Notifications setup response was not valid UTF-8 JSON.",
       response.status,
@@ -431,12 +433,12 @@ interface AdministrationRequest<T> {
 export interface NotificationsAdministrationClientOptions {
   baseUrl: string | URL;
   projectCredential: string;
-  fetch?: NotificationsFetch;
+  fetch?: WhooshBangFetch;
 }
 
 export class NotificationsAdministrationClient {
   private readonly baseUrl: URL;
-  private readonly fetchImplementation: NotificationsFetch;
+  private readonly fetchImplementation: WhooshBangFetch;
   private readonly projectCredential: string;
 
   public constructor(options: NotificationsAdministrationClientOptions) {
@@ -451,7 +453,7 @@ export class NotificationsAdministrationClient {
     options: { idempotencyKey: string; signal?: AbortSignal },
   ): Promise<MachineClient> {
     if (!validateCreateMachineClientRequest(request)) {
-      throw new NotificationsContractError(
+      throw new WhooshBangContractError(
         "createMachineClient",
         contractValidationErrors(validateCreateMachineClientRequest),
         "The machine-client request does not match the pinned contract.",
@@ -492,7 +494,7 @@ export class NotificationsAdministrationClient {
     options: { idempotencyKey: string; signal?: AbortSignal },
   ): Promise<MachineCredential> {
     if (!validateRegisterMachineCredentialRequest(request)) {
-      throw new NotificationsContractError(
+      throw new WhooshBangContractError(
         "registerMachineCredential",
         contractValidationErrors(validateRegisterMachineCredentialRequest),
         "The machine-credential registration does not match the pinned contract.",
@@ -580,7 +582,7 @@ export class NotificationsAdministrationClient {
         },
       );
     } catch {
-      throw new NotificationsTransportError(
+      throw new WhooshBangTransportError(
         descriptor.operation,
         descriptor.method !== "GET",
       );
@@ -593,14 +595,14 @@ export class NotificationsAdministrationClient {
         response.status < 400 &&
         response.headers.has("location")
       ) {
-        throw new NotificationsProtocolError(
+        throw new WhooshBangProtocolError(
           descriptor.operation,
           "Notifications setup redirects are not permitted.",
           response.status,
         );
       }
       if (mediaType !== "application/problem+json") {
-        throw new NotificationsProtocolError(
+        throw new WhooshBangProtocolError(
           descriptor.operation,
           "The Notifications setup error response had an unexpected media type.",
           response.status,
@@ -612,23 +614,23 @@ export class NotificationsAdministrationClient {
         MAX_PROBLEM_BYTES,
       );
       if (!validateProblem(value) || value.status !== response.status) {
-        throw new NotificationsProtocolError(
+        throw new WhooshBangProtocolError(
           descriptor.operation,
           "The Notifications setup error response did not match Problem Details.",
           response.status,
         );
       }
-      throw new NotificationsProblemError(value);
+      throw new WhooshBangProblemError(value);
     }
     if (!descriptor.expectedStatuses.includes(response.status)) {
-      throw new NotificationsProtocolError(
+      throw new WhooshBangProtocolError(
         descriptor.operation,
         "The Notifications setup response used an unexpected success status.",
         response.status,
       );
     }
     if (mediaType !== "application/json") {
-      throw new NotificationsProtocolError(
+      throw new WhooshBangProtocolError(
         descriptor.operation,
         "The Notifications setup success response had an unexpected media type.",
         response.status,
@@ -640,7 +642,7 @@ export class NotificationsAdministrationClient {
       MAX_RESPONSE_BYTES,
     );
     if (!descriptor.validator(value)) {
-      throw new NotificationsContractError(
+      throw new WhooshBangContractError(
         descriptor.operation,
         contractValidationErrors(descriptor.validator),
         "The Notifications setup response did not match the pinned contract.",
@@ -700,7 +702,7 @@ export interface ConnectNotificationsMachineOptions {
   createCredentialMaterial?: () => Promise<MachineCredentialMaterial>;
   createIdempotencyKey?: (operation: string) => string;
   displayName?: string;
-  fetch?: NotificationsFetch;
+  fetch?: WhooshBangFetch;
   machineId: string;
   notifierId?: string;
   now?: () => Date;
@@ -811,7 +813,7 @@ function isAcceptedCanaryState(
 }
 
 async function waitForAuthorization(
-  client: NotificationsClient,
+  client: WhooshBangClient,
   initial: SubscriptionLink,
   options: ConnectNotificationsMachineOptions,
 ): Promise<SubscriptionLink> {
@@ -889,7 +891,7 @@ export async function connectNotificationsMachine(
     const baseUrl = normalizeNotificationsBaseUrl(options.baseUrl);
     const notifierId = options.notifierId ?? "default";
     const fetchImplementation = noRedirectFetch(options.fetch);
-    const projectClient = new NotificationsClient({
+    const projectClient = new WhooshBangClient({
       baseUrl,
       credential: options.projectCredential,
       fetch: fetchImplementation,
@@ -979,7 +981,7 @@ export async function connectNotificationsMachine(
       );
     }
 
-    const narrowClient = new NotificationsClient({
+    const narrowClient = new WhooshBangClient({
       baseUrl,
       credential: material.bearerToken,
       fetch: fetchImplementation,
@@ -989,7 +991,7 @@ export async function connectNotificationsMachine(
       limit: 1,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
-    if (poll.schema !== "notifications.machine-events.v1") {
+    if (poll.schema !== "whooshbang.machine-events.v1") {
       throw new NotificationsSetupError(
         "Notifications returned another machine-event contract.",
         "notifications-contract-invalid",
@@ -1087,7 +1089,7 @@ export interface DisconnectNotificationsMachineOptions {
   baseUrl: string | URL;
   credentialId: string;
   createIdempotencyKey?: (operation: string) => string;
-  fetch?: NotificationsFetch;
+  fetch?: WhooshBangFetch;
   machineClientId: string;
   projectCredential: string;
   signal?: AbortSignal;
@@ -1131,7 +1133,7 @@ export async function disconnectNotificationsMachine(
 export const NOTIFICATIONS_MACHINE_SCOPES = MACHINE_SCOPES;
 export const NOTIFICATIONS_CONTRACT_VERSION = contractVersion;
 export { createMachineCredentialMaterial };
-export type { MachineCredentialMaterial, NotificationsFetch };
+export type { MachineCredentialMaterial, WhooshBangFetch };
 
 export function isNotificationsMachineCredential(value: unknown): boolean {
   return validateMachineCredentialBearer(value);

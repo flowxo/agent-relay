@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
-  createNotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
+  createWhooshBangContractMock,
+} from "@whooshbang/contract-mock";
 import { makeProjectRef } from "@agent-relay/protocol";
 import { webhookSignature } from "@agent-relay/webhook-transport";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -330,7 +330,7 @@ describe("startDaemon Telegram update mode", () => {
   });
 
   it("delivers only through explicitly selected Notifications and reports safe runtime state", async () => {
-    const mock = createNotificationsContractMock();
+    const mock = createWhooshBangContractMock();
     const notificationsFetch = vi.fn<typeof fetch>(
       async (input, init) => await mock.fetch(new Request(input, init)),
     );
@@ -437,7 +437,7 @@ describe("startDaemon Telegram update mode", () => {
   });
 
   it("resolves and acknowledges a hosted choice through the running daemon", async () => {
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       scenario: "interaction-select",
     });
     const daemon = await startDaemon({
@@ -581,7 +581,7 @@ describe("startDaemon Telegram update mode", () => {
 
   it("stops hosted calls after disconnect, preserves local authority, and recovers after restart", async () => {
     const databasePath = await temporaryDatabase();
-    const mock = createNotificationsContractMock();
+    const mock = createWhooshBangContractMock();
     let active = true;
     const connectionGuard = async () => active;
     const hostedFetch: typeof fetch = async (input, init) =>

@@ -28,7 +28,7 @@ import type {
   ConnectNotificationsMachineOptions,
   MachineCredentialMaterial,
   NotificationsConnectResult,
-  NotificationsFetch,
+  WhooshBangFetch,
 } from "@agent-relay/notifications-transport";
 import type {
   NotificationsConnectionConfiguration,
@@ -84,7 +84,7 @@ export interface NotificationsCommandRuntime {
   createCredentialMaterial?: () => Promise<MachineCredentialMaterial>;
   createIdempotencyKey?: (operation: string) => string;
   environment?: Readonly<Record<string, string | undefined>>;
-  fetch?: NotificationsFetch;
+  fetch?: WhooshBangFetch;
   now?: () => Date;
   promptCredential?: () => Promise<string>;
   readCredentialStdin?: () => Promise<string>;
@@ -322,7 +322,7 @@ function newConfiguration(
 async function revokePendingConnections(
   configuration: NotificationsConnectionConfiguration,
   input: {
-    fetch?: NotificationsFetch;
+    fetch?: WhooshBangFetch;
     projectCredential: string;
     signalForOperation: () => AbortSignal;
   },
@@ -423,7 +423,7 @@ function hostedStateMayRemain(
 async function cleanupConnectedMachine(
   result: Extract<NotificationsConnectResult, { status: "connected" }>,
   input: {
-    fetch?: NotificationsFetch;
+    fetch?: WhooshBangFetch;
     projectCredential: string;
   },
 ): Promise<boolean> {

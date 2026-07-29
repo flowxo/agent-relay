@@ -396,17 +396,17 @@ async function loadNotificationsEvidenceModules() {
     resolve(root, "packages/notifications-transport/package.json"),
   );
   const mockEntry = requireFromRelay.resolve(
-    "@flowxo/notifications-contract-mock",
+    "@whooshbang/contract-mock",
   );
   const contractsEntry = requireFromTransport.resolve(
-    "@flowxo/notifications-contracts",
+    "@whooshbang/contracts",
   );
   const mockModule = await import(pathToFileURL(mockEntry).href);
   const contractsModule = await import(pathToFileURL(contractsEntry).href);
   return {
     CONTRACT_MOCK_FIXTURE_CREDENTIALS:
       mockModule.CONTRACT_MOCK_FIXTURE_CREDENTIALS,
-    createNotificationsContractMock: mockModule.createNotificationsContractMock,
+    createWhooshBangContractMock: mockModule.createWhooshBangContractMock,
     verifyMachineCredentialToken: contractsModule.verifyMachineCredentialToken,
   };
 }
@@ -425,7 +425,7 @@ async function startAdaptiveNotificationsMock(modules) {
     counters.set(kind, next);
     return `${kind}_packed_${String(next).padStart(3, "0")}`;
   };
-  let mock = modules.createNotificationsContractMock({
+  let mock = modules.createWhooshBangContractMock({
     clock,
     idGenerator,
     scenario: "nominal",
@@ -466,7 +466,7 @@ async function startAdaptiveNotificationsMock(modules) {
     );
     narrowBearer = bearer;
     sensitiveValues.add(bearer);
-    mock = modules.createNotificationsContractMock({
+    mock = modules.createWhooshBangContractMock({
       clock,
       idGenerator,
       scenario: "nominal",
@@ -950,9 +950,9 @@ if (process.platform !== "darwin") {
       "utf8",
     );
     assert(
-      cliSource.includes("1.0.0-rc.1") &&
+      cliSource.includes("1.0.0-rc.4") &&
         cliSource.includes("notifications connect") &&
-        !cliSource.includes("@flowxo/notifications-contract-mock"),
+        !cliSource.includes("@whooshbang/contract-mock"),
       "packed CLI omitted the hosted adapter or bundled the test-only mock",
     );
 
@@ -1527,20 +1527,20 @@ if (process.platform !== "darwin") {
 
     const notificationArtifacts = contractLock.dependencies.filter((artifact) =>
       [
-        "@flowxo/notifications",
-        "@flowxo/notifications-contracts",
-        "@flowxo/notifications-contract-mock",
+        "@whooshbang/sdk",
+        "@whooshbang/contracts",
+        "@whooshbang/contract-mock",
       ].includes(artifact.artifact),
     );
     assert(
       notificationArtifacts.length === 3 &&
         notificationArtifacts.every(
           (artifact) =>
-            artifact.version === "1.0.0-rc.1" &&
+            artifact.version === "1.0.0-rc.4" &&
             /^[a-f0-9]{64}$/u.test(artifact.sha256) &&
             /^[a-f0-9]{40}$/u.test(artifact.source_commit),
         ),
-      "packed hosted proof is not paired with exact Notifications pins",
+      "packed hosted proof is not paired with exact WhooshBang pins",
     );
     const lockSha256 = createHash("sha256")
       .update(await readFile(resolve(root, "contracts/contract-lock.json")))
@@ -1554,7 +1554,7 @@ if (process.platform !== "darwin") {
           sha256: packageSha256,
         },
         notifications: {
-          contractVersion: "1.0.0-rc.1",
+          contractVersion: "1.0.0-rc.4",
           contractLockSha256: lockSha256,
           exactArtifacts: notificationArtifacts.length,
           setup: "narrow-credential-proven",

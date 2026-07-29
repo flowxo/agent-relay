@@ -21,9 +21,9 @@ import {
 } from "@agent-relay/notification-contracts";
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
-  createNotificationsContractMock,
-  type NotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
+  createWhooshBangContractMock,
+  type WhooshBangContractMock,
+} from "@whooshbang/contract-mock";
 import {
   NotificationsContractTransport,
   NotificationsMachineInteractionSource,
@@ -269,7 +269,7 @@ class ParityRuntime {
   private readonly telegramApi: TelegramApiHarness | undefined;
   private readonly notificationsTransport:
     RecordingNotificationsTransport | undefined;
-  private readonly notificationsMock: NotificationsContractMock | undefined;
+  private readonly notificationsMock: WhooshBangContractMock | undefined;
   private readonly notificationsBodies: string[] = [];
   private notificationsSendFailures = 0;
   private closed = false;
@@ -293,7 +293,7 @@ class ParityRuntime {
       this.transport = this.telegramTransport;
       this.presentationCapability = "supported";
     } else {
-      this.notificationsMock = createNotificationsContractMock();
+      this.notificationsMock = createWhooshBangContractMock();
       const hostedFetch: typeof fetch = async (input, init) => {
         const request = new Request(input, init);
         const isMessageCreate =

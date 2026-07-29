@@ -7,7 +7,7 @@ import {
   NOTIFICATIONS_MACHINE_SCOPES,
   NotificationsSetupError,
 } from "@agent-relay/notifications-transport";
-import { createNotificationsContractMock } from "@flowxo/notifications-contract-mock";
+import { createWhooshBangContractMock } from "@whooshbang/contract-mock";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -24,13 +24,13 @@ import {
 
 import type {
   MachineCredentialMaterial,
-  NotificationsFetch,
+  WhooshBangFetch,
 } from "@agent-relay/notifications-transport";
 import type {
   ContractMockCredential,
   ContractMockIdGenerator,
-  NotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
+  WhooshBangContractMock,
+} from "@whooshbang/contract-mock";
 
 const temporaryDirectories: string[] = [];
 const projectCredential = "synthetic-project-command-token";
@@ -112,7 +112,7 @@ function sharedMachineClientIdGenerator(
   return (kind) => (kind === "machine_client" ? machineClientId : next(kind));
 }
 
-function fetchFor(mock: NotificationsContractMock): NotificationsFetch {
+function fetchFor(mock: WhooshBangContractMock): WhooshBangFetch {
   return async (input, init) => mock.fetch(new Request(input, init));
 }
 
@@ -159,7 +159,7 @@ describe("Notifications CLI lifecycle", () => {
       await createMachineCredentialMaterial(),
     ];
     const remainingMaterials = [...materials];
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: mockCredentials(materials),
       idGenerator: sequentialIdGenerator(),
     });
@@ -241,7 +241,7 @@ describe("Notifications CLI lifecycle", () => {
       status: "active",
     });
 
-    const crossOriginFetch = vi.fn<NotificationsFetch>(fetchFor(mock));
+    const crossOriginFetch = vi.fn<WhooshBangFetch>(fetchFor(mock));
     await expect(
       runNotificationsCommand({
         ...shared,
@@ -365,7 +365,7 @@ describe("Notifications CLI lifecycle", () => {
       await createMachineCredentialMaterial(),
     ];
     const remainingMaterials = [...materials];
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: mockCredentials(materials, machineClientId),
       idGenerator: sharedMachineClientIdGenerator(machineClientId),
     });
@@ -442,13 +442,13 @@ describe("Notifications CLI lifecycle", () => {
   it("revokes remote setup when private local storage cannot commit", async () => {
     const stateDirectory = join(await temporaryDirectory(), "storage-failure");
     const material = await createMachineCredentialMaterial();
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: mockCredentials([material]),
       idGenerator: sequentialIdGenerator(),
     });
     const paths = notificationsConnectionPaths(stateDirectory);
     let blockedStorage = false;
-    const fetchImplementation: NotificationsFetch = async (input, init) => {
+    const fetchImplementation: WhooshBangFetch = async (input, init) => {
       const request = new Request(input, init);
       if (!blockedStorage && new URL(request.url).pathname === "/v1/messages") {
         await mkdir(paths.credentialPath);
@@ -516,7 +516,7 @@ describe("Notifications CLI lifecycle", () => {
         schema: "agent-relay-notifications-config.v1",
         status: "active",
         baseUrl: "https://notifications.mock.test/",
-        contractVersion: "1.0.0-rc.1",
+        contractVersion: "1.0.0-rc.4",
         environment: "test",
         projectId: "project_synthetic",
         machineClientId: "machine_client_retained_current",
@@ -545,7 +545,7 @@ describe("Notifications CLI lifecycle", () => {
         rotation: { generation: 1 },
       }),
     );
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: mockCredentials([replacementMaterial]),
       idGenerator: sequentialIdGenerator(),
     });
@@ -599,7 +599,7 @@ describe("Notifications CLI lifecycle", () => {
   it("does not claim success or write files when authorization remains pending", async () => {
     const stateDirectory = join(await temporaryDirectory(), "pending");
     const material = await createMachineCredentialMaterial();
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: mockCredentials([material]),
       idGenerator: sequentialIdGenerator(),
       scenario: "cancellation-before-send",

@@ -32,11 +32,18 @@ export const CANONICAL_POLICY_SHA256 =
   "555cdfd33ef52c796928d04404b71f1d0c2567af593f1ba024a40b3949eb54e1";
 export const CONTRACT_CHECK_RESULT_SCHEMA_SHA256 =
   "a28b5432904413bdef7d88af1818f0c31c210ceb1103d0391e193930700f8688";
-export const NOTIFICATIONS_BASE_SOURCE_COMMIT =
-  "0e0198fc248468ec9f0cd8e06997faee55a2cb25";
-export const NOTIFICATIONS_MOCK_SOURCE_COMMIT =
-  "0e0198fc248468ec9f0cd8e06997faee55a2cb25";
-export const NOTIFICATIONS_VERSION = "1.0.0-rc.1";
+export const WHOOSHBANG_OWNER = "whooshbang";
+export const WHOOSHBANG_SOURCE_REPOSITORY = "flowxo/whooshbang";
+export const WHOOSHBANG_BASE_SOURCE_COMMIT =
+  "c6f4eb3bee2391137c15364e7cb84e468728aab8";
+export const WHOOSHBANG_MOCK_SOURCE_COMMIT =
+  "c6f4eb3bee2391137c15364e7cb84e468728aab8";
+export const WHOOSHBANG_VERSION = "1.0.0-rc.4";
+export const WHOOSHBANG_CONTRACTS_ARTIFACT = "@whooshbang/contracts";
+export const WHOOSHBANG_SDK_ARTIFACT = "@whooshbang/sdk";
+export const WHOOSHBANG_MOCK_ARTIFACT = "@whooshbang/contract-mock";
+export const WHOOSHBANG_ARTIFACT_SCOPE = "@whooshbang/";
+export const WHOOSHBANG_VENDOR_DIRECTORY = "vendor/whooshbang-rc4";
 
 const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
 const MAX_UNCOMPRESSED_ARCHIVE_BYTES = 64 * 1024 * 1024;
@@ -47,11 +54,10 @@ const repositoryRoot = resolve(
 
 const EXPECTED_DEPENDENCIES = [
   {
-    artifact: "@flowxo/notifications-contracts",
-    artifact_file:
-      "vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz",
-    source_commit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
-    sha256: "02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2",
+    artifact: WHOOSHBANG_CONTRACTS_ARTIFACT,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contracts-1.0.0-rc.4.tgz`,
+    source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
+    sha256: "eeee4c3b31bd3c976d26359e5fb48ce196e7b7dac788b5ee7bb1ccfb5de950ed",
     fixture_sets: [
       "core-api-bodies",
       "core-semantic-scenarios",
@@ -67,19 +73,17 @@ const EXPECTED_DEPENDENCIES = [
     ],
   },
   {
-    artifact: "@flowxo/notifications",
-    artifact_file:
-      "vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz",
-    source_commit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
-    sha256: "82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44",
+    artifact: WHOOSHBANG_SDK_ARTIFACT,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-sdk-1.0.0-rc.4.tgz`,
+    source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
+    sha256: "27080980b8f1766345c217ed63d17dbcc75b1b0ba6b774f59a26aa7b276c0054",
     fixture_sets: [],
   },
   {
-    artifact: "@flowxo/notifications-contract-mock",
-    artifact_file:
-      "vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz",
-    source_commit: NOTIFICATIONS_MOCK_SOURCE_COMMIT,
-    sha256: "9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e",
+    artifact: WHOOSHBANG_MOCK_ARTIFACT,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contract-mock-1.0.0-rc.4.tgz`,
+    source_commit: WHOOSHBANG_MOCK_SOURCE_COMMIT,
+    sha256: "6163f68fa6bb7c2953428db8a9dfc36f87e2e24522d0610dbf7316e4f7bae454",
     fixture_sets: ["contract-mock-scenarios.v1"],
   },
 ];
@@ -129,27 +133,27 @@ function assertNotificationsTopology(lock) {
     throw new Error("Agent Relay must not claim a C0 owned artifact.");
   }
   if (lock.dependencies.length !== EXPECTED_DEPENDENCIES.length) {
-    throw new Error("Notifications lock must contain exactly three artifacts.");
+    throw new Error("WhooshBang lock must contain exactly three artifacts.");
   }
 
   for (const [index, expected] of EXPECTED_DEPENDENCIES.entries()) {
     const pin = lock.dependencies[index];
     const fixtureSets = expected.fixture_sets.map((id) => ({
       id,
-      version: NOTIFICATIONS_VERSION,
+      version: WHOOSHBANG_VERSION,
     }));
     if (
-      pin.owner !== "flowxo-notifications" ||
+      pin.owner !== WHOOSHBANG_OWNER ||
       pin.artifact !== expected.artifact ||
-      pin.version !== NOTIFICATIONS_VERSION ||
-      pin.source_repository !== "flowxo/flowxo-notifications" ||
+      pin.version !== WHOOSHBANG_VERSION ||
+      pin.source_repository !== WHOOSHBANG_SOURCE_REPOSITORY ||
       pin.source_commit !== expected.source_commit ||
       pin.sha256 !== expected.sha256 ||
       pin.artifact_file !== expected.artifact_file ||
       !sameJson(pin.fixture_sets, fixtureSets)
     ) {
       throw new Error(
-        `Notifications lock inventory drifted at dependency ${String(index)}.`,
+        `WhooshBang lock inventory drifted at dependency ${String(index)}.`,
       );
     }
   }
@@ -158,7 +162,7 @@ function assertNotificationsTopology(lock) {
 const PRODUCTION_IMPORT_RULES = [
   /(?:from|import)\s*["'][^"']*(?:store|sqlite|telegram|cloudflare|apps\/relay)[^"']*["']/iu,
   /(?:from|import)\s*["']node:/u,
-  /(?:\.\.\/){2,}(?:flowxo-notifications|agent-relay)/u,
+  /(?:\.\.\/){2,}(?:whooshbang|flowxo-notifications|agent-relay)/u,
   /from\s*["']@agent-relay\/core["']/u,
 ];
 
@@ -471,11 +475,14 @@ function assertDependencyPins(packageJson, lock) {
       if (typeof version !== "string" || !EXACT_SEMVER.test(version)) {
         throw new Error("Artifact contains a mutable transitive dependency.");
       }
-      if (name.startsWith("@flowxo/")) {
+      if (name.startsWith(WHOOSHBANG_ARTIFACT_SCOPE)) {
         const lockedVersion = lockedVersions.get(name);
         if (lockedVersion === undefined || lockedVersion !== version) {
-          throw new Error("Artifact contains an unpinned FlowXO dependency.");
+          throw new Error("Artifact contains an unpinned WhooshBang dependency.");
         }
+      }
+      if (name.startsWith("@flowxo/")) {
+        throw new Error("Artifact depends on a retired FlowXO package identity.");
       }
     }
   }
@@ -506,9 +513,9 @@ export function inspectLockedArtifact({ bytes, lock, pin }) {
   }
   assertDependencyPins(packageJson, lock);
 
-  if (pin.artifact === "@flowxo/notifications-contracts") {
+  if (pin.artifact === WHOOSHBANG_CONTRACTS_ARTIFACT) {
     assertContractFixtures(entries, pin);
-  } else if (pin.artifact === "@flowxo/notifications-contract-mock") {
+  } else if (pin.artifact === WHOOSHBANG_MOCK_ARTIFACT) {
     assertMockFixtures(entries, pin);
   } else if (!sameJson(pin.fixture_sets, [])) {
     throw new Error("SDK artifact must not claim a fixture set.");
@@ -528,10 +535,12 @@ export async function preflightArtifactsBeforeInstall({
   return inspected;
 }
 
-async function assertLegacyArtifactManifest(root, lock) {
+async function assertVendorArtifactManifest(root, lock) {
   const manifest = parseJson(
-    await readFile(resolve(root, "vendor/notifications-c0/artifacts.json")),
-    "Legacy C0 artifact manifest",
+    await readFile(
+      resolve(root, `${WHOOSHBANG_VENDOR_DIRECTORY}/artifacts.json`),
+    ),
+    "WhooshBang artifact manifest",
   );
   const expected = lock.dependencies.map((pin) => ({
     package: pin.artifact,
@@ -539,19 +548,21 @@ async function assertLegacyArtifactManifest(root, lock) {
     sha256: pin.sha256,
   }));
   if (
-    manifest.schema !== "agent-relay.notifications-c0-artifacts.v1" ||
-    manifest.contractVersion !== NOTIFICATIONS_VERSION ||
+    manifest.schema !== "agent-relay.whooshbang-rc4-artifacts.v1" ||
+    manifest.contractVersion !== WHOOSHBANG_VERSION ||
+    manifest.sourceRepository !== WHOOSHBANG_SOURCE_REPOSITORY ||
+    manifest.sourceCommit !== WHOOSHBANG_BASE_SOURCE_COMMIT ||
     !sameJson(manifest.artifacts, expected)
   ) {
     throw new Error(
-      "Legacy C0 artifact manifest drifted from the contract lock.",
+      "WhooshBang vendor artifact manifest drifted from the contract lock.",
     );
   }
 }
 
 async function freshPnpmInstall(inspected) {
   const directory = await mkdtemp(
-    join(tmpdir(), "agent-relay-notifications-contract-"),
+    join(tmpdir(), "agent-relay-whooshbang-contract-"),
   );
   try {
     const artifactsDirectory = resolve(directory, "artifacts");
@@ -566,7 +577,7 @@ async function freshPnpmInstall(inspected) {
       resolve(directory, "package.json"),
       `${JSON.stringify(
         {
-          name: "agent-relay-notifications-contract-install",
+          name: "agent-relay-whooshbang-contract-install",
           version: "0.0.0",
           private: true,
           type: "module",
@@ -578,7 +589,7 @@ async function freshPnpmInstall(inspected) {
       )}\n`,
     );
     const contractsArtifact = inspected.find(
-      ({ pin }) => pin.artifact === "@flowxo/notifications-contracts",
+      ({ pin }) => pin.artifact === WHOOSHBANG_CONTRACTS_ARTIFACT,
     );
     if (contractsArtifact === undefined) {
       throw new Error("Fresh install is missing the contracts artifact.");
@@ -590,7 +601,7 @@ async function freshPnpmInstall(inspected) {
         '  - "."',
         "",
         "overrides:",
-        `  "@flowxo/notifications-contracts@${NOTIFICATIONS_VERSION}": "file:artifacts/${basename(
+        `  "${WHOOSHBANG_CONTRACTS_ARTIFACT}@${WHOOSHBANG_VERSION}": "file:artifacts/${basename(
           contractsArtifact.pin.artifact_file,
         )}"`,
         "",
@@ -638,7 +649,7 @@ async function freshPnpmInstall(inspected) {
       [
         "--input-type=module",
         "--eval",
-        'await Promise.all(["@flowxo/notifications-contracts","@flowxo/notifications","@flowxo/notifications-contract-mock"].map((name) => import(name)));',
+        'await Promise.all(["@whooshbang/contracts","@whooshbang/sdk","@whooshbang/contract-mock"].map((name) => import(name)));',
       ],
       { cwd: directory, stdio: "pipe" },
     );
@@ -770,7 +781,9 @@ export function buildNotificationsCheckResult({
       "ajv-lock-schema",
       "semantic-lock-validator",
       "canonical-schema-policy-digests",
-      "exact-notifications-topology",
+      "exact-whooshbang-topology",
+      "vendor-provenance-manifest",
+      "no-retired-flowxo-package-identity",
       "artifact-digests",
       "safe-archive-members",
       "package-identity-transitive-pins",
@@ -778,7 +791,7 @@ export function buildNotificationsCheckResult({
       "no-secret-like-paths",
       "fresh-pnpm-install-ignore-scripts",
       "production-import-boundary",
-      "notifications-consumer",
+      "whooshbang-consumer",
       "consumer-mapping-temporal-behavior",
       "cross-machine-answer-origin",
       "unknown-additive-tolerance",
@@ -827,7 +840,7 @@ export async function verifyNotificationsContract({
   const { lock, policyDigest, schemaDigest } =
     await loadNotificationsContractLock(root);
   await verifyNotificationsProductionBoundary(root);
-  await assertLegacyArtifactManifest(root, lock);
+  await assertVendorArtifactManifest(root, lock);
   const artifacts = await Promise.all(
     lock.dependencies.map(async (pin) => {
       const path = assertRepositoryPath(root, pin.artifact_file);

@@ -1,13 +1,13 @@
 import {
-  NotificationsClient,
-  NotificationsProblemError,
-  NotificationsProtocolError,
-} from "@flowxo/notifications";
+  WhooshBangClient,
+  WhooshBangProblemError,
+  WhooshBangProtocolError,
+} from "@whooshbang/sdk";
 import {
   createMachineCredentialMaterial,
   validateMachineCredentialBearer,
-} from "@flowxo/notifications-contracts";
-import { createNotificationsContractMock } from "@flowxo/notifications-contract-mock";
+} from "@whooshbang/contracts";
+import { createWhooshBangContractMock } from "@whooshbang/contract-mock";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -18,13 +18,13 @@ import {
   NotificationsSetupError,
 } from "./bootstrap.js";
 
-import type { MachineCredentialMaterial } from "@flowxo/notifications-contracts";
+import type { MachineCredentialMaterial } from "@whooshbang/contracts";
 import type {
   ContractMockCredential,
   ContractMockIdGenerator,
-  NotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
-import type { NotificationsFetch } from "@flowxo/notifications";
+  WhooshBangContractMock,
+} from "@whooshbang/contract-mock";
+import type { WhooshBangFetch } from "@whooshbang/sdk";
 
 const projectToken = "synthetic-project-bootstrap-token";
 const machineClientId = "machine_client_setup_001";
@@ -109,7 +109,7 @@ function credentials(
   ];
 }
 
-function fetchFor(mock: NotificationsContractMock): NotificationsFetch {
+function fetchFor(mock: WhooshBangContractMock): WhooshBangFetch {
   return async (input, init) => mock.fetch(new Request(input, init));
 }
 
@@ -120,9 +120,9 @@ interface ObservedRequest {
 }
 
 function observingFetch(
-  mock: NotificationsContractMock,
+  mock: WhooshBangContractMock,
   observed: ObservedRequest[],
-): NotificationsFetch {
+): WhooshBangFetch {
   return async (input, init) => {
     const request = new Request(input, init);
     const body =
@@ -143,7 +143,7 @@ async function connectedFixture(
   } = {},
 ) {
   const material = await createMachineCredentialMaterial();
-  const mock = createNotificationsContractMock({
+  const mock = createWhooshBangContractMock({
     credentials: credentials(material),
     idGenerator: idGenerator(),
     scenario: options.scenario ?? "nominal",
@@ -183,7 +183,7 @@ describe("Notifications machine bootstrap", () => {
     });
     expect(result.configuration).toMatchObject({
       baseUrl: "https://notifications.mock.test/",
-      contractVersion: "1.0.0-rc.1",
+      contractVersion: "1.0.0-rc.4",
       environment: "test",
       machineClientId,
       notifierId,
@@ -256,7 +256,7 @@ describe("Notifications machine bootstrap", () => {
   it("does not create or persist credential material while authorization is pending", async () => {
     const material = await createMachineCredentialMaterial();
     const createCredential = vi.fn(async () => material);
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: credentials(material),
       idGenerator: idGenerator(),
       scenario: "cancellation-before-send",
@@ -279,7 +279,7 @@ describe("Notifications machine bootstrap", () => {
         status: "pending",
         url: expect.stringMatching(/^https:\/\//u),
       },
-      contractVersion: "1.0.0-rc.1",
+      contractVersion: "1.0.0-rc.4",
       status: "authorization_pending",
     });
     expect(createCredential).not.toHaveBeenCalled();
@@ -294,12 +294,12 @@ describe("Notifications machine bootstrap", () => {
     const { material, mock, result } = await connectedFixture({
       scenario: "cross-machine-rejection",
     });
-    const generatedClient = new NotificationsClient({
+    const generatedClient = new WhooshBangClient({
       baseUrl: "https://notifications.mock.test",
       credential: material.bearerToken,
       fetch: fetchFor(mock),
     });
-    const foreignClient = new NotificationsClient({
+    const foreignClient = new WhooshBangClient({
       baseUrl: "https://notifications.mock.test",
       credential: "synthetic-foreign-machine-token",
       fetch: fetchFor(mock),
@@ -355,7 +355,7 @@ describe("Notifications machine bootstrap", () => {
       client: { status: "revoked" },
       credential: { status: "revoked" },
     });
-    const revokedClient = new NotificationsClient({
+    const revokedClient = new WhooshBangClient({
       baseUrl: "https://notifications.mock.test",
       credential: material.bearerToken,
       fetch: fetchFor(mock),
@@ -367,11 +367,11 @@ describe("Notifications machine bootstrap", () => {
 
   it("revokes provisional remote state when the narrow smoke test fails", async () => {
     const material = await createMachineCredentialMaterial();
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: credentials(material),
       idGenerator: idGenerator(),
     });
-    const fetchImplementation: NotificationsFetch = async (input, init) => {
+    const fetchImplementation: WhooshBangFetch = async (input, init) => {
       const request = new Request(input, init);
       if (
         new URL(request.url).pathname === "/v1/machine-events" &&
@@ -411,12 +411,12 @@ describe("Notifications machine bootstrap", () => {
 
   it("reports incomplete cleanup when provisional revocation cannot be proven", async () => {
     const material = await createMachineCredentialMaterial();
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials: credentials(material),
       idGenerator: idGenerator(),
     });
     let cleanupAttempts = 0;
-    const fetchImplementation: NotificationsFetch = async (input, init) => {
+    const fetchImplementation: WhooshBangFetch = async (input, init) => {
       const request = new Request(input, init);
       const path = new URL(request.url).pathname;
       if (
@@ -455,10 +455,10 @@ describe("Notifications machine bootstrap", () => {
   });
 
   it("redacts untrusted problem details from setup errors", async () => {
-    const fetchImplementation: NotificationsFetch = async () =>
+    const fetchImplementation: WhooshBangFetch = async () =>
       new Response(
         JSON.stringify({
-          type: "https://flowxo.com/notifications/problems/credential_invalid",
+          type: "https://whooshbang.flowxo.com/problems/credential_invalid",
           title: "Credential invalid",
           status: 401,
           detail: "broad-token-value at /private/machine/path",
@@ -520,7 +520,7 @@ describe("Notifications setup HTTP safety", () => {
   });
 
   it("never follows redirects carrying a project credential", async () => {
-    const fetchImplementation = vi.fn<NotificationsFetch>(
+    const fetchImplementation = vi.fn<WhooshBangFetch>(
       async (_input, init) => {
         expect(init?.redirect).toBe("manual");
         return new Response(null, {
@@ -539,12 +539,12 @@ describe("Notifications setup HTTP safety", () => {
 
     await expect(
       client.getMachineClient(machineClientId),
-    ).rejects.toBeInstanceOf(NotificationsProtocolError);
+    ).rejects.toBeInstanceOf(WhooshBangProtocolError);
     expect(fetchImplementation).toHaveBeenCalledTimes(1);
   });
 
   it("never follows a subscription redirect carrying a project credential", async () => {
-    const fetchImplementation = vi.fn<NotificationsFetch>(
+    const fetchImplementation = vi.fn<WhooshBangFetch>(
       async (_input, init) => {
         expect(init?.redirect).toBe("manual");
         return new Response(null, {
@@ -588,7 +588,7 @@ describe("Notifications setup HTTP safety", () => {
     });
     await expect(
       oversized.getMachineClient(machineClientId),
-    ).rejects.toBeInstanceOf(NotificationsProtocolError);
+    ).rejects.toBeInstanceOf(WhooshBangProtocolError);
 
     const malformed = new NotificationsAdministrationClient({
       baseUrl: "https://notifications.example.test",
@@ -601,7 +601,7 @@ describe("Notifications setup HTTP safety", () => {
     });
     await expect(
       malformed.getMachineClient(machineClientId),
-    ).rejects.toBeInstanceOf(NotificationsProtocolError);
+    ).rejects.toBeInstanceOf(WhooshBangProtocolError);
   });
 
   it("keeps the typed upstream problem available for bounded callers", async () => {
@@ -611,7 +611,7 @@ describe("Notifications setup HTTP safety", () => {
       fetch: async () =>
         new Response(
           JSON.stringify({
-            type: "https://flowxo.com/notifications/problems/scope_forbidden",
+            type: "https://whooshbang.flowxo.com/problems/scope_forbidden",
             title: "Scope forbidden",
             status: 403,
             detail: "Synthetic protected detail.",
@@ -627,6 +627,6 @@ describe("Notifications setup HTTP safety", () => {
     });
     await expect(
       client.getMachineClient(machineClientId),
-    ).rejects.toBeInstanceOf(NotificationsProblemError);
+    ).rejects.toBeInstanceOf(WhooshBangProblemError);
   });
 });

@@ -1,9 +1,9 @@
 import {
-  NotificationsContractError,
-  NotificationsProblemError,
-  NotificationsProtocolError,
-  NotificationsTransportError,
-} from "@flowxo/notifications";
+  WhooshBangContractError,
+  WhooshBangProblemError,
+  WhooshBangProtocolError,
+  WhooshBangTransportError,
+} from "@whooshbang/sdk";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -13,8 +13,8 @@ import {
 } from "./errors.js";
 import { NotificationsMappingError } from "./mapping.js";
 
-import type { Problem } from "@flowxo/notifications";
-import type { ProblemCode } from "@flowxo/notifications-contracts";
+import type { Problem } from "@whooshbang/sdk";
+import type { ProblemCode } from "@whooshbang/contracts";
 
 function problem(
   code: ProblemCode,
@@ -22,7 +22,7 @@ function problem(
   status = retryable ? 503 : 400,
 ): Problem {
   return {
-    type: `https://flowxo.com/notifications/problems/${code}`,
+    type: `https://whooshbang.flowxo.com/problems/${code}`,
     title: "Synthetic problem",
     status,
     detail: "credential secret_value and /private/path",
@@ -46,7 +46,7 @@ describe("Notifications error classification", () => {
     "maps %s to the bounded local policy",
     (code, retryable, disposition) => {
       const mapped = asNotificationsDeliveryError(
-        new NotificationsProblemError(
+        new WhooshBangProblemError(
           problem(
             code,
             code === "provider_outcome_unknown" ? false : retryable,
@@ -84,7 +84,7 @@ describe("Notifications error classification", () => {
 
   it("permits uncertain connection replay only through the same operation", () => {
     const mapped = asNotificationsDeliveryError(
-      new NotificationsTransportError("createMessage", true),
+      new WhooshBangTransportError("createMessage", true),
     );
     expect(mapped).toMatchObject({
       code: "notifications-transport-outcome-unknown",
@@ -95,7 +95,7 @@ describe("Notifications error classification", () => {
 
   it("fails closed on contract-integrity errors", () => {
     const mapped = asNotificationsDeliveryError(
-      new NotificationsContractError("pollMachineEvents", []),
+      new WhooshBangContractError("pollMachineEvents", []),
     );
     expect(mapped).toMatchObject({
       code: "notifications-contract-invalid",
@@ -121,7 +121,7 @@ describe("Notifications error classification", () => {
 
   it("bounds unknown protocol and implementation failures without reflecting secrets", () => {
     const protocol = asNotificationsDeliveryError(
-      new NotificationsProtocolError(
+      new WhooshBangProtocolError(
         "createMessage",
         "Bearer private-secret",
         502,
@@ -171,24 +171,24 @@ describe("Notifications error classification", () => {
 
   it("quarantines malformed/schema responses and requires operator action for explicit ambiguity", () => {
     const schema = asNotificationsDeliveryError(
-      new NotificationsContractError("pollMachineEvents", []),
+      new WhooshBangContractError("pollMachineEvents", []),
     );
     const malformed = asNotificationsDeliveryError(
-      new NotificationsProtocolError(
+      new WhooshBangProtocolError(
         "pollMachineEvents",
         "private malformed body",
         200,
       ),
     );
     const redirect = asNotificationsDeliveryError(
-      new NotificationsProtocolError(
+      new WhooshBangProtocolError(
         "pollMachineEvents",
         "https://private.example.test",
         307,
       ),
     );
     const ambiguous = asNotificationsDeliveryError(
-      new NotificationsProblemError(
+      new WhooshBangProblemError(
         problem("provider_outcome_unknown", false, 502),
       ),
     );

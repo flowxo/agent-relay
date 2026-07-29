@@ -1,6 +1,6 @@
-import { validateCreateMessageRequest } from "@flowxo/notifications-contracts";
+import { validateCreateMessageRequest } from "@whooshbang/contracts";
 
-import type { CreateMessageRequest } from "@flowxo/notifications";
+import type { CreateMessageRequest } from "@whooshbang/sdk";
 import type {
   DeliveryInteraction,
   DeliveryMessage,

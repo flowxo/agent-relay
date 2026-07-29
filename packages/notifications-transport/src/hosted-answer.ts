@@ -1,4 +1,4 @@
-import type { InteractionEvent } from "@flowxo/notifications-contracts";
+import type { InteractionEvent } from "@whooshbang/contracts";
 import type {
   Harness,
   OperatorInteractionRequestV1,
