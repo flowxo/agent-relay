@@ -29,7 +29,16 @@
   digest `2d5f52cd51fca994d9e2dbf741e25ba841151d6b841a87d80d7fa01e5dbc51c1`, and
   the schema-5-to-schema-6 packed lifecycle with schema-7 downgrade refusal. All
   three Chromium scenarios passed, and `pnpm audit --prod` found no known
-  vulnerability.
+  vulnerability. PR #15 merged the candidate as `1f25869`; the checkout-backed
+  install reconciled unchanged, credentialed doctor was healthy, and one
+  direct-Telegram poller restarted after successful private-topic preflight. A
+  private integrity-checked database backup was retained before activation. The
+  live store is healthy on schema `6` with 28 ready topics and no queued,
+  retrying, delivering, or dead-letter events. Eight fallback records written
+  while the daemon was unavailable replayed visibly: four valid events delivered
+  and four malformed payloads produced diagnostics. Live provider deletion
+  remains unclaimed until the operator reviews and confirms an exact `/prune`
+  preview.
 - FXO-1350 replaces native-hook fingerprint pseudo-sequences with a durable
   per-machine/harness/session allocator in the authoritative local SQLite store.
   Exact source-fingerprint retries reuse one event sequence; distinct hooks
@@ -955,7 +964,7 @@ card; the later Stop with empty collections should create the ordinary waiting
 card. Confirm both events retain monotonic sequence and lane state after the
 schema-5 live upgrade.
 
-After FXO-1357 is merged and the single dogfood daemon is upgraded, send
+The merged schema-6 dogfood daemon is ready for the FXO-1357 live canary. Send
 `/prune` in Telegram General, inspect the bounded exact set, and confirm only
 the topics whose Telegram history may be permanently removed. A later event for
 any pruned session should create a fresh topic without changing that session's
