@@ -35,7 +35,7 @@ Implement only what the provider can prove:
 - `InteractiveNotificationTransport` acknowledges callbacks and edits original
   or resolved messages;
 - `OperatorControlTransport` sends and edits provider-neutral operator controls
-  outside a session topic; and
+  in an optional explicitly selected provider topic or unthreaded context; and
 - `InteractionCapabilityTransport` reports observed provider limits for
   deterministic negotiation.
 

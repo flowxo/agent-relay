@@ -1,0 +1,27 @@
+{
+  "update_id": 900000001,
+  "message": {
+    "message_id": 101,
+    "message_thread_id": 77,
+    "is_topic_message": true,
+    "from": {
+      "id": 7001,
+      "is_bot": false,
+      "first_name": "Operator"
+    },
+    "chat": {
+      "id": 10001,
+      "first_name": "Operator",
+      "type": "private"
+    },
+    "date": 1785283200,
+    "text": "/prune",
+    "entities": [
+      {
+        "offset": 0,
+        "length": 6,
+        "type": "bot_command"
+      }
+    ]
+  }
+}

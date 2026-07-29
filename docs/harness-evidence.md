@@ -132,7 +132,8 @@ Threaded mode disabled, non-private scope, invalid token/chat, blocked bot,
 topic-permission denial, missing or conflicting webhook state, concurrent
 `getUpdates`, deleted/closed topics, and transient network/provider failures
 have distinct stable codes. Fake transport bypasses credential checks and is
-reported explicitly; real Telegram never falls back to General.
+reported explicitly; real Telegram never falls back to an unthreaded
+conversation.
 
 Compact card fixtures enforce Telegram's 4,096-character message boundary and
 64-byte callback-data boundary before the request. Card action payloads use a

@@ -450,17 +450,19 @@ API updates for no longer than 24 hours; Agent Relay's longer-lived request
 state does not extend that upstream delivery window.
 
 End leaves its session topic intact. Send `/cleanup` from the authorized
-Telegram account to receive an exact-set preview in General, then confirm with a
-button. Only explicitly ended sessions qualify; every candidate is revalidated
-before Telegram permanently deletes the topic and all of its messages. See the
+Telegram account from **New Chat** or an existing topic. Agent Relay returns the
+exact-set preview to that same private-chat topic, then waits for button
+confirmation. Only explicitly ended sessions qualify; every candidate is
+revalidated before Telegram permanently deletes the topic and all of its
+messages. See the
 [direct Telegram guide](docs/telegram.md#delete-proven-dead-topics) for the full
 safety boundary.
 
 For inactive topics whose sessions were never explicitly ended, use `/prune` (24
 hours by default), `/prune 12h`, or `/prune 7d`. Agent Relay previews the exact
-guarded set and requires a button confirmation. Pruning removes only the
-Telegram topic mapping, not the retained session or its lane state; later
-activity creates a fresh topic. See
+guarded set in the topic where the command was sent and requires a button
+confirmation. Pruning removes only the Telegram topic mapping, not the retained
+session or its lane state; later activity creates a fresh topic. See
 [prune inactive topics](docs/telegram.md#prune-inactive-topics).
 
 ### Telegram activation canary

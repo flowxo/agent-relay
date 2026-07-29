@@ -466,6 +466,7 @@ export class RelayService {
     confirmCallbackData: string;
     cancelCallbackData: string;
     pruneCallbackData?: string;
+    topicId?: string;
   }): Promise<TopicCleanupOperationRecord> {
     if (!isOperatorControlTransport(this.transport)) {
       throw new Error(
@@ -484,7 +485,10 @@ export class RelayService {
           input.cancelCallbackData,
           input.pruneCallbackData,
         ),
-        { idempotencyKey: `topic_cleanup_preview:${operation.operationId}` },
+        {
+          idempotencyKey: `topic_cleanup_preview:${operation.operationId}`,
+          ...(input.topicId === undefined ? {} : { topicId: input.topicId }),
+        },
       );
       const attached = this.store.attachTopicCleanupPreview({
         operationId: operation.operationId,

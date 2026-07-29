@@ -8,6 +8,16 @@
   "scope": "private chat with topics enabled",
   "fixtures": [
     {
+      "file": "private-topic-prune-command.v10.2.json",
+      "method": "getUpdates",
+      "evidence": "Sanitized from the private-topic command shape accepted during the credentialed New Chat dogfood canary and checked against the Bot API 10.2 Message contract",
+      "sanitization": [
+        "update, chat, operator, message, and thread IDs replaced",
+        "private operator content replaced with the public command",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
       "file": "single-choice-send-message.v10.2.json",
       "method": "sendMessage",
       "evidence": "Sanitized from the request shape exercised by the credentialed private-topic activation",
@@ -43,9 +53,10 @@
     {
       "file": "topic-cleanup-control.v10.2.json",
       "method": "sendMessage",
-      "evidence": "Sanitized Bot API 10.2 operator-control projection exercised against the fake HTTP transport",
+      "evidence": "Sanitized Bot API 10.2 private-topic operator-control projection exercised against the fake HTTP transport after the New Chat dogfood routing defect",
       "sanitization": [
         "chat ID replaced",
+        "message thread ID replaced",
         "session metadata replaced",
         "cleanup operation identifier replaced",
         "bot token excluded because it is carried only in the URL"
@@ -54,9 +65,10 @@
     {
       "file": "topic-prune-control.v10.2.json",
       "method": "sendMessage",
-      "evidence": "Sanitized Bot API 10.2 inactive-topic operator-control projection exercised against the fake HTTP transport",
+      "evidence": "Sanitized Bot API 10.2 inactive-topic operator-control projection exercised against the fake HTTP transport after the New Chat dogfood routing defect",
       "sanitization": [
         "chat ID replaced",
+        "message thread ID replaced",
         "session metadata and inactivity age replaced",
         "cleanup operation identifier replaced",
         "bot token excluded because it is carried only in the URL"

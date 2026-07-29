@@ -1,5 +1,6 @@
 {
   "chat_id": "10001",
+  "message_thread_id": 77,
   "text": "Agent Relay topic cleanup\n\nDelete 1 proven-dead session topic?",
   "disable_web_page_preview": true,
   "reply_markup": {
