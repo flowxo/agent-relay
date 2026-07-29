@@ -17,7 +17,7 @@
   while a new expired claim remains rejected. The command opens no listener,
   makes no provider call, adds no product dependency, and offers no reverse
   ownership transfer. On 2026-07-28 the complete serial `pnpm check` passed with
-  71 Vitest files/518 tests, immutable runner-protocol verification, 33/33
+  74 Vitest files/555 tests, immutable runner-protocol verification, 33/33
   bridge contract cases, package isolation, and packed install/upgrade/
   uninstall lifecycle proof. The product-owned built-CLI canary also passed
   against real temporary Agent Relay core and bridge stores, proving readiness,
