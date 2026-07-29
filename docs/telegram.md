@@ -208,11 +208,19 @@ that races an in-flight provider deletion retries and provisions a fresh topic
 after deletion completes.
 
 Confirmations, selections, permissions, and ordered question sets use buttons.
-Free text can be typed directly in a session topic only when exactly one
-compatible request is open there. With zero candidates, Agent Relay posts
-guidance; with multiple candidates, it asks for Telegram's Reply gesture on the
-specific request card. It never searches another topic or treats arbitrary topic
-chatter as a button answer.
+After an authorized one-shot tap commits to SQLite, Agent Relay immediately
+answers Telegram's callback and replaces the card and keyboard with
+`✅ <button label>` before continuation or follow-up delivery work runs.
+Multi-select toggles and nonterminal question-set controls remain interactive;
+their checked button state and callback acknowledgement update concurrently.
+Rejected or stale taps never receive a success checkmark. A failed feedback edit
+is retained as `telegram.callback-feedback-edit-failed` diagnostic evidence even
+when the underlying action committed successfully. Free text can be typed
+directly in a session topic only when exactly one compatible request is open
+there. With zero candidates, Agent Relay posts guidance; with multiple
+candidates, it asks for Telegram's Reply gesture on the specific request card.
+It never searches another topic or treats arbitrary topic chatter as a button
+answer.
 
 ## Reliability and privacy
 

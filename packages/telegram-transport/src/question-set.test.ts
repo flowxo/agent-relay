@@ -663,12 +663,7 @@ describe("durable ordered Telegram question sets", () => {
         },
       ],
     });
-    expect(testRuntime.transport.messageEdits.at(-1)?.text).toContain(
-      "1. Proceed with this release?: Stop",
-    );
-    expect(testRuntime.transport.messageEdits.at(-1)?.text).toContain(
-      "2. Which units should run?: Core, UI",
-    );
+    expect(testRuntime.transport.messageEdits.at(-1)?.text).toBe("✅ Submit");
     expect(
       await testRuntime.router.handle(
         callback(
