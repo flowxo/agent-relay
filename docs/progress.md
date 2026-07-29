@@ -1041,8 +1041,8 @@ also remain free of silent delivery, hook, or correlation failures.
   `runner.protocol/v1` artifacts are immutable development inputs with an
   `internal-until-gate-5` commitment, and the actuator claim covers only exact
   `codex-cli 0.145.0`. Public promotion remains a Gate 5 decision; reverse
-  ownership transfer remains unsupported under the monotonic policy delivered
-  by FXO-1122.
+  ownership transfer remains unsupported under the monotonic policy delivered by
+  FXO-1122.
 - The generic webhook is deliberately outbound-only. Its local-web handoff is a
   credential-free locator and still requires browser authentication; when a
   receiver runs on another machine, loopback in that link refers to the Agent
