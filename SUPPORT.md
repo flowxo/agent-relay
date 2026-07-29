@@ -34,10 +34,11 @@ remains disabled and false at runtime pending a current sanitized live fixture.
 
 <!-- END GENERATED HARNESS SUPPORT -->
 
-Direct Telegram and the fake transport are available without a hosted Flow XO
-account. The local web companion is optional and loopback-only. Flow XO
-Notifications is an optional replaceable transport and is not required for local
-operation.
+Direct Telegram, the signed outbound webhook, and the fake transport are
+available without a hosted Flow XO account. The local web companion is optional
+and loopback-only. Flow XO Notifications is an optional replaceable transport
+and is not required for local operation. The outbound webhook has no inbound
+response API in V1.
 
 ## Before opening an issue
 
@@ -47,6 +48,7 @@ Run the checks that are safe for your environment:
 agent-relay doctor
 agent-relay status
 agent-relay canary
+agent-relay transport status
 ```
 
 Prefer reproducing with the fake transport and synthetic data. Search existing

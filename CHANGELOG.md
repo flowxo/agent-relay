@@ -49,6 +49,11 @@ breaking changes and required operator action.
 - An isolated exact-version Codex app-server driver with owned stdio lifecycle,
   typed thread/turn/approval operations, content-free observations, canonical
   schema locking, sanitized fixtures, and a bounded model-backed canary.
+- A provider-neutral signed outbound webhook with strict v1 request and
+  acknowledgement contracts, exact-byte HMAC authentication, stable idempotency,
+  bounded retries and `Retry-After`, private file/stdin configuration, safe
+  status/doctor output, a loopback canary, and an authenticated local-web
+  handoff for questions.
 
 ### Changed
 

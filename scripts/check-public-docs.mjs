@@ -16,6 +16,7 @@ const focusedDocuments = [
   "docs/release-readiness.md",
   "docs/fixtures.md",
   "docs/extending-transports.md",
+  "docs/outbound-webhooks.md",
   "docs/extending-harnesses.md",
   "docs/hosted-notifications.md",
   "docs/runner-bridge.md",

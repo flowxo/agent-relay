@@ -2,6 +2,34 @@
 
 ## Proven
 
+- FXO-1364 adds a fourth explicit notification transport for developers who want
+  Agent Relay alerts in their own tools without maintaining an in-repo adapter.
+  `@agent-relay/webhook-transport` sends one strict `agent-relay-webhook.v1`
+  envelope with sanitized session routing metadata, stable delivery identity,
+  exact-byte HMAC-SHA256 authentication, bounded request/acknowledgement
+  streams, full-request timeout, redirect refusal, strict optional
+  acknowledgements, classified HTTP/network failures, and bounded `Retry-After`.
+  Private file/stdin and environment configuration, readiness, doctor, safe
+  runtime status, durable retries/dead letters, and a public webhook canary are
+  composed only when `webhook` is explicitly selected. Open questions carry an
+  unauthenticated locator—not a credential—to the exact request on the
+  authenticated local web companion; with the web deliberately disabled, Agent
+  Relay delivers an honest alert without response controls and retains the
+  request as open. The checked synthetic fixture, deterministic
+  transport/service/config/daemon tests, and an isolated compiled CLI receiver
+  prove signatures over exact bytes, `0600` configuration, duplicate/retry
+  identity, malformed and oversized acknowledgements, header/body timeouts,
+  existing stale-answer rejection, mismatched acknowledgements, concurrent
+  session isolation, strict ACK correlation, and an empty spool after delivery.
+  On 2026-07-28 the complete `pnpm check` passed 72 Vitest files/543 tests, 24
+  contract and supply-chain tests, the six-test isolated Notifications consumer,
+  the 33/33 runner corpus, all workspace builds, the 226,080-byte
+  packed/1,391,665-byte unpacked 11-file artifact, hosted proof digest
+  `567d68e4a9191f975dde362db6600791d84de0799b1b784f88cb43410458cdb0`, and the
+  complete packed lifecycle. All three Chromium scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability. FXO-1365 separately owns
+  post-release design of an authenticated inbound response API; V1 does not
+  expose the daemon's local hook or browser routes as a public integration API.
 - The public README now follows the developer journey: the product experience,
   source setup, credential-free canary, safe hook installation, direct Telegram
   activation, everyday controls, the local web board, supervised runs, and only
@@ -993,8 +1021,20 @@ also remain free of silent delivery, hook, or correlation failures.
   `internal-until-gate-5` commitment, and the actuator claim covers only exact
   `codex-cli 0.145.0`. Public adoption UX and reverse ownership
   transfer/recovery remain explicitly owned by FXO-1122.
+- The generic webhook is deliberately outbound-only. Its local-web handoff is a
+  credential-free locator and still requires browser authentication; when a
+  receiver runs on another machine, loopback in that link refers to the Agent
+  Relay host and must be presented accordingly. FXO-1365 must settle inbound
+  authentication and rotation, request/option authorization, replay and rate
+  limits, first-writer conflict responses, reverse-proxy trust, bind defaults,
+  and audit/privacy behavior before any remote response API is claimed.
 
 ## Next action
+
+Merge the green FXO-1364 outbound-webhook candidate without changing the live
+direct-Telegram selection, then continue bounded dogfood. Treat custom receiver
+delivery as V1-ready and keep FXO-1365 inbound responses in the post-release
+design backlog until its threat model and API contract are approved.
 
 Continue bounded direct-Telegram dogfood. If any pruned session emits another
 event, verify that it provisions a fresh topic without changing its retained
