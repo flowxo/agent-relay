@@ -162,6 +162,56 @@ describe("RunnerBridgeStore", () => {
     restarted.close();
   });
 
+  test("prepares one observation binding and adoption intent atomically", () => {
+    const store = new RunnerBridgeStore(":memory:");
+    const at = "2026-07-27T12:00:00.000Z";
+    const adoption = {
+      adoptionId: "adoption_store_prepare",
+      requestFingerprint: sha256("adoption-store-prepare"),
+      requestJson: '{"schema":"agent-relay-session-adoption.v1"}',
+      state: "proposed" as const,
+      createdAt: at,
+      updatedAt: at,
+    };
+    const binding = {
+      workspaceId: "wsp_store",
+      runnerId: "run_store",
+      projectId: "prj_store",
+      sessionId: "ses_store_prepare",
+      harnessProfileId: "hpf_store_prepare",
+      nativeSessionReference: "native_store_prepare",
+      capabilitySnapshotDigest: sha256("capability-store-prepare"),
+      actuatorOwner: "standalone-attention" as const,
+      aggregateRevision: 0,
+      createdAt: at,
+      updatedAt: at,
+    };
+    expect(store.prepareStandaloneAdoption(adoption, binding)).toBe("accepted");
+    expect(store.prepareStandaloneAdoption(adoption, binding)).toBe(
+      "duplicate",
+    );
+    expect(store.adoption(adoption.adoptionId)).toMatchObject({
+      requestFingerprint: adoption.requestFingerprint,
+      state: "proposed",
+    });
+    expect(store.binding(binding.sessionId)).toMatchObject({
+      nativeSessionReference: binding.nativeSessionReference,
+      actuatorOwner: "standalone-attention",
+    });
+    expect(() =>
+      store.prepareStandaloneAdoption(
+        {
+          ...adoption,
+          requestFingerprint: sha256("changed-adoption"),
+        },
+        binding,
+      ),
+    ).toThrow("reused");
+    expect(store.adoptionCount()).toBe(1);
+    expect(store.bindingCount()).toBe(1);
+    store.close();
+  });
+
   test("migrates v1 correlation state and enforces terminal transitions", async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "runner-bridge-store-"));
     cleanup.push(directory);

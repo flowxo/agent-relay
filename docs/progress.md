@@ -2,6 +2,21 @@
 
 ## Proven
 
+- FXO-1122 adds the approved private local session-adoption peer without
+  changing Agent Relay's standalone transports or default-off runner bridge.
+  Core candidate queries return only exact active/waiting Codex CLI checkpoints
+  for one cwd hash and verified version, excluding terminal, pending-
+  interaction, active-resume, and product-owned sessions. Human-visible
+  responses contain only a process-local handle and bounded display metadata;
+  every hidden checkpoint is reloaded and compared before commit. The bridge
+  validates its own runner authority and writes an observation-only binding,
+  then the existing core compare-and-set claim commits before product actuation
+  becomes usable. Strict `runner.session-adoption/local-v1` stdio framing
+  rejects malformed, oversized, invalid-UTF-8, trailing, substituted, expired,
+  and stale input. A stored exact claim can recover forward after offer expiry,
+  while a new expired claim remains rejected. The command opens no listener,
+  makes no provider call, adds no product dependency, and offers no reverse
+  ownership transfer.
 - The public README now follows the developer journey: the product experience,
   source setup, credential-free canary, safe hook installation, direct Telegram
   activation, everyday controls, the local web board, supervised runs, and only

@@ -53,6 +53,7 @@ export interface RunnerBridgeAdoptionConfiguration {
   readonly runnerId: string;
   readonly harnessProfileId: string;
   readonly harnessVersion: string;
+  readonly standaloneCapabilityEvidenceId: string;
   readonly capabilitySnapshotDigest: Sha256Digest;
   readonly authorizedProjectIds: ReadonlySet<string>;
   readonly now: () => IsoTimestamp;
@@ -95,7 +96,21 @@ export class RunnerBridgeAdoptionService {
   }
 
   async adopt(request: SessionAdoptionRequest): Promise<SessionAdoptionResult> {
-    const failure = this.#validate(request);
+    return await this.#adopt(request, false, false);
+  }
+
+  async adoptPrepared(
+    request: SessionAdoptionRequest,
+  ): Promise<SessionAdoptionResult> {
+    return await this.#adopt(request, false, true);
+  }
+
+  async #adopt(
+    request: SessionAdoptionRequest,
+    recovering: boolean,
+    prepared: boolean,
+  ): Promise<SessionAdoptionResult> {
+    const failure = this.#validate(request, recovering);
     if (failure) {
       return { status: "rejected", safeCode: failure };
     }
@@ -109,11 +124,13 @@ export class RunnerBridgeAdoptionService {
       createdAt: now,
       updatedAt: now,
     };
-    let duplicate: boolean;
-    try {
-      duplicate = this.#store.proposeAdoption(proposed) === "duplicate";
-    } catch {
-      return { status: "rejected", safeCode: "adoption_identity_conflict" };
+    let duplicate = false;
+    if (!prepared) {
+      try {
+        duplicate = this.#store.proposeAdoption(proposed) === "duplicate";
+      } catch {
+        return { status: "rejected", safeCode: "adoption_identity_conflict" };
+      }
     }
     const stored = this.#store.adoption(request.adoptionId);
     if (!stored || stored.requestFingerprint !== fingerprint) {
@@ -202,11 +219,16 @@ export class RunnerBridgeAdoptionService {
         safeCode: "adoption_record_mismatch",
       };
     }
-    return await this.adopt(request);
+    return await this.#adopt(request, true, false);
   }
 
-  #validate(request: SessionAdoptionRequest): string | undefined {
+  #validate(
+    request: SessionAdoptionRequest,
+    recovering: boolean,
+  ): string | undefined {
     const now = Date.parse(this.#configuration.now());
+    const issuedAt = Date.parse(request.issuedAt);
+    const expiresAt = Date.parse(request.expiresAt);
     if (
       !Number.isFinite(now) ||
       request.schema !== "agent-relay-session-adoption.v1" ||
@@ -229,11 +251,11 @@ export class RunnerBridgeAdoptionService {
       !/^sha256:[a-f0-9]{64}$/u.test(request.projectAuthorityDigest) ||
       !/^[a-f0-9]{64}$/u.test(request.standaloneCapabilityDigest) ||
       !/^[a-f0-9]{64}$/u.test(request.capabilitySnapshotDigest) ||
-      !Number.isFinite(Date.parse(request.issuedAt)) ||
-      !Number.isFinite(Date.parse(request.expiresAt)) ||
-      Date.parse(request.issuedAt) > now ||
-      Date.parse(request.expiresAt) <= now ||
-      Date.parse(request.issuedAt) >= Date.parse(request.expiresAt)
+      !Number.isFinite(issuedAt) ||
+      !Number.isFinite(expiresAt) ||
+      issuedAt >= expiresAt ||
+      expiresAt - issuedAt > 10 * 60_000 ||
+      (!recovering && (issuedAt > now || expiresAt <= now))
     ) {
       return "adoption_request_malformed";
     }
@@ -241,6 +263,8 @@ export class RunnerBridgeAdoptionService {
       request.harness !== "codex" ||
       request.surface !== "cli" ||
       request.harnessVersion !== this.#configuration.harnessVersion ||
+      request.standaloneCapabilityEvidenceId !==
+        this.#configuration.standaloneCapabilityEvidenceId ||
       request.harnessProfileId !== this.#configuration.harnessProfileId
     ) {
       return "adoption_profile_unsupported";

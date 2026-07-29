@@ -733,6 +733,20 @@ export class RunnerBridgeStore {
     return row ? bindingFromRow(row) : undefined;
   }
 
+  bindingByNativeSessionReference(
+    nativeSessionReference: string,
+  ): ProductNativeBinding | undefined {
+    const row = this.#database
+      .prepare(
+        `SELECT * FROM product_native_binding
+         WHERE native_session_reference = ?
+         ORDER BY session_id
+         LIMIT 1`,
+      )
+      .get(nativeSessionReference) as BindingRow | undefined;
+    return row ? bindingFromRow(row) : undefined;
+  }
+
   adoptBinding(binding: ProductNativeBinding): void {
     if (binding.actuatorOwner !== "product-managed") {
       throw new Error("Adopted binding must be product managed.");
@@ -1283,6 +1297,48 @@ export class RunnerBridgeStore {
         adoption.updatedAt,
       );
     return "accepted";
+  }
+
+  prepareStandaloneAdoption(
+    adoption: StoredSessionAdoption,
+    binding: ProductNativeBinding,
+  ): "accepted" | "duplicate" {
+    if (
+      adoption.state !== "proposed" ||
+      binding.actuatorOwner !== "standalone-attention"
+    ) {
+      throw new Error("Standalone adoption preparation is malformed.");
+    }
+    return this.#database.transaction(() => {
+      const existingProduct = this.binding(binding.sessionId);
+      const existingNative = this.bindingByNativeSessionReference(
+        binding.nativeSessionReference,
+      );
+      for (const existing of [existingProduct, existingNative]) {
+        if (
+          existing !== undefined &&
+          (existing.workspaceId !== binding.workspaceId ||
+            existing.runnerId !== binding.runnerId ||
+            existing.projectId !== binding.projectId ||
+            existing.worktreeId !== binding.worktreeId ||
+            existing.sessionId !== binding.sessionId ||
+            existing.harnessProfileId !== binding.harnessProfileId ||
+            existing.nativeSessionReference !==
+              binding.nativeSessionReference ||
+            existing.capabilitySnapshotDigest !==
+              binding.capabilitySnapshotDigest ||
+            existing.actuatorOwner !== "standalone-attention" ||
+            existing.aggregateRevision !== binding.aggregateRevision)
+        ) {
+          throw new Error("Standalone adoption binding conflicts.");
+        }
+      }
+      const result = this.proposeAdoption(adoption);
+      if (existingProduct === undefined && existingNative === undefined) {
+        this.putBinding(binding);
+      }
+      return result;
+    })();
   }
 
   adoption(adoptionId: string): StoredSessionAdoption | undefined {

@@ -49,6 +49,9 @@ breaking changes and required operator action.
 - An isolated exact-version Codex app-server driver with owned stdio lifecycle,
   typed thread/turn/approval operations, content-free observations, canonical
   schema locking, sanitized fixtures, and a bounded model-backed canary.
+- A private, local-only session-adoption peer with privacy-safe candidate
+  choices, exact live-checkpoint comparison, monotonic ownership transfer, and
+  durable forward recovery after process exit or offer expiry.
 
 ### Changed
 

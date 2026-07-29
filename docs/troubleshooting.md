@@ -259,8 +259,11 @@ Runner status may report a claimed or blocked-recovery adoption. That means
 standalone interaction has already been disabled for the exact local session,
 but the product binding was not yet proven complete. Do not delete either SQLite
 file, restart the session through a standalone surface, or manually change
-ownership rows. Restart the same bridge composition so it can inspect the
-durable receipt and complete the original adoption ID.
+ownership rows. Use the product runner's adoption status and recover commands;
+they spawn the private local Agent Relay peer, inspect the durable receipt, and
+complete the original adoption without asking for a raw adoption ID. Recovery
+continues to work after the original short-lived offer expires because it cannot
+create a different claim.
 
 An `outcome_unknown` approval or command is deliberately not retryable. Inspect
 the native session locally and start a new product operation if appropriate;
