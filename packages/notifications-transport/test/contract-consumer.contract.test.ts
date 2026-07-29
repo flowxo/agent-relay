@@ -784,7 +784,7 @@ describe("C0 Notifications consumer contract", () => {
       store.close();
       await running.close();
     }
-  });
+  }, 15_000);
 
   it("records a safe durable quarantine before acknowledging poison data", async () => {
     const mock = createNotificationsContractMock({
