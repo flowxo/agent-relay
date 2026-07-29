@@ -239,12 +239,7 @@ describe("durable Telegram multi-select drafts", () => {
         ),
       ),
     ).toEqual({ outcome: "answered", updateId: 208 });
-    expect(testRuntime.transport.messageEdits.at(-1)?.text).toContain(
-      "Answered",
-    );
-    expect(testRuntime.transport.messageEdits.at(-1)?.text).toContain(
-      "Selected: Unit 1, Unit 2",
-    );
+    expect(testRuntime.transport.messageEdits.at(-1)?.text).toBe("✅ Submit");
 
     expect(
       await testRuntime.router.handle(
@@ -326,10 +321,7 @@ describe("durable Telegram multi-select drafts", () => {
     expect(
       secondStore.getMultiSelectDraft("correlation_multi_restart"),
     ).toMatchObject({ state: "cancelled" });
-    expect(secondTransport.messageEdits.at(-1)?.text).toContain("Canceled");
-    expect(secondTransport.messageEdits.at(-1)?.text).toContain(
-      "Selected: Unit 2",
-    );
+    expect(secondTransport.messageEdits.at(-1)?.text).toBe("✅ Cancel");
 
     const maintenance = new RelayService(secondStore, secondTransport, {
       now: () => new Date("2026-09-10T12:00:00.000Z"),
@@ -428,6 +420,9 @@ describe("durable Telegram multi-select drafts", () => {
         ),
       ),
     ).toEqual({ outcome: "duplicate-answer", updateId: 215 });
+    expect(staleRuntime.transport.messageEdits.at(-1)?.text).toContain(
+      "Superseded",
+    );
     expect(
       staleRuntime.store.getPendingRequest("correlation_multi_stale")?.answer,
     ).toBe("terminal writer won");

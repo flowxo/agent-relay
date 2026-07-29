@@ -188,10 +188,11 @@ identify the oversized request even when other requests are pending.
 A button callback is authorized against the configured operator and chat, then
 bound to the retained option token, delivered message ID, transport, session
 identity, and ready topic ID. SQLite commits the first valid option ID before
-`answerCallbackQuery` is called. The card is then edited to remove its keyboard
-and show both terminal state and the selected label. Duplicate, expired,
-unknown, malformed, wrong-topic, and cross-session callbacks never replace the
-durable first answer.
+`answerCallbackQuery` is called. The callback acknowledgement and compact
+`✅ <selected label>` edit then start together, removing the stale keyboard
+without waiting for continuation or delivery work. Duplicate, expired, unknown,
+malformed, wrong-topic, and cross-session callbacks never replace the durable
+first answer or receive a false success checkmark.
 
 ## Telegram multi-select drafts
 
@@ -216,8 +217,11 @@ first, the draft becomes `superseded` and cannot replace the answer.
 
 Cancel is a distinct terminal transition: the pending request and draft become
 `cancelled`, the answer remains null, and no empty selection is sent to the
-harness. Submitted, canceled, expired, superseded, and failed cards remove their
-controls and retain the selected labels for auditability.
+harness. Accepted Submit and Cancel actions replace the controls with
+`✅ Submit` or `✅ Cancel`; rejected and externally superseded actions retain an
+explicit terminal status instead. The selected option IDs remain in the durable
+draft for auditability even though the compact terminal Telegram message does
+not repeat them.
 
 Drafts and selections survive daemon restart in SQLite. Expiry synchronizes the
 parent request and draft. Retention deletes terminal drafts with their parent
@@ -247,13 +251,15 @@ transition, and marks the wizard submitted before Telegram is acknowledged.
 Partial drafts never resolve the parent request.
 
 Cancel, expiry, terminal-first supersession, invalid transitions, selection
-limit failures, and missing answers are explicit outcomes. Terminal cards remove
-their controls but retain the ordered partial or final answer summary for
-diagnosis. Drafts resume at the exact question and revision after daemon
-restart; retention reports deleted parents and `questionSetDrafts` separately.
-Callback authorization binds every action to the operator, chat, transport,
-delivered message, session, and ready topic, so simultaneous wizards cannot
-cross-answer.
+limit failures, and missing answers are explicit outcomes. Accepted terminal
+buttons remove their controls and collapse to `✅ <button label>`; stale,
+expired, failed, and externally superseded actions retain an explicit terminal
+summary for diagnosis. The ordered answers remain durable even when Telegram
+uses compact accepted feedback. Drafts resume at the exact question and revision
+after daemon restart; retention reports deleted parents and `questionSetDrafts`
+separately. Callback authorization binds every action to the operator, chat,
+transport, delivered message, session, and ready topic, so simultaneous wizards
+cannot cross-answer.
 
 ## Telegram free-text capture
 

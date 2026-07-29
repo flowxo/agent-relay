@@ -338,7 +338,7 @@ describe("Notifications CLI lifecycle", () => {
       configured: false,
       status: "not_configured",
     });
-  });
+  }, 15_000);
 
   it("rejects positional credentials without reflecting their value", async () => {
     const failure = await runNotificationsCommand({

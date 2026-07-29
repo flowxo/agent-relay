@@ -2,6 +2,29 @@
 
 ## Proven
 
+- Direct Telegram button feedback is now separated from slower downstream work.
+  After authorization and the authoritative SQLite transition, one-shot choices,
+  session controls, cleanup confirmations, and terminal structured controls
+  start `answerCallbackQuery` and an `editMessageText` replacement together; the
+  stale card and keyboard become only `✅ <button label>`. Multi-select toggles
+  and nonterminal wizard controls retain their keyboard and update its checked
+  state concurrently with acknowledgement. Stale, expired, rejected,
+  cross-session, and externally superseded actions never receive a false success
+  checkmark. A deterministic blocked-Details test proves both visible feedback
+  operations finish before follow-up page delivery is allowed to continue.
+  Feedback-edit failure leaves the durable action intact while recording
+  `telegram.callback-feedback-edit-failed`; a later Details delivery failure
+  replaces the accepted marker with an explicit failure. The current official
+  Bot API confirms that clients show progress until `answerCallbackQuery` and
+  that bot messages with inline keyboards can be edited. On 2026-07-29 the
+  complete `pnpm check` passed formatting, governance, public-doc, fixture,
+  secret, release-policy, lint, and type gates; 74 Vitest files/560 tests; both
+  pinned contract suites; all workspace builds; the 234,159-byte
+  packed/1,431,254-byte unpacked 11-file artifact; hosted package proof; and the
+  complete packed lifecycle. The first fully parallel run exposed two
+  pre-existing load-sensitive integration budgets, so their test-only timeouts
+  were bounded upward before the clean rerun. All three Chromium end-to-end
+  scenarios passed, and `pnpm audit --prod` found no known vulnerability.
 - The inactive-topic command is now `/purge`; `/prune` remains a compatibility
   alias. The live defect was a routing gap, not a deletion-worker regression:
   the prior router recognized only `/cleanup` and `/prune`, so `/purge` was

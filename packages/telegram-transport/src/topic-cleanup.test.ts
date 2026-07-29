@@ -199,6 +199,13 @@ describe("Telegram proven-dead topic cleanup", () => {
       },
     });
     expect(confirmed).toMatchObject({ outcome: "cleanup-confirmed" });
+    expect(runtime.transport.callbackAcknowledgements.at(-1)).toEqual({
+      callbackId: "callback_cleanup_confirm",
+      text: "Cleanup started",
+    });
+    expect(runtime.transport.messageEdits.at(-1)?.text).toBe(
+      "✅ Delete 1 topic",
+    );
 
     await expect(runtime.service.drainTopicCleanups()).resolves.toMatchObject({
       supported: true,
@@ -603,8 +610,11 @@ describe("Telegram inactive-topic pruning", () => {
     );
     expect(runtime.transport.callbackAcknowledgements.at(-1)).toEqual({
       callbackId: "callback_prune_start",
-      text: "Purge preview ready",
+      text: "Opening purge preview",
     });
+    expect(runtime.transport.messageEdits.at(-1)?.text).toBe(
+      "✅ Review topics inactive 24h",
+    );
     runtime.store.close();
   });
 
