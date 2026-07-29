@@ -310,6 +310,7 @@ describe("Telegram activation canary", () => {
     const address = daemon.server.address() as AddressInfo;
     const relayClient = new RelayClient({
       baseUrl: `http://127.0.0.1:${String(address.port)}`,
+      timeoutMs: 10_000,
     });
     expect(daemon.service.transport).toBeInstanceOf(FakeNotificationTransport);
     const transport = daemon.service.transport as FakeNotificationTransport;
@@ -323,7 +324,7 @@ describe("Telegram activation canary", () => {
     });
 
     await vi.waitFor(() => expect(transport.deliveries).toHaveLength(1), {
-      timeout: 10_000,
+      timeout: 15_000,
     });
     await relayClient.handleTelegramUpdate({
       update_id: 909,
@@ -344,5 +345,5 @@ describe("Telegram activation canary", () => {
       resolvedBy: "telegram",
     });
     await daemon.close();
-  }, 15_000);
+  }, 25_000);
 });

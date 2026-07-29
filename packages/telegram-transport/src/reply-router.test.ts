@@ -571,13 +571,8 @@ describe("Telegram reply correlation", () => {
       "Already handled",
     );
     expect(runtime.transport.messageEdits).toHaveLength(2);
-    expect(runtime.transport.messageEdits[0]?.text).toContain("Answered");
-    expect(runtime.transport.messageEdits[0]?.text).toContain(
-      "session rmission",
-    );
-    expect(runtime.transport.messageEdits[0]?.text).toContain(
-      "Selected: Allow once",
-    );
+    expect(runtime.transport.messageEdits[0]?.text).toBe("✅ Allow once");
+    expect(runtime.transport.messageEdits[1]?.text).toBe("✅ Allow once");
     expect(runtime.transport.messageEdits[0]?.text).not.toContain("allow_once");
     runtime.store.close();
   });

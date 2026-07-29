@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { makeProjectRef } from "@agent-relay/protocol";
-import type { CardActionKind } from "@agent-relay/notification-contracts";
+import {
+  TransportError,
+  type CardActionKind,
+} from "@agent-relay/notification-contracts";
 import {
   FakeNotificationTransport,
   RelayService,
@@ -119,9 +122,8 @@ function callbackFor(
   };
 }
 
-async function setup() {
+async function setup(transport = new FakeNotificationTransport()) {
   const store = new RelayStore();
-  const transport = new FakeNotificationTransport();
   const service = new RelayService(store, transport, {
     now: () => new Date(baseTime),
   });
@@ -185,6 +187,104 @@ describe("Telegram card actions", () => {
       runtime.store.getPendingRequest(input.request?.correlationId ?? "")
         ?.answer,
     ).toBe("Continue.");
+    expect(runtime.transport.messageEdits[0]?.text).toBe("✅ Continue");
+    runtime.store.close();
+  });
+
+  it("shows accepted Details feedback before downstream delivery finishes", async () => {
+    const runtime = await setup();
+    runtime.service.ingest(
+      event(
+        "evt_card_details_feedback_12345678",
+        "session_card_details_feedback_12345678",
+        1,
+        { lastAssistantMessage: "x".repeat(2_000) },
+      ),
+    );
+    await runtime.service.drain();
+    const card = runtime.transport.deliveries[0];
+    if (card === undefined) {
+      throw new Error("missing details feedback card");
+    }
+
+    const originalDeliver = runtime.transport.deliver.bind(runtime.transport);
+    let releaseDetails = (): void => {};
+    const detailsReleased = new Promise<void>((resolve) => {
+      releaseDetails = resolve;
+    });
+    let markDetailsStarted = (): void => {};
+    const detailsStarted = new Promise<void>((resolve) => {
+      markDetailsStarted = resolve;
+    });
+    vi.spyOn(runtime.transport, "deliver").mockImplementation(
+      async (message, context) => {
+        if (message.title.includes("Details")) {
+          markDetailsStarted();
+          await detailsReleased;
+        }
+        return await originalDeliver(message, context);
+      },
+    );
+
+    const callback = callbackFor(card, "details", 214);
+    const handling = runtime.router.handle(callback.update);
+    await detailsStarted;
+    expect(runtime.transport.callbackAcknowledgements.at(-1)).toEqual({
+      callbackId: "callback_214",
+      text: "Details accepted",
+    });
+    expect(runtime.transport.messageEdits.at(-1)?.text).toBe("✅ Details");
+    expect(runtime.store.getCardAction(callback.action.token)?.state).toBe(
+      "claimed",
+    );
+
+    releaseDetails();
+    await expect(handling).resolves.toMatchObject({
+      outcome: "action-completed",
+    });
+    runtime.store.close();
+  });
+
+  it("records compact-feedback edit failures without losing the accepted action", async () => {
+    class FeedbackFailureTransport extends FakeNotificationTransport {
+      public override async editResolvedMessage(): Promise<void> {
+        throw new TransportError(
+          "synthetic feedback edit failure",
+          "fake-feedback-edit",
+          true,
+        );
+      }
+    }
+    const runtime = await setup(new FeedbackFailureTransport());
+    const input = continuationEvent(
+      "evt_card_feedback_failure_12345678",
+      "session_card_feedback_failure_12345678",
+      1,
+    );
+    runtime.service.ingest(input);
+    await runtime.service.drain();
+    const delivery = runtime.transport.deliveries[0];
+    if (delivery === undefined) {
+      throw new Error("missing feedback-failure card");
+    }
+
+    await expect(
+      runtime.router.handle(callbackFor(delivery, "continue", 215).update),
+    ).resolves.toMatchObject({ outcome: "action-completed" });
+    expect(
+      runtime.store.getPendingRequest(input.request?.correlationId ?? ""),
+    ).toMatchObject({ state: "answered", answer: "Continue." });
+    expect(runtime.transport.callbackAcknowledgements.at(-1)?.text).toBe(
+      "Continuation queued",
+    );
+    expect(runtime.store.listDiagnostics()).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        code: "telegram.callback-feedback-edit-failed",
+        message:
+          "Telegram could not show accepted button feedback: fake-feedback-edit",
+      }),
+    );
     runtime.store.close();
   });
 
@@ -329,9 +429,7 @@ describe("Telegram card actions", () => {
     expect(runtime.store.getSessionControl(input)).toMatchObject({
       endedAt: baseTime,
     });
-    expect(runtime.transport.messageEdits.at(-1)?.text).toContain(
-      "harness process is unchanged",
-    );
+    expect(runtime.transport.messageEdits.at(-1)?.text).toBe("✅ End");
     const delayed = questionEvent(
       "evt_card_end_delayed_12345678",
       sessionId,

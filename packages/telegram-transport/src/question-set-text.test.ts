@@ -298,7 +298,7 @@ describe("structured question-set free text", () => {
       ],
     });
     const finalText = testRuntime.transport.messageEdits.at(-1)!.text;
-    expect(finalText).toContain("text saved (26 characters)");
+    expect(finalText).toBe("✅ Submit");
     expect(finalText).not.toContain(replacement);
     testRuntime.store.close();
   });

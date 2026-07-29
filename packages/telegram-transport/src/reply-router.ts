@@ -248,6 +248,13 @@ function parseTopicPruneDuration(text: string): number | undefined {
     : undefined;
 }
 
+const CARD_ACTION_LABELS: Record<ParsedCardActionCallback["action"], string> = {
+  continue: "Continue",
+  details: "Details",
+  mute: "Mute",
+  end: "End",
+};
+
 export class TelegramReplyRouter {
   private readonly now: () => Date;
   private readonly logger: RelayLogger;
@@ -335,6 +342,60 @@ export class TelegramReplyRouter {
         return;
       }
     }
+  }
+
+  private async editCallbackFeedback(
+    callback: TelegramCallback,
+    text: string,
+  ): Promise<void> {
+    if (
+      !isInteractiveTransport(this.transport) ||
+      callback.message === undefined
+    ) {
+      return;
+    }
+    try {
+      await this.transport.editResolvedMessage(
+        String(callback.message.message_id),
+        text,
+      );
+    } catch (error) {
+      const transportError = asTransportError(error);
+      const recordedAt = this.now().toISOString();
+      this.logger.log({
+        level: "error",
+        code: "telegram.callback-feedback-edit-failed",
+        message: transportError.message,
+        at: recordedAt,
+        details: {
+          errorCode: transportError.code,
+          retryable: transportError.retryable,
+        },
+      });
+      this.store.recordDiagnostic({
+        schema: "agent-relay-diagnostic.v1",
+        diagnosticId: `diag_callback_feedback_${randomUUID()}`,
+        recordedAt,
+        source: "daemon",
+        level: "error",
+        code: "telegram.callback-feedback-edit-failed",
+        message: `Telegram could not show accepted button feedback: ${transportError.code}`,
+      });
+    }
+  }
+
+  private async showAcceptedButton(
+    callback: TelegramCallback,
+    label: string,
+    acknowledgement: string,
+  ): Promise<void> {
+    // The caller has already committed the action to SQLite. Start both Bot API
+    // requests together so Telegram can clear its progress bar and replace the
+    // stale keyboard without waiting for downstream delivery or continuation.
+    await Promise.all([
+      this.acknowledge(callback.id, acknowledgement),
+      this.editCallbackFeedback(callback, `✅ ${label}`),
+    ]);
   }
 
   private async editResolved(
@@ -771,8 +832,26 @@ export class TelegramReplyRouter {
       "message-mismatch": "Stale cleanup control",
       "not-ready": "Cleanup is no longer available",
     }[decision.outcome];
-    await this.acknowledge(callback.id, acknowledgement);
-    if (decision.operation !== undefined) {
+    if (
+      (decision.outcome === "claimed" || decision.outcome === "cancelled") &&
+      decision.operation !== undefined
+    ) {
+      const count = decision.operation.candidates.length;
+      const label =
+        parsed.action === "cancel"
+          ? "Cancel"
+          : `${
+              decision.operation.mode === "inactive" ? "Purge" : "Delete"
+            } ${String(count)} topic${count === 1 ? "" : "s"}`;
+      await this.showAcceptedButton(callback, label, acknowledgement);
+    } else {
+      await this.acknowledge(callback.id, acknowledgement);
+    }
+    if (
+      decision.operation !== undefined &&
+      decision.outcome !== "claimed" &&
+      decision.outcome !== "cancelled"
+    ) {
       await controller.syncTopicCleanupPresentation(decision.operation);
     }
     switch (decision.outcome) {
@@ -809,6 +888,12 @@ export class TelegramReplyRouter {
         "This prune control is stale or in the wrong conversation",
       );
     }
+    const inactiveHours = Math.round(parsed.inactiveForMs / (60 * 60_000));
+    await this.showAcceptedButton(
+      callback,
+      `Review topics inactive ${String(inactiveHours)}h`,
+      "Opening purge preview",
+    );
     const route = await this.handleTopicCleanupCommand(updateId, {
       mode: "inactive",
       inactiveForMs: parsed.inactiveForMs,
@@ -816,12 +901,12 @@ export class TelegramReplyRouter {
         ? {}
         : { topicId: String(callback.message.message_thread_id) }),
     });
-    await this.acknowledge(
-      callback.id,
-      route.outcome === "cleanup-previewed"
-        ? "Purge preview ready"
-        : "Could not open purge preview",
-    );
+    if (route.outcome !== "cleanup-previewed") {
+      await this.editCallbackFeedback(
+        callback,
+        "❌ Could not open purge preview",
+      );
+    }
     return route;
   }
 
@@ -917,8 +1002,24 @@ export class TelegramReplyRouter {
     }[resolution.outcome];
     // SQLite is the answer authority. Acknowledge only after its transaction
     // commits so Telegram can never claim an unrecorded selection succeeded.
-    await this.acknowledge(callback.id, acknowledgement);
-    await this.editResolved(messageId, resolution);
+    const selected =
+      resolution.request?.answer === undefined
+        ? undefined
+        : resolution.request.options.find(
+            (option) => option.optionId === resolution.request?.answer,
+          );
+    if (
+      (resolution.outcome === "answered" ||
+        resolution.outcome === "duplicate") &&
+      selected !== undefined
+    ) {
+      await this.showAcceptedButton(callback, selected.label, acknowledgement);
+    } else {
+      await Promise.all([
+        this.acknowledge(callback.id, acknowledgement),
+        this.editResolved(messageId, resolution),
+      ]);
+    }
     return {
       outcome: routeOutcome(resolution),
       updateId,
@@ -1003,6 +1104,9 @@ export class TelegramReplyRouter {
     request: PendingRequestRecord,
     draft: MultiSelectDraftRecord,
   ): AttentionCardResolutionState {
+    if (draft.state === "superseded") {
+      return "superseded";
+    }
     if (request.state === "answered" || draft.state === "submitted") {
       return "answered";
     }
@@ -1011,9 +1115,6 @@ export class TelegramReplyRouter {
     }
     if (request.state === "expired" || draft.state === "expired") {
       return "expired";
-    }
-    if (draft.state === "superseded") {
-      return "superseded";
     }
     return "failed";
   }
@@ -1172,19 +1273,21 @@ export class TelegramReplyRouter {
           updateId,
         };
       }
-      await this.acknowledge(
-        callback.id,
-        result.outcome === "unchanged"
-          ? "Already updated"
-          : selected
-            ? "Selected"
-            : "Removed",
-      );
-      await this.editMultiSelectDraft(
-        context.messageId,
-        result.request,
-        result.draft,
-      );
+      await Promise.all([
+        this.acknowledge(
+          callback.id,
+          result.outcome === "unchanged"
+            ? "Already updated"
+            : selected
+              ? "Selected"
+              : "Removed",
+        ),
+        this.editMultiSelectDraft(
+          context.messageId,
+          result.request,
+          result.draft,
+        ),
+      ]);
       return {
         outcome:
           result.outcome === "unchanged" ? "draft-unchanged" : "draft-updated",
@@ -1229,21 +1332,36 @@ export class TelegramReplyRouter {
       result.outcome === "duplicate" ||
       result.outcome === "expired"
     ) {
-      await this.acknowledge(
-        callback.id,
-        {
-          answered: "Submitted",
-          cancelled: "Canceled",
-          duplicate: "Already handled",
-          expired: "Request expired",
-        }[result.outcome],
-      );
-      await this.editMultiSelectFinal(
-        context.messageId,
-        result.request,
-        result.draft,
-        this.multiSelectFinalState(result.request, result.draft),
-      );
+      const acknowledgement = {
+        answered: "Submitted",
+        cancelled: "Canceled",
+        duplicate: "Already handled",
+        expired: "Request expired",
+      }[result.outcome];
+      const matchingDuplicate =
+        result.outcome === "duplicate" &&
+        ((result.draft.state === "submitted" && parsed.action === "submit") ||
+          (result.draft.state === "cancelled" && parsed.action === "cancel"));
+      if (
+        result.outcome === "expired" ||
+        (result.outcome === "duplicate" && !matchingDuplicate)
+      ) {
+        await Promise.all([
+          this.acknowledge(callback.id, acknowledgement),
+          this.editMultiSelectFinal(
+            context.messageId,
+            result.request,
+            result.draft,
+            this.multiSelectFinalState(result.request, result.draft),
+          ),
+        ]);
+      } else {
+        await this.showAcceptedButton(
+          callback,
+          parsed.action === "submit" ? "Submit" : "Cancel",
+          acknowledgement,
+        );
+      }
       return {
         outcome:
           result.outcome === "duplicate" ? "duplicate-answer" : result.outcome,
@@ -1685,23 +1803,25 @@ export class TelegramReplyRouter {
       result.outcome === "unchanged" ||
       result.outcome === "moved"
     ) {
-      await this.acknowledge(
-        callback.id,
-        result.outcome === "unchanged"
-          ? "Already updated"
-          : result.outcome === "moved"
-            ? parsed.action === "back"
-              ? "Previous question"
-              : "Next question"
-            : parsed.action === "unselect"
-              ? "Removed"
-              : "Selected",
-      );
-      await this.editQuestionSetDraft(
-        context.messageId,
-        result.request,
-        result.draft,
-      );
+      await Promise.all([
+        this.acknowledge(
+          callback.id,
+          result.outcome === "unchanged"
+            ? "Already updated"
+            : result.outcome === "moved"
+              ? parsed.action === "back"
+                ? "Previous question"
+                : "Next question"
+              : parsed.action === "unselect"
+                ? "Removed"
+                : "Selected",
+        ),
+        this.editQuestionSetDraft(
+          context.messageId,
+          result.request,
+          result.draft,
+        ),
+      ]);
       return {
         outcome:
           result.outcome === "unchanged" ? "draft-unchanged" : "draft-updated",
@@ -1733,22 +1853,48 @@ export class TelegramReplyRouter {
       );
       return { outcome: "draft-rejected", updateId };
     }
-    await this.acknowledge(
-      callback.id,
-      {
-        answered: "Submitted",
-        cancelled: "Canceled",
-        duplicate: "Already handled",
-        expired: "Request expired",
-        stale: "This interaction is no longer active",
-        failed: "Request failed",
-      }[result.outcome],
-    );
-    await this.editQuestionSetFinal(
-      context.messageId,
-      result.request,
-      result.draft,
-    );
+    const acknowledgement = {
+      answered: "Submitted",
+      cancelled: "Canceled",
+      duplicate: "Already handled",
+      expired: "Request expired",
+      stale: "This interaction is no longer active",
+      failed: "Request failed",
+    }[result.outcome];
+    const matchingDuplicate =
+      result.outcome === "duplicate" &&
+      ((result.draft.state === "submitted" && parsed.action === "submit") ||
+        (result.draft.state === "cancelled" && parsed.action === "cancel"));
+    if (
+      result.outcome === "answered" ||
+      result.outcome === "cancelled" ||
+      matchingDuplicate
+    ) {
+      const selectedLabel =
+        parsed.action === "choose"
+          ? request.options.find((option) => option.token === parsed.token)
+              ?.label
+          : undefined;
+      await this.showAcceptedButton(
+        callback,
+        selectedLabel ??
+          (parsed.action === "submit"
+            ? "Submit"
+            : parsed.action === "cancel"
+              ? "Cancel"
+              : "Selection"),
+        acknowledgement,
+      );
+    } else {
+      await Promise.all([
+        this.acknowledge(callback.id, acknowledgement),
+        this.editQuestionSetFinal(
+          context.messageId,
+          result.request,
+          result.draft,
+        ),
+      ]);
+    }
     return {
       outcome:
         result.outcome === "duplicate"
@@ -1769,33 +1915,6 @@ export class TelegramReplyRouter {
     this.diagnoseCardCallback(updateId, code, response);
     await this.acknowledge(callback.id, response);
     return { outcome: "action-rejected", updateId };
-  }
-
-  private async editCardControl(
-    messageId: string,
-    event: NonNullable<ReturnType<RelayStore["getEvent"]>>["event"],
-    state: string,
-  ): Promise<void> {
-    if (!isInteractiveTransport(this.transport)) {
-      return;
-    }
-    try {
-      await this.transport.editResolvedMessage(
-        messageId,
-        `${renderDeliveryText(
-          renderDeliveryMessage(event, { now: this.now() }),
-        )}\n\nSession control: ${state}`,
-      );
-    } catch (error) {
-      this.logger.log({
-        level: "warn",
-        code: "telegram.card-edit-failed",
-        message:
-          error instanceof Error ? error.message : "Telegram card edit failed",
-        at: this.now().toISOString(),
-        details: { messageId },
-      });
-    }
   }
 
   private async handleCardCallback(
@@ -1910,6 +2029,11 @@ export class TelegramReplyRouter {
         await this.acknowledge(callback.id, "Already handled");
         return { outcome: "action-duplicate", updateId };
       }
+      await this.showAcceptedButton(
+        callback,
+        CARD_ACTION_LABELS[parsed.action],
+        "Details accepted",
+      );
       try {
         const details = this.store.notificationDetails(action.eventId);
         const pages = renderDetailsMessages(details.events, details.totalCount);
@@ -1925,7 +2049,6 @@ export class TelegramReplyRouter {
           outcome: "details-delivered",
           now: this.now().toISOString(),
         });
-        await this.acknowledge(callback.id, "Details posted");
         return { outcome: "action-completed", updateId };
       } catch (error) {
         const transportError = asTransportError(error);
@@ -1942,7 +2065,7 @@ export class TelegramReplyRouter {
           "Details delivery failed after the action was claimed",
           "error",
         );
-        await this.acknowledge(callback.id, "Details failed");
+        await this.editCallbackFeedback(callback, "❌ Details failed");
         return { outcome: "action-failed", updateId };
       }
     }
@@ -1956,29 +2079,21 @@ export class TelegramReplyRouter {
       );
     }
     if (parsed.action === "continue") {
-      const pending = this.store.getPendingForEvent(action.eventId);
-      if (pending !== undefined) {
-        await this.editResolved(String(callback.message.message_id), {
-          outcome: "answered",
-          request: pending,
-        });
-      }
-      await this.acknowledge(callback.id, "Continuation queued");
+      await this.showAcceptedButton(
+        callback,
+        CARD_ACTION_LABELS[parsed.action],
+        "Continuation queued",
+      );
     } else if (parsed.action === "mute") {
-      await this.editCardControl(
-        String(callback.message.message_id),
-        eventRecord.event,
-        "routine notifications muted; questions and critical failures remain active",
+      await this.showAcceptedButton(
+        callback,
+        CARD_ACTION_LABELS[parsed.action],
+        "Routine notifications muted",
       );
-      await this.acknowledge(callback.id, "Routine notifications muted");
     } else {
-      await this.editCardControl(
-        String(callback.message.message_id),
-        eventRecord.event,
-        "relay lane ended; the harness process is unchanged",
-      );
-      await this.acknowledge(
-        callback.id,
+      await this.showAcceptedButton(
+        callback,
+        CARD_ACTION_LABELS[parsed.action],
         "Relay lane ended; harness process unchanged",
       );
     }
