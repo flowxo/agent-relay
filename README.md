@@ -1,47 +1,318 @@
 # Agent Relay
 
-Agent Relay is a local-first attention and control layer for concurrent Codex,
-Claude Code, and Cursor sessions. It normalizes deterministic harness events,
-durably spools them, routes them through replaceable notification transports,
-and keeps continuation capabilities explicit.
+Keep tabs on all your coding agents without keeping every terminal in view.
 
-It gives one operator a dependable way to notice when several coding agents
-stop, fail, or need an answer; identify the exact session; respond through
-buttons, text, or the local web board; and continue only where the harness has
-an official continuation contract.
+Agent Relay watches Codex, Claude Code, and Cursor sessions running on your
+machine. When an agent finishes a turn, needs an answer, or a supervised process
+exits unexpectedly, you get an alert in a dedicated Telegram topic. You can
+respond from your phone, and Agent Relay routes the answer back to the right
+session.
 
-> **Release status:** an installable `0.1.0-alpha.1` package candidate is proven
-> locally, but no npm package or stable support claim exists yet.
+Each session gets its own topic, so five agents working at once still look like
+five separate conversations. There is also a local web board for seeing every
+session at a glance.
 
-## What it can prove
+Agent Relay is local-first: the daemon and its SQLite database run on your
+machine. Telegram and the optional Notifications service are adapters, not
+places where Agent Relay keeps its source of truth.
 
-| Signal or action    | Evidence and boundary                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| Stop or question    | Native runtime-validated hook payload from the exact harness session                     |
-| Background pause    | Claude structured Stop task/cron counts suppress a false waiting alert; prose is ignored |
-| Inline continuation | The original hook remains open for a bounded reply and returns native harness JSON       |
-| Late CLI resume     | An Agent Relay-owned supervisor exits, claims one answer, and invokes official resume    |
-| Process crash       | Reported only from the exit status of a child process Agent Relay owns                   |
-| Silent hang         | Never inferred from inactivity; no automatic hang restart is claimed                     |
-| Cursor IDE resume   | Unsupported; an IDE Stop hook cannot safely become a new Cursor CLI process              |
+> **Project status:** Agent Relay is an early alpha and is not published to npm
+> yet. Install it from source. The currently tested setup is macOS on Apple
+> silicon with Node.js 22 or newer and pnpm 11.
 
-Native hooks do not prove that a process crashed. Installing hooks alone gives
-stop/question notifications and bounded inline replies. Use
-`agent-relay run <harness>` when proven exit reporting or late CLI resume is
-required.
+## What you get
 
-The current end-user validation target is macOS on Apple silicon with
-Node.js 22. Exact harness versions and surfaces are evidence-based, not guessed
-from a version range; see [compatibility and evidence](docs/compatibility.md)
-and the [generated capability matrix](docs/capability-matrix.md). Windows, Linux
-runtime operation, Intel macOS, automatic service installation, and Cursor IDE
-late resume are not current support claims.
+- One private Telegram topic for each agent session.
+- Clear alerts when an agent stops, asks a question, or has a proven crash.
+- Buttons for choices and common actions such as **Continue**, **Details**,
+  **Mute**, and **End**.
+- Free-text answers routed to the exact request that opened them.
+- A local session board at `http://127.0.0.1:4317/ui/`.
+- Durable delivery and reply state in SQLite, including retries and visible dead
+  letters.
+- Native hooks for ordinary use, plus an opt-in supervisor when you need proven
+  process exits or late CLI resume.
+- Replaceable notification transports. Direct Telegram works without a hosted
+  Agent Relay account.
 
-### Evidence-backed harness support
+## Get started
 
-This concise table and the detailed matrix are generated from the same
-runtime-validated registry that powers `agent-relay capabilities` and `doctor`.
-Exact versions are snapshots, not ranges.
+### 1. Build Agent Relay
+
+You need Node.js 22 or newer, pnpm 11, and at least one supported coding
+harness.
+
+```sh
+git clone https://github.com/flowxo/agent-relay.git
+cd agent-relay
+
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm contracts:preinstall
+pnpm rebuild
+pnpm build
+```
+
+The install starts with dependency lifecycle scripts disabled. The contract
+preflight checks the vendored packages, then `pnpm rebuild` builds the reviewed
+SQLite dependency.
+
+Do not install the unrelated unscoped `agent-relay` package from npm. This
+project's future package name is `@flowxo/agent-relay`, but it has not been
+published.
+
+### 2. Prove the local loop
+
+Before adding Telegram credentials, run the complete ingest, database, and
+delivery path against the built-in fake transport.
+
+In one terminal:
+
+```sh
+node apps/relay/dist/cli.js daemon --transport fake --no-web
+```
+
+In another:
+
+```sh
+node apps/relay/dist/cli.js canary
+```
+
+The canary should finish in a durable `delivered` state. Stop the daemon with
+`Ctrl-C`.
+
+### 3. Install the harness hooks
+
+Agent Relay can install user-level hooks for all three harnesses. Inspect the
+dry run first:
+
+```sh
+node apps/relay/dist/cli.js install --dry-run
+node apps/relay/dist/cli.js install
+node apps/relay/dist/cli.js doctor
+```
+
+The installer preserves unrelated settings, makes private backups, and owns only
+the entries it adds. It may update:
+
+- `~/.codex/hooks.json`
+- `~/.claude/settings.json`
+- `~/.cursor/hooks.json`
+
+It also creates the launcher at `~/.agent-relay/bin/agent-relay`.
+
+Keep this source checkout in place while those hooks are installed; the launcher
+points to the exact build you inspected.
+
+Review newly installed hooks in each harness. In Codex, use `/hooks` and trust
+the exact Agent Relay entry. Claude Code and Cursor have their own hook views.
+
+For upgrade, rollback, and removal details, read the
+[installation guide](docs/install-upgrade-uninstall.md).
+
+## Connect Telegram
+
+Direct Telegram is the easiest way to use Agent Relay away from your desk. It
+uses long polling, so you do not need a public URL or webhook.
+
+You will need:
+
+- a dedicated bot created with
+  [BotFather](https://core.telegram.org/bots/features#botfather);
+- a private one-to-one chat with that bot;
+- **Threaded Mode** enabled for the bot in BotFather; and
+- the bot token, private chat ID, and operator user ID.
+
+The [living onboarding guide](docs/onboarding.md) walks through BotFather,
+finding the two IDs safely, and checking threaded mode. The shorter
+[Telegram guide](docs/telegram.md) is the day-to-day reference.
+
+Create a private, gitignored activation file:
+
+```sh
+umask 077
+cp .env.example .env.activation
+chmod 600 .env.activation
+```
+
+Set these values in `.env.activation`:
+
+```dotenv
+AGENT_RELAY_TRANSPORT=telegram
+AGENT_RELAY_TELEGRAM_TOKEN=<bot token>
+AGENT_RELAY_TELEGRAM_CHAT_ID=<private chat id>
+AGENT_RELAY_TELEGRAM_OPERATOR_ID=<authorized user id>
+AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll
+```
+
+Load the file and start the daemon:
+
+```sh
+set +x
+set -a
+. ./.env.activation
+set +a
+
+~/.agent-relay/bin/agent-relay daemon
+```
+
+There is no background service installer yet, so leave this terminal running.
+The daemon also starts the local web board on `127.0.0.1:4317`.
+
+In a second terminal, load the same environment and run the real round-trip
+canary:
+
+```sh
+set +x
+set -a
+. ./.env.activation
+set +a
+
+~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
+```
+
+Agent Relay creates a Telegram topic and asks for the exact reply
+`relay-canary-ok`. When that succeeds, start Codex, Claude Code, or Cursor as
+usual. Their installed hooks will send attention events to the daemon.
+
+## Use it day to day
+
+### Follow sessions in Telegram
+
+The first event from a session creates a topic named with the harness,
+repository, optional branch, and a short session suffix. Later events from the
+same session return to that topic, even after the daemon restarts.
+
+Structured choices appear as buttons. For a free-text question, type in the
+session topic when it has one compatible open request. If several requests are
+open in that topic, reply to the specific request card so Agent Relay can tell
+which one you mean.
+
+Agent text cannot invent callback actions. Buttons carry opaque local tokens,
+and every answer must match the configured chat, operator, topic, request, and
+session before it is accepted. If Telegram and the web board race to answer the
+same request, the first durable answer wins.
+
+Useful session controls include:
+
+- **Continue** — answer an eligible continuation request.
+- **Details** — show a bounded, redacted excerpt.
+- **Mute** — hide routine alerts without hiding questions or proven failures.
+- **End** — close the Agent Relay lane after its open questions are resolved.
+
+Ending a lane does not kill a process Agent Relay does not own, and it does not
+automatically delete the Telegram topic.
+
+### Clean up old topics
+
+Send `/cleanup` to preview topics for sessions that Agent Relay can prove have
+ended. Send `/prune`, `/prune 12h`, or `/prune 7d` to preview inactive topics
+whose sessions were never explicitly ended. Both commands require button
+confirmation before Telegram permanently deletes anything.
+
+You can send either command from Telegram's **New Chat** surface or an existing
+topic. Agent Relay posts the preview back where the command arrived. Telegram
+does not expose ordinary private-bot read receipts, so the returned card is the
+visible acknowledgement.
+
+Cleanup is deliberately conservative. It will not remove a topic with an open
+request, active continuation, pending delivery, or newly arrived work. See the
+[Telegram cleanup and pruning rules](docs/telegram.md) before relying on it for
+retention.
+
+### Use the local web board
+
+Open `http://127.0.0.1:4317/ui/` while the daemon is running. The board shows
+running, waiting, crashed, stale, muted, and ended sessions, along with their
+open requests and a bounded event timeline.
+
+The daemon creates a private credential file at
+`~/.agent-relay/web-credential.json`. Copy its bearer and CSRF values into the
+connection form. The page keeps them in memory rather than browser storage.
+
+To explore the UI with synthetic data and no Telegram account:
+
+```sh
+node apps/relay/dist/cli.js web-demo
+```
+
+The demo runs separately at `http://127.0.0.1:4318/ui/`. Read the
+[web companion guide](docs/web-companion.md) for its security model and API.
+
+### Supervise a CLI when exits matter
+
+Installed hooks can prove that a harness emitted a stop or question event. They
+cannot prove that its process crashed. If you need exit reporting or want Agent
+Relay to resume a CLI after the original process exits, launch it through the
+supervisor:
+
+```sh
+~/.agent-relay/bin/agent-relay run codex \
+  --harness-version 0.145.0 -- exec "work on the task"
+
+~/.agent-relay/bin/agent-relay run claude \
+  --harness-version 2.1.219 -- --print "work on the task"
+
+~/.agent-relay/bin/agent-relay run cursor \
+  --harness-version 2026.07.23-e383d2b -- --trust "work on the task"
+```
+
+Arguments after `--` are passed directly to the harness without a shell. The
+supervisor owns the child process, so it can report a non-zero exit or
+unexpected signal without guessing. A correlated answer can then start the
+harness's official resume command once the original child has exited.
+
+Agent Relay never calls inactivity a crash and does not automatically restart a
+silent process. Cursor IDE resume is also unsupported: an IDE stop hook cannot
+safely be turned into a new Cursor CLI process.
+
+## How it works
+
+The main loop is intentionally small:
+
+```text
+Codex / Claude Code / Cursor
+            │
+            │ native hook or supervised child
+            ▼
+      local Agent Relay daemon  ◀──── correlated answer
+            │
+            ▼
+      durable SQLite spool
+            │
+            ├──── Telegram session topics
+            ├──── local web board
+            └──── hosted Notifications (optional)
+```
+
+Harness adapters validate native payloads and turn them into one shared,
+runtime-validated event protocol. The daemon writes an event before trying to
+deliver it. Delivery attempts, retries, requests, answers, callbacks, and
+continuation claims all use the same SQLite source of truth.
+
+If the daemon is temporarily unavailable, a hook returns the harness's safe
+no-op response and writes a bounded, redacted record to a fallback spool. The
+daemon replays it later. Malformed input and exhausted deliveries become
+diagnostics or dead letters instead of disappearing silently.
+
+Only the selected transport receives an event. The fake transport remains local,
+direct Telegram receives bounded cards, and the optional hosted Notifications
+adapter receives the same provider-neutral contract. Agent Relay does not
+require a hosted account, public callback, or Cloudflare runtime for local or
+Telegram operation.
+
+For the deeper design, read
+[architecture and threat boundaries](docs/architecture.md). To add another
+provider, start with
+[extending notification transports](docs/extending-transports.md). To support
+another agent surface, see
+[extending harness adapters](docs/extending-harnesses.md).
+
+## Compatibility
+
+Agent Relay fails closed when a harness capability is unknown. Exact versions
+below are evidence snapshots, not promises that an untested version behaves the
+same way. Run `agent-relay doctor` and `agent-relay capabilities` on your
+machine.
 
 <!-- BEGIN GENERATED HARNESS SUPPORT -->
 
@@ -56,483 +327,78 @@ Exact versions are snapshots, not ranges.
 
 <!-- END GENERATED HARNESS SUPPORT -->
 
-## Try the complete local loop first
+The current runtime validation target is macOS on Apple silicon with Node.js 22.
+Windows, Linux runtime operation, Intel macOS, automatic service installation,
+and Cursor IDE late resume are not current support claims. The
+[compatibility policy](docs/compatibility.md) explains the classifications, and
+the [generated capability matrix](docs/capability-matrix.md) links every claim
+to its evidence.
 
-No Telegram account or hosted service is needed for the first proof:
+## Privacy and removal
 
-```sh
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm contracts:preinstall
-pnpm rebuild
-pnpm check
-pnpm build
-```
+Agent Relay sends no product analytics or remote crash reports. Local state,
+outbound fields, retention, and erasure are documented in
+[PRIVACY.md](PRIVACY.md).
 
-In one terminal, start the local daemon with an explicit fake override:
-
-```sh
-node apps/relay/dist/cli.js daemon --transport fake --no-web
-```
-
-In a second terminal:
-
-```sh
-node apps/relay/dist/cli.js canary
-```
-
-The canary must report a durable fake-Telegram delivery. Stop the daemon with
-`Ctrl-C`. Next, follow the
-[installation/upgrade/uninstall guide](docs/install-upgrade-uninstall.md).
-Configure [direct Telegram](docs/telegram.md) only when private credentials are
-available.
-
-## Inspect the standalone package
-
-The one-package distribution candidate is `@flowxo/agent-relay`. The npm scope
-is still an owner-controlled publication gate; do not try to install it from the
-registry yet, and do not install the unrelated unscoped `agent-relay` package.
-
-Build and prove the exact local artifact:
-
-```sh
-pnpm package:check
-pnpm package:hosted:check
-pnpm package:lifecycle:check
-```
-
-The first command packs the staged release directory, compares all 11 files to a
-reviewed allowlist, enforces compressed and unpacked size budgets, rejects
-workspace/source/private-path leakage, installs with lifecycle scripts disabled
-in an isolated prefix, explicitly rebuilds the approved SQLite native
-dependency, and proves CLI help, the fake canary, static web assets, and the
-authenticated local web API. It publishes nothing and removes its temporary
-artifact.
-
-The hosted package check installs the same release candidate into a clean home,
-configures the exact pinned loopback Notifications mock through the public CLI,
-proves confirm/select/input, crash-before-ack replay, explicit disconnect and
-local state retention, then runs the real direct-Telegram adapter against a
-synthetic Bot API. It also scans the artifact and diagnostics for credential,
-provider identity, prompt, answer, transcript, path, and executable leakage. It
-requires no real bot token or hosted account and emits the package and immutable
-contract lock SHA-256 digests as reproducible evidence.
-
-The lifecycle check then generates the sanitized prior `0.1.0-alpha.0` fixture
-and proves dry run, install, doctor, retained answer/state, forward migration,
-stale-manifest diagnosis, upgrade, idempotent reconciliation, unsafe-downgrade
-refusal, owned uninstall, unrelated-config preservation, and package removal. It
-also publishes nothing.
-
-See [package identity and artifact boundary](docs/packaging.md) for the exact
-contents, metadata, source-map decision, and a command that retains a local
-tarball for inspection.
-
-## What runs and what changes
-
-The Node.js daemon binds to loopback, uses local SQLite as the source of truth,
-and writes bounded redacted diagnostics. The installer creates one owned
-launcher and minimally merges owned hook entries into:
-
-- `~/.codex/hooks.json`;
-- `~/.claude/settings.json`; and
-- `~/.cursor/hooks.json`.
-
-Existing entries are preserved and changed files receive private backups.
-Uninstall removes only owned hooks, launcher, and manifest; retained state is
-preserved until the operator explicitly erases it.
-
-The fake transport stays local. Direct Telegram sends bounded attention cards
-that can include an agent summary or question. The optional local web companion
-talks only to the loopback daemon. Flow XO Notifications is an optional,
-replaceable transport: local operation requires no hosted account, Cloudflare
-runtime, public callback, or Flow XO credential. See the
-[architecture and threat boundaries](docs/architecture.md),
-[privacy policy](PRIVACY.md), and
-[hosted Notifications boundary](docs/hosted-notifications.md).
-
-## Documentation
-
-- [Architecture and threat boundaries](docs/architecture.md)
-- [Install, upgrade, uninstall, and erasure](docs/install-upgrade-uninstall.md)
-- [Direct Telegram setup and operation](docs/telegram.md)
-- [Local web companion](docs/web-companion.md)
-- [Troubleshooting and doctor](docs/troubleshooting.md)
-- [Compatibility and evidence policy](docs/compatibility.md)
-- [Package identity and artifact boundary](docs/packaging.md)
-- [Prerelease build, attestation, and publication](docs/releasing.md)
-- [Release-readiness evaluation and native Node 22 proof](docs/release-readiness.md)
-- [Safe fixtures and compatibility evidence](docs/fixtures.md)
-- [Write a notification transport](docs/extending-transports.md)
-- [Write or update a harness adapter](docs/extending-harnesses.md)
-- [Optional hosted Notifications boundary](docs/hosted-notifications.md)
-- [Experimental outbound runner bridge](docs/runner-bridge.md)
-- [Living clean-checkout onboarding](docs/onboarding.md)
-
-Implementation history and deeper evidence remain available in the
-[implementation brief](docs/implementation-brief.md),
-[progress ledger](docs/progress.md),
-[harness evidence](docs/harness-evidence.md),
-[Open Source V1 charter](docs/product/open-source-v1-charter.md), and
-[AR1 project specification](docs/projects/open-source-release-readiness/project-spec.md).
-
-## Trust and governance
-
-Agent Relay is local-first and sends no product analytics or remote crash
-reports. Notification providers receive bounded attention cards, which can
-include an agent summary or question; local state and uninstall behavior are
-documented in [PRIVACY.md](PRIVACY.md).
-
-Before reporting or operating the software, read:
-
-- [SECURITY.md](SECURITY.md) for private vulnerability reporting;
-- [SUPPORT.md](SUPPORT.md) for the verified support boundary and safe
-  diagnostics;
-- [PRIVACY.md](PRIVACY.md) for local files, outbound data, retention, and
-  erasure;
-- [MAINTAINERS.md](MAINTAINERS.md) for review and release authority;
-- [CONTRIBUTING.md](CONTRIBUTING.md) for credential-free setup, architecture
-  boundaries, fixture safety, and CI parity;
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations; and
-- the [MIT license](LICENSE).
-
-Never post a token, private transcript, SQLite database, raw log, username,
-hostname, account identifier, or real working path in an issue or pull request.
-
-## Development
-
-Requirements: Node.js 22 or newer and pnpm 11.
-
-The complete contributor path, including focused checks and change-specific
-review gates, is in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-```sh
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm contracts:preinstall
-pnpm rebuild
-pnpm check
-pnpm build
-pnpm contracts:notifications
-pnpm contracts:runner
-```
-
-The checked-in compatibility matrix and the README/SUPPORT summaries are
-generated from the runtime registry. Run `pnpm capabilities:generate` after an
-evidence change; `pnpm capabilities:check` fails on any drift. Sanitized harness
-fixtures and their provenance live under `packages/harnesses/fixtures`; the
-[fixture policy](docs/fixtures.md) and `pnpm fixtures:check` enforce the exact
-inventory, metadata, size, and common privacy boundaries.
-
-No bot token, transcript, credential, hostname, username, or raw working path is
-required for the contract test suite.
-
-The stable Notifications C0 consumer command verifies the exact immutable
-contract/client/mock lock and a fresh scripts-disabled install, runs the
-SQLite-to-mock crash-replay proof, and starts the packed mock as a guarded
-separate loopback process. It requires no hosted account, public callback, or
-sibling checkout. Its lock, safe install order, compatibility policy, generated
-evidence, and update procedure are documented in
-[`contracts/README.md`](contracts/README.md).
-
-## Safe installation
-
-Build once, inspect the exact changes, then install user-level hooks:
-
-```sh
-pnpm build
-node apps/relay/dist/cli.js install --dry-run
-node apps/relay/dist/cli.js install
-node apps/relay/dist/cli.js doctor
-```
-
-The installer creates one exact-path launcher under `~/.agent-relay/bin` and
-minimally patches `~/.codex/hooks.json`, `~/.claude/settings.json`, and
-`~/.cursor/hooks.json`. Existing hooks and unrelated settings are preserved.
-Every changed existing config receives a private timestamped backup. All target
-files are preflighted before mutation, writes are atomic, and a partial failure
-rolls back earlier writes.
-
-Codex installs `Stop` and `PermissionRequest`; Claude installs `Stop`,
-`StopFailure`, and `PermissionRequest`. Cursor installs only `stop` until its
-permission fixture has a sanitized live capture. Cursor defaults to IDE
-capabilities; pass `--cursor-surface cli` for a CLI-only installation. A
-supervised Cursor child always overrides that surface to CLI.
-
-Codex requires new or changed command hooks to be reviewed in `/hooks`. For
-vetted one-off non-interactive automation, Codex also documents
-`--dangerously-bypass-hook-trust`; Agent Relay preserves that flag during late
-resume when it was present on the initial invocation. Claude's `/hooks` browser
-and Cursor's trusted-workspace hook view provide corresponding runtime
-verification. `doctor` checks the files, exact-path launcher, installed harness
-binaries, verified-version classifications, evidence IDs, SQLite schema, and
-capability records. Version drift is a `compatible-unverified` warning; a
-missing, known-incompatible, or misconfigured binary or hook is a failure.
-
-Safe uninstall removes only entries carrying Agent Relay's ownership marker and
-its launcher/manifest. It preserves user hooks, unrelated settings, SQLite,
-fallback records, logs, credentials, and config backups:
+To remove the installed hooks and launcher while preserving local data:
 
 ```sh
 node apps/relay/dist/cli.js uninstall --dry-run
 node apps/relay/dist/cli.js uninstall
 ```
 
-## Local loop
+Uninstall removes only Agent Relay-owned hook entries, its launcher, and its
+manifest. Read the [installation guide](docs/install-upgrade-uninstall.md)
+before erasing the retained state directory or provider data.
 
-The daemon binds to loopback, uses SQLite as the source of truth, and defaults
-to `fake`. Credentials never select a transport. Persist a choice with
-`agent-relay transport select <fake|telegram|notifications>`, set the
-`AGENT_RELAY_TRANSPORT` process override, or pass the daemon-only `--transport`
-override. No mode automatically sends or fails over to another.
+Never post tokens, transcripts, databases, raw logs, account identifiers, or
+machine-specific paths in an issue. Private vulnerability reporting is
+documented in [SECURITY.md](SECURITY.md); [SUPPORT.md](SUPPORT.md) explains how
+to share safe diagnostics.
 
-```sh
-# Terminal 1
-pnpm relay daemon
+## Development
 
-# Terminal 2
-pnpm relay canary
-pnpm relay status
-pnpm relay doctor
-```
-
-The canary queues and drains one bounded synthetic stop event. Repeating an
-event with the same event ID is idempotent. When the transport is offline or
-times out, the event remains in `retry`; non-retryable or exhausted delivery
-attempts are visible in `dead_letter`.
-
-Hook entry points read one native JSON payload from stdin and write only native
-continuation JSON to stdout:
+The full local quality gate is:
 
 ```sh
-pnpm relay hook codex --harness-version 0.145.0 \
-  < packages/harnesses/fixtures/codex/stop.json
-
-pnpm relay hook cursor --surface ide --harness-version 2026.07.23-e383d2b \
-  < packages/harnesses/fixtures/cursor/stop.json
+pnpm check
 ```
 
-If the daemon is unavailable, the hook returns safe no-op JSON, writes a concise
-diagnostic to stderr, and appends the normalized event or diagnostic (never the
-raw malformed payload) to the fallback spool. A remote-mode stop hook can remain
-open for a bounded inline reply:
+It runs formatting, governance, documentation, fixture and secret checks,
+linting, type checking, tests, compatibility generation checks, contract tests,
+and isolated package proofs. No real bot token, transcript, or hosted account is
+needed.
+
+Compatibility summaries in this README and `SUPPORT.md` are generated from the
+runtime registry. After changing harness evidence, run:
 
 ```sh
-pnpm relay hook claude --harness-version 2.1.219 --wait-ms 30000 \
-  < packages/harnesses/fixtures/claude/stop.json
+pnpm capabilities:generate
+pnpm capabilities:check
 ```
 
-Codex and Claude answers emit `decision: "block"` plus `reason`; Cursor emits
-`followup_message`. Stop recursion fields prevent a second waiting loop.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), then use the focused references
+for the part you are changing:
 
-Fallback records are redacted, capped, and rotated into lossless segments. The
-daemon atomically claims and replays those segments at startup and every five
-seconds; event and diagnostic IDs make crash retries harmless. Failed lines stay
-in a pending segment while successful lines are removed. Before a real transport
-drains replayed work, the installed daemon dead-letters queued events older than
-one hour with a bounded diagnostic; still-open unexpired requests and proven
-owned-child exits are exempt. Set `AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS=0`
-only for an intentional full historical replay. Replay can also be run and
-inspected explicitly:
+- [Package contents and artifact boundary](docs/packaging.md)
+- [Prerelease builds and publication](docs/releasing.md)
+- [Release-readiness evidence](docs/release-readiness.md)
+- [Safe fixtures and evidence](docs/fixtures.md)
+- [Hosted Notifications boundary](docs/hosted-notifications.md)
+- [Experimental runner bridge](docs/runner-bridge.md)
+- [Troubleshooting and doctor](docs/troubleshooting.md)
 
-```sh
-pnpm relay replay-fallback
-```
+Project history and implementation evidence live in the
+[implementation brief](docs/implementation-brief.md),
+[progress ledger](docs/progress.md), and
+[harness evidence](docs/harness-evidence.md).
 
-The command exits non-zero while any segment remains pending. Invalid or
-oversized lines become durable bounded diagnostics rather than being silently
-discarded; raw invalid input is never sent to Telegram.
+## Project policies
 
-## Retention and logs
-
-The daemon expires stale open requests, then applies bounded batches to terminal
-requests, delivered events, dead letters, diagnostics, Telegram update IDs,
-completed topic-cleanup operations, and provably inactive sessions. Open work
-and claimed/running resume commands are never pruned. Defaults retain delivered
-history for 30 days and dead letters and diagnostics for 90 days:
-
-```sh
-pnpm relay maintain --retention-days 30 \
-  --dead-letter-retention-days 90 \
-  --diagnostic-retention-days 90
-```
-
-Maintenance runs at daemon startup and hourly. The daemon writes redacted JSON
-lines to stderr and `~/.agent-relay/relay.ndjson`; the file defaults to 4 MiB
-with five total segments. Configure these bounds through the
-`AGENT_RELAY_*_RETENTION_DAYS`, `AGENT_RELAY_LOG_PATH`,
-`AGENT_RELAY_LOG_MAX_BYTES`, and `AGENT_RELAY_LOG_FILES` variables shown in
-[`.env.example`](.env.example). File-write failures are also emitted to stderr.
-
-## Supervised CLI processes
-
-Milestone 3 adds an opt-in launcher for CLI processes whose exit status must be
-proven:
-
-```sh
-# Arguments after -- are passed directly as argv; no shell is involved.
-pnpm relay run codex --harness-version 0.145.0 -- exec "work on the task"
-pnpm relay run claude --harness-version 2.1.219 -- --print "work on the task"
-pnpm relay run cursor --harness-version 2026.07.23-e383d2b \
-  -- --trust "work on the task"
-```
-
-The launcher inherits the terminal, owns the child PID, forwards `SIGINT` and
-`SIGTERM`, preserves the conventional terminal exit status, and records a
-`process.exited` event only for a non-zero exit, unrequested signal, startup
-failure, or unknown exit. Every crash event must carry validated `owned-child`
-evidence; native hooks cannot manufacture it. Command output and arguments are
-not copied into the event or logs.
-
-The launcher injects a unique bridge identity into its child. A supervised CLI
-stop hook opens a durable continuation request without keeping the hook process
-alive. Once the owned child has exited cleanly, a correlated Telegram answer is
-atomically claimed and resumed with the official Codex, Claude Code, or Cursor
-CLI argv. Resume claims and their running/succeeded/failed transitions are
-stored in SQLite, so concurrent supervisors cannot resume the same answer twice.
-Resume execution authority is derived once from the initial argv. Codex fails
-closed to `read-only` unless the initial invocation explicitly selected another
-sandbox or dangerous bypass; Claude fails closed to `plan`; Cursor carries
-workspace trust and `--force` only when they were originally present.
-
-By default the supervisor remains available for an open continuation until its
-24-hour expiry. Use `--resume-wait-ms` to shorten that bound, or
-`AGENT_RELAY_LATE_RESUME_TTL_MS` to shorten the hook-created request expiry. If
-the daemon is unavailable when a crash occurs, the normalized crash event is
-written to the privacy-safe fallback spool.
-
-Supervisors accept at most 100 late resumes by default. Use `--max-resumes 1`
-for a bounded activation canary or another explicit limit for automation. The
-last permitted resumed child runs with late-resume hook creation disabled, so
-its final Stop event cannot open an orphan continuation request.
-
-On the tested Cursor build, the interactive CLI emits the configured Stop hook
-but `--print` exits without one. Start the supervised initial Cursor turn
-interactively as above, then exit the idle CLI after its Stop notification. The
-late-resume leg uses Cursor's official non-interactive `--resume=<session>`
-contract. `--trust` is preserved without being widened to `--force`.
-
-The supervisor does not infer a hang from inactivity. `suspected_stalled` is a
-distinct state reserved for an explicit failed harness health probe; no
-automatic restart exists. Active CLI steering is also not claimed: late resume
-starts only after the owned process exits.
-
-## Real Telegram adapter
-
-Copy the names from [`.env.example`](.env.example) into your secret manager or
-shell environment. Do not commit values. Select `telegram` explicitly; token and
-chat credential presence only affects readiness and never activates the adapter.
-Reply routing additionally requires the numeric
-`AGENT_RELAY_TELEGRAM_OPERATOR_ID`.
-
-```sh
-node apps/relay/dist/cli.js transport select telegram
-node apps/relay/dist/cli.js transport status
-```
-
-The default `AGENT_RELAY_TELEGRAM_UPDATE_MODE=poll` uses Bot API long polling,
-so a daemon bound to loopback can receive replies without a public HTTP
-deployment. The next poll confirms only update IDs that the reply router has
-handled. A crash before confirmation can replay an update, and the durable
-SQLite claim makes that replay harmless. Poll and routing errors are logged with
-bounded exponential retry.
-
-Set `AGENT_RELAY_TELEGRAM_UPDATE_MODE=webhook` only when an external HTTPS
-bridge is available. Webhook mode requires
-`AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET`; the `/v1/telegram/updates` route verifies
-Telegram's `X-Telegram-Bot-Api-Secret-Token` independently from the daemon
-bearer token. Telegram does not permit `getUpdates` while a webhook is
-configured, so remove the bot's webhook before switching back to poll mode.
-
-The reply router accepts only the configured operator and chat, deduplicates
-Telegram `update_id`, correlates text through Telegram's replied-to message ID,
-and uses opaque callback tokens for fixed choices. Terminal and Telegram answers
-share a single SQLite first-writer-wins transition. Telegram retains pending Bot
-API updates for no longer than 24 hours; Agent Relay's longer-lived request
-state does not extend that upstream delivery window.
-
-End leaves its session topic intact. Send `/cleanup` from the authorized
-Telegram account from **New Chat** or an existing topic. Agent Relay returns the
-exact-set preview to that same private-chat topic, then waits for button
-confirmation. Only explicitly ended sessions qualify; every candidate is
-revalidated before Telegram permanently deletes the topic and all of its
-messages. See the
-[direct Telegram guide](docs/telegram.md#delete-proven-dead-topics) for the full
-safety boundary.
-
-For inactive topics whose sessions were never explicitly ended, use `/prune` (24
-hours by default), `/prune 12h`, or `/prune 7d`. Agent Relay previews the exact
-guarded set in the topic where the command was sent and requires a button
-confirmation. Pruning removes only the Telegram topic mapping, not the retained
-session or its lane state; later activity creates a fresh topic. See
-[prune inactive topics](docs/telegram.md#prune-inactive-topics).
-
-### Telegram activation canary
-
-Use a dedicated bot and private chat. Keep the three values in a secret manager
-or a local, mode-`0600`, gitignored environment file; never paste them into an
-issue, PR, fixture, or log. Start the daemon with all three variables present:
-
-```sh
-# Terminal 1
-set -a
-. ./.env.activation
-set +a
-pnpm relay daemon
-```
-
-Then run the bounded round trip from another terminal:
-
-```sh
-# Terminal 2 (source the same file if daemon authentication is configured)
-set -a
-. ./.env.activation
-set +a
-pnpm relay telegram-canary --wait-ms 120000
-```
-
-The command refuses the fake transport. It sends a unique correlated question
-and waits up to two minutes for a direct Telegram reply containing exactly
-`relay-canary-ok`. Success requires real Bot API delivery, authorized
-chat/operator routing, replied-to-message correlation, and durable resolution by
-Telegram. The result omits the question and answer text and exits non-zero for a
-delivery failure, timeout, terminal answer, or mismatched reply.
-
-## Current boundary
-
-Supervisor tests use real local child exit codes/signals. A daemon-level
-activation test covers a complete fake Telegram delivery and HTTP reply,
-including authorized routing and durable resolution. A credentialed private-chat
-canary on 2026-07-24 additionally proved real Bot API delivery, long-poll reply
-intake, replied-to-message correlation, exact answer validation, stale-answer
-rejection, and durable Telegram resolution. No credential or private message was
-retained in git. Model-backed private-chat canaries have proved installed Stop
-hooks and exact late resume for Codex `0.145.0`, Claude Code `2.1.219`, and
-Cursor CLI `2026.07.23-e383d2b`. An invalid Claude invocation also proved
-owned-child crash delivery. Cursor's live run additionally proved workspace
-trust preservation and expected operator-signal classification. Native hooks
-still do not prove crashes, Cursor IDE late resume remains explicitly
-unsupported, Cursor `--print` did not emit Stop on the tested build, and an
-interactive child must exit before its session can be resumed through a new CLI
-process.
-
-The pinned Notifications `1.0.0-rc.1` consumer and compatibility gate are also
-green against the executable mock. They prove the provider-neutral mapping,
-retry, replay, acknowledgement, isolation, and local-authority boundary. The
-mock-backed `agent-relay notifications` setup command additionally proves
-subscriber authorization, locally generated narrow credentials, secure
-persistence, a synthetic canary, rotation, revocation, and explicit erasure. The
-daemon can now select its Notifications adapter explicitly and reports safe
-readiness/runtime state. Selected hosted mode continuously polls the
-authenticated machine stream, commits exact-session answers and durable
-acknowledgement state to local SQLite, and advances its cursor only after
-provider acknowledgement. Terminal presentation is a separate durable,
-idempotent concern; the exact pinned rc.1 contract honestly reports it as
-unsupported because it has no resolved-message update endpoint. Safe status
-includes failure policy and presentation counts, and local disconnect/revocation
-stops new hosted calls without deleting state. A transport-neutral matrix now
-keeps fake, direct Telegram, and Notifications aligned on delivery identity,
-retry, confirm/select/input, expiry, duplicate/race authority, restart, and
-at-most-once resume. The clean-home packed artifact now proves that complete
-mock-backed hosted lifecycle plus an unchanged direct-Telegram canary. C0-09
-approved the exact `1.0.0-rc.1` contract candidate. Real-service dogfood still
-belongs to AR3 and starts only after the Notifications owner supplies an
-approved environment, machine stream, and bounded-canary authorization.
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Maintainers and release authority](MAINTAINERS.md)
+- [Security policy](SECURITY.md)
+- [Privacy](PRIVACY.md)
+- [Support](SUPPORT.md)
+- [Contributing](CONTRIBUTING.md)
+- [MIT license](LICENSE)
