@@ -329,7 +329,7 @@ describe("startDaemon Telegram update mode", () => {
     }
   });
 
-  it("delivers only through explicitly selected Notifications and reports safe runtime state", async () => {
+  it("delivers only through explicitly selected WhooshBang and reports safe runtime state", async () => {
     const mock = createWhooshBangContractMock();
     const notificationsFetch = vi.fn<typeof fetch>(
       async (input, init) => await mock.fetch(new Request(input, init)),
@@ -376,7 +376,7 @@ describe("startDaemon Telegram update mode", () => {
         cwdHash: `sha256:${"c".repeat(64)}`,
       },
       type: "turn.stopped",
-      summary: "Synthetic explicit Notifications delivery",
+      summary: "Synthetic explicit WhooshBang delivery",
       capabilities: {
         inlineContinue: true,
         lateResume: true,

@@ -82,7 +82,7 @@ Commands:
   telegram-canary    Prove a configured direct-Telegram reply loop
   webhook-canary     Prove a configured outbound webhook delivery
   webhook            Configure or inspect the outbound webhook
-  notifications      Connect, inspect, or disconnect hosted Notifications
+  notifications      Connect, inspect, or disconnect hosted WhooshBang
   runner-bridge      Inspect or select the experimental runner bridge
   transport          Select a notification transport
 
@@ -299,7 +299,7 @@ async function main(): Promise<void> {
         );
       } catch {
         throw new Error(
-          "selected Notifications transport configuration is invalid; reconnect it before startup",
+          "selected WhooshBang transport configuration is invalid; reconnect it before startup",
         );
       }
     }
@@ -310,7 +310,7 @@ async function main(): Promise<void> {
         notificationsConnection.credential === undefined)
     ) {
       throw new Error(
-        "selected Notifications transport is not ready; run agent-relay notifications connect",
+        "selected WhooshBang transport is not ready; run agent-relay notifications connect",
       );
     }
     const webhookConfiguration =

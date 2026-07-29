@@ -60,17 +60,17 @@ permission to copy private content into the repository.
 
 ## Fixture roots
 
-| Root                                              | Purpose                                     |
-| ------------------------------------------------- | ------------------------------------------- |
-| `packages/harnesses/fixtures`                     | Sanitized native harness payload contracts  |
-| `packages/telegram-transport/fixtures/telegram`   | Sanitized Telegram Bot API request shapes   |
-| `packages/protocol/fixtures/interactions`         | Synthetic provider-neutral interaction data |
-| `packages/webhook-transport/fixtures/webhook`     | Synthetic outbound webhook v1 envelopes     |
-| `vendor/notifications-c0` and `contracts/vendor/` | Pinned artifacts governed by contract locks |
+| Root                                                                        | Purpose                                     |
+| --------------------------------------------------------------------------- | ------------------------------------------- |
+| `packages/harnesses/fixtures`                                               | Sanitized native harness payload contracts  |
+| `packages/telegram-transport/fixtures/telegram`                             | Sanitized Telegram Bot API request shapes   |
+| `packages/protocol/fixtures/interactions`                                   | Synthetic provider-neutral interaction data |
+| `packages/webhook-transport/fixtures/webhook`                               | Synthetic outbound webhook v1 envelopes     |
+| `vendor/whooshbang-rc4`, `vendor/notifications-c0`, and `contracts/vendor/` | Pinned artifacts governed by contract locks |
 
-The pinned Notifications archives are supply-chain inputs, not ordinary JSON
+The pinned WhooshBang archives are supply-chain inputs, not ordinary JSON
 fixtures. Their immutable hashes, contents, and install behavior are enforced by
-the Notifications contract lock and must not be added to a fixture manifest.
+the WhooshBang contract lock and must not be added to a fixture manifest.
 
 ## Review checklist
 

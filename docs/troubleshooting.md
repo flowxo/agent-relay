@@ -170,12 +170,12 @@ not block the harness or silently discard the failure.
 
 ## Historical fallback events become dead letters
 
-For Telegram, the outbound webhook, or Notifications, the installed daemon
-defaults `AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS` to one hour. After
-interrupted-delivery recovery and fallback replay—but before automatic
-drain—older queued work is marked `dead_letter` with `delivery-stale-backlog`.
-One bounded `delivery.stale-backlog-quarantined` diagnostic records the count
-without event text.
+For Telegram, the outbound webhook, or WhooshBang, the installed daemon defaults
+`AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS` to one hour. After interrupted-delivery
+recovery and fallback replay—but before automatic drain—older queued work is
+marked `dead_letter` with `delivery-stale-backlog`. One bounded
+`delivery.stale-backlog-quarantined` diagnostic records the count without event
+text.
 
 This is deliberate flood protection, not silent loss. Still-open unexpired
 requests and `process.exited` events carrying proven `owned-child` evidence are
@@ -190,7 +190,7 @@ Claude Code can emit its main `Stop` hook while background tasks or scheduled
 wakeups remain. On Claude Code 2.1.145 or newer, Agent Relay reads the official
 `background_tasks` and `session_crons` arrays. A non-empty collection keeps the
 lane active and produces a local `notification.suppressed` diagnostic with
-reason `background-work`; it must not create a Telegram/Notifications card or a
+reason `background-work`; it must not create a Telegram/WhooshBang card or a
 continuation request.
 
 Agent Relay uses only the collection counts. It does not inspect the assistant

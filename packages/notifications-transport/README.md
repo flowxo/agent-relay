@@ -1,14 +1,14 @@
-# Agent Relay Notifications transport
+# Agent Relay WhooshBang transport
 
 This private package is the production-promotable boundary between Agent Relay
-delivery semantics and the pinned FlowXO Notifications C0 API. C0-07 proves
-mapping and local authority. AR2.1 adds the bounded project administration
-client and mock-backed machine setup used by the CLI. AR2.2 wires explicit
-outbound daemon selection and a terminal configuration circuit. AR2.3 adds the
-bounded interaction source used by the durable local poll/claim/resolve/ack
-loop. AR2.4 adds stable hosted failure policy plus the optional terminal
-presentation interface. AR2.5 proves shared transport behavior, and AR2.6 proves
-the installed public adapter from the packed release artifact.
+delivery semantics and the pinned WhooshBang C0 API. C0-07 proves mapping and
+local authority. AR2.1 adds the bounded project administration client and
+mock-backed machine setup used by the CLI. AR2.2 wires explicit outbound daemon
+selection and a terminal configuration circuit. AR2.3 adds the bounded
+interaction source used by the durable local poll/claim/resolve/ack loop. AR2.4
+adds stable hosted failure policy plus the optional terminal presentation
+interface. AR2.5 proves shared transport behavior, and AR2.6 proves the
+installed public adapter from the packed release artifact.
 
 ## Machine bootstrap
 
@@ -31,13 +31,13 @@ has no filesystem, SQLite, Telegram, daemon, or shell-command authority.
 
 ## Pinned consumer artifacts
 
-Agent Relay consumes immutable tarballs from `vendor/notifications-c0`:
+Agent Relay consumes immutable tarballs from `vendor/whooshbang-rc4`:
 
-| Package                               | Version      | SHA-256                                                            |
-| ------------------------------------- | ------------ | ------------------------------------------------------------------ |
-| `@flowxo/notifications-contracts`     | `1.0.0-rc.1` | `02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2` |
-| `@flowxo/notifications`               | `1.0.0-rc.1` | `82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44` |
-| `@flowxo/notifications-contract-mock` | `1.0.0-rc.1` | `9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e` |
+| Package                     | Version      | SHA-256                                                            |
+| --------------------------- | ------------ | ------------------------------------------------------------------ |
+| `@whooshbang/contracts`     | `1.0.0-rc.4` | `eeee4c3b31bd3c976d26359e5fb48ce196e7b7dac788b5ee7bb1ccfb5de950ed` |
+| `@whooshbang/sdk`           | `1.0.0-rc.4` | `27080980b8f1766345c217ed63d17dbcc75b1b0ba6b774f59a26aa7b276c0054` |
+| `@whooshbang/contract-mock` | `1.0.0-rc.4` | `6163f68fa6bb7c2953428db8a9dfc36f87e2e24522d0610dbf7316e4f7bae454` |
 
 The C0-08 source of truth is
 [`contracts/contract-lock.json`](../../contracts/contract-lock.json). The
@@ -61,7 +61,7 @@ copied into Agent Relay.
 - Multi-select, ordered sets, and select requests wider than the pinned hosted
   capability fail before HTTP. Their negotiated local fallback is retained; they
   are never flattened.
-- `observeInteractionCapabilities` publishes the exact rc.1 boundary: confirm,
+- `observeInteractionCapabilities` publishes the exact RC.4 boundary: confirm,
   single-select, and free-text; one question; at most six options; no durable
   drafts, ordered/multi-select sets, or message updates.
 - Explicit availability failures retry only with the unchanged event ID.
@@ -93,12 +93,12 @@ detached long-poll response signature, and this package does not claim one.
 The daemon persists hosted delivery identity, immutable event digest, local
 outcome, acknowledgement retry, message-update retry, and committed cursor in
 SQLite. It commits local resolution or safe quarantine first, then acknowledges
-Notifications with a deterministic idempotency key. A crash before
-acknowledgement repeats the event; recovery drains that acknowledgement before a
-new poll, and the already materialized resume command cannot be claimed twice.
-Local duplicate/terminal reason codes remain durable, but `processed`
-acknowledgements omit them because the pinned contract permits `reason_code`
-only for `quarantined`.
+WhooshBang with a deterministic idempotency key. A crash before acknowledgement
+repeats the event; recovery drains that acknowledgement before a new poll, and
+the already materialized resume command cannot be claimed twice. Local
+duplicate/terminal reason codes remain durable, but `processed` acknowledgements
+omit them because the pinned contract permits `reason_code` only for
+`quarantined`.
 
 ## Resolution presentation
 
@@ -108,9 +108,9 @@ is acknowledged. Retry uses `resolution_${sha256(hostedEventId)}` every time;
 update failure cannot call `resolveRequest`, create a message, or claim
 continuation.
 
-The exact pinned `@flowxo/notifications@1.0.0-rc.1` client has no
-resolved-message update method. `PinnedNotificationsResolutionPresenter`
-therefore reports `unsupported`, and the daemon marks that job terminally with
+The exact pinned `@whooshbang/sdk@1.0.0-rc.4` client has no resolved-message
+update method. `PinnedNotificationsResolutionPresenter` therefore reports
+`unsupported`, and the daemon marks that job terminally with
 `notifications-resolution-update-unsupported`. Tests inject a supported fake
 presenter to prove answered, duplicate, expired, cancelled, and unsupported
 projection plus retry/restart behavior without pretending cancellation is an

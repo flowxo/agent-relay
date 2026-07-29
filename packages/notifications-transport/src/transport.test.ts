@@ -43,7 +43,7 @@ function transportFor(mock: WhooshBangContractMock, fetch = fetchFor(mock)) {
   });
 }
 
-describe("Notifications contract transport", () => {
+describe("WhooshBang contract transport", () => {
   it("advertises only interaction behavior proven by the pinned contract", () => {
     const transport = transportFor(createWhooshBangContractMock());
 
@@ -258,10 +258,7 @@ describe("Notifications contract transport", () => {
         },
       );
     });
-    const transport = transportFor(
-      createWhooshBangContractMock(),
-      fetchMock,
-    );
+    const transport = transportFor(createWhooshBangContractMock(), fetchMock);
     const first = delivery();
     const second = {
       ...delivery(),
@@ -331,10 +328,7 @@ describe("Notifications contract transport", () => {
         status: 307,
       });
     });
-    const transport = transportFor(
-      createWhooshBangContractMock(),
-      fetchMock,
-    );
+    const transport = transportFor(createWhooshBangContractMock(), fetchMock);
     const message = delivery();
     await expect(
       transport.deliver(message, { idempotencyKey: message.eventId }),

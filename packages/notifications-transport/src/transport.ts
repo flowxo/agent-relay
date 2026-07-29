@@ -176,7 +176,7 @@ export class NotificationsContractTransport
       const hosted = await this.client.getMessage(messageId);
       if (hosted.state === "outcome_unknown") {
         throw new NotificationsDeliveryError(
-          "Notifications cannot prove the provider outcome; no new hosted send is permitted.",
+          "WhooshBang cannot prove the provider outcome; no new hosted send is permitted.",
           "notifications-provider-outcome-unknown",
           false,
           "outcome_unknown",
@@ -205,7 +205,7 @@ export class NotificationsContractTransport
       context.idempotencyKey.length < 8
     ) {
       throw new TransportError(
-        "Notifications delivery requires the stable event ID as its idempotency key.",
+        "WhooshBang delivery requires the stable event ID as its idempotency key.",
         "notifications-idempotency-identity-mismatch",
         false,
       );
@@ -220,7 +220,7 @@ export class NotificationsContractTransport
         !(await this.connectionGuard())
       ) {
         throw new NotificationsDeliveryError(
-          "The configured Notifications machine connection is inactive.",
+          "The configured WhooshBang machine connection is inactive.",
           "notifications-connection-inactive",
           false,
           "terminal",
@@ -232,7 +232,7 @@ export class NotificationsContractTransport
       );
       if (hosted.state === "outcome_unknown") {
         throw new NotificationsDeliveryError(
-          "Notifications cannot prove the provider outcome; no new hosted send is permitted.",
+          "WhooshBang cannot prove the provider outcome; no new hosted send is permitted.",
           "notifications-provider-outcome-unknown",
           false,
           "outcome_unknown",

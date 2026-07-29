@@ -91,8 +91,7 @@ const SAFE_PROBLEM_MESSAGES = {
   environment_mismatch:
     "The WhooshBang project credential targets another environment.",
   idempotency_conflict: "WhooshBang rejected a conflicting setup operation.",
-  idempotency_key_required:
-    "WhooshBang rejected the setup operation identity.",
+  idempotency_key_required: "WhooshBang rejected the setup operation identity.",
   project_slug_conflict: "WhooshBang rejected the requested project slug.",
   provider_outcome_unknown:
     "WhooshBang could not prove the setup canary outcome.",
@@ -180,7 +179,7 @@ export function asNotificationsSetupError(
   }
   if (error instanceof WhooshBangContractError) {
     return new NotificationsSetupError(
-      "Notifications returned data outside the pinned setup contract.",
+      "WhooshBang returned data outside the pinned setup contract.",
       "notifications-contract-invalid",
       false,
       {
@@ -192,7 +191,7 @@ export function asNotificationsSetupError(
   }
   if (error instanceof WhooshBangProtocolError) {
     return new NotificationsSetupError(
-      "Notifications returned an invalid setup protocol response.",
+      "WhooshBang returned an invalid setup protocol response.",
       "notifications-protocol-invalid",
       false,
       {
@@ -205,7 +204,7 @@ export function asNotificationsSetupError(
   }
   if (error instanceof WhooshBangTransportError) {
     return new NotificationsSetupError(
-      "The Notifications setup request could not be completed.",
+      "The WhooshBang setup request could not be completed.",
       "notifications-transport-unavailable",
       true,
       {
@@ -215,7 +214,7 @@ export function asNotificationsSetupError(
   }
   if (error instanceof TypeError) {
     return new NotificationsSetupError(
-      "The Notifications setup configuration is invalid.",
+      "The WhooshBang setup configuration is invalid.",
       "notifications-setup-invalid",
       false,
       {
@@ -226,7 +225,7 @@ export function asNotificationsSetupError(
     );
   }
   return new NotificationsSetupError(
-    "Notifications setup failed with an unclassified response.",
+    "WhooshBang setup failed with an unclassified response.",
     "notifications-setup-failed",
     false,
     {
@@ -250,19 +249,19 @@ function isLoopbackHostname(hostname: string): boolean {
 export function normalizeNotificationsBaseUrl(value: string | URL): URL {
   const url = new URL(value);
   if (url.username !== "" || url.password !== "") {
-    throw new TypeError("Notifications base URL must not contain credentials.");
+    throw new TypeError("WhooshBang base URL must not contain credentials.");
   }
   if (
     url.protocol !== "https:" &&
     !(url.protocol === "http:" && isLoopbackHostname(url.hostname))
   ) {
     throw new TypeError(
-      "Notifications base URL must use HTTPS except on explicit loopback.",
+      "WhooshBang base URL must use HTTPS except on explicit loopback.",
     );
   }
   if (url.search !== "" || url.hash !== "") {
     throw new TypeError(
-      "Notifications base URL must not contain a query or fragment.",
+      "WhooshBang base URL must not contain a query or fragment.",
     );
   }
   url.pathname = `${url.pathname.replace(/\/+$/u, "")}/`;
@@ -300,7 +299,7 @@ function validateIdempotencyKey(value: string): void {
     !/^[\u0021-\u007e]+$/u.test(value)
   ) {
     throw new TypeError(
-      "Notifications setup idempotency key must contain 8 to 255 visible ASCII characters.",
+      "WhooshBang setup idempotency key must contain 8 to 255 visible ASCII characters.",
     );
   }
 }
@@ -352,7 +351,7 @@ async function readBoundedJson(
   ) {
     throw new WhooshBangProtocolError(
       operation,
-      "The Notifications setup response exceeded the client safety limit.",
+      "The WhooshBang setup response exceeded the client safety limit.",
       response.status,
     );
   }
@@ -369,7 +368,7 @@ async function readBoundedJson(
         } catch {
           throw new WhooshBangProtocolError(
             operation,
-            "The Notifications setup response body could not be read safely.",
+            "The WhooshBang setup response body could not be read safely.",
             response.status,
           );
         }
@@ -385,7 +384,7 @@ async function readBoundedJson(
           }
           throw new WhooshBangProtocolError(
             operation,
-            "The Notifications setup response exceeded the client safety limit.",
+            "The WhooshBang setup response exceeded the client safety limit.",
             response.status,
           );
         }
@@ -413,7 +412,7 @@ async function readBoundedJson(
   } catch {
     throw new WhooshBangProtocolError(
       operation,
-      "The Notifications setup response was not valid UTF-8 JSON.",
+      "The WhooshBang setup response was not valid UTF-8 JSON.",
       response.status,
     );
   }
@@ -597,14 +596,14 @@ export class NotificationsAdministrationClient {
       ) {
         throw new WhooshBangProtocolError(
           descriptor.operation,
-          "Notifications setup redirects are not permitted.",
+          "WhooshBang setup redirects are not permitted.",
           response.status,
         );
       }
       if (mediaType !== "application/problem+json") {
         throw new WhooshBangProtocolError(
           descriptor.operation,
-          "The Notifications setup error response had an unexpected media type.",
+          "The WhooshBang setup error response had an unexpected media type.",
           response.status,
         );
       }
@@ -616,7 +615,7 @@ export class NotificationsAdministrationClient {
       if (!validateProblem(value) || value.status !== response.status) {
         throw new WhooshBangProtocolError(
           descriptor.operation,
-          "The Notifications setup error response did not match Problem Details.",
+          "The WhooshBang setup error response did not match Problem Details.",
           response.status,
         );
       }
@@ -625,14 +624,14 @@ export class NotificationsAdministrationClient {
     if (!descriptor.expectedStatuses.includes(response.status)) {
       throw new WhooshBangProtocolError(
         descriptor.operation,
-        "The Notifications setup response used an unexpected success status.",
+        "The WhooshBang setup response used an unexpected success status.",
         response.status,
       );
     }
     if (mediaType !== "application/json") {
       throw new WhooshBangProtocolError(
         descriptor.operation,
-        "The Notifications setup success response had an unexpected media type.",
+        "The WhooshBang setup success response had an unexpected media type.",
         response.status,
       );
     }
@@ -645,7 +644,7 @@ export class NotificationsAdministrationClient {
       throw new WhooshBangContractError(
         descriptor.operation,
         contractValidationErrors(descriptor.validator),
-        "The Notifications setup response did not match the pinned contract.",
+        "The WhooshBang setup response did not match the pinned contract.",
       );
     }
     return value;
@@ -732,7 +731,7 @@ function authorizationMetadata(
 function defaultIdempotencyKey(operation: string): string {
   const runtimeCrypto = globalThis.crypto;
   if (runtimeCrypto === undefined) {
-    throw new TypeError("Web Crypto is required for Notifications setup.");
+    throw new TypeError("Web Crypto is required for WhooshBang setup.");
   }
   return `agent-relay-${operation}-${runtimeCrypto.randomUUID()}`;
 }
@@ -782,7 +781,7 @@ function assertBinding(
     client.environment !== link.environment
   ) {
     throw new NotificationsSetupError(
-      "Notifications did not prove the expected subscriber binding.",
+      "WhooshBang did not prove the expected subscriber binding.",
       "notifications-setup-invalid",
       false,
     );
@@ -975,7 +974,7 @@ export async function connectNotificationsMachine(
       !MACHINE_SCOPES.every((scope) => registered.scope_summary.includes(scope))
     ) {
       throw new NotificationsSetupError(
-        "Notifications did not return the required narrow machine scope.",
+        "WhooshBang did not return the required narrow machine scope.",
         "notifications-setup-invalid",
         false,
       );
@@ -993,7 +992,7 @@ export async function connectNotificationsMachine(
     });
     if (poll.schema !== "whooshbang.machine-events.v1") {
       throw new NotificationsSetupError(
-        "Notifications returned another machine-event contract.",
+        "WhooshBang returned another machine-event contract.",
         "notifications-contract-invalid",
         false,
       );
@@ -1004,7 +1003,7 @@ export async function connectNotificationsMachine(
         notifier_id: notifierId,
         content: {
           type: "text",
-          text: "Agent Relay Notifications connection canary.",
+          text: "Agent Relay WhooshBang connection canary.",
         },
       },
       {
@@ -1019,7 +1018,7 @@ export async function connectNotificationsMachine(
       !isAcceptedCanaryState(canary.state)
     ) {
       throw new NotificationsSetupError(
-        "Notifications did not prove the configured canary destination.",
+        "WhooshBang did not prove the configured canary destination.",
         "notifications-setup-invalid",
         false,
       );
@@ -1037,7 +1036,7 @@ export async function connectNotificationsMachine(
     });
     if (activeClient.status !== "active") {
       throw new NotificationsSetupError(
-        "Notifications did not activate the narrow machine client.",
+        "WhooshBang did not activate the narrow machine client.",
         "notifications-setup-invalid",
         false,
       );
@@ -1119,7 +1118,7 @@ export async function disconnectNotificationsMachine(
     );
     if (credential.status !== "revoked" || client.status !== "revoked") {
       throw new NotificationsSetupError(
-        "Notifications did not prove machine-client revocation.",
+        "WhooshBang did not prove machine-client revocation.",
         "notifications-setup-invalid",
         false,
       );

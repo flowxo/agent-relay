@@ -165,12 +165,12 @@ async function connectedFixture(
     subscriberId,
   });
   if (result.status !== "connected") {
-    throw new Error("Synthetic Notifications setup did not connect.");
+    throw new Error("Synthetic WhooshBang setup did not connect.");
   }
   return { authorizations, material, mock, observed, result };
 }
 
-describe("Notifications machine bootstrap", () => {
+describe("WhooshBang machine bootstrap", () => {
   it("provisions, smoke-tests, and canaries a locally generated narrow credential", async () => {
     const { authorizations, material, mock, observed, result } =
       await connectedFixture();
@@ -493,7 +493,7 @@ describe("Notifications machine bootstrap", () => {
   });
 });
 
-describe("Notifications setup HTTP safety", () => {
+describe("WhooshBang setup HTTP safety", () => {
   it("requires HTTPS outside exact loopback origins", () => {
     expect(
       normalizeNotificationsBaseUrl("https://notifications.example.test/api"),
@@ -520,17 +520,15 @@ describe("Notifications setup HTTP safety", () => {
   });
 
   it("never follows redirects carrying a project credential", async () => {
-    const fetchImplementation = vi.fn<WhooshBangFetch>(
-      async (_input, init) => {
-        expect(init?.redirect).toBe("manual");
-        return new Response(null, {
-          headers: {
-            location: "https://untrusted.example.test/capture",
-          },
-          status: 307,
-        });
-      },
-    );
+    const fetchImplementation = vi.fn<WhooshBangFetch>(async (_input, init) => {
+      expect(init?.redirect).toBe("manual");
+      return new Response(null, {
+        headers: {
+          location: "https://untrusted.example.test/capture",
+        },
+        status: 307,
+      });
+    });
     const client = new NotificationsAdministrationClient({
       baseUrl: "https://notifications.example.test",
       projectCredential: projectToken,
@@ -544,17 +542,15 @@ describe("Notifications setup HTTP safety", () => {
   });
 
   it("never follows a subscription redirect carrying a project credential", async () => {
-    const fetchImplementation = vi.fn<WhooshBangFetch>(
-      async (_input, init) => {
-        expect(init?.redirect).toBe("manual");
-        return new Response(null, {
-          headers: {
-            location: "https://untrusted.example.test/capture",
-          },
-          status: 307,
-        });
-      },
-    );
+    const fetchImplementation = vi.fn<WhooshBangFetch>(async (_input, init) => {
+      expect(init?.redirect).toBe("manual");
+      return new Response(null, {
+        headers: {
+          location: "https://untrusted.example.test/capture",
+        },
+        status: 307,
+      });
+    });
 
     await expect(
       connectNotificationsMachine({

@@ -26,8 +26,8 @@ pnpm contracts:preinstall
 pnpm rebuild
 ```
 
-The scripts-disabled install verifies the pinned Notifications artifacts before
-the explicitly approved native rebuild. Do not replace this sequence with an
+The scripts-disabled install verifies the pinned WhooshBang artifacts before the
+explicitly approved native rebuild. Do not replace this sequence with an
 unreviewed lifecycle-script install.
 
 No hosted credential is needed. Keep local activation files under ignored

@@ -944,6 +944,23 @@
   restart, and cross-surface races. The exact committed tree is verified
   separately in a clean worktree. `pnpm audit --prod` reports no known
   vulnerabilities.
+- FXO-1373 migrated the optional hosted transport from the retired pre-rename
+  `@flowxo/notifications*` `1.0.0-rc.1` inputs to WhooshBang's exact
+  `@whooshbang/contracts`, `@whooshbang/sdk`, and `@whooshbang/contract-mock`
+  `1.0.0-rc.4` candidate from `flowxo/whooshbang@c6f4eb3`. The consumer lock,
+  vendored bytes under `vendor/whooshbang-rc4`, provenance manifest, preflight
+  inventory, workspace override, package dependencies, imports, renamed contract
+  discriminators, Problem Details namespace, mock control header, and hosted
+  diagnostics all moved to the WhooshBang identities; the preflight now rejects
+  any retired `@flowxo/*` transitive identity outright. The complete consumer
+  contract suite and the packed clean-home mock canary pass against the exact
+  packed RC.4 mock without a live account or sibling checkout. Local SQLite
+  first-writer-wins authority, the persisted `notifications` transport name,
+  crash-before-ack replay, contiguous acknowledgement, quarantine fail-closed
+  behavior, non-executable hosted fields, and direct-Telegram parity are
+  unchanged, so no operator action is required. `vendor/notifications-c0` and
+  the C0-07/AR2 stories retain the retired identities as immutable history. See
+  [the FXO-1373 record](projects/notifications-transport-adapter/stories/fxo-1373-migrate-to-whooshbang-rc4.md).
 
 ## Phase 1 reproduction
 
@@ -1085,10 +1102,12 @@ event, verify that it provisions a fresh topic without changing its retained
 lane state; this is the only FXO-1357 behavior still waiting for a natural live
 observation. `/cleanup` remains available for explicitly ended sessions.
 
-Continue bounded local direct-Telegram dogfood while the Notifications owner
-prepares the approved hosted environment. Hosted AR3 evidence begins only after
-that environment implements narrow machine bootstrap and durable poll/ack and
-authorizes the canary. It must still confirm production retention/privacy,
+Continue bounded local direct-Telegram dogfood while the WhooshBang owner
+prepares the approved hosted environment. The consumer now pins the exact
+WhooshBang `1.0.0-rc.4` candidate, so FXO-1156 (AR3.1) is unblocked on the
+artifact-identity prerequisite alone. Hosted AR3 evidence still begins only
+after that environment implements narrow machine bootstrap and durable poll/ack
+and authorizes the canary. It must still confirm production retention/privacy,
 subscriber activation and digest verification, live delivery/reply/recovery, and
 deliberate transport switching. npm scope/publication and the monitored public
 security-contact path remain owner-controlled promotion gates.

@@ -13,8 +13,8 @@ five separate conversations. There is also a local web board for seeing every
 session at a glance.
 
 Agent Relay is local-first: the daemon and its SQLite database run on your
-machine. Telegram and the optional Notifications service are adapters, not
-places where Agent Relay keeps its source of truth.
+machine. Telegram and the optional WhooshBang service are adapters, not places
+where Agent Relay keeps its source of truth.
 
 > **Project status:** Agent Relay is an early alpha and is not published to npm
 > yet. Install it from source. The currently tested setup is macOS on Apple
@@ -314,7 +314,7 @@ Codex / Claude Code / Cursor
             ├──── Telegram session topics
             ├──── signed outbound webhook
             ├──── local web board
-            └──── hosted Notifications (optional)
+            └──── hosted WhooshBang (optional)
 ```
 
 Harness adapters validate native payloads and turn them into one shared,
@@ -329,9 +329,9 @@ diagnostics or dead letters instead of disappearing silently.
 
 Only the selected transport receives an event. The fake transport remains local,
 direct Telegram receives bounded cards, the outbound webhook sends signed
-runtime-validated JSON, and the optional hosted Notifications adapter receives
-the same provider-neutral contract. Agent Relay does not require a hosted
-account, public callback, or Cloudflare runtime for local, webhook, or Telegram
+runtime-validated JSON, and the optional hosted WhooshBang adapter receives the
+same provider-neutral contract. Agent Relay does not require a hosted account,
+public callback, or Cloudflare runtime for local, webhook, or Telegram
 operation.
 
 For the deeper design, read
@@ -418,7 +418,7 @@ for the part you are changing:
 - [Prerelease builds and publication](docs/releasing.md)
 - [Release-readiness evidence](docs/release-readiness.md)
 - [Safe fixtures and evidence](docs/fixtures.md)
-- [Hosted Notifications boundary](docs/hosted-notifications.md)
+- [Hosted WhooshBang boundary](docs/hosted-notifications.md)
 - [Experimental runner bridge](docs/runner-bridge.md)
 - [Troubleshooting and doctor](docs/troubleshooting.md)
 

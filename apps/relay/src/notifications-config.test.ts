@@ -89,7 +89,7 @@ function credential(
   });
 }
 
-describe("Notifications private configuration", () => {
+describe("WhooshBang private configuration", () => {
   it("atomically stores only the narrow credential at mode 0600", async () => {
     const directory = await temporaryDirectory();
     const paths = notificationsConnectionPaths(join(directory, "state"));

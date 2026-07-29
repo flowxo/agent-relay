@@ -36,7 +36,7 @@ import type {
   StoredNotificationsConnection,
 } from "./notifications-config.js";
 
-export const NOTIFICATIONS_COMMAND_USAGE = `Agent Relay Notifications
+export const NOTIFICATIONS_COMMAND_USAGE = `Agent Relay WhooshBang
 
 Usage:
   agent-relay notifications connect [options]
@@ -44,8 +44,8 @@ Usage:
   agent-relay notifications disconnect [options]
 
 Connect options:
-  --base-url <https-url>       Notifications API base URL (or explicit loopback)
-  --subscriber-id <id>         Opaque subscriber configured in Notifications
+  --base-url <https-url>       WhooshBang API base URL (or explicit loopback)
+  --subscriber-id <id>         Opaque subscriber configured in WhooshBang
   --notifier-id <id>           Opaque notifier (default: default)
   --display-name <name>        Optional bounded local machine label
   --wait-seconds <seconds>     Wait for Telegram authorization (default: 300)
@@ -113,25 +113,25 @@ function parseOptions(
     }
     if (booleanNames.has(candidate)) {
       if (booleans.has(candidate)) {
-        throw new Error("A Notifications option was provided more than once");
+        throw new Error("A WhooshBang option was provided more than once");
       }
       booleans.add(candidate);
       continue;
     }
     if (valueNames.has(candidate)) {
       if (values.has(candidate)) {
-        throw new Error("A Notifications option was provided more than once");
+        throw new Error("A WhooshBang option was provided more than once");
       }
       const value = args[index + 1];
       if (value === undefined || value.startsWith("--")) {
-        throw new Error("A Notifications option is missing its value");
+        throw new Error("A WhooshBang option is missing its value");
       }
       values.set(candidate, value);
       index += 1;
       continue;
     }
     throw new Error(
-      "Unsupported Notifications option; credentials must never be positional",
+      "Unsupported WhooshBang option; credentials must never be positional",
     );
   }
   return { booleans, values };
@@ -157,10 +157,10 @@ function boundedInteger(
 async function readHiddenCredential(): Promise<string> {
   if (!process.stdin.isTTY) {
     throw new Error(
-      "Notifications project credential requires environment injection or --credential-stdin outside a TTY",
+      "WhooshBang project credential requires environment injection or --credential-stdin outside a TTY",
     );
   }
-  process.stderr.write("Notifications project credential (input hidden): ");
+  process.stderr.write("WhooshBang project credential (input hidden): ");
   const muted = new Writable({
     write(_chunk, _encoding, callback) {
       callback();
@@ -187,9 +187,7 @@ async function readBoundedCredentialStdin(): Promise<string> {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     length += bytes.byteLength;
     if (length > 8 * 1024) {
-      throw new Error(
-        "Notifications project credential stdin exceeds 8192 bytes",
-      );
+      throw new Error("WhooshBang project credential stdin exceeds 8192 bytes");
     }
     chunks.push(bytes);
   }
@@ -208,7 +206,7 @@ export async function resolveNotificationsProjectCredential(
     : await (input.prompt ?? readHiddenCredential)();
   const normalized = value.trim();
   if (normalized.length === 0) {
-    throw new Error("Notifications project credential was empty");
+    throw new Error("WhooshBang project credential was empty");
   }
   return normalized;
 }
@@ -356,7 +354,7 @@ async function revokePendingConnections(
         );
         if (credential.status !== "revoked") {
           throw new NotificationsSetupError(
-            "Notifications did not prove retired credential revocation.",
+            "WhooshBang did not prove retired credential revocation.",
             "notifications-setup-invalid",
             false,
           );
@@ -460,9 +458,7 @@ async function connectCommand(
     optionValue(parsed, "--subscriber-id") ??
     environmentValue(environment, "AGENT_RELAY_NOTIFICATIONS_SUBSCRIBER_ID");
   if (baseUrl === undefined || subscriberId === undefined) {
-    throw new Error(
-      "Notifications connect requires a base URL and subscriber ID",
-    );
+    throw new Error("WhooshBang connect requires a base URL and subscriber ID");
   }
   const notifierId =
     optionValue(parsed, "--notifier-id") ??
@@ -472,13 +468,13 @@ async function connectCommand(
     optionValue(parsed, "--wait-seconds"),
     300,
     { minimum: 0, maximum: 900 },
-    "Notifications authorization wait",
+    "WhooshBang authorization wait",
   );
   const pollIntervalMs = boundedInteger(
     optionValue(parsed, "--poll-interval-ms"),
     1_000,
     { minimum: 10, maximum: 30_000 },
-    "Notifications authorization polling interval",
+    "WhooshBang authorization polling interval",
   );
   const projectCredential = await resolveNotificationsProjectCredential(
     projectCredentialInput(parsed, runtime, environment),
@@ -497,7 +493,7 @@ async function connectCommand(
     previous.configuration.baseUrl !== normalizedBaseUrl
   ) {
     throw new NotificationsSetupError(
-      "Revoke the retained Notifications connection before changing API origins.",
+      "Revoke the retained WhooshBang connection before changing API origins.",
       "notifications-setup-invalid",
       false,
     );
@@ -552,7 +548,7 @@ async function connectCommand(
       projectCredential,
     });
     throw new NotificationsSetupError(
-      "Revoke the retained Notifications connection before changing project or environment.",
+      "Revoke the retained WhooshBang connection before changing project or environment.",
       "notifications-setup-invalid",
       false,
       { cleanupIncomplete: !cleanupComplete },
@@ -574,8 +570,8 @@ async function connectCommand(
     });
     throw new NotificationsSetupError(
       cleanupComplete
-        ? "Notifications connected but private storage failed; remote setup was revoked."
-        : "Notifications connected but private storage and remote cleanup failed.",
+        ? "WhooshBang connected but private storage failed; remote setup was revoked."
+        : "WhooshBang connected but private storage and remote cleanup failed.",
       "notifications-setup-failed",
       false,
       { cleanupIncomplete: !cleanupComplete },
@@ -672,7 +668,7 @@ async function disconnectCommand(
     });
     if (retired.failures.length > 0) {
       throw new NotificationsSetupError(
-        "Notifications could not revoke every retained machine client.",
+        "WhooshBang could not revoke every retained machine client.",
         "notifications-setup-failed",
         true,
         { cleanupIncomplete: true },
@@ -775,5 +771,5 @@ export async function runNotificationsCommand(
     );
     return await disconnectCommand(parsed, runtime, environment);
   }
-  throw new Error("Unknown Notifications subcommand");
+  throw new Error("Unknown WhooshBang subcommand");
 }

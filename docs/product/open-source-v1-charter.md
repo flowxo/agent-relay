@@ -25,7 +25,7 @@ Open Source V1 should be:
 - deterministic about identity and continuation;
 - private by default;
 - diagnosable when a hook, network, provider, or resume path fails; and
-- easy to connect to FlowXO Notifications as an optional hosted transport.
+- easy to connect to WhooshBang as an optional hosted transport.
 
 ## 2. Product statement
 
@@ -57,7 +57,7 @@ fixtures:
 - a diagnostic command and compiled-distribution canary.
 
 Open Source V1 planning should build from this evidence. It must not restart the
-architecture or rewrite the product around Notifications.
+architecture or rewrite the product around WhooshBang.
 
 ### 3.1 Release-candidate baseline
 
@@ -74,9 +74,13 @@ coherent Agent Relay C0 history reviewed in
 
 This lineage deliberately preserves the centrally reviewed commits. C0-07,
 C0-08, and [C0-09](https://linear.app/flowxo/issue/FXO-1050) are complete; C0-09
-recorded `go`, and Agent Relay now consumes the exact pinned `1.0.0-rc.1`
-artifacts. That approval and mainline integration do not constitute a public
-Agent Relay release or authorize a real Notifications service environment.
+recorded `go` for the exact pre-rename `1.0.0-rc.1` artifacts. That producer
+identity was later retired by WhooshBang's pre-alpha hard cut, so
+[FXO-1373](https://linear.app/flowxo/issue/FXO-1373) migrated the consumer to
+the exact `@whooshbang/*` `1.0.0-rc.4` candidate, which Agent Relay now
+consumes. Neither that approval, the migration, nor mainline integration
+constitutes a public Agent Relay release or authorizes a real WhooshBang service
+environment.
 
 ## 4. Target users
 
@@ -128,9 +132,9 @@ or hostnames by default.
 
 ### 5.5 Transports are replaceable
 
-Fake transport, direct Telegram, and FlowXO Notifications implement the same
-product-level delivery responsibility. Open-source users are not required to
-adopt a hosted service.
+Fake transport, direct Telegram, and WhooshBang implement the same product-level
+delivery responsibility. Open-source users are not required to adopt a hosted
+service.
 
 ### 5.6 Continuation is never guessed
 
@@ -175,8 +179,8 @@ requirements for local event capture, decision ownership, or continuation.
   documentation.
 - MIT license and copyright notice.
 - Reproducible release packaging and versioned changelog.
-- FlowXO Notifications transport adapter.
-- Direct Telegram fallback after Notifications integration.
+- WhooshBang transport adapter.
+- Direct Telegram fallback after WhooshBang integration.
 - Sustained internal dogfood evidence.
 
 ### 6.2 Not required for V1
@@ -190,10 +194,10 @@ requirements for local event capture, decision ownership, or continuation.
 - Team policies and cross-agent permission policy.
 - Mobile-originated creation of new coding sessions.
 
-## 7. FlowXO Notifications relationship
+## 7. WhooshBang relationship
 
-FlowXO Notifications becomes the recommended hosted transport for users who do
-not want to create and operate a Telegram bot.
+WhooshBang becomes the recommended hosted transport for users who do not want to
+create and operate a Telegram bot.
 
 Agent Relay sends a normalized delivery request containing:
 
@@ -204,7 +208,7 @@ Agent Relay sends a normalized delivery request containing:
 - expiry; and
 - safe display context.
 
-Notifications returns:
+WhooshBang returns:
 
 - stable hosted message ID;
 - durable acceptance state;
@@ -220,7 +224,7 @@ Agent Relay remains authoritative for:
 - the exact continuation command; and
 - whether a resume was already claimed.
 
-Notifications never receives arbitrary local commands to execute. An interaction
+WhooshBang never receives arbitrary local commands to execute. An interaction
 becomes a typed Agent Relay command only after local validation and atomic
 claim.
 
@@ -236,8 +240,8 @@ Shared Contracts project may extend it carefully to support:
 - resolved-message updates; and
 - transport capability reporting.
 
-The abstraction should not be widened to mirror every Notifications feature.
-Agent Relay needs only its bounded attention/control use case.
+The abstraction should not be widened to mirror every WhooshBang feature. Agent
+Relay needs only its bounded attention/control use case.
 
 ### 8.1 Direct Telegram
 
@@ -245,17 +249,17 @@ Direct Telegram remains:
 
 - the no-hosted-account path;
 - a local integration canary;
-- a fallback when Notifications is unavailable;
+- a fallback when WhooshBang is unavailable;
 - a reference for transport contributors; and
 - protection against product lock-in.
 
-### 8.2 Notifications transport
+### 8.2 WhooshBang transport
 
 The hosted transport should provide:
 
 - account/device subscription onboarding without a bot token;
 - durable server-side delivery and retries;
-- phone/browser reach managed by Notifications;
+- phone/browser reach managed by WhooshBang;
 - interaction ingress without exposing a local webhook;
 - status and diagnostics; and
 - future channel choice without changing Agent Relay's core protocol.
@@ -304,24 +308,23 @@ Agent Relay is released under the MIT license.
 - Eight simultaneous sessions remain isolated.
 - A terminal and phone response racing resolve exactly once.
 - A supported late reply resumes the exact CLI session once.
-- Notifications can be disabled without disabling Agent Relay.
-- Direct Telegram and Notifications transports pass the same core contract
-  suite.
+- WhooshBang can be disabled without disabling Agent Relay.
+- Direct Telegram and WhooshBang transports pass the same core contract suite.
 - Internal developers use the hosted path for a sustained period without
   bypassing it for reliability.
 - Open-source users can understand the privacy model from the repository alone.
 
 ## 12. Principal risks
 
-| Risk                                                   | Response                                                                           |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| Harness hooks change rapidly                           | Versioned capabilities, fixtures, doctor warnings, compatibility canaries          |
-| Hosted transport compromises local determinism         | Local source of truth and typed bounded transport contract                         |
-| Open-source product appears to advertise Notifications | Preserve direct Telegram, document hosted service as optional                      |
-| Permission automation becomes unsafe                   | Enable only proven hook contracts; never turn infrastructure failure into approval |
-| Resume executes twice                                  | Durable local claim and at-most-once command ownership                             |
-| User assumes all Cursor surfaces resume                | Explicit capability UI and retained non-resumable answers                          |
-| Maintenance burden spans three harnesses               | Generated capability matrix and bounded support policy                             |
+| Risk                                                | Response                                                                           |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Harness hooks change rapidly                        | Versioned capabilities, fixtures, doctor warnings, compatibility canaries          |
+| Hosted transport compromises local determinism      | Local source of truth and typed bounded transport contract                         |
+| Open-source product appears to advertise WhooshBang | Preserve direct Telegram, document hosted service as optional                      |
+| Permission automation becomes unsafe                | Enable only proven hook contracts; never turn infrastructure failure into approval |
+| Resume executes twice                               | Durable local claim and at-most-once command ownership                             |
+| User assumes all Cursor surfaces resume             | Explicit capability UI and retained non-resumable answers                          |
+| Maintenance burden spans three harnesses            | Generated capability matrix and bounded support policy                             |
 
 ## 13. Initiative projects and dependency
 
@@ -338,7 +341,7 @@ Relay-owned Linear project for the same seam.
 The canonical cross-product specification lives in the neutral portfolio
 repository at
 `flowxo-portfolio/docs/projects/shared-contracts-and-autonomous-delivery-conventions/project-spec.md`.
-Agent Relay's exact `1.0.0-rc.1` consumer and compatibility gates are green. The
+Agent Relay's exact `1.0.0-rc.4` consumer and compatibility gates are green. The
 separately controlled public package and service-environment decisions remain
 outside C0.
 
@@ -364,7 +367,7 @@ supported Open Source V1 surface.
 Complete licensing, security, privacy, contribution, packaging, provenance,
 compatibility, and release documentation.
 
-### AR2 — Notifications Transport Adapter
+### AR2 — WhooshBang Transport Adapter
 
 - **Wave:** `wave:1-independent-alpha`
 - **Priority:** High
@@ -375,7 +378,7 @@ compatibility, and release documentation.
 Implement against Shared Contracts mocks, preserve direct Telegram, and cover
 delivery/interaction behavior with the common contract suite. The C0 outbound
 mapping and executable consumer proof are already complete; production dogfood
-waits for an approved Notifications environment and production implementation of
+waits for an approved WhooshBang environment and production implementation of
 the narrow machine bootstrap and durable poll/ack stream.
 
 ### AR3 — Hosted Dogfood and Reliability Hardening
@@ -385,10 +388,10 @@ the narrow machine bootstrap and durable poll/ack stream.
 - **Linear:**
   [AR3 — Agent Relay Hosted Dogfood and Reliability Hardening](https://linear.app/flowxo/project/ar3-agent-relay-hosted-dogfood-and-reliability-hardening-96621124993f)
 - **Status:** Planned; AR1, AR2, and C0-09 are complete, but no approved real
-  Notifications machine-stream environment exists yet
+  WhooshBang machine-stream environment exists yet
 
-Route real FlowXO engineering sessions through Notifications, collect evidence,
-and fix reliability or diagnostic gaps in either product.
+Route real FlowXO engineering sessions through WhooshBang, collect evidence, and
+fix reliability or diagnostic gaps in either product.
 
 ### AR4 — Public Open Source V1 Release
 

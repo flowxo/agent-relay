@@ -20,10 +20,10 @@ approved release commit can make the staged artifact registry-eligible.
 
 The TypeScript workspace keeps protocol, harness, notification-contract,
 provider-adapter, core, runner-bridge, and relay composition boundaries for
-development. In particular, Telegram and hosted Notifications are private
-sibling adapter packages; neither is part of core's dependency surface.
-Publishing those as separately versioned packages would expose internal APIs and
-workspace coordination without helping an operator.
+development. In particular, Telegram and hosted WhooshBang are private sibling
+adapter packages; neither is part of core's dependency surface. Publishing those
+as separately versioned packages would expose internal APIs and workspace
+coordination without helping an operator.
 
 The release build bundles all internal runtime TypeScript into one executable
 JavaScript file. Only `better-sqlite3` and `zod` remain runtime dependencies.
@@ -116,11 +116,11 @@ clean temporary home/prefix with scripts disabled and no workspace or sibling
 runtime dependency. On macOS it then:
 
 1. proves the installed version and hosted CLI surface;
-2. connects through the public CLI to the exact pinned loopback Notifications
-   mock, while separately proving the generated narrow bearer matches the
-   registered digest;
+2. connects through the public CLI to the exact pinned loopback WhooshBang mock,
+   while separately proving the generated narrow bearer matches the registered
+   digest;
 3. inspects private configuration/credential separation and mode-`0600` files;
-4. explicitly selects Notifications and starts the installed daemon;
+4. explicitly selects WhooshBang and starts the installed daemon;
 5. delivers and resolves confirm, single-select, and bounded input requests;
 6. kills the daemon after local select resolution but before provider
    acknowledgement, then proves restart replays and commits exactly one
@@ -140,7 +140,7 @@ SHA-256, the immutable contract-lock SHA-256, interaction/replay results,
 direct-Telegram result, retention/uninstall result, and privacy-scan result. The
 tarball digest describes that invocation's exact source state and therefore
 changes when packed documentation or code changes. The contract lock pins three
-`1.0.0-rc.1` artifacts by package version, archive SHA-256, and source commit;
+`1.0.0-rc.4` artifacts by package version, archive SHA-256, and source commit;
 mutable branches, copied contract types, and sibling checkouts are rejected by
 the existing contract and package gates. Unsupported operating systems report a
 runtime skip, while content and exact-contract gates remain mandatory.

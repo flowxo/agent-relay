@@ -113,27 +113,27 @@ record, an incapable harness, a provider-limit violation, or an exhausted
 fallback list is still dead-lettered with a durable diagnostic before any
 interactive card is sent.
 
-## Relationship to Notifications contracts
+## Relationship to WhooshBang contracts
 
 [FXO-1048](https://linear.app/flowxo/issue/FXO-1048) consumes the exact
-version-pinned `@flowxo/notifications-contracts`, `@flowxo/notifications`, and
-executable mock `1.0.0-rc.1` tarballs through the immutable consumer fixture
-under `vendor/notifications-c0`. The focused gate revalidates their
-owner-produced SHA-256 digests before running. Agent Relay does not copy that
-schema or generated type into its runtime contract, and CI has no
-sibling-checkout dependency.
+version-pinned `@whooshbang/contracts`, `@whooshbang/sdk`, and executable mock
+`1.0.0-rc.4` tarballs through the immutable consumer fixture under
+`vendor/whooshbang-rc4`. The focused gate revalidates their owner-produced
+SHA-256 digests before running. Agent Relay does not copy that schema or
+generated type into its runtime contract, and CI has no sibling-checkout
+dependency.
 
 The adapter boundary is deliberately narrow:
 
-| Agent Relay V1              | Notifications C0 projection |
-| --------------------------- | --------------------------- |
-| request ID                  | interaction correlation ID  |
-| confirm                     | confirm                     |
-| single-select               | select                      |
-| free-text                   | input                       |
-| option ID and label         | opaque value and label      |
-| request expiry              | interaction/message expiry  |
-| multi-select or ordered set | negotiated fallback/reject  |
+| Agent Relay V1              | WhooshBang C0 projection   |
+| --------------------------- | -------------------------- |
+| request ID                  | interaction correlation ID |
+| confirm                     | confirm                    |
+| single-select               | select                     |
+| free-text                   | input                      |
+| option ID and label         | opaque value and label     |
+| request expiry              | interaction/message expiry |
+| multi-select or ordered set | negotiated fallback/reject |
 
 Multi-select and ordered sets must not be flattened into an ambiguous C0
 single-select answer. Until the pinned hosted contract advertises equivalent
@@ -145,8 +145,8 @@ then commits through the existing local first-writer-wins transition.
 The canonical delivery boundary now carries one optional `DeliveryInteraction`;
 the earlier top-level `correlationId` and `choices` aliases are removed. Direct
 Telegram renders the same opaque values as before. The hosted adapter accepts at
-most the pinned Notifications select limit and fails before HTTP for wider
-selects, multi-select, or ordered sets so their declared local fallback remains
+most the pinned WhooshBang select limit and fails before HTTP for wider selects,
+multi-select, or ordered sets so their declared local fallback remains
 authoritative.
 
 Hosted answer validation is a pure pre-SQLite step. It requires schema,

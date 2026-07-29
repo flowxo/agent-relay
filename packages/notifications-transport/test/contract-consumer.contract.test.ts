@@ -272,8 +272,7 @@ function requireInteractionEvent(batch: MachineEventPollResponse) {
 
 async function startPackedMock() {
   const require = createRequire(import.meta.url);
-  const packageJson =
-    require.resolve("@whooshbang/contract-mock/package.json");
+  const packageJson = require.resolve("@whooshbang/contract-mock/package.json");
   const cli = resolve(dirname(packageJson), "dist/cli.js");
   const controlToken = "control-c0-07-12345678";
   const child = spawn(
@@ -328,7 +327,7 @@ async function startPackedMock() {
   };
 }
 
-describe("C0 Notifications consumer contract", () => {
+describe("C0 WhooshBang consumer contract", () => {
   it("keeps a machine B answer off machine A's stream", async () => {
     const projectCredential: ContractMockProjectCredential = {
       accountId: "account_synthetic",

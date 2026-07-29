@@ -28,7 +28,7 @@ function message(
   };
 }
 
-describe("Notifications delivery mapping", () => {
+describe("WhooshBang delivery mapping", () => {
   it("projects confirm, select, and input without provider or executable data", () => {
     const confirm = mapDeliveryMessageToNotifications(
       message({

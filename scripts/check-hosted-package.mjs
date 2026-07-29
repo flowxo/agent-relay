@@ -395,12 +395,8 @@ async function loadNotificationsEvidenceModules() {
   const requireFromTransport = createRequire(
     resolve(root, "packages/notifications-transport/package.json"),
   );
-  const mockEntry = requireFromRelay.resolve(
-    "@whooshbang/contract-mock",
-  );
-  const contractsEntry = requireFromTransport.resolve(
-    "@whooshbang/contracts",
-  );
+  const mockEntry = requireFromRelay.resolve("@whooshbang/contract-mock");
+  const contractsEntry = requireFromTransport.resolve("@whooshbang/contracts");
   const mockModule = await import(pathToFileURL(mockEntry).href);
   const contractsModule = await import(pathToFileURL(contractsEntry).href);
   return {
@@ -903,7 +899,7 @@ await run(
 
 if (process.platform !== "darwin") {
   process.stdout.write(
-    `Packed hosted runtime proof skipped on unsupported ${process.platform}/${process.arch}; exact Notifications artifact preflight passed and package:check remains mandatory.\n`,
+    `Packed hosted runtime proof skipped on unsupported ${process.platform}/${process.arch}; exact WhooshBang artifact preflight passed and package:check remains mandatory.\n`,
   );
   process.exitCode = 0;
 } else {
@@ -988,7 +984,7 @@ if (process.platform !== "darwin") {
     assert(
       help.stdout.includes("notifications connect") &&
         help.stdout.includes("notifications disconnect"),
-      "packed Notifications command surface is incomplete",
+      "packed WhooshBang command surface is incomplete",
     );
 
     const modules = await loadNotificationsEvidenceModules();

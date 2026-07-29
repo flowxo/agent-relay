@@ -18,9 +18,9 @@ companion binds to loopback and requires its generated credential. Harness
 continuation remains a local child-process action.
 
 The fake transport exercises ingestion, SQLite, delivery, and diagnosis without
-a Telegram or hosted account. Direct Telegram and future Notifications support
-are explicit transports behind the same local interface; credential presence
-does not silently select one.
+a Telegram or hosted account. Direct Telegram and future WhooshBang support are
+explicit transports behind the same local interface; credential presence does
+not silently select one.
 
 There is no default telemetry, Cloudflare runtime, hosted database, remote
 execution authority, or server-side transcript store.
@@ -34,8 +34,8 @@ does not send raw hook payloads, full transcripts, environment variables,
 credentials, local database contents, or source files.
 
 The local web companion does not leave loopback. A future explicitly selected
-Notifications transport may send its documented bounded contract fields, but it
-is not selected by the V1 daemon.
+WhooshBang transport may send its documented bounded contract fields, but it is
+not selected by the V1 daemon.
 
 Package installation contacts the configured npm registry for the two exact
 direct runtime dependencies and their frozen transitive closure. The release
@@ -187,7 +187,7 @@ unrecorded maintainer memory, a repository path, or a hosted Flow XO account.
 
 ## AR2 handoff
 
-AR2 adds the optional FlowXO Notifications adapter through the existing
+AR2 adds the optional WhooshBang adapter through the existing
 `NotificationTransport` boundary. It does not need a new event protocol, answer
 authority, continuation mechanism, SQLite authority model, installer, or package
 topology. The pinned C0 transport contract and executable mock already pass

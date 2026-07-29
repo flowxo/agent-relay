@@ -137,7 +137,7 @@ package: strict request/acknowledgement schemas, exact-byte HMAC signing,
 loopback-or-HTTPS endpoint validation, redirect refusal, response bounds,
 idempotent retry identity, and no inbound authority.
 
-The Notifications adapter in `packages/notifications-transport` demonstrates a
+The WhooshBang adapter in `packages/notifications-transport` demonstrates a
 provider-neutral contract mapping, explicit daemon selection, safe readiness
 diagnosis, authenticated contract validation against pinned artifacts, and a
 durable poll/claim/resolve/ack loop. Its optional resolution presenter is

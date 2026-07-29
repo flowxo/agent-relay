@@ -74,7 +74,7 @@ export class NotificationsMachineInteractionSource implements NotificationsInter
   private async assertConnectionActive(): Promise<void> {
     if (this.connectionGuard !== undefined && !(await this.connectionGuard())) {
       throw new NotificationsDeliveryError(
-        "The configured Notifications machine connection is inactive.",
+        "The configured WhooshBang machine connection is inactive.",
         "notifications-connection-inactive",
         false,
         "terminal",

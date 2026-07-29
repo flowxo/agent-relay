@@ -116,7 +116,7 @@ function fetchFor(mock: WhooshBangContractMock): WhooshBangFetch {
   return async (input, init) => mock.fetch(new Request(input, init));
 }
 
-describe("Notifications project credential input", () => {
+describe("WhooshBang project credential input", () => {
   it("prefers environment injection without reading or prompting", async () => {
     const readStdin = vi.fn(async () => "stdin-value");
     const prompt = vi.fn(async () => "prompt-value");
@@ -151,7 +151,7 @@ describe("Notifications project credential input", () => {
   });
 });
 
-describe("Notifications CLI lifecycle", () => {
+describe("WhooshBang CLI lifecycle", () => {
   it("connects, reports safe status, rotates, revokes, and erases explicitly", async () => {
     const stateDirectory = join(await temporaryDirectory(), "state");
     const materials = [

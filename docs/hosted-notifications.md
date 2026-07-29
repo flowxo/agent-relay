@@ -1,11 +1,12 @@
-# Optional hosted Notifications boundary
+# Optional hosted WhooshBang boundary
 
-Flow XO Notifications is an optional, replaceable notification transport. It is
-not required for local SQLite, hooks, fake delivery, direct Telegram, the web
-companion, supervision, or continuation.
+WhooshBang is an optional, replaceable hosted notification transport for Agent
+Relay. It is not required for local SQLite, hooks, fake delivery, direct
+Telegram, the web companion, supervision, or continuation.
 
 Open Source V1 remains a local Node.js application. It does not require a hosted
-Agent Relay account, Cloudflare runtime, public callback, or Flow XO credential.
+Agent Relay account, Cloudflare runtime, public callback, or WhooshBang
+credential.
 
 ## Current implementation state
 
@@ -13,7 +14,7 @@ Agent Relay account, Cloudflare runtime, public callback, or Flow XO credential.
 `agent-relay notifications connect|status|disconnect`, and
 `agent-relay transport` now implement the complete AR2.1–AR2.6 mock-backed
 setup, explicit selection, and durable interaction boundary against exact pinned
-Notifications C0 artifacts. They prove:
+WhooshBang C0 artifacts. They prove:
 
 - subscriber authorization without claiming success while it is pending;
 - local 32-byte secret and credential-ID generation;
@@ -39,7 +40,7 @@ Notifications C0 artifacts. They prove:
 - runtime disconnect/revocation guards that stop new send/poll/ack calls while
   retaining local state; and
 - cross-machine stream, message, and administration denial;
-- one common fake/direct-Telegram/Notifications behavior matrix; and
+- one common fake/direct-Telegram/WhooshBang behavior matrix; and
 - a scripts-disabled clean-home proof from the packed release artifact.
 
 The daemon can select `fake`, direct `telegram`, outbound `webhook`, or
@@ -51,12 +52,14 @@ Credential presence never selects a transport.
 There is no dual send or automatic failover.
 
 Switching retains SQLite and request state. The terminal-presentation worker is
-implemented, but the exact pinned rc.1 client does not expose a resolved-message
+implemented, but the exact pinned RC.4 client does not expose a resolved-message
 update endpoint. Agent Relay records that optional capability as unsupported
-instead of misusing message cancellation. C0-09 approved the exact `1.0.0-rc.1`
-candidate. Continue using the executable C0 mock—not a production account—as the
-integration source of truth until the Notifications owner supplies and
-authorizes an AR3 service environment.
+instead of misusing message cancellation. C0-09 recorded `go` for the retired
+pre-rename `1.0.0-rc.1` candidate; that decision does not carry to WhooshBang's
+breaking `1.0.0-rc.4` cut. FXO-1373 rebuilt the repository-native consumer proof
+against the exact RC.4 artifacts. Continue using the executable mock—not a
+production account—as the integration source of truth until the WhooshBang owner
+supplies and authorizes an AR3 service environment.
 
 ## Mock-backed setup command
 
@@ -89,7 +92,7 @@ After activation, Agent Relay:
 
 1. binds one stable local machine ID to that subscriber/notifier;
 2. generates a 32-byte secret and credential ID locally;
-3. sends only the SHA-256 digest to Notifications;
+3. sends only the SHA-256 digest to WhooshBang;
 4. polls the authenticated machine stream and sends a fixed synthetic canary;
 5. verifies the returned project, environment, binding, subscriber, notifier,
    machine, and exact four narrow scopes; and
@@ -150,7 +153,7 @@ polls after the locally committed cursor. For one event at a time it validates
 the pinned response contract, binding, message/interaction/correlation, local
 machine/harness/session/turn/request, answer kind, option membership,
 occurrence, and expiry. It then commits the local first-writer-wins result plus
-safe claim and retry state in SQLite before acknowledging Notifications.
+safe claim and retry state in SQLite before acknowledging WhooshBang.
 
 Confirm, select, and bounded input answers use the same local resolution path as
 direct Telegram and the web companion. A crash before acknowledgement repeats
@@ -174,7 +177,7 @@ category into a bounded presenter. A retry always reuses
 `resolution_${sha256(hostedEventId)}`. It never sends a new message, re-runs the
 decision, or touches continuation authority.
 
-The executable rc.1 presenter returns `unsupported` without HTTP because the
+The executable RC.4 presenter returns `unsupported` without HTTP because the
 pinned client has no resolution-update method. The job becomes durably blocked
 with a safe capability code while polling and local authority continue. A future
 exact contract may implement the same interface; supported-fake tests already
@@ -288,7 +291,7 @@ those local-only reasons.
 
 ## Transport parity
 
-Fake, direct Telegram, and Notifications run the same local behavior matrix for
+Fake, direct Telegram, and WhooshBang run the same local behavior matrix for
 bounded delivery, duplicate ingestion, retry identity, confirm/select/input,
 identity rejection, expiry, duplicate answers, both terminal/phone race orders,
 restart, and single-owner resume. The direct Telegram leg uses the real
@@ -296,15 +299,15 @@ restart, and single-owner resume. The direct Telegram leg uses the real
 leg uses the exact pinned contract mock and durable poller.
 
 Presentation differences are declared rather than normalized away. Fake and
-direct Telegram advertise `message-updates`; the pinned Notifications
-observation advertises only proven confirm, single-select, and free-text
-behavior with one question and at most six options. It does not advertise
-durable drafts, ordered/multi-select sets, or message updates. The daemon also
-reports the exact resolved-presentation capability as unsupported.
+direct Telegram advertise `message-updates`; the pinned WhooshBang observation
+advertises only proven confirm, single-select, and free-text behavior with one
+question and at most six options. It does not advertise durable drafts,
+ordered/multi-select sets, or message updates. The daemon also reports the exact
+resolved-presentation capability as unsupported.
 
 ## Deployment boundary
 
-A future hosted adapter may call a Cloudflare-hosted Notifications service. That
+A future hosted adapter may call a Cloudflare-hosted WhooshBang service. That
 does not move Agent Relay protocol, SQLite, hooks, installer, daemon, or
 supervisor into Cloudflare. Direct Telegram and fake/local operation remain
 independent transport choices.
@@ -322,7 +325,7 @@ scripts disabled into a clean home and prefix, explicitly rebuilds the approved
 SQLite native dependency, and rejects workspace or sibling runtime resolution.
 The installed public CLI then connects to the exact pinned executable mock,
 stores a narrow mode-`0600` credential separately from non-secret configuration,
-selects Notifications, and resolves confirm, select, and input requests.
+selects WhooshBang, and resolves confirm, select, and input requests.
 
 The proof kills the daemon after local commit but before one provider
 acknowledgement. Restart must replay that immutable acknowledgement, advance the

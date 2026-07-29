@@ -26,7 +26,7 @@ const event: InteractionEvent = {
   expires_at: "2026-07-26T20:30:00.000Z",
 };
 
-describe("Notifications machine interaction source", () => {
+describe("WhooshBang machine interaction source", () => {
   it("polls and acknowledges the pinned authenticated contract", async () => {
     const mock = createWhooshBangContractMock({ scenario: "nominal" });
     mock.control.enqueueMachineEvent({

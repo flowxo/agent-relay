@@ -208,7 +208,7 @@ export function asNotificationsDeliveryError(
   }
   if (error instanceof WhooshBangTransportError) {
     return new NotificationsDeliveryError(
-      "The Notifications response was not received; retry only with the original event identity.",
+      "The WhooshBang response was not received; retry only with the original event identity.",
       error.outcomeUnknown
         ? "notifications-transport-outcome-unknown"
         : "notifications-transport-unavailable",
@@ -218,7 +218,7 @@ export function asNotificationsDeliveryError(
   }
   if (error instanceof WhooshBangContractError) {
     return new NotificationsDeliveryError(
-      "Notifications returned data outside the pinned contract.",
+      "WhooshBang returned data outside the pinned contract.",
       "notifications-contract-invalid",
       false,
       "terminal",
@@ -228,7 +228,7 @@ export function asNotificationsDeliveryError(
     const status = error.status;
     if (status !== undefined && status >= 300 && status < 400) {
       return new NotificationsDeliveryError(
-        "Notifications refused a credential-bearing redirect.",
+        "WhooshBang refused a credential-bearing redirect.",
         "notifications-redirect-refused",
         false,
         "terminal",
@@ -237,7 +237,7 @@ export function asNotificationsDeliveryError(
     }
     if (status === undefined || (status >= 200 && status < 300)) {
       return new NotificationsDeliveryError(
-        "Notifications returned a malformed response outside the pinned contract.",
+        "WhooshBang returned a malformed response outside the pinned contract.",
         "notifications-protocol-malformed",
         false,
         "terminal",
@@ -245,7 +245,7 @@ export function asNotificationsDeliveryError(
       );
     }
     return new NotificationsDeliveryError(
-      "Notifications returned an unclassified protocol response.",
+      "WhooshBang returned an unclassified protocol response.",
       "notifications-protocol-unclassified",
       status >= 500 || status === 408 || status === 429,
       status >= 500 || status === 408 || status === 429
@@ -256,14 +256,14 @@ export function asNotificationsDeliveryError(
   }
   if (error instanceof NotificationsMappingError) {
     return new NotificationsDeliveryError(
-      "Agent Relay cannot safely project this interaction into the pinned Notifications contract.",
+      "Agent Relay cannot safely project this interaction into the pinned WhooshBang contract.",
       error.code,
       false,
       "terminal",
     );
   }
   return new NotificationsDeliveryError(
-    "Notifications delivery failed with an unclassified response.",
+    "WhooshBang delivery failed with an unclassified response.",
     "notifications-unclassified",
     true,
     "retry_same_operation",

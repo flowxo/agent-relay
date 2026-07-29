@@ -155,14 +155,14 @@ export class NotificationsInteractionPoller {
       this.waitSeconds < 0 ||
       this.waitSeconds > 30
     ) {
-      throw new Error("Notifications poll wait must be between 0 and 30");
+      throw new Error("WhooshBang poll wait must be between 0 and 30");
     }
     if (
       !Number.isSafeInteger(this.limit) ||
       this.limit < 1 ||
       this.limit > 50
     ) {
-      throw new Error("Notifications poll limit must be between 1 and 50");
+      throw new Error("WhooshBang poll limit must be between 1 and 50");
     }
     if (
       !Number.isSafeInteger(this.requestTimeoutMs) ||
@@ -176,10 +176,10 @@ export class NotificationsInteractionPoller {
       this.failureLogIntervalMs < 1_000 ||
       this.failureLogIntervalMs > 60 * 60_000
     ) {
-      throw new Error("Notifications poll timeout or retry bounds are invalid");
+      throw new Error("WhooshBang poll timeout or retry bounds are invalid");
     }
     if (!/^[a-f0-9]{64}$/u.test(options.streamKey)) {
-      throw new Error("Notifications stream key must be a SHA-256 digest");
+      throw new Error("WhooshBang stream key must be a SHA-256 digest");
     }
   }
 
@@ -322,7 +322,7 @@ export class NotificationsInteractionPoller {
       ) {
         throw Object.assign(
           new Error(
-            "Notifications acknowledgement response changed durable identity",
+            "WhooshBang acknowledgement response changed durable identity",
           ),
           {
             code: "notifications-acknowledgement-identity-mismatch",
@@ -363,8 +363,8 @@ export class NotificationsInteractionPoller {
           ? "notifications.ack-retry"
           : "notifications.ack-blocked",
         message: retryable
-          ? "Notifications acknowledgement will retry from durable state"
-          : "Notifications acknowledgement stopped on a terminal failure",
+          ? "WhooshBang acknowledgement will retry from durable state"
+          : "WhooshBang acknowledgement stopped on a terminal failure",
         details: {
           eventRef: safeRef(work.eventId),
           errorCode: errorCode(error),
@@ -413,7 +413,7 @@ export class NotificationsInteractionPoller {
           level: "warn",
           code: "notifications.presentation-unsupported",
           message:
-            "The pinned Notifications contract cannot reflect terminal message presentation",
+            "The pinned WhooshBang contract cannot reflect terminal message presentation",
           details: {
             errorCode: result.reasonCode,
             eventRef: safeRef(work.eventId),
@@ -426,7 +426,7 @@ export class NotificationsInteractionPoller {
         result.messageId !== work.messageId
       ) {
         throw new NotificationsDeliveryError(
-          "Notifications presentation response changed durable identity",
+          "WhooshBang presentation response changed durable identity",
           "notifications-presentation-identity-mismatch",
           false,
           "terminal",
@@ -440,7 +440,7 @@ export class NotificationsInteractionPoller {
       this.logger.log({
         level: "info",
         code: "notifications.presentation-updated",
-        message: "Notifications terminal message presentation was updated",
+        message: "WhooshBang terminal message presentation was updated",
         at: now.toISOString(),
         details: {
           eventRef: safeRef(work.eventId),
@@ -474,8 +474,8 @@ export class NotificationsInteractionPoller {
           ? "notifications.presentation-retry"
           : "notifications.presentation-blocked",
         message: retryable
-          ? "Notifications presentation update will retry with the same operation identity"
-          : "Notifications presentation update requires no automatic retry",
+          ? "WhooshBang presentation update will retry with the same operation identity"
+          : "WhooshBang presentation update requires no automatic retry",
         details: {
           category: policy.category,
           errorCode: classified.code,
@@ -514,7 +514,7 @@ export class NotificationsInteractionPoller {
       this.logger.log({
         level: "info",
         code: "notifications.work-recovered",
-        message: "Notifications durable interaction work was recovered",
+        message: "WhooshBang durable interaction work was recovered",
         at: startedAt,
         details: { interrupted: recovered, requeuedAfterReconnect: requeued },
       });
@@ -522,7 +522,7 @@ export class NotificationsInteractionPoller {
     this.logger.log({
       level: "info",
       code: "notifications.poll-started",
-      message: "Notifications interaction polling started",
+      message: "WhooshBang interaction polling started",
       at: this.now().toISOString(),
     });
     try {
@@ -603,7 +603,7 @@ export class NotificationsInteractionPoller {
           });
           if (!this.validateBatch(batch.events)) {
             throw Object.assign(
-              new Error("Notifications returned duplicate event identities"),
+              new Error("WhooshBang returned duplicate event identities"),
               {
                 code: "notifications-stream-order-invalid",
                 retryable: false,
@@ -629,7 +629,7 @@ export class NotificationsInteractionPoller {
               level: "error",
               code: "notifications.poll-stopped-on-integrity",
               message:
-                "Notifications polling stopped before acknowledgement because local correlation failed",
+                "WhooshBang polling stopped before acknowledgement because local correlation failed",
               at: this.now().toISOString(),
               details: {
                 eventRef: safeRef(event.id),
@@ -658,8 +658,8 @@ export class NotificationsInteractionPoller {
               ? "notifications.poll-retry"
               : "notifications.poll-blocked",
             message: retryable
-              ? "Notifications interaction polling will retry"
-              : "Notifications interaction polling stopped on a terminal failure",
+              ? "WhooshBang interaction polling will retry"
+              : "WhooshBang interaction polling stopped on a terminal failure",
             details: {
               errorCode: code,
               retryDelayMs: retryable ? this.retryDelay(failedPolls + 1) : 0,
@@ -676,7 +676,7 @@ export class NotificationsInteractionPoller {
       this.logger.log({
         level: "info",
         code: "notifications.poll-stopped",
-        message: "Notifications interaction polling stopped",
+        message: "WhooshBang interaction polling stopped",
         at: this.now().toISOString(),
       });
     }

@@ -170,7 +170,7 @@ describe("doctor version and installation checks", () => {
     );
   });
 
-  it("reports only safe selected Notifications readiness details", async () => {
+  it("reports only safe selected WhooshBang readiness details", async () => {
     const readiness = {
       schema: "agent-relay-transport-readiness.v1",
       selectedTransport: "notifications",

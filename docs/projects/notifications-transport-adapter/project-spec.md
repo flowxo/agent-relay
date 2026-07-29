@@ -1,7 +1,8 @@
 # Project specification: FlowXO Notifications Transport Adapter
 
 - **Status:** Complete against the pinned executable mock and packed artifact;
-  C0-09 approved `1.0.0-rc.1`, while AR3 awaits an approved real service
+  C0-09 approved the pre-rename `1.0.0-rc.1` inputs, FXO-1373 migrated the
+  consumer to WhooshBang `1.0.0-rc.4`, and AR3 awaits an approved real service
   environment
 - **Product:** Agent Relay
 - **Initiative:**
@@ -46,8 +47,12 @@ artifact proves setup, confirm/select/input, crash-before-ack replay,
 disconnect/erasure with retained local authority, and unchanged direct Telegram.
 The centrally owned
 [C0-09 security review](https://linear.app/flowxo/issue/FXO-1050) recorded `go`
-for the exact `1.0.0-rc.1` candidate. AR3 owns real-service evidence and starts
-only when the Notifications owner supplies the approved environment, narrow
+for the exact `1.0.0-rc.1` candidate. WhooshBang's pre-alpha hard cut later
+retired that producer and artifact identity with no compatibility alias, so
+[FXO-1373](https://linear.app/flowxo/issue/FXO-1373) revendored the exact
+`@whooshbang/*` `1.0.0-rc.4` artifacts and reproduced this project's consumer
+and packed mock-backed proofs against them. AR3 owns real-service evidence and
+starts only when the WhooshBang owner supplies the approved environment, narrow
 machine bootstrap, durable poll/ack stream, and bounded-canary authorization.
 
 ## 2. Outcome

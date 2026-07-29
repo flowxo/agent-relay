@@ -32,7 +32,7 @@ function problem(
   } as unknown as Problem;
 }
 
-describe("Notifications error classification", () => {
+describe("WhooshBang error classification", () => {
   it.each([
     ["provider_retryable", true, "retry_same_operation"],
     ["rate_limited", true, "retry_same_operation"],

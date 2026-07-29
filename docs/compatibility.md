@@ -116,7 +116,7 @@ paths remain independent of any sibling checkout.
 
 This evidence retains the `internal-until-gate-5` commitment. It cannot promote
 an unrecorded Codex version, infer Claude/Cursor actuator support from their
-observation-only profiles, or turn the Notifications adapter into a runner
+observation-only profiles, or turn the WhooshBang adapter into a runner
 transport.
 
 ## Primary harness sources

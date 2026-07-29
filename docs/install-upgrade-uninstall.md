@@ -21,7 +21,7 @@ pnpm build
 ```
 
 The first install is scripts-disabled. The contract preflight verifies the exact
-vendored Notifications archives before the approved SQLite native build runs. No
+vendored WhooshBang archives before the approved SQLite native build runs. No
 Telegram credential is needed.
 
 No public npm package exists yet. Do not install the unrelated unscoped
@@ -190,7 +190,7 @@ node apps/relay/dist/cli.js uninstall
 The command removes only hook handlers carrying Agent Relay's ownership marker,
 the owned launcher, and the manifest. It preserves user hooks, unrelated
 settings, SQLite, fallback records, logs, web credentials, Telegram
-configuration, Notifications configuration/narrow credentials, and installer
+configuration, WhooshBang configuration/narrow credentials, and installer
 backups.
 
 Package-manager removal alone does not remove installed hooks because those
@@ -215,7 +215,7 @@ Uninstall is intentionally non-destructive. To erase retained data:
    remove only the backups you no longer need; and
 6. remove the separate secret-manager entry or local activation file.
 
-Provider data is separate. Revoke a hosted Notifications machine client before
+Provider data is separate. Revoke a hosted WhooshBang machine client before
 local erasure:
 
 ```sh

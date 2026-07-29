@@ -1,8 +1,8 @@
 # Agent Relay contract release gate
 
 `contract-lock.json` is Agent Relay's exact consumer lock for cross-repository
-public contracts. It pins only the three Notifications artifacts consumed by the
-C0 transport boundary. Agent Relay owns no C0 artifact.
+public contracts. It pins only the three WhooshBang artifacts consumed by the C0
+transport boundary. Agent Relay owns no C0 artifact.
 
 The lock records the producer repository and full commit, exact SemVer, artifact
 SHA-256, repository-relative tarball, and exact fixture-set identities. The
@@ -25,17 +25,25 @@ The stable gate:
 4. verifies every artifact digest before parsing or installing it;
 5. rejects unsafe archive members, secret-like paths, links, lifecycle scripts,
    mutable transitive dependencies, and package or fixture identity drift;
-6. installs the verified bytes in a fresh temporary pnpm project with lifecycle
+6. rejects any retired `@flowxo/*` transitive package identity outright, because
+   WhooshBang's pre-alpha hard cut publishes no compatibility alias;
+7. checks the `vendor/whooshbang-rc4` provenance manifest against the lock,
+   including the producer repository and full commit;
+8. installs the verified bytes in a fresh temporary pnpm project with lifecycle
    scripts disabled and imports all three packages;
-7. enforces the production transport import boundary;
-8. runs the lock, supply-chain, additive-compatibility, mapping, SQLite replay,
-   acknowledgement, quarantine, and direct-Telegram parity tests; and
-9. writes deterministic aggregate evidence to `.contract-results/c0-08.json`.
+9. enforces the production transport import boundary;
+10. runs the lock, supply-chain, additive-compatibility, mapping, SQLite replay,
+    acknowledgement, quarantine, and direct-Telegram parity tests; and
+11. writes deterministic aggregate evidence to `.contract-results/c0-08.json`.
 
 The result directory is generated and ignored. The result identifies the exact
 consumer `HEAD`, producer commits, versions, digests, fixture sets, canonical
 schema/policy bytes, command, and checks. It contains no timestamp, credential,
 message content, or machine path.
+
+`vendor/notifications-c0` holds the retired pre-rename `1.0.0-rc.1` tarballs as
+immutable C0 history. No active path installs, resolves, overrides, or checks
+them.
 
 ## Install ordering
 
@@ -72,18 +80,18 @@ breaking.
 The canonical `compatibility-policy.json` contains the complete executable C0
 classification vocabulary.
 
-## Updating a Notifications pin
+## Updating a WhooshBang pin
 
 Every update is an explicit reviewable change:
 
-1. Start from an immutable full source commit for every Notifications artifact
+1. Start from an immutable full source commit for every WhooshBang artifact
    being updated. Confirm the owner changelog, canonical schema, generated
    artifact, fixture, manifest version, and any required migration or
    deprecation note.
 2. Produce or obtain the replacement tarball from its exact source commit
    without running lifecycle scripts. Record its package version and SHA-256
    digest; unchanged artifacts retain their existing source commits and bytes.
-3. Replace only the corresponding files under `vendor/notifications-c0`. Update
+3. Replace only the corresponding files under `vendor/whooshbang-rc4`. Update
    its provenance manifest and `contract-lock.json` with the exact commit,
    versions, digests, paths, and fixture identities.
 4. Update the deliberately duplicated expected C0 inventory in

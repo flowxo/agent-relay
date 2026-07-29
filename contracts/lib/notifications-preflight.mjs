@@ -478,11 +478,15 @@ function assertDependencyPins(packageJson, lock) {
       if (name.startsWith(WHOOSHBANG_ARTIFACT_SCOPE)) {
         const lockedVersion = lockedVersions.get(name);
         if (lockedVersion === undefined || lockedVersion !== version) {
-          throw new Error("Artifact contains an unpinned WhooshBang dependency.");
+          throw new Error(
+            "Artifact contains an unpinned WhooshBang dependency.",
+          );
         }
       }
       if (name.startsWith("@flowxo/")) {
-        throw new Error("Artifact depends on a retired FlowXO package identity.");
+        throw new Error(
+          "Artifact depends on a retired FlowXO package identity.",
+        );
       }
     }
   }

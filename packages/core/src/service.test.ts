@@ -354,7 +354,7 @@ describe("RelayService durable delivery loop", () => {
       name: "notifications",
       deliver: async () => {
         throw new TransportError(
-          "Notifications connection is inactive.",
+          "WhooshBang connection is inactive.",
           "notifications-connection-inactive",
           false,
         );

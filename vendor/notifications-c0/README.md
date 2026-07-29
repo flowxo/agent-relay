@@ -7,10 +7,10 @@ retained unchanged so the recorded C0 evidence stays verifiable.
 
 Nothing here is installed, resolved, overridden, or checked by any active
 runtime, package, lock, setup, or support path. The producer repository
-`flowxo/flowxo-notifications` and the `@flowxo/notifications*` package identities
-are retired. WhooshBang replaced them with a pre-alpha hard cut that publishes no
-compatibility aliases and accepts no old contract, so these artifacts cannot
-prove anything about the current candidate.
+`flowxo/flowxo-notifications` and the `@flowxo/notifications*` package
+identities are retired. WhooshBang replaced them with a pre-alpha hard cut that
+publishes no compatibility aliases and accepts no old contract, so these
+artifacts cannot prove anything about the current candidate.
 
 The active consumer boundary is
 [`vendor/whooshbang-rc4`](../whooshbang-rc4/README.md), pinned by
