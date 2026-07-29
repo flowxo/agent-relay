@@ -40,7 +40,7 @@ transcripts or machine paths.
 ## Choose one transport explicitly
 
 Agent Relay supports four exclusive transport choices: `fake`, direct
-`telegram`, signed outbound `webhook`, and hosted `notifications`. Credentials
+`telegram`, signed outbound `webhook`, and hosted `whooshbang`. Credentials
 affect readiness but never select a transport. There is no dual send or
 automatic failover.
 
@@ -49,7 +49,7 @@ agent-relay transport status
 agent-relay transport select fake
 agent-relay transport select telegram
 agent-relay transport select webhook
-agent-relay transport select notifications
+agent-relay transport select whooshbang
 ```
 
 Restart the daemon after changing the durable selection. Switching transports
@@ -83,13 +83,13 @@ environment injection, or a hidden prompt. It generates and retains a narrow
 machine credential in a separate private mode-`0600` file:
 
 ```sh
-credential_command | agent-relay notifications connect \
+credential_command | agent-relay whooshbang connect \
   --credential-stdin \
-  --base-url https://notifications.example.test \
+  --base-url https://whooshbang.example.test \
   --subscriber-id configured_subscriber \
   --notifier-id default
-agent-relay notifications status
-agent-relay transport select notifications
+agent-relay whooshbang status
+agent-relay transport select whooshbang
 ```
 
 The provider receives only a bounded attention card and, when applicable, one
@@ -99,7 +99,7 @@ commands, process arguments, absolute paths, machine credentials, and resume
 authority do not cross the transport boundary.
 
 Use `agent-relay status`, `agent-relay doctor`, and
-`agent-relay notifications status` for safe diagnosis. They expose stable codes,
+`agent-relay whooshbang status` for safe diagnosis. They expose stable codes,
 counts, capability state, and hashed references—not credentials, full provider
 identifiers, prompts, answers, transcripts, or raw session identities.
 
@@ -108,7 +108,7 @@ revoke the hosted machine credential with a newly supplied project credential,
 then explicitly erase its local narrow credential and configuration:
 
 ```sh
-credential_command | agent-relay notifications disconnect \
+credential_command | agent-relay whooshbang disconnect \
   --revoke \
   --erase-credential \
   --erase-configuration \

@@ -7,28 +7,28 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDaemonTransportStatus,
-  classifyNotificationsErrorCode,
+  classifyWhooshBangErrorCode,
   classifyWebhookErrorCode,
 } from "./transport-status.js";
 
 describe("safe transport runtime status", () => {
   it.each([
-    ["notifications-credential-invalid", "authentication"],
-    ["notifications-scope-forbidden", "authorization"],
-    ["notifications-stream-identity-failure", "authorization"],
-    ["notifications-subscriber-unbound", "configuration"],
-    ["notifications-connection-inactive", "configuration"],
-    ["notifications-contract-invalid", "contract"],
-    ["notifications-protocol-malformed", "contract"],
-    ["notifications-stream-order-invalid", "contract"],
-    ["notifications-provider-outcome-unknown", "outcome-unknown"],
-    ["notifications-provider-terminal", "terminal"],
-    ["notifications-request-not-found", "terminal"],
-    ["notifications-resolution-update-unsupported", "terminal"],
-    ["notifications-transport-unavailable", "transient"],
-    ["notifications-future-additive-error", "transient"],
+    ["whooshbang-credential-invalid", "authentication"],
+    ["whooshbang-scope-forbidden", "authorization"],
+    ["whooshbang-stream-identity-failure", "authorization"],
+    ["whooshbang-subscriber-unbound", "configuration"],
+    ["whooshbang-connection-inactive", "configuration"],
+    ["whooshbang-contract-invalid", "contract"],
+    ["whooshbang-protocol-malformed", "contract"],
+    ["whooshbang-stream-order-invalid", "contract"],
+    ["whooshbang-provider-outcome-unknown", "outcome-unknown"],
+    ["whooshbang-provider-terminal", "terminal"],
+    ["whooshbang-request-not-found", "terminal"],
+    ["whooshbang-resolution-update-unsupported", "terminal"],
+    ["whooshbang-transport-unavailable", "transient"],
+    ["whooshbang-future-additive-error", "transient"],
   ] as const)("classifies %s as %s", (code, expected) => {
-    expect(classifyNotificationsErrorCode(code)).toBe(expected);
+    expect(classifyWhooshBangErrorCode(code)).toBe(expected);
   });
 
   it.each([
@@ -48,11 +48,11 @@ describe("safe transport runtime status", () => {
     const store = new RelayStore();
     const privateFailureText = "private provider diagnostic must not escape";
     const transport: NotificationTransport = {
-      name: "notifications",
+      name: "whooshbang",
       deliver: async () => {
         throw new TransportError(
           privateFailureText,
-          "notifications-credential-invalid",
+          "whooshbang-credential-invalid",
           false,
         );
       },
@@ -62,15 +62,15 @@ describe("safe transport runtime status", () => {
     });
     service.ingest({
       schema: "agent-attention.v1",
-      eventId: "evt_notifications_status_error_12345678",
+      eventId: "evt_whooshbang_status_error_12345678",
       occurredAt: "2026-07-26T22:30:00.000Z",
       sequence: 1,
-      machineId: "machine_notifications_status_12345678",
-      bridgeSessionId: "bridge_notifications_status_12345678",
+      machineId: "machine_whooshbang_status_12345678",
+      bridgeSessionId: "bridge_whooshbang_status_12345678",
       harness: "codex",
       surface: "cli",
       harnessVersion: "test",
-      sessionId: "session_notifications_status_12345678",
+      sessionId: "session_whooshbang_status_12345678",
       project: {
         displayName: "synthetic-status",
         cwdHash: `sha256:${"d".repeat(64)}`,
@@ -92,20 +92,20 @@ describe("safe transport runtime status", () => {
       service,
       selection: {
         configured: true,
-        selected: "notifications",
+        selected: "whooshbang",
         source: "durable",
       },
     });
     expect(status).toMatchObject({
-      selectedTransport: "notifications",
+      selectedTransport: "whooshbang",
       transportRuntime: {
-        notifications: {
+        whooshbang: {
           delivery: {
             lastSuccessfulSendAt: null,
             lastError: {
               category: "terminal-configuration",
               classification: "authentication",
-              code: "notifications-credential-invalid",
+              code: "whooshbang-credential-invalid",
             },
           },
           presentation: {

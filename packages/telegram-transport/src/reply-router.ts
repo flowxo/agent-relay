@@ -2088,7 +2088,7 @@ export class TelegramReplyRouter {
       await this.showAcceptedButton(
         callback,
         CARD_ACTION_LABELS[parsed.action],
-        "Routine notifications muted",
+        "Routine whooshbang muted",
       );
     } else {
       await this.showAcceptedButton(

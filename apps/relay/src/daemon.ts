@@ -19,12 +19,12 @@ import {
   TelegramReplyRouter,
 } from "@agent-relay/telegram-transport";
 import {
-  NotificationsContractTransport,
-  NotificationsMachineInteractionSource,
-  PinnedNotificationsResolutionPresenter,
-  type NotificationsContractTransportOptions,
-  type NotificationsResolutionPresenter,
-} from "@agent-relay/notifications-transport";
+  WhooshBangContractTransport,
+  WhooshBangMachineInteractionSource,
+  PinnedWhooshBangResolutionPresenter,
+  type WhooshBangContractTransportOptions,
+  type WhooshBangResolutionPresenter,
+} from "@agent-relay/whooshbang-transport";
 import type { StandaloneSessionAuthorityPort } from "@agent-relay/runner-bridge";
 import {
   WebhookNotificationTransport,
@@ -43,15 +43,15 @@ import type {
 import { buildDaemonTransportStatus } from "./transport-status.js";
 import { loadOrCreateWebCredential } from "./web-credential.js";
 import {
-  notificationsStreamKey,
-  NotificationsInteractionPoller,
-} from "./notifications-poller.js";
+  whooshbangStreamKey,
+  WhooshBangInteractionPoller,
+} from "./whooshbang-poller.js";
 import { RelayStoreSessionAuthority } from "./runner-bridge-session-authority.js";
 
-export interface DaemonNotificationsOptions extends NotificationsContractTransportOptions {
+export interface DaemonWhooshBangOptions extends WhooshBangContractTransportOptions {
   bindingId: string;
   machineId: string;
-  presenter?: NotificationsResolutionPresenter;
+  presenter?: WhooshBangResolutionPresenter;
 }
 
 export interface DaemonRunnerBridge {
@@ -80,7 +80,7 @@ export interface DaemonOptions {
   telegramWebhookSecret?: string;
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
-  notifications?: DaemonNotificationsOptions;
+  whooshbang?: DaemonWhooshBangOptions;
   webhook?: WebhookTransportOptions;
   runnerBridgeEnabled?: boolean;
   runnerBridge?: DaemonRunnerBridge;
@@ -128,13 +128,13 @@ function selectTransport(options: DaemonOptions): NotificationTransport {
           : { fetch: options.telegramFetch }),
       });
     }
-    case "notifications":
-      if (options.notifications === undefined) {
+    case "whooshbang":
+      if (options.whooshbang === undefined) {
         throw new Error(
           "selected WhooshBang transport requires an active narrow machine connection",
         );
       }
-      return new NotificationsContractTransport(options.notifications);
+      return new WhooshBangContractTransport(options.whooshbang);
     case "webhook":
       if (options.webhook === undefined) {
         throw new Error(
@@ -215,30 +215,30 @@ export async function startDaemon(
       "transport readiness does not match the daemon transport selection",
     );
   }
-  const notificationsRuntime =
-    transport instanceof NotificationsContractTransport
-      ? options.notifications
+  const whooshbangRuntime =
+    transport instanceof WhooshBangContractTransport
+      ? options.whooshbang
       : undefined;
   if (
-    transport instanceof NotificationsContractTransport &&
-    notificationsRuntime === undefined
+    transport instanceof WhooshBangContractTransport &&
+    whooshbangRuntime === undefined
   ) {
     throw new Error(
       "selected WhooshBang transport requires machine interaction configuration",
     );
   }
   const hostedStreamKey =
-    notificationsRuntime === undefined
+    whooshbangRuntime === undefined
       ? undefined
-      : notificationsStreamKey(
-          notificationsRuntime.baseUrl,
-          notificationsRuntime.machineClientId,
+      : whooshbangStreamKey(
+          whooshbangRuntime.baseUrl,
+          whooshbangRuntime.machineClientId,
         );
-  const notificationsPresenter =
-    notificationsRuntime === undefined
+  const whooshbangPresenter =
+    whooshbangRuntime === undefined
       ? undefined
-      : (notificationsRuntime.presenter ??
-        new PinnedNotificationsResolutionPresenter());
+      : (whooshbangRuntime.presenter ??
+        new PinnedWhooshBangResolutionPresenter());
   if (
     telegramUpdateMode === "webhook" &&
     transport instanceof TelegramBotTransport &&
@@ -293,7 +293,7 @@ export async function startDaemon(
     }
   }
   const replyRouter =
-    transport instanceof NotificationsContractTransport ||
+    transport instanceof WhooshBangContractTransport ||
     transport instanceof WebhookNotificationTransport ||
     options.telegramOperatorUserId === undefined ||
     options.telegramReplyChatId === undefined
@@ -318,10 +318,10 @@ export async function startDaemon(
         service,
         selection: transportSelection,
         ...(hostedStreamKey === undefined ? {} : { hostedStreamKey }),
-        ...(notificationsPresenter === undefined
+        ...(whooshbangPresenter === undefined
           ? {}
           : {
-              hostedPresentationCapability: notificationsPresenter.capability,
+              hostedPresentationCapability: whooshbangPresenter.capability,
             }),
         ...(options.transportReadiness === undefined
           ? {}
@@ -472,39 +472,39 @@ export async function startDaemon(
     });
   }
 
-  let notificationsPollingAbort: AbortController | undefined;
-  let notificationsPolling: Promise<void> | undefined;
+  let whooshbangPollingAbort: AbortController | undefined;
+  let whooshbangPolling: Promise<void> | undefined;
   if (
-    transport instanceof NotificationsContractTransport &&
-    notificationsRuntime !== undefined &&
+    transport instanceof WhooshBangContractTransport &&
+    whooshbangRuntime !== undefined &&
     hostedStreamKey !== undefined
   ) {
-    notificationsPollingAbort = new AbortController();
-    notificationsPolling = new NotificationsInteractionPoller({
+    whooshbangPollingAbort = new AbortController();
+    whooshbangPolling = new WhooshBangInteractionPoller({
       store,
-      source: new NotificationsMachineInteractionSource({
-        baseUrl: notificationsRuntime.baseUrl,
-        credential: notificationsRuntime.credential,
-        ...(notificationsRuntime.connectionGuard === undefined
+      source: new WhooshBangMachineInteractionSource({
+        baseUrl: whooshbangRuntime.baseUrl,
+        credential: whooshbangRuntime.credential,
+        ...(whooshbangRuntime.connectionGuard === undefined
           ? {}
-          : { connectionGuard: notificationsRuntime.connectionGuard }),
-        ...(notificationsRuntime.fetch === undefined
+          : { connectionGuard: whooshbangRuntime.connectionGuard }),
+        ...(whooshbangRuntime.fetch === undefined
           ? {}
-          : { fetch: notificationsRuntime.fetch }),
+          : { fetch: whooshbangRuntime.fetch }),
       }),
       streamKey: hostedStreamKey,
-      ...(notificationsPresenter === undefined
+      ...(whooshbangPresenter === undefined
         ? {}
-        : { presenter: notificationsPresenter }),
-      machineId: notificationsRuntime.machineId,
-      bindingId: notificationsRuntime.bindingId,
+        : { presenter: whooshbangPresenter }),
+      machineId: whooshbangRuntime.machineId,
+      bindingId: whooshbangRuntime.bindingId,
       logger,
     })
-      .run(notificationsPollingAbort.signal)
+      .run(whooshbangPollingAbort.signal)
       .catch((error: unknown) => {
         logger.log({
           level: "error",
-          code: "notifications.poll-crashed",
+          code: "whooshbang.poll-crashed",
           message:
             error instanceof Error
               ? error.message
@@ -605,7 +605,7 @@ export async function startDaemon(
       return closePromise;
     }
     telegramPollingAbort?.abort();
-    notificationsPollingAbort?.abort();
+    whooshbangPollingAbort?.abort();
     clearInterval(interval);
     clearInterval(retentionInterval);
     if (fallbackInterval !== undefined) {
@@ -627,7 +627,7 @@ export async function startDaemon(
       activeDrain ?? Promise.resolve(),
       activeFallbackReplay ?? Promise.resolve(),
       telegramPolling ?? Promise.resolve(),
-      notificationsPolling ?? Promise.resolve(),
+      whooshbangPolling ?? Promise.resolve(),
     ]).then(() => {
       store.close();
     });

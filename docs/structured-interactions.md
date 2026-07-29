@@ -153,7 +153,7 @@ Hosted answer validation is a pure pre-SQLite step. It requires schema,
 signature, authenticated stream, configured machine, hosted message/interaction,
 correlation, local machine/harness/session/turn, local kind/choice, occurrence,
 and expiry evidence. The consumer harness then uses the existing
-`RelayStore.resolveRequest` transaction with resolution source `notifications`.
+`RelayStore.resolveRequest` transaction with resolution source `whooshbang`.
 SQLite commit or a safe durable quarantine precedes hosted acknowledgement.
 Crash-before-ack replay resolves no second local answer or resume command.
 

@@ -388,12 +388,12 @@ function nodeRequestHeaders(request) {
   return headers;
 }
 
-async function loadNotificationsEvidenceModules() {
+async function loadWhooshBangEvidenceModules() {
   const requireFromRelay = createRequire(
     resolve(root, "apps/relay/package.json"),
   );
   const requireFromTransport = createRequire(
-    resolve(root, "packages/notifications-transport/package.json"),
+    resolve(root, "packages/whooshbang-transport/package.json"),
   );
   const mockEntry = requireFromRelay.resolve("@whooshbang/contract-mock");
   const contractsEntry = requireFromTransport.resolve("@whooshbang/contracts");
@@ -407,7 +407,7 @@ async function loadNotificationsEvidenceModules() {
   };
 }
 
-async function startAdaptiveNotificationsMock(modules) {
+async function startAdaptiveWhooshBangMock(modules) {
   const counters = new Map();
   const clock = { now: () => new Date() };
   const idGenerator = (kind) => {
@@ -753,8 +753,7 @@ async function ingestAndDeliver(baseUrl, event, mock) {
       retrying: drain.retrying,
       deadLettered: drain.deadLettered,
       errorCode:
-        failedStatus?.transportRuntime?.notifications?.delivery?.lastError
-          ?.code,
+        failedStatus?.transportRuntime?.whooshbang?.delivery?.lastError?.code,
     })}`,
   );
   const request = await waitFor("packed hosted delivery receipt", async () => {
@@ -790,7 +789,7 @@ async function waitForAnswered(baseUrl, correlationId, expectedAnswer) {
     );
     assertEqual(
       request.resolvedBy,
-      "notifications",
+      "whooshbang",
       "packed hosted answer has the wrong local authority",
     );
     return request;
@@ -893,7 +892,7 @@ globalThis.fetch = async (input, init = {}) => {
 
 await run(
   process.execPath,
-  [resolve(root, "contracts/scripts/verify-notifications.mjs")],
+  [resolve(root, "contracts/scripts/verify-whooshbang.mjs")],
   { timeoutMs: 30_000 },
 );
 
@@ -910,7 +909,7 @@ if (process.platform !== "darwin") {
   let recoveryDaemon;
   let fakeDaemon;
   let telegramDaemon;
-  let notificationsMock;
+  let whooshbangMock;
   const daemonOutputs = [];
   try {
     const tarball = resolve(temporaryRoot, "agent-relay.tgz");
@@ -968,12 +967,12 @@ if (process.platform !== "darwin") {
     );
     assert(
       cliSource.includes("1.0.0-rc.4") &&
-        cliSource.includes("notifications connect") &&
+        cliSource.includes("whooshbang connect") &&
         !cliSource.includes("@whooshbang/contract-mock"),
       "packed CLI omitted the hosted adapter or bundled the test-only mock",
     );
 
-    const help = await run(binary, ["notifications", "--help"], {
+    const help = await run(binary, ["whooshbang", "--help"], {
       env: safeRuntimeEnvironment({
         home: isolatedHome,
         prefix,
@@ -982,14 +981,14 @@ if (process.platform !== "darwin") {
       temporaryRoot,
     });
     assert(
-      help.stdout.includes("notifications connect") &&
-        help.stdout.includes("notifications disconnect"),
+      help.stdout.includes("whooshbang connect") &&
+        help.stdout.includes("whooshbang disconnect"),
       "packed WhooshBang command surface is incomplete",
     );
 
-    const modules = await loadNotificationsEvidenceModules();
+    const modules = await loadWhooshBangEvidenceModules();
     sensitiveValues.add(modules.CONTRACT_MOCK_FIXTURE_CREDENTIALS.projectTest);
-    notificationsMock = await startAdaptiveNotificationsMock(modules);
+    whooshbangMock = await startAdaptiveWhooshBangMock(modules);
     await writeFile(resolve(stateDirectory, "machine-id"), `${MACHINE_ID}\n`, {
       encoding: "utf8",
       mode: 0o600,
@@ -1003,11 +1002,11 @@ if (process.platform !== "darwin") {
     const connect = await run(
       binary,
       [
-        "notifications",
+        "whooshbang",
         "connect",
         "--credential-stdin",
         "--base-url",
-        notificationsMock.baseUrl,
+        whooshbangMock.baseUrl,
         "--subscriber-id",
         SUBSCRIBER_ID,
         "--notifier-id",
@@ -1029,15 +1028,15 @@ if (process.platform !== "darwin") {
         connected.canary === "accepted",
       "packed hosted setup did not prove a narrow connection",
     );
-    notificationsMock.assertHealthy();
-    const registration = notificationsMock.registration();
+    whooshbangMock.assertHealthy();
+    const registration = whooshbangMock.registration();
     assert(
       registration !== undefined &&
         /^sha256:[a-f0-9]{64}$/u.test(registration.secretSha256),
       "packed setup did not register an exact credential digest",
     );
     sensitiveValues.add(registration.secretSha256);
-    const narrowBearer = notificationsMock.narrowBearer();
+    const narrowBearer = whooshbangMock.narrowBearer();
     assert(
       narrowBearer !== undefined,
       "packed hosted setup did not retain its generated narrow credential",
@@ -1056,9 +1055,9 @@ if (process.platform !== "darwin") {
     );
     const credentialPath = resolve(
       stateDirectory,
-      "notifications-credential.json",
+      "whooshbang-credential.json",
     );
-    const configurationPath = resolve(stateDirectory, "notifications.json");
+    const configurationPath = resolve(stateDirectory, "whooshbang.json");
     const credentialMetadata = await stat(credentialPath);
     const configurationMetadata = await stat(configurationPath);
     assert(
@@ -1079,7 +1078,7 @@ if (process.platform !== "darwin") {
 
     const selected = parseJson(
       (
-        await run(binary, ["transport", "select", "notifications"], {
+        await run(binary, ["transport", "select", "whooshbang"], {
           env: commandEnvironment,
           temporaryRoot,
         })
@@ -1087,9 +1086,9 @@ if (process.platform !== "darwin") {
       "packed hosted transport selection",
     );
     assert(
-      selected.selectedTransport === "notifications" &&
-        selected.durableSelection === "notifications" &&
-        selected.transports?.notifications?.ready === true,
+      selected.selectedTransport === "whooshbang" &&
+        selected.durableSelection === "whooshbang" &&
+        selected.transports?.whooshbang?.ready === true,
       "packed hosted transport selection is not ready",
     );
 
@@ -1126,8 +1125,8 @@ if (process.platform !== "darwin") {
     );
     const hostedStatus = await hostedDaemon.ready();
     assert(
-      hostedStatus.selectedTransport === "notifications" &&
-        hostedStatus.transport === "notifications",
+      hostedStatus.selectedTransport === "whooshbang" &&
+        hostedStatus.transport === "whooshbang",
       "packed daemon did not start with the selected hosted transport",
     );
 
@@ -1135,9 +1134,9 @@ if (process.platform !== "darwin") {
     const confirmRequest = await ingestAndDeliver(
       hostedDaemon.baseUrl,
       confirm.event,
-      notificationsMock,
+      whooshbangMock,
     );
-    const confirmBody = notificationsMock.deliveredBodies().at(-1);
+    const confirmBody = whooshbangMock.deliveredBodies().at(-1);
     const hiddenValuesAbsent =
       confirmBody !== undefined &&
       privateValues.hiddenValues.every((value) => !confirmBody.includes(value));
@@ -1154,8 +1153,8 @@ if (process.platform !== "darwin") {
         },
       )}`,
     );
-    const confirmCommits = notificationsMock.inspect().cursorCommits.length;
-    const confirmSubmitted = await notificationsMock.submitInteraction({
+    const confirmCommits = whooshbangMock.inspect().cursorCommits.length;
+    const confirmSubmitted = await whooshbangMock.submitInteraction({
       messageId: confirmRequest.transportMessageId,
       response: { type: "confirm", value: true },
     });
@@ -1169,7 +1168,7 @@ if (process.platform !== "darwin") {
       "yes_option",
     );
     await waitFor("packed confirm acknowledgement", async () =>
-      notificationsMock.inspect().cursorCommits.length === confirmCommits + 1
+      whooshbangMock.inspect().cursorCommits.length === confirmCommits + 1
         ? true
         : undefined,
     );
@@ -1178,15 +1177,15 @@ if (process.platform !== "darwin") {
     const selectRequest = await ingestAndDeliver(
       hostedDaemon.baseUrl,
       select.event,
-      notificationsMock,
+      whooshbangMock,
     );
     const beta = selectRequest.options.find(
       (option) => option.optionId === "option_packed_beta_12345678",
     );
     assert(beta !== undefined, "packed hosted select token is unavailable");
-    const beforeCrashCommits = notificationsMock.inspect().cursorCommits.length;
-    notificationsMock.blockAcks();
-    const selectSubmitted = await notificationsMock.submitInteraction({
+    const beforeCrashCommits = whooshbangMock.inspect().cursorCommits.length;
+    whooshbangMock.blockAcks();
+    const selectSubmitted = await whooshbangMock.submitInteraction({
       messageId: selectRequest.transportMessageId,
       response: { type: "select", value: beta.token },
     });
@@ -1194,14 +1193,14 @@ if (process.platform !== "darwin") {
       selectSubmitted.eventCreated === true,
       "packed select interaction did not create an exact hosted event",
     );
-    await notificationsMock.waitForDroppedAck();
+    await whooshbangMock.waitForDroppedAck();
     await waitForAnswered(
       hostedDaemon.baseUrl,
       select.correlationId,
       "option_packed_beta_12345678",
     );
     assertEqual(
-      notificationsMock.inspect().cursorCommits.length,
+      whooshbangMock.inspect().cursorCommits.length,
       beforeCrashCommits,
       "provider acknowledgement committed before the simulated crash",
     );
@@ -1209,7 +1208,7 @@ if (process.platform !== "darwin") {
     daemonOutputs.push(hostedDaemon.output());
     hostedDaemon = undefined;
 
-    notificationsMock.allowAcks();
+    whooshbangMock.allowAcks();
     const recoveryPort = await allocatePort();
     recoveryDaemon = startDaemon(
       binary,
@@ -1220,8 +1219,7 @@ if (process.platform !== "darwin") {
     );
     await recoveryDaemon.ready();
     await waitFor("packed crash-before-ack replay", async () =>
-      notificationsMock.inspect().cursorCommits.length ===
-      beforeCrashCommits + 1
+      whooshbangMock.inspect().cursorCommits.length === beforeCrashCommits + 1
         ? true
         : undefined,
     );
@@ -1235,10 +1233,10 @@ if (process.platform !== "darwin") {
     const inputRequest = await ingestAndDeliver(
       recoveryDaemon.baseUrl,
       input.event,
-      notificationsMock,
+      whooshbangMock,
     );
-    const beforeInputCommits = notificationsMock.inspect().cursorCommits.length;
-    const inputSubmitted = await notificationsMock.submitInteraction({
+    const beforeInputCommits = whooshbangMock.inspect().cursorCommits.length;
+    const inputSubmitted = await whooshbangMock.submitInteraction({
       messageId: inputRequest.transportMessageId,
       response: { type: "input", value: privateValues.answer },
     });
@@ -1252,13 +1250,12 @@ if (process.platform !== "darwin") {
       privateValues.answer,
     );
     await waitFor("packed input acknowledgement", async () =>
-      notificationsMock.inspect().cursorCommits.length ===
-      beforeInputCommits + 1
+      whooshbangMock.inspect().cursorCommits.length === beforeInputCommits + 1
         ? true
         : undefined,
     );
     assertEqual(
-      notificationsMock.inspect().cursorCommits.length,
+      whooshbangMock.inspect().cursorCommits.length,
       confirmCommits + 3,
       "packed hosted proof observed a duplicate provider cursor commit",
     );
@@ -1269,28 +1266,27 @@ if (process.platform !== "darwin") {
           recoveryDaemon.baseUrl,
           "/v1/status",
         );
-        return status.transportRuntime?.notifications?.presentation?.blocked ===
-          3
+        return status.transportRuntime?.whooshbang?.presentation?.blocked === 3
           ? status
           : undefined;
       },
     );
     assert(
-      finalHostedStatus.transportRuntime.notifications.presentation
-        .capability === "unsupported" &&
-        finalHostedStatus.transportRuntime.notifications.presentation
-          .updated === 0 &&
-        finalHostedStatus.transportRuntime.notifications.polling
+      finalHostedStatus.transportRuntime.whooshbang.presentation.capability ===
+        "unsupported" &&
+        finalHostedStatus.transportRuntime.whooshbang.presentation.updated ===
+          0 &&
+        finalHostedStatus.transportRuntime.whooshbang.polling
           .unacknowledgedEventCount === 0,
       "packed hosted presentation or acknowledgement diagnosis is unsafe",
     );
-    const rawCursor = notificationsMock
+    const rawCursor = whooshbangMock
       .inspect()
       .cursorCommits.at(-1)?.committedCursor;
-    const hostedMessageIds = notificationsMock
+    const hostedMessageIds = whooshbangMock
       .inspect()
       .messages.map((message) => message.id);
-    const hostedEventIds = notificationsMock
+    const hostedEventIds = whooshbangMock
       .inspect()
       .logicalEvents.map((event) => event.eventId);
     for (const value of [
@@ -1324,7 +1320,7 @@ if (process.platform !== "darwin") {
         await run(
           binary,
           [
-            "notifications",
+            "whooshbang",
             "disconnect",
             "--revoke",
             "--erase-credential",
@@ -1354,7 +1350,7 @@ if (process.platform !== "darwin") {
     assert(
       !(await exists(credentialPath)) &&
         !(await exists(configurationPath)) &&
-        notificationsMock
+        whooshbangMock
           .inspect()
           .machineClients.find(
             (candidate) => candidate.id === MACHINE_CLIENT_ID,
@@ -1532,7 +1528,7 @@ if (process.platform !== "darwin") {
       "packed daemon logs",
     );
     assertAbsent(cliSource, privateLogValues, "packed package contents");
-    notificationsMock.assertHealthy();
+    whooshbangMock.assertHealthy();
 
     await run("pnpm", ["--dir", prefix, "remove", release.name], {
       temporaryRoot,
@@ -1570,7 +1566,7 @@ if (process.platform !== "darwin") {
           version: release.version,
           sha256: packageSha256,
         },
-        notifications: {
+        whooshbang: {
           contractVersion: "1.0.0-rc.4",
           contractLockSha256: lockSha256,
           exactArtifacts: notificationArtifacts.length,
@@ -1598,7 +1594,7 @@ if (process.platform !== "darwin") {
         await daemon.exited.catch(() => undefined);
       }
     }
-    await notificationsMock?.close().catch(() => undefined);
+    await whooshbangMock?.close().catch(() => undefined);
     await rm(temporaryRoot, {
       recursive: true,
       force: true,

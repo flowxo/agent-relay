@@ -13,11 +13,11 @@ copied producer schema is an authority.
 Run the complete consumer gate with:
 
 ```sh
-pnpm contracts:notifications
+pnpm contracts:whooshbang
 ```
 
-The legacy `pnpm notifications:contract:check` alias invokes the same command.
-The stable gate:
+The legacy `pnpm whooshbang:contract:check` alias invokes the same command. The
+stable gate:
 
 1. strictly compiles and applies `contract-lock.schema.json` with Ajv 2020;
 2. applies the independent semantic validator and exact Agent Relay topology;
@@ -95,11 +95,11 @@ Every update is an explicit reviewable change:
    its provenance manifest and `contract-lock.json` with the exact commit,
    versions, digests, paths, and fixture identities.
 4. Update the deliberately duplicated expected C0 inventory in
-   `contracts/lib/notifications-preflight.mjs`. A canonical schema or
+   `contracts/lib/whooshbang-preflight.mjs`. A canonical schema or
    compatibility-policy change also requires byte-for-byte portfolio
    coordination and new pinned digests.
-5. Run the safe install ordering above, then `pnpm contracts:notifications` and
-   the normal `pnpm check`.
+5. Run the safe install ordering above, then `pnpm contracts:whooshbang` and the
+   normal `pnpm check`.
 6. Include the owner changelog/migration note, exact producer build evidence,
    generated `.contract-results/c0-08.json`, and consumer output in the pull
    request.

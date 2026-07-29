@@ -3,7 +3,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readSafeTarGzip } from "./notifications-preflight.mjs";
+import { readSafeTarGzip } from "./whooshbang-preflight.mjs";
 
 const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),

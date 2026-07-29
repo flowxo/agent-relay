@@ -62,9 +62,9 @@ await build({
       root,
       "packages/notification-contracts/src/index.ts",
     ),
-    "@agent-relay/notifications-transport": resolve(
+    "@agent-relay/whooshbang-transport": resolve(
       root,
-      "packages/notifications-transport/src/index.ts",
+      "packages/whooshbang-transport/src/index.ts",
     ),
     "@agent-relay/protocol": resolve(root, "packages/protocol/src/index.ts"),
     "@agent-relay/runner-bridge": resolve(

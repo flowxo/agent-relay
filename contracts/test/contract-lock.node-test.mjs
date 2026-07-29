@@ -8,10 +8,10 @@ import { compileContractLockSchema } from "../lib/json-schema.mjs";
 import {
   CANONICAL_POLICY_SHA256,
   CANONICAL_SCHEMA_SHA256,
-  loadNotificationsContractLock,
+  loadWhooshBangContractLock,
   WHOOSHBANG_BASE_SOURCE_COMMIT,
   WHOOSHBANG_MOCK_SOURCE_COMMIT,
-} from "../lib/notifications-preflight.mjs";
+} from "../lib/whooshbang-preflight.mjs";
 
 const digest = "a".repeat(64);
 const commit = "b".repeat(40);
@@ -113,7 +113,7 @@ describe("exact SemVer locks", () => {
 describe("flowxo.contract-lock.v1", () => {
   it("strictly compiles and validates the checked-in Agent Relay lock", async () => {
     const { lock, policyDigest, schemaDigest } =
-      await loadNotificationsContractLock();
+      await loadWhooshBangContractLock();
     assert.equal(schemaDigest, CANONICAL_SCHEMA_SHA256);
     assert.equal(policyDigest, CANONICAL_POLICY_SHA256);
     assert.equal(lock.repository, "flowxo/agent-relay");

@@ -173,17 +173,17 @@ describe("doctor version and installation checks", () => {
   it("reports only safe selected WhooshBang readiness details", async () => {
     const readiness = {
       schema: "agent-relay-transport-readiness.v1",
-      selectedTransport: "notifications",
+      selectedTransport: "whooshbang",
       selection: {
         configured: true,
-        selected: "notifications",
+        selected: "whooshbang",
         source: "durable",
         updatedAt: "2026-07-26T22:00:00.000Z",
       },
       transports: {
         fake: { ready: true },
-        notifications: {
-          apiOrigin: "https://notifications.example.test",
+        whooshbang: {
+          apiOrigin: "https://whooshbang.example.test",
           binding: "verified-at-connect",
           canaryRef: "canary_safe12",
           configured: true,
@@ -227,14 +227,14 @@ describe("doctor version and installation checks", () => {
         expect.objectContaining({
           name: "transport-selection",
           level: "pass",
-          detail: "notifications selected from durable configuration",
+          detail: "whooshbang selected from durable configuration",
         }),
         expect.objectContaining({
           name: "selected-transport-readiness",
           level: "pass",
         }),
         expect.objectContaining({
-          name: "notifications-transport",
+          name: "whooshbang-transport",
           level: "pass",
           detail: expect.stringContaining("client_safe12"),
         }),
@@ -252,24 +252,21 @@ describe("doctor version and installation checks", () => {
   it("fails doctor when the selected hosted credential is revoked", async () => {
     const readiness = {
       schema: "agent-relay-transport-readiness.v1",
-      selectedTransport: "notifications",
+      selectedTransport: "whooshbang",
       selection: {
         configured: true,
-        selected: "notifications",
+        selected: "whooshbang",
         source: "durable",
       },
       transports: {
         fake: { ready: true },
-        notifications: {
+        whooshbang: {
           binding: "inactive",
           configured: true,
           connectionStatus: "revoked",
           credentialPermissions: "inactive",
           credentialPresent: false,
-          issueCodes: [
-            "notifications-revoked",
-            "notifications-credential-missing",
-          ],
+          issueCodes: ["whooshbang-revoked", "whooshbang-credential-missing"],
           pendingRevocations: 0,
           ready: false,
           resolutionPresentation: "unsupported-in-pinned-contract",
@@ -303,10 +300,10 @@ describe("doctor version and installation checks", () => {
         expect.objectContaining({
           name: "selected-transport-readiness",
           level: "fail",
-          detail: expect.stringContaining("notifications-revoked"),
+          detail: expect.stringContaining("whooshbang-revoked"),
         }),
         expect.objectContaining({
-          name: "notifications-transport",
+          name: "whooshbang-transport",
           level: "fail",
         }),
       ]),

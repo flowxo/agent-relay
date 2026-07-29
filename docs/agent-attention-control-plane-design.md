@@ -44,9 +44,9 @@ Build an internal macOS-first version with:
 - Codex CLI, Claude Code, Cursor CLI: stop, error, explicit question,
   permission, and abnormal-exit events; Telegram replies resume the same
   session.
-- Cursor IDE: deterministic notifications and inline stop-hook replies; late
-  remote resume remains notify-only until Cursor exposes a stable cross-surface
-  session API.
+- Cursor IDE: deterministic whooshbang and inline stop-hook replies; late remote
+  resume remains notify-only until Cursor exposes a stable cross-surface session
+  API.
 - One operator, one Telegram bot, multiple local machines and concurrent
   sessions.
 - No transcript upload by default. Send only bounded summaries and the last
@@ -88,7 +88,7 @@ Pushary is not a single hook. The package contains:
 - a daemon that can start a new Claude session from a phone command.
 
 The public product page describes the same layers: approvals and questions,
-notifications, a fleet view, policy, a kill switch, and an audit trail
+whooshbang, a fleet view, policy, a kill switch, and an audit trail
 ([Pushary overview](https://pushary.com/),
 [control panel](https://pushary.com/ai-agent-control-panel)).
 
@@ -140,8 +140,8 @@ The current package installs a local Cursor plugin with:
 - one global `beforeShellExecution` permission gate.
 
 The inspected Cursor plugin does **not** install a deterministic `stop` hook.
-Generic "task complete" notifications therefore depend on the model following
-its always-on rule and calling the MCP tool. That is materially weaker than the
+Generic "task complete" whooshbang therefore depend on the model following its
+always-on rule and calling the MCP tool. That is materially weaker than the
 Claude and Codex paths and is a plausible explanation for silent non-delivery in
 Cursor.
 
@@ -276,7 +276,7 @@ wrapper/TTY handoff is a separate product-sized component.
 
 ### 3.4 Cursor
 
-Cursor's current hooks are capable enough for deterministic notifications:
+Cursor's current hooks are capable enough for deterministic whooshbang:
 
 - `stop` receives a stable `conversation_id` and `loop_count`;
 - returning `followup_message` automatically submits a new user message;
@@ -850,8 +850,7 @@ changes.
 
 ### Awareness
 
-- Eight parallel sessions each produce independently attributed stop
-  notifications.
+- Eight parallel sessions each produce independently attributed stop whooshbang.
 - One session ending does not cancel another session's pending question.
 - Main-agent stops notify once; subagent stops do not notify by default.
 - API error, non-zero child exit, SIGTERM, and laptop sleep/reconnect each
@@ -895,7 +894,7 @@ Recommended defaults are shown first.
 
 ## 12. Bottom line
 
-The useful product is not "push notifications for agents." It is an **attention
+The useful product is not "push whooshbang for agents." It is an **attention
 router with deterministic continuation**:
 
 - hooks turn heterogeneous harness lifecycle events into one protocol;

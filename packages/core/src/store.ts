@@ -51,7 +51,19 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 6;
+export const RELAY_STORE_SCHEMA_VERSION = 7;
+
+// Schema 7 renamed the hosted transport identity from `notifications` to
+// `whooshbang`. These columns retain that value, so an existing database is
+// rewritten forward once instead of losing its hosted rows.
+const HOSTED_TRANSPORT_IDENTITY_COLUMNS = [
+  ["session_topics", "transport_name"],
+  ["events", "transport_name"],
+  ["topic_cleanup_operations", "transport_name"],
+  ["notification_groups", "transport_name"],
+  ["hosted_delivery_mappings", "transport_name"],
+  ["pending_requests", "resolved_by"],
+] as const;
 
 const NativeHookSequenceAllocationInputSchema = z
   .object({
@@ -396,7 +408,7 @@ export interface HostedDeliveryRecord {
 export interface HostedResolution {
   correlationId: string;
   answer: string;
-  resolvedBy: "notifications";
+  resolvedBy: "whooshbang";
   now: string;
   expected: {
     machineId: string;
@@ -592,7 +604,7 @@ export interface PendingRequestRecord {
     | "continuation";
   question: string;
   expiresAt: string;
-  resolvedBy?: "terminal" | "telegram" | "web" | "notifications";
+  resolvedBy?: "terminal" | "telegram" | "web" | "whooshbang";
   answer?: string;
   resolvedAt?: string;
   transportMessageId?: string;
@@ -790,7 +802,7 @@ export type NumberedChoiceResolutionResult =
 export interface ResolveRequestInput {
   correlationId: string;
   answer: string;
-  resolvedBy: "terminal" | "telegram" | "web" | "notifications";
+  resolvedBy: "terminal" | "telegram" | "web" | "whooshbang";
   now: string;
   expected?: {
     machineId: string;
@@ -1028,7 +1040,7 @@ interface PendingRow {
   request_kind: PendingRequestRecord["requestKind"];
   question: string;
   expires_at: string;
-  resolved_by: "terminal" | "telegram" | "web" | "notifications" | null;
+  resolved_by: "terminal" | "telegram" | "web" | "whooshbang" | null;
   answer: string | null;
   resolved_at: string | null;
   transport_message_id: string | null;
@@ -1313,14 +1325,14 @@ export class RelayStore {
         this.database.pragma("journal_mode = WAL");
         this.database.pragma("synchronous = FULL");
       }
-      this.migrate();
+      this.migrate(observedSchemaVersion);
     } catch (error) {
       this.database.close();
       throw error;
     }
   }
 
-  private migrate(): void {
+  private migrate(observedSchemaVersion: number): void {
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         machine_id TEXT NOT NULL,
@@ -2069,6 +2081,18 @@ export class RelayStore {
       this.database.exec(
         "ALTER TABLE topic_cleanup_operations ADD COLUMN inactive_before TEXT",
       );
+    }
+    if (observedSchemaVersion < 7) {
+      const rename = this.database.transaction(() => {
+        for (const [table, column] of HOSTED_TRANSPORT_IDENTITY_COLUMNS) {
+          this.database
+            .prepare(
+              `UPDATE ${table} SET ${column} = 'whooshbang' WHERE ${column} = 'notifications'`,
+            )
+            .run();
+        }
+      });
+      rename();
     }
     this.database.pragma(
       `user_version = ${String(RELAY_STORE_SCHEMA_VERSION)}`,
@@ -6889,7 +6913,7 @@ export class RelayStore {
 
   public resolveOptionToken(
     token: string,
-    resolvedBy: "terminal" | "telegram" | "web" | "notifications",
+    resolvedBy: "terminal" | "telegram" | "web" | "whooshbang",
     now: string,
     expected?: {
       machineId: string;
@@ -8301,7 +8325,7 @@ export class RelayStore {
         SELECT event_id, message_id, interaction_id, interaction_type
         FROM hosted_delivery_mappings
         WHERE stream_key = ?
-          AND transport_name = 'notifications'
+          AND transport_name = 'whooshbang'
           AND message_id = ?
       `,
       )

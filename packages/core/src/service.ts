@@ -257,9 +257,9 @@ export class RelayService {
         ? record.details["errorCode"]
         : undefined;
     if (
-      this.transport.name !== "notifications" ||
+      this.transport.name !== "whooshbang" ||
       errorCode === undefined ||
-      !errorCode.startsWith("notifications-")
+      !errorCode.startsWith("whooshbang-")
     ) {
       this.logger.log(record);
       return;
@@ -1220,7 +1220,7 @@ export class RelayService {
     }
     const note =
       result.action.kind === "mute"
-        ? "routine notifications muted; questions and critical failures remain active"
+        ? "routine whooshbang muted; questions and critical failures remain active"
         : "relay lane ended; the harness process is unchanged";
     try {
       await this.transport.editResolvedMessage(

@@ -12,7 +12,7 @@ import { webhookSignature } from "@agent-relay/webhook-transport";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startDaemon } from "./daemon.js";
-import { notificationsStreamKey } from "./notifications-poller.js";
+import { whooshbangStreamKey } from "./whooshbang-poller.js";
 import { WebCredentialSchema } from "./web-credential.js";
 
 const temporaryDirectories: string[] = [];
@@ -331,7 +331,7 @@ describe("startDaemon Telegram update mode", () => {
 
   it("delivers only through explicitly selected WhooshBang and reports safe runtime state", async () => {
     const mock = createWhooshBangContractMock();
-    const notificationsFetch = vi.fn<typeof fetch>(
+    const whooshbangFetch = vi.fn<typeof fetch>(
       async (input, init) => await mock.fetch(new Request(input, init)),
     );
     const telegramFetch = vi
@@ -342,16 +342,16 @@ describe("startDaemon Telegram update mode", () => {
     const daemon = await startDaemon({
       databasePath: await temporaryDatabase(),
       port: 0,
-      selectedTransport: "notifications",
-      notifications: {
-        baseUrl: "https://notifications.mock.test",
+      selectedTransport: "whooshbang",
+      whooshbang: {
+        baseUrl: "https://whooshbang.mock.test",
         credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
         subscriberId: "agent_relay_operator",
         notifierId: "default",
         bindingId: "binding_synthetic_relay",
         machineClientId: "machine_client_synthetic_001",
         machineId: "machine_synthetic_a",
-        fetch: notificationsFetch,
+        fetch: whooshbangFetch,
       },
       telegramToken: "123456:synthetic-token-value",
       telegramChatId: "10001",
@@ -362,17 +362,17 @@ describe("startDaemon Telegram update mode", () => {
 
     daemon.service.ingest({
       schema: "agent-attention.v1",
-      eventId: "evt_explicit_notifications_12345678",
+      eventId: "evt_explicit_whooshbang_12345678",
       occurredAt: "2026-07-26T21:05:00.000Z",
       sequence: 1,
-      machineId: "machine_explicit_notifications_12345678",
-      bridgeSessionId: "bridge_explicit_notifications_12345678",
+      machineId: "machine_explicit_whooshbang_12345678",
+      bridgeSessionId: "bridge_explicit_whooshbang_12345678",
       harness: "codex",
       surface: "cli",
       harnessVersion: "test",
-      sessionId: "session_explicit_notifications_12345678",
+      sessionId: "session_explicit_whooshbang_12345678",
       project: {
-        displayName: "synthetic-explicit-notifications",
+        displayName: "synthetic-explicit-whooshbang",
         cwdHash: `sha256:${"c".repeat(64)}`,
       },
       type: "turn.stopped",
@@ -390,7 +390,7 @@ describe("startDaemon Telegram update mode", () => {
       deadLettered: 0,
     });
     expect(mock.inspect().messages).toHaveLength(1);
-    expect(notificationsFetch).toHaveBeenCalled();
+    expect(whooshbangFetch).toHaveBeenCalled();
     expect(telegramFetch).not.toHaveBeenCalled();
 
     const address = daemon.server.address();
@@ -401,15 +401,15 @@ describe("startDaemon Telegram update mode", () => {
       await fetch(`http://127.0.0.1:${address.port}/v1/status`)
     ).json()) as Record<string, unknown>;
     expect(status).toMatchObject({
-      selectedTransport: "notifications",
-      transport: "notifications",
+      selectedTransport: "whooshbang",
+      transport: "whooshbang",
       transportRuntime: {
         selection: {
           configured: true,
-          selected: "notifications",
+          selected: "whooshbang",
           source: "command-line",
         },
-        notifications: {
+        whooshbang: {
           circuit: { blocked: false },
           delivery: {
             lastError: null,
@@ -443,9 +443,9 @@ describe("startDaemon Telegram update mode", () => {
     const daemon = await startDaemon({
       databasePath: await temporaryDatabase(),
       port: 0,
-      selectedTransport: "notifications",
-      notifications: {
-        baseUrl: "https://notifications.mock.test",
+      selectedTransport: "whooshbang",
+      whooshbang: {
+        baseUrl: "https://whooshbang.mock.test",
         credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
         subscriberId: "agent_relay_operator",
         notifierId: "default",
@@ -508,8 +508,8 @@ describe("startDaemon Telegram update mode", () => {
       }),
     ).resolves.toMatchObject({ eventCreated: true, outcome: "authorized" });
 
-    const streamKey = notificationsStreamKey(
-      "https://notifications.mock.test",
+    const streamKey = whooshbangStreamKey(
+      "https://whooshbang.mock.test",
       "machine_client_synthetic_001",
     );
     await vi.waitFor(
@@ -519,7 +519,7 @@ describe("startDaemon Telegram update mode", () => {
         ).toMatchObject({
           state: "answered",
           answer: "option_daemon_beta_12345678",
-          resolvedBy: "notifications",
+          resolvedBy: "whooshbang",
         });
         expect(mock.inspect().cursorCommits).toHaveLength(1);
         expect(
@@ -548,7 +548,7 @@ describe("startDaemon Telegram update mode", () => {
     ).json();
     expect(status).toMatchObject({
       transportRuntime: {
-        notifications: {
+        whooshbang: {
           polling: {
             committedCursorRef: expect.stringMatching(/^cursor_[a-f0-9]{12}$/u),
             state: "active",
@@ -563,7 +563,7 @@ describe("startDaemon Telegram update mode", () => {
             lastError: {
               category: "operator-action",
               classification: "terminal",
-              code: "notifications-resolution-update-unsupported",
+              code: "whooshbang-resolution-update-unsupported",
             },
           },
         },
@@ -586,8 +586,8 @@ describe("startDaemon Telegram update mode", () => {
     const connectionGuard = async () => active;
     const hostedFetch: typeof fetch = async (input, init) =>
       await mock.fetch(new Request(input, init));
-    const notifications = {
-      baseUrl: "https://notifications.mock.test",
+    const whooshbang = {
+      baseUrl: "https://whooshbang.mock.test",
       credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
       subscriberId: "agent_relay_operator",
       notifierId: "default",
@@ -600,8 +600,8 @@ describe("startDaemon Telegram update mode", () => {
     const daemon = await startDaemon({
       databasePath,
       port: 0,
-      selectedTransport: "notifications",
-      notifications,
+      selectedTransport: "whooshbang",
+      whooshbang,
       drainIntervalMs: 60_000,
       retentionIntervalMs: 60_000,
     });
@@ -654,12 +654,9 @@ describe("startDaemon Telegram update mode", () => {
     await vi.waitFor(() => {
       expect(
         daemon.service.store.hostedPollStatus(
-          notificationsStreamKey(
-            notifications.baseUrl,
-            notifications.machineClientId,
-          ),
+          whooshbangStreamKey(whooshbang.baseUrl, whooshbang.machineClientId),
         ).lastError,
-      ).toMatchObject({ code: "notifications-connection-inactive" });
+      ).toMatchObject({ code: "whooshbang-connection-inactive" });
     });
     daemon.service.ingest({
       schema: "agent-attention.v1",
@@ -695,10 +692,7 @@ describe("startDaemon Telegram update mode", () => {
     );
     expect(
       daemon.service.store.getHostedDeliveryForMessage(
-        notificationsStreamKey(
-          notifications.baseUrl,
-          notifications.machineClientId,
-        ),
+        whooshbangStreamKey(whooshbang.baseUrl, whooshbang.machineClientId),
         hostedMessageId,
       ),
     ).toMatchObject({ eventId });
@@ -708,8 +702,8 @@ describe("startDaemon Telegram update mode", () => {
     const restarted = await startDaemon({
       databasePath,
       port: 0,
-      selectedTransport: "notifications",
-      notifications,
+      selectedTransport: "whooshbang",
+      whooshbang,
       drainIntervalMs: 60_000,
       retentionIntervalMs: 60_000,
     });

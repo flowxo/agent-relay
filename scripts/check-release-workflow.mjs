@@ -117,7 +117,7 @@ for (const command of [
   "typecheck",
   "test",
   "capabilities:check",
-  "contracts:notifications",
+  "contracts:whooshbang",
   "dist:check",
   "package:check",
   "package:hosted:check",

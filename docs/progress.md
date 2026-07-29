@@ -989,7 +989,12 @@
   behavior, non-executable hosted fields, and direct-Telegram parity are
   unchanged, so no operator action is required. `vendor/notifications-c0` and
   the C0-07/AR2 stories retain the retired identities as immutable history. See
-  [the FXO-1373 record](projects/notifications-transport-adapter/stories/fxo-1373-migrate-to-whooshbang-rc4.md).
+  [the FXO-1373 record](projects/notifications-transport-adapter/stories/fxo-1373-migrate-to-whooshbang-rc4.md)
+  FXO-1376 then renamed Agent Relay's own hosted transport identifier from
+  `notifications` to `whooshbang` across the selector, CLI, local files,
+  diagnostics, package, and SQLite values at schema version 7, while the
+  provider-neutral notification seam kept its generic name. See
+  [the FXO-1376 record](projects/notifications-transport-adapter/stories/fxo-1376-rename-hosted-transport-identifier.md).
 
 ## Phase 1 reproduction
 

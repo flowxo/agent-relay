@@ -25,16 +25,16 @@ import {
   type WhooshBangContractMock,
 } from "@whooshbang/contract-mock";
 import {
-  NotificationsContractTransport,
-  NotificationsMachineInteractionSource,
-} from "@agent-relay/notifications-transport";
+  WhooshBangContractTransport,
+  WhooshBangMachineInteractionSource,
+} from "@agent-relay/whooshbang-transport";
 import { makeProjectRef } from "@agent-relay/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  NotificationsInteractionPoller,
-  notificationsStreamKey,
-} from "./notifications-poller.js";
+  WhooshBangInteractionPoller,
+  whooshbangStreamKey,
+} from "./whooshbang-poller.js";
 
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 
@@ -45,11 +45,11 @@ const OPERATOR_ID = 7_001;
 const CHAT_ID = 9_001;
 const BINDING_ID = "binding_synthetic_relay";
 const MACHINE_CLIENT_ID = "machine_client_synthetic_001";
-const NOTIFICATIONS_BASE_URL = "https://notifications.mock.test";
+const WHOOSHBANG_BASE_URL = "https://whooshbang.mock.test";
 const temporaryDirectories: string[] = [];
 const activeRuntimes = new Set<ParityRuntime>();
 
-type ProviderKind = "fake" | "telegram" | "notifications";
+type ProviderKind = "fake" | "telegram" | "whooshbang";
 type ParityAnswer =
   | { type: "confirm"; value: boolean }
   | { type: "select"; optionId: string }
@@ -159,7 +159,7 @@ class RecordingTelegramTransport extends TelegramBotTransport {
   }
 }
 
-class RecordingNotificationsTransport extends NotificationsContractTransport {
+class RecordingWhooshBangTransport extends WhooshBangContractTransport {
   public readonly deliveryKeys: string[] = [];
 
   public override async deliver(
@@ -267,11 +267,11 @@ class ParityRuntime {
   private readonly fakeTransport: RecordingFakeTransport | undefined;
   private readonly telegramTransport: RecordingTelegramTransport | undefined;
   private readonly telegramApi: TelegramApiHarness | undefined;
-  private readonly notificationsTransport:
-    RecordingNotificationsTransport | undefined;
-  private readonly notificationsMock: WhooshBangContractMock | undefined;
-  private readonly notificationsBodies: string[] = [];
-  private notificationsSendFailures = 0;
+  private readonly whooshbangTransport:
+    RecordingWhooshBangTransport | undefined;
+  private readonly whooshbangMock: WhooshBangContractMock | undefined;
+  private readonly whooshbangBodies: string[] = [];
+  private whooshbangSendFailures = 0;
   private closed = false;
 
   public constructor(
@@ -293,14 +293,14 @@ class ParityRuntime {
       this.transport = this.telegramTransport;
       this.presentationCapability = "supported";
     } else {
-      this.notificationsMock = createWhooshBangContractMock();
+      this.whooshbangMock = createWhooshBangContractMock();
       const hostedFetch: typeof fetch = async (input, init) => {
         const request = new Request(input, init);
         const isMessageCreate =
           request.method === "POST" &&
           new URL(request.url).pathname.endsWith("/messages");
-        if (isMessageCreate && this.notificationsSendFailures > 0) {
-          this.notificationsSendFailures -= 1;
+        if (isMessageCreate && this.whooshbangSendFailures > 0) {
+          this.whooshbangSendFailures -= 1;
           throw new Error("synthetic hosted connection loss");
         }
         if (isMessageCreate) {
@@ -311,20 +311,20 @@ class ParityRuntime {
             body.content?.type === "text" &&
             typeof body.content.text === "string"
           ) {
-            this.notificationsBodies.push(body.content.text);
+            this.whooshbangBodies.push(body.content.text);
           }
         }
-        return await this.notificationsMock!.fetch(request);
+        return await this.whooshbangMock!.fetch(request);
       };
-      this.notificationsTransport = new RecordingNotificationsTransport({
-        baseUrl: NOTIFICATIONS_BASE_URL,
+      this.whooshbangTransport = new RecordingWhooshBangTransport({
+        baseUrl: WHOOSHBANG_BASE_URL,
         credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
         machineClientId: MACHINE_CLIENT_ID,
         subscriberId: "agent_relay_operator",
         notifierId: "default",
         fetch: hostedFetch,
       });
-      this.transport = this.notificationsTransport;
+      this.transport = this.whooshbangTransport;
       this.presentationCapability = "unsupported";
     }
     this.store = new RelayStore(databasePath);
@@ -342,7 +342,7 @@ class ParityRuntime {
       },
     });
     this.router =
-      this.provider === "notifications"
+      this.provider === "whooshbang"
         ? undefined
         : new TelegramReplyRouter(this.store, this.transport, {
             operatorUserId: OPERATOR_ID,
@@ -361,14 +361,14 @@ class ParityRuntime {
       this.telegramApi.failNextSend();
       return;
     }
-    this.notificationsSendFailures += 1;
+    this.whooshbangSendFailures += 1;
   }
 
   public deliveryKeys(): string[] {
     return [
       ...(this.fakeTransport?.deliveryKeys ?? []),
       ...(this.telegramTransport?.deliveryKeys ?? []),
-      ...(this.notificationsTransport?.deliveryKeys ?? []),
+      ...(this.whooshbangTransport?.deliveryKeys ?? []),
     ];
   }
 
@@ -379,7 +379,7 @@ class ParityRuntime {
     if (this.telegramApi !== undefined) {
       return this.telegramApi.messages.length;
     }
-    return this.notificationsMock?.inspect().messages.length ?? 0;
+    return this.whooshbangMock?.inspect().messages.length ?? 0;
   }
 
   public deliveredBodies(): string[] {
@@ -393,7 +393,7 @@ class ParityRuntime {
         String(message.body["text"] ?? ""),
       );
     }
-    return [...this.notificationsBodies];
+    return [...this.whooshbangBodies];
   }
 
   public presentationUpdateCount(): number {
@@ -405,7 +405,7 @@ class ParityRuntime {
     }
     return (
       this.store.hostedPollStatus(
-        notificationsStreamKey(NOTIFICATIONS_BASE_URL, MACHINE_CLIENT_ID),
+        whooshbangStreamKey(WHOOSHBANG_BASE_URL, MACHINE_CLIENT_ID),
       ).messageUpdates.updated ?? 0
     );
   }
@@ -414,8 +414,8 @@ class ParityRuntime {
     event: AgentAttentionEventV1,
     answer: ParityAnswer,
   ): Promise<ReplyRouteOutcome> {
-    return this.provider === "notifications"
-      ? await this.answerNotifications(event, answer)
+    return this.provider === "whooshbang"
+      ? await this.answerWhooshBang(event, answer)
       : await this.answerTelegram(event, answer);
   }
 
@@ -491,11 +491,11 @@ class ParityRuntime {
     ).outcome;
   }
 
-  private async answerNotifications(
+  private async answerWhooshBang(
     event: AgentAttentionEventV1,
     answer: ParityAnswer,
   ): Promise<ReplyRouteOutcome> {
-    const mock = this.notificationsMock;
+    const mock = this.whooshbangMock;
     const request = this.store.getPendingRequest(
       event.request?.correlationId ?? "",
     );
@@ -525,7 +525,7 @@ class ParityRuntime {
       response,
     });
     if (submitted.eventCreated) {
-      await this.pollNotificationsUntilIdle();
+      await this.pollWhooshBangUntilIdle();
     }
     const resultingState = this.store.getPendingRequest(
       event.request?.correlationId ?? "",
@@ -539,7 +539,7 @@ class ParityRuntime {
         `WhooshBang parity event was not resolved: ${JSON.stringify({
           cursorCommits: mock.inspect().cursorCommits,
           poll: this.store.hostedPollStatus(
-            notificationsStreamKey(NOTIFICATIONS_BASE_URL, MACHINE_CLIENT_ID),
+            whooshbangStreamKey(WHOOSHBANG_BASE_URL, MACHINE_CLIENT_ID),
           ),
           submitted,
         })}`,
@@ -554,13 +554,13 @@ class ParityRuntime {
     return priorState === "open" ? "answered" : "duplicate-answer";
   }
 
-  private async pollNotificationsUntilIdle(): Promise<void> {
-    const mock = this.notificationsMock;
+  private async pollWhooshBangUntilIdle(): Promise<void> {
+    const mock = this.whooshbangMock;
     if (mock === undefined) {
       throw new Error("WhooshBang mock is unavailable");
     }
-    const baseSource = new NotificationsMachineInteractionSource({
-      baseUrl: NOTIFICATIONS_BASE_URL,
+    const baseSource = new WhooshBangMachineInteractionSource({
+      baseUrl: WHOOSHBANG_BASE_URL,
       credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
       fetch: async (input, init) => await mock.fetch(new Request(input, init)),
     });
@@ -580,13 +580,10 @@ class ParityRuntime {
       ): ReturnType<typeof baseSource.acknowledge> =>
         await baseSource.acknowledge(input),
     };
-    await new NotificationsInteractionPoller({
+    await new WhooshBangInteractionPoller({
       store: this.store,
       source,
-      streamKey: notificationsStreamKey(
-        NOTIFICATIONS_BASE_URL,
-        MACHINE_CLIENT_ID,
-      ),
+      streamKey: whooshbangStreamKey(WHOOSHBANG_BASE_URL, MACHINE_CLIENT_ID),
       machineId: MACHINE_ID,
       bindingId: BINDING_ID,
       waitSeconds: 0,
@@ -638,7 +635,7 @@ afterEach(async () => {
 const providers = [
   { provider: "fake", resolvedBy: "telegram" },
   { provider: "telegram", resolvedBy: "telegram" },
-  { provider: "notifications", resolvedBy: "notifications" },
+  { provider: "whooshbang", resolvedBy: "whooshbang" },
 ] as const;
 
 describe.each(providers)(
@@ -747,10 +744,10 @@ describe.each(providers)(
       expect(relay.presentationUpdateCount()).toBe(
         relay.presentationCapability === "supported" ? 3 : 0,
       );
-      if (provider === "notifications") {
+      if (provider === "whooshbang") {
         expect(
           relay.store.hostedPollStatus(
-            notificationsStreamKey(NOTIFICATIONS_BASE_URL, MACHINE_CLIENT_ID),
+            whooshbangStreamKey(WHOOSHBANG_BASE_URL, MACHINE_CLIENT_ID),
           ).messageUpdates,
         ).toMatchObject({
           blocked: 3,

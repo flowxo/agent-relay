@@ -45,7 +45,7 @@ pnpm exec vitest run packages/core
 pnpm --filter @agent-relay/relay typecheck
 pnpm capabilities:check
 pnpm fixtures:check
-pnpm contracts:notifications
+pnpm contracts:whooshbang
 ```
 
 Use a specific test file when possible:
@@ -95,10 +95,9 @@ Keep these ownership rules intact:
   failure contracts live in `packages/notification-contracts`;
 - SQLite in `packages/core` is authoritative for events, requests, answers,
   retries, and resume claims;
-- provider-neutral presentation code lives under
-  `packages/core/src/notifications`, while concrete providers live in sibling
-  adapter packages such as `packages/telegram-transport` and
-  `packages/notifications-transport`;
+- provider-neutral presentation code lives under `packages/core/src/whooshbang`,
+  while concrete providers live in sibling adapter packages such as
+  `packages/telegram-transport` and `packages/whooshbang-transport`;
 - transports deliver bounded presentations and submit candidate answers; core
   never imports a concrete provider, and providers do not decide request state
   or execute commands;

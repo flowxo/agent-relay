@@ -1,11 +1,11 @@
 import type { RelayService } from "@agent-relay/core";
 import { sha256 } from "@agent-relay/protocol";
 import {
-  notificationsFailurePolicy,
-  NotificationsContractTransport,
-  type NotificationsFailureCategory,
-  type NotificationsResolutionPresenter,
-} from "@agent-relay/notifications-transport";
+  whooshbangFailurePolicy,
+  WhooshBangContractTransport,
+  type WhooshBangFailureCategory,
+  type WhooshBangResolutionPresenter,
+} from "@agent-relay/whooshbang-transport";
 
 import type {
   AgentRelayTransport,
@@ -13,7 +13,7 @@ import type {
   TransportReadinessReport,
 } from "./transport-config.js";
 
-export type NotificationsErrorClassification =
+export type WhooshBangErrorClassification =
   | "authentication"
   | "authorization"
   | "configuration"
@@ -41,7 +41,7 @@ export interface DaemonTransportStatus {
         retrying: number;
       };
     };
-    notifications: {
+    whooshbang: {
       circuit: {
         blocked: boolean;
         errorCode?: string;
@@ -50,8 +50,8 @@ export interface DaemonTransportStatus {
       delivery: {
         lastError: {
           at: string;
-          category: NotificationsFailureCategory;
-          classification: NotificationsErrorClassification;
+          category: WhooshBangFailureCategory;
+          classification: WhooshBangErrorClassification;
           code: string;
         } | null;
         lastSuccessfulSendAt: string | null;
@@ -60,8 +60,8 @@ export interface DaemonTransportStatus {
         committedCursorRef: string | null;
         lastError: {
           at: string;
-          category: NotificationsFailureCategory;
-          classification: NotificationsErrorClassification;
+          category: WhooshBangFailureCategory;
+          classification: WhooshBangErrorClassification;
           code: string;
         } | null;
         lastSuccessfulPollAt: string | null;
@@ -70,15 +70,15 @@ export interface DaemonTransportStatus {
       };
       presentation: {
         capability:
-          NotificationsResolutionPresenter["capability"] | "not-selected";
+          WhooshBangResolutionPresenter["capability"] | "not-selected";
         blocked: number;
         pending: number;
         retrying: number;
         updated: number;
         lastError: {
           at: string;
-          category: NotificationsFailureCategory;
-          classification: NotificationsErrorClassification;
+          category: WhooshBangFailureCategory;
+          classification: WhooshBangErrorClassification;
           code: string;
         } | null;
       };
@@ -111,57 +111,57 @@ export function classifyWebhookErrorCode(
 }
 
 const AUTHENTICATION_ERRORS = new Set([
-  "notifications-authentication-required",
-  "notifications-credential-invalid",
+  "whooshbang-authentication-required",
+  "whooshbang-credential-invalid",
 ]);
 
 const AUTHORIZATION_ERRORS = new Set([
-  "notifications-environment-mismatch",
-  "notifications-scope-forbidden",
-  "notifications-authentication-identity-mismatch",
-  "notifications-correlation-mismatch",
-  "notifications-local-identity-mismatch",
-  "notifications-stream-identity-failure",
+  "whooshbang-environment-mismatch",
+  "whooshbang-scope-forbidden",
+  "whooshbang-authentication-identity-mismatch",
+  "whooshbang-correlation-mismatch",
+  "whooshbang-local-identity-mismatch",
+  "whooshbang-stream-identity-failure",
 ]);
 
 const CONFIGURATION_ERRORS = new Set([
-  "notifications-connection-inactive",
-  "notifications-resource-not-found",
-  "notifications-subscriber-unbound",
+  "whooshbang-connection-inactive",
+  "whooshbang-resource-not-found",
+  "whooshbang-subscriber-unbound",
 ]);
 
 const CONTRACT_ERRORS = new Set([
-  "notifications-contract-invalid",
-  "notifications-idempotency-conflict",
-  "notifications-idempotency-identity-mismatch",
-  "notifications-idempotency-key-required",
-  "notifications-request-contract-invalid",
-  "notifications-request-invalid",
-  "notifications-contract-integrity-failure",
-  "notifications-schema-integrity-failure",
-  "notifications-stream-order-invalid",
-  "notifications-unsafe-opaque-value",
-  "notifications-protocol-malformed",
-  "notifications-presentation-identity-mismatch",
-  "notifications-redirect-refused",
+  "whooshbang-contract-invalid",
+  "whooshbang-idempotency-conflict",
+  "whooshbang-idempotency-identity-mismatch",
+  "whooshbang-idempotency-key-required",
+  "whooshbang-request-contract-invalid",
+  "whooshbang-request-invalid",
+  "whooshbang-contract-integrity-failure",
+  "whooshbang-schema-integrity-failure",
+  "whooshbang-stream-order-invalid",
+  "whooshbang-unsafe-opaque-value",
+  "whooshbang-protocol-malformed",
+  "whooshbang-presentation-identity-mismatch",
+  "whooshbang-redirect-refused",
 ]);
 
 const OUTCOME_UNKNOWN_ERRORS = new Set([
-  "notifications-provider-outcome-unknown",
-  "notifications-transport-outcome-unknown",
+  "whooshbang-provider-outcome-unknown",
+  "whooshbang-transport-outcome-unknown",
 ]);
 
 const TERMINAL_ERRORS = new Set([
-  "notifications-cancellation-too-late",
-  "notifications-provider-terminal",
-  "notifications-resource-expired",
-  "notifications-request-not-found",
-  "notifications-resolution-update-unsupported",
+  "whooshbang-cancellation-too-late",
+  "whooshbang-provider-terminal",
+  "whooshbang-resource-expired",
+  "whooshbang-request-not-found",
+  "whooshbang-resolution-update-unsupported",
 ]);
 
-export function classifyNotificationsErrorCode(
+export function classifyWhooshBangErrorCode(
   code: string,
-): NotificationsErrorClassification {
+): WhooshBangErrorClassification {
   if (AUTHENTICATION_ERRORS.has(code)) {
     return "authentication";
   }
@@ -183,19 +183,19 @@ export function classifyNotificationsErrorCode(
   return "transient";
 }
 
-function failureCategoryForCode(code: string): NotificationsFailureCategory {
-  const classification = classifyNotificationsErrorCode(code);
-  return notificationsFailurePolicy({
+function failureCategoryForCode(code: string): WhooshBangFailureCategory {
+  const classification = classifyWhooshBangErrorCode(code);
+  return whooshbangFailurePolicy({
     code,
     disposition:
-      code === "notifications-provider-outcome-unknown"
+      code === "whooshbang-provider-outcome-unknown"
         ? "outcome_unknown"
         : classification === "transient"
           ? "retry_same_operation"
           : "terminal",
     retryable:
       classification === "transient" ||
-      code === "notifications-transport-outcome-unknown",
+      code === "whooshbang-transport-outcome-unknown",
   }).category;
 }
 
@@ -204,15 +204,15 @@ export function buildDaemonTransportStatus(input: {
   selection: ResolvedTransportSelection;
   service: RelayService;
   hostedStreamKey?: string;
-  hostedPresentationCapability?: NotificationsResolutionPresenter["capability"];
+  hostedPresentationCapability?: WhooshBangResolutionPresenter["capability"];
 }): DaemonTransportStatus {
   const storeStatus = input.service.store.status();
-  const notificationsDelivery =
-    input.service.store.transportDeliverySummary("notifications");
+  const whooshbangDelivery =
+    input.service.store.transportDeliverySummary("whooshbang");
   const webhookDelivery =
     input.service.store.transportDeliverySummary("webhook");
-  const notificationsCircuit =
-    input.service.transport instanceof NotificationsContractTransport
+  const whooshbangCircuit =
+    input.service.transport instanceof WhooshBangContractTransport
       ? input.service.transport.circuitState()
       : { blocked: false, suppressedDeliveries: 0 };
   const hostedPoll =
@@ -246,21 +246,20 @@ export function buildDaemonTransportStatus(input: {
           deadLetter: storeStatus.events.dead_letter,
         },
       },
-      notifications: {
-        circuit: notificationsCircuit,
+      whooshbang: {
+        circuit: whooshbangCircuit,
         delivery: {
-          lastSuccessfulSendAt:
-            notificationsDelivery.lastSuccessfulSendAt ?? null,
+          lastSuccessfulSendAt: whooshbangDelivery.lastSuccessfulSendAt ?? null,
           lastError:
-            notificationsDelivery.lastError === undefined
+            whooshbangDelivery.lastError === undefined
               ? null
               : {
-                  ...notificationsDelivery.lastError,
+                  ...whooshbangDelivery.lastError,
                   category: failureCategoryForCode(
-                    notificationsDelivery.lastError.code,
+                    whooshbangDelivery.lastError.code,
                   ),
-                  classification: classifyNotificationsErrorCode(
-                    notificationsDelivery.lastError.code,
+                  classification: classifyWhooshBangErrorCode(
+                    whooshbangDelivery.lastError.code,
                   ),
                 },
         },
@@ -282,7 +281,7 @@ export function buildDaemonTransportStatus(input: {
               : {
                   ...hostedPoll.lastError,
                   category: failureCategoryForCode(hostedPoll.lastError.code),
-                  classification: classifyNotificationsErrorCode(
+                  classification: classifyWhooshBangErrorCode(
                     hostedPoll.lastError.code,
                   ),
                 },
@@ -308,7 +307,7 @@ export function buildDaemonTransportStatus(input: {
                   category: failureCategoryForCode(
                     hostedPoll.messageUpdates.lastError.code,
                   ),
-                  classification: classifyNotificationsErrorCode(
+                  classification: classifyWhooshBangErrorCode(
                     hostedPoll.messageUpdates.lastError.code,
                   ),
                 },
