@@ -269,6 +269,26 @@ export async function runDoctor(
         }),
       });
     }
+
+    const webhook = readiness.transports.webhook;
+    if (webhook.configured || readiness.selectedTransport === "webhook") {
+      checks.push({
+        name: "webhook-transport",
+        ok: webhook.ready,
+        level: webhook.ready
+          ? "pass"
+          : readiness.selectedTransport === "webhook"
+            ? "fail"
+            : "warn",
+        detail: JSON.stringify({
+          endpointOrigin: webhook.endpointOrigin ?? null,
+          issueCodes: webhook.issueCodes,
+          secretPresent: webhook.secretPresent,
+          source: webhook.source,
+          timeoutMs: webhook.timeoutMs ?? null,
+        }),
+      });
+    }
   }
   let store: RelayStore | undefined;
   try {

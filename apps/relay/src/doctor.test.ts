@@ -190,6 +190,13 @@ describe("doctor version and installation checks", () => {
           updateMode: "poll",
           webhookReady: true,
         },
+        webhook: {
+          configured: false,
+          issueCodes: ["webhook-not-configured"],
+          ready: false,
+          secretPresent: false,
+          source: "none",
+        },
       },
     } satisfies TransportReadinessReport;
     const report = await runDoctor({ transportReadiness: readiness });
@@ -255,6 +262,13 @@ describe("doctor version and installation checks", () => {
           ready: false,
           updateMode: "poll",
           webhookReady: true,
+        },
+        webhook: {
+          configured: false,
+          issueCodes: ["webhook-not-configured"],
+          ready: false,
+          secretPresent: false,
+          source: "none",
         },
       },
     } satisfies TransportReadinessReport;

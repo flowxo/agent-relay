@@ -26,6 +26,7 @@ import {
   redactDiagnosticText,
   redactText,
   renderDeliveryMessage,
+  sessionPublicKey,
 } from "@agent-relay/core";
 import type { TelegramReplyRouter } from "@agent-relay/telegram-transport";
 import { z } from "zod";
@@ -355,16 +356,6 @@ function assertWebOrigin(
   }
 }
 
-function sessionKey(input: {
-  machineId: string;
-  harness: string;
-  sessionId: string;
-}): string {
-  return sha256(
-    `${input.machineId}\u001f${input.harness}\u001f${input.sessionId}`,
-  ).slice(0, 24);
-}
-
 function requestCanContinue(event: AgentAttentionEventV1): boolean {
   return event.capabilities.inlineContinue || event.capabilities.lateResume;
 }
@@ -524,7 +515,7 @@ function toWebSession(
   laneState: SessionLaneState,
   attentionCount: number,
 ): WebSessionSummaryV1 {
-  const key = sessionKey(session);
+  const key = sessionPublicKey(session);
   const readableSuffix = session.sessionId
     .slice(-8)
     .replace(/[^A-Za-z0-9]/g, "_");
@@ -562,7 +553,7 @@ function toWebAttention(
     schema: "agent-relay-web-attention.v1",
     requestId: request.correlationId,
     eventId: request.eventId,
-    sessionKey: sessionKey(request),
+    sessionKey: sessionPublicKey(request),
     harness: request.harness,
     requestKind: request.requestKind,
     state: "open",
@@ -825,7 +816,7 @@ export function createRelayHttpServer(
           harness: event.harness,
           surface: event.surface,
           harnessVersion: event.harnessVersion,
-          sessionKey: sessionKey(event),
+          sessionKey: sessionPublicKey(event),
           type: event.type,
           deliveryStatus: record.status,
           repository: redactText(event.project.displayName, 120),
@@ -1026,7 +1017,7 @@ export function createRelayHttpServer(
         const pending = service.getRequest(correlationId);
         if (
           pending !== undefined &&
-          sessionKey(pending) !== command.sessionKey
+          sessionPublicKey(pending) !== command.sessionKey
         ) {
           throw new HttpRequestError(
             409,

@@ -106,6 +106,16 @@ function shortSessionIdentity(event: AgentAttentionEventV1): string {
   return `${readableSuffix}-${collisionSuffix}`;
 }
 
+export function sessionPublicKey(input: {
+  machineId: string;
+  harness: string;
+  sessionId: string;
+}): string {
+  return sha256(
+    `${input.machineId}\u001f${input.harness}\u001f${input.sessionId}`,
+  ).slice(0, 24);
+}
+
 export function sessionTopicMetadata(
   event: AgentAttentionEventV1,
 ): SessionTopicMetadata {

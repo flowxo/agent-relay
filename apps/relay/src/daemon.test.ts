@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -7,6 +8,7 @@ import {
   createNotificationsContractMock,
 } from "@flowxo/notifications-contract-mock";
 import { makeProjectRef } from "@agent-relay/protocol";
+import { webhookSignature } from "@agent-relay/webhook-transport";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startDaemon } from "./daemon.js";
@@ -174,6 +176,157 @@ describe("startDaemon Telegram update mode", () => {
     expect(daemon.service.transport.name).toBe("fake-telegram");
     expect(telegramFetch).not.toHaveBeenCalled();
     await daemon.close();
+  });
+
+  it("delivers through an explicitly selected signed webhook and exposes only safe runtime status", async () => {
+    const secret = "synthetic-daemon-webhook-secret-0001";
+    const received: Array<{
+      body: string;
+      headers: Record<string, string | string[] | undefined>;
+    }> = [];
+    const receiver = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        received.push({ body, headers: request.headers });
+        const deliveryId = (JSON.parse(body) as { deliveryId: string })
+          .deliveryId;
+        response.writeHead(202, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            schema: "agent-relay-webhook-ack.v1",
+            deliveryId,
+            messageId: "receiver_daemon_webhook_12345678",
+          }),
+        );
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      receiver.once("error", reject);
+      receiver.listen(0, "127.0.0.1", () => {
+        receiver.off("error", reject);
+        resolve();
+      });
+    });
+    const receiverAddress = receiver.address();
+    if (receiverAddress === null || typeof receiverAddress === "string") {
+      throw new Error("synthetic webhook receiver did not open a TCP port");
+    }
+    const telegramFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(
+        new Error("unselected Telegram must not be contacted"),
+      );
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "webhook",
+      webhook: {
+        endpoint: `http://127.0.0.1:${String(receiverAddress.port)}/agent-relay`,
+        secret,
+        now: () => new Date("2026-07-28T14:00:00.000Z"),
+      },
+      telegramToken: "123456:synthetic-token-value",
+      telegramChatId: "10001",
+      telegramOperatorUserId: 10002,
+      telegramReplyChatId: 10001,
+      telegramFetch,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    try {
+      daemon.service.ingest({
+        schema: "agent-attention.v1",
+        eventId: "event_daemon_webhook_12345678",
+        occurredAt: "2026-07-28T14:00:00.000Z",
+        sequence: 1,
+        machineId: "machine_daemon_webhook_12345678",
+        bridgeSessionId: "bridge_daemon_webhook_12345678",
+        harness: "codex",
+        surface: "cli",
+        harnessVersion: "test",
+        sessionId: "session_daemon_webhook_12345678",
+        project: {
+          ...makeProjectRef("/private/workspace/agent-relay"),
+          branch: "codex/webhook-daemon",
+        },
+        type: "turn.stopped",
+        summary: "Synthetic signed webhook delivery",
+        capabilities: {
+          inlineContinue: true,
+          lateResume: true,
+          activeSteer: false,
+          permissionDecision: true,
+        },
+      });
+      await expect(daemon.service.drain()).resolves.toEqual({
+        claimed: 1,
+        delivered: 1,
+        retrying: 0,
+        deadLettered: 0,
+      });
+      expect(received).toHaveLength(1);
+      const delivery = received[0]!;
+      const timestamp = String(delivery.headers["x-agent-relay-timestamp"]);
+      expect(delivery.headers["idempotency-key"]).toBe(
+        "event_daemon_webhook_12345678",
+      );
+      expect(delivery.headers["x-agent-relay-signature"]).toBe(
+        webhookSignature(secret, timestamp, delivery.body),
+      );
+      expect(JSON.parse(delivery.body)).toMatchObject({
+        schema: "agent-relay-webhook.v1",
+        deliveryId: "event_daemon_webhook_12345678",
+        source: {
+          harness: "codex",
+          repository: "agent-relay",
+          branch: "codex/webhook-daemon",
+          sessionKey: expect.stringMatching(/^[a-f0-9]{24}$/u),
+        },
+      });
+      expect(delivery.body).not.toContain("/private/workspace");
+      expect(delivery.body).not.toContain(secret);
+      expect(telegramFetch).not.toHaveBeenCalled();
+
+      const daemonAddress = daemon.server.address();
+      if (daemonAddress === null || typeof daemonAddress === "string") {
+        throw new Error("daemon did not expose a TCP address");
+      }
+      const status = await (
+        await fetch(`http://127.0.0.1:${daemonAddress.port}/v1/status`)
+      ).json();
+      expect(status).toMatchObject({
+        selectedTransport: "webhook",
+        transport: "webhook",
+        transportRuntime: {
+          webhook: {
+            delivery: {
+              lastError: null,
+              lastSuccessfulSendAt: expect.any(String),
+            },
+            spool: {
+              deadLetter: 0,
+              pending: 0,
+              retrying: 0,
+            },
+          },
+        },
+      });
+      expect(JSON.stringify(status)).not.toContain(secret);
+      expect(JSON.stringify(status)).not.toContain(receiverAddress.port);
+    } finally {
+      await daemon.close();
+      await new Promise<void>((resolve, reject) => {
+        receiver.close((error) => {
+          if (error === undefined) {
+            resolve();
+          } else {
+            reject(error);
+          }
+        });
+      });
+    }
   });
 
   it("delivers only through explicitly selected Notifications and reports safe runtime state", async () => {

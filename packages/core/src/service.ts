@@ -61,7 +61,7 @@ import type {
   TopicCleanupOperationRecord,
 } from "./store.js";
 import { DEFAULT_RETRY_POLICY } from "./store.js";
-import { sessionTopicMetadata } from "./topic.js";
+import { sessionPublicKey, sessionTopicMetadata } from "./topic.js";
 
 export interface DrainResult {
   claimed: number;
@@ -76,6 +76,10 @@ export interface RelayServiceOptions {
   now?: () => Date;
   coalescingWindowMs?: number;
   transportFailureLogIntervalMs?: number;
+  interactionHandoff?: {
+    baseUrl?: string;
+    fallbackWhenTransportUnavailable?: boolean;
+  };
 }
 
 export interface RetentionOptions {
@@ -188,6 +192,12 @@ export class RelayService {
   private readonly now: () => Date;
   private readonly coalescingWindowMs: number;
   private readonly transportFailureLogIntervalMs: number;
+  private readonly interactionHandoff:
+    | {
+        baseUrl?: string;
+        fallbackWhenTransportUnavailable: boolean;
+      }
+    | undefined;
   private readonly transportFailureLogs = new Map<
     string,
     { loggedAt: number; suppressed: number }
@@ -204,6 +214,22 @@ export class RelayService {
     this.coalescingWindowMs = options.coalescingWindowMs ?? 60_000;
     this.transportFailureLogIntervalMs =
       options.transportFailureLogIntervalMs ?? 60_000;
+    this.interactionHandoff =
+      options.interactionHandoff === undefined
+        ? undefined
+        : {
+            ...(options.interactionHandoff.baseUrl === undefined
+              ? {}
+              : {
+                  baseUrl: options.interactionHandoff.baseUrl.replace(
+                    /\/+$/,
+                    "",
+                  ),
+                }),
+            fallbackWhenTransportUnavailable:
+              options.interactionHandoff.fallbackWhenTransportUnavailable ??
+              false,
+          };
     if (
       !Number.isSafeInteger(this.coalescingWindowMs) ||
       this.coalescingWindowMs < 0 ||
@@ -971,12 +997,7 @@ export class RelayService {
     }
     return this.store
       .listSessions()
-      .find(
-        (session) =>
-          sha256(
-            `${session.machineId}\u001f${session.harness}\u001f${session.sessionId}`,
-          ).slice(0, 24) === key,
-      );
+      .find((session) => sessionPublicKey(session) === key);
   }
 
   public listSessionTimeline(
@@ -1326,8 +1347,35 @@ export class RelayService {
 
   private async deliveryContext(
     event: AgentAttentionEventV1,
+    pending?: PendingRequestRecord,
   ): Promise<DeliveryContext> {
-    const context = { idempotencyKey: event.eventId };
+    const metadata = sessionTopicMetadata(event);
+    const context: DeliveryContext = {
+      idempotencyKey: event.eventId,
+      source: {
+        occurredAt: event.occurredAt,
+        eventType: event.type,
+        harness: event.harness,
+        surface: event.surface,
+        repository: metadata.repository,
+        ...(metadata.branch === undefined ? {} : { branch: metadata.branch }),
+        sessionKey: sessionPublicKey(event),
+        shortSessionId: metadata.shortSessionId,
+      },
+      ...(pending === undefined ||
+      this.interactionHandoff?.baseUrl === undefined
+        ? {}
+        : {
+            handoff: {
+              mode: "local-web",
+              requestId: pending.correlationId,
+              expiresAt: pending.expiresAt,
+              url: `${this.interactionHandoff.baseUrl}/ui/?request=${encodeURIComponent(
+                pending.correlationId,
+              )}`,
+            },
+          }),
+    };
     const topicTransport = this.transport;
     if (!isTopicTransport(topicTransport)) {
       return context;
@@ -1684,6 +1732,7 @@ export class RelayService {
           pending?.requestKind === "question-set"
             ? this.store.getQuestionSetDraft(pending.correlationId)
             : undefined;
+        let questionSetAlertOnly = false;
         if (
           pending?.requestKind === "multi-select" &&
           multiSelectDraft === undefined
@@ -1749,7 +1798,40 @@ export class RelayService {
               ? { transport: transportObservation.data }
               : {}),
           });
-          if (negotiation.outcome === "unsupported") {
+          if (
+            negotiation.outcome === "unsupported" &&
+            this.interactionHandoff?.fallbackWhenTransportUnavailable ===
+              true &&
+            (negotiation.code === "transport-capabilities-unavailable" ||
+              negotiation.code === "interaction-mode-unavailable")
+          ) {
+            if (this.interactionHandoff.baseUrl === undefined) {
+              questionSetAlertOnly = true;
+            } else {
+              questionSetDraft = this.store.setQuestionSetPresentationMode(
+                pending.correlationId,
+                "web-handoff",
+                observedAt,
+              );
+            }
+            this.reportDiagnostic({
+              schema: "agent-relay-diagnostic.v1",
+              diagnosticId: `diag_interaction_web_handoff_${sha256(
+                item.event.eventId,
+              ).slice(0, 36)}`,
+              recordedAt: observedAt,
+              source: "daemon",
+              level: "warn",
+              code:
+                this.interactionHandoff.baseUrl === undefined
+                  ? "interaction.alert-only-selected"
+                  : "interaction.web-handoff-selected",
+              message:
+                this.interactionHandoff.baseUrl === undefined
+                  ? "Structured controls are unavailable in the selected notification transport; an alert was delivered without response controls because the local web companion is disabled"
+                  : "Structured controls are unavailable in the selected notification transport; the local web companion remains authoritative for this request",
+            });
+          } else if (negotiation.outcome === "unsupported") {
             this.reportDiagnostic({
               schema: "agent-relay-diagnostic.v1",
               diagnosticId: `diag_interaction_unsupported_${sha256(
@@ -1766,31 +1848,34 @@ export class RelayService {
               `interaction-${negotiation.code}`,
               false,
             );
+          } else {
+            questionSetDraft = this.store.setQuestionSetPresentationMode(
+              pending.correlationId,
+              negotiation.mode,
+              observedAt,
+            );
+            this.logger.log({
+              level: "info",
+              code: "interaction.mode-selected",
+              message: "structured interaction presentation mode selected",
+              at: observedAt,
+              details: {
+                eventId: item.event.eventId,
+                mode: negotiation.mode,
+                transportProviderId: negotiation.transportProviderId,
+                harnessProviderId: negotiation.harnessProviderId,
+              },
+            });
           }
-          questionSetDraft = this.store.setQuestionSetPresentationMode(
-            pending.correlationId,
-            negotiation.mode,
-            observedAt,
-          );
-          this.logger.log({
-            level: "info",
-            code: "interaction.mode-selected",
-            message: "structured interaction presentation mode selected",
-            at: observedAt,
-            details: {
-              eventId: item.event.eventId,
-              mode: negotiation.mode,
-              transportProviderId: negotiation.transportProviderId,
-              harnessProviderId: negotiation.harnessProviderId,
-            },
-          });
         }
         const deliveryInteraction =
           pending === undefined
             ? undefined
             : renderDeliveryInteraction(item.event, pending);
         const message =
-          pending !== undefined && questionSetDraft !== undefined
+          pending !== undefined &&
+          questionSetDraft !== undefined &&
+          !questionSetAlertOnly
             ? renderQuestionSetDeliveryMessage(
                 item.event,
                 pending,
@@ -1812,7 +1897,7 @@ export class RelayService {
                       ? {}
                       : { interaction: deliveryInteraction }),
                   };
-        const deliveryContext = await this.deliveryContext(item.event);
+        const deliveryContext = await this.deliveryContext(item.event, pending);
         deliveryTopicId = deliveryContext.topicId;
         const receipt = await this.transport.deliver(message, deliveryContext);
         if (fingerprint === undefined) {
@@ -1917,6 +2002,7 @@ export class RelayService {
           transportError.retryable,
           this.now().toISOString(),
           this.retryPolicy,
+          transportError.retryAfterMs,
         );
         if (status === "retry") {
           result.retrying += 1;

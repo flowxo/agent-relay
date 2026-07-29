@@ -1,14 +1,4 @@
-import { randomUUID } from "node:crypto";
-import {
-  chmod,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  unlink,
-} from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { z } from "zod";
 
@@ -17,13 +7,23 @@ import {
   readNotificationsConnection,
   safeNotificationsConnectionSummary,
 } from "./notifications-config.js";
+import { atomicWritePrivateJson, readPrivateJson } from "./private-config.js";
+import {
+  resolveWebhookConfiguration,
+  type WebhookReadiness,
+} from "./webhook-config.js";
 
 const MAX_TRANSPORT_CONFIGURATION_BYTES = 16 * 1024;
+const TRANSPORT_FILE_OPTIONS = {
+  description: "Transport configuration",
+  maximumBytes: MAX_TRANSPORT_CONFIGURATION_BYTES,
+} as const;
 
 export const AgentRelayTransportSchema = z.enum([
   "fake",
   "telegram",
   "notifications",
+  "webhook",
 ]);
 export type AgentRelayTransport = z.infer<typeof AgentRelayTransportSchema>;
 
@@ -84,6 +84,7 @@ export interface TransportReadinessReport {
     fake: { ready: true };
     notifications: NotificationsReadiness;
     telegram: TelegramReadiness;
+    webhook: WebhookReadiness;
   };
 }
 
@@ -96,89 +97,6 @@ export interface TelegramReadinessInput {
   webhookSecret?: string;
 }
 
-function isErrorCode(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code === code
-  );
-}
-
-async function ensurePrivateDirectory(path: string): Promise<void> {
-  await mkdir(path, { recursive: true, mode: 0o700 });
-  const metadata = await lstat(path);
-  if (!metadata.isDirectory()) {
-    throw new Error("Transport configuration parent is not a directory");
-  }
-  if ((metadata.mode & 0o077) !== 0) {
-    throw new Error(
-      "Transport configuration parent must not be accessible by group or others",
-    );
-  }
-}
-
-async function inspectPrivateFile(
-  path: string,
-): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
-  try {
-    const metadata = await lstat(path);
-    if (!metadata.isFile()) {
-      throw new Error("Transport configuration path is not a regular file");
-    }
-    if ((metadata.mode & 0o077) !== 0) {
-      throw new Error(
-        "Transport configuration must not be accessible by group or others",
-      );
-    }
-    if (metadata.size > MAX_TRANSPORT_CONFIGURATION_BYTES) {
-      throw new Error("Transport configuration exceeds its size limit");
-    }
-    return metadata;
-  } catch (error) {
-    if (isErrorCode(error, "ENOENT")) {
-      return undefined;
-    }
-    throw error;
-  }
-}
-
-async function atomicWritePrivate(path: string, value: unknown): Promise<void> {
-  const parent = dirname(path);
-  await ensurePrivateDirectory(parent);
-  await inspectPrivateFile(path);
-  const temporaryPath = `${path}.tmp-${randomUUID()}`;
-  let handle;
-  try {
-    handle = await open(temporaryPath, "wx", 0o600);
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await chmod(temporaryPath, 0o600);
-    await rename(temporaryPath, path);
-  } catch (error) {
-    try {
-      await handle?.close();
-    } catch {
-      // The original write failure remains authoritative.
-    }
-    try {
-      await unlink(temporaryPath);
-    } catch (cleanupError) {
-      if (!isErrorCode(cleanupError, "ENOENT")) {
-        throw new AggregateError(
-          [error, cleanupError],
-          "Transport configuration write and cleanup both failed",
-          { cause: cleanupError },
-        );
-      }
-    }
-    throw error;
-  }
-  await inspectPrivateFile(path);
-}
-
 export function transportSelectionPath(stateDirectory: string): string {
   return join(stateDirectory, "transport.json");
 }
@@ -186,15 +104,9 @@ export function transportSelectionPath(stateDirectory: string): string {
 export async function readTransportSelection(
   path: string,
 ): Promise<TransportSelectionConfiguration | undefined> {
-  const metadata = await inspectPrivateFile(path);
-  if (metadata === undefined) {
+  const value = await readPrivateJson(path, TRANSPORT_FILE_OPTIONS);
+  if (value === undefined) {
     return undefined;
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(await readFile(path, "utf8")) as unknown;
-  } catch {
-    throw new Error("Transport configuration is not valid JSON");
   }
   return TransportSelectionConfigurationSchema.parse(value);
 }
@@ -210,7 +122,7 @@ export async function writeTransportSelection(
     selected,
     updatedAt: now.toISOString(),
   });
-  await atomicWritePrivate(path, configuration);
+  await atomicWritePrivateJson(path, configuration, TRANSPORT_FILE_OPTIONS);
   return configuration;
 }
 
@@ -383,7 +295,12 @@ export async function inspectTransportReadiness(input: {
   selection: ResolvedTransportSelection;
   stateDirectory: string;
   telegram?: TelegramReadinessInput;
+  webhookEnvironment?: Readonly<Record<string, string | undefined>>;
 }): Promise<TransportReadinessReport> {
+  const webhook = await resolveWebhookConfiguration({
+    stateDirectory: input.stateDirectory,
+    environment: input.webhookEnvironment ?? {},
+  });
   return {
     schema: "agent-relay-transport-readiness.v1",
     selectedTransport: input.selection.selected,
@@ -392,6 +309,7 @@ export async function inspectTransportReadiness(input: {
       fake: { ready: true },
       notifications: await notificationsReadiness(input.stateDirectory),
       telegram: telegramReadiness(input.telegram ?? {}),
+      webhook: webhook.readiness,
     },
   };
 }

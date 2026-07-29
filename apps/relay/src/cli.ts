@@ -55,6 +55,8 @@ import {
   inspectTransportReadiness,
   resolveTransportSelection,
 } from "./transport-config.js";
+import { WEBHOOK_COMMAND_USAGE, runWebhookCommand } from "./webhook-command.js";
+import { resolveWebhookConfiguration } from "./webhook-config.js";
 import { seedWebDemo } from "./web-demo.js";
 
 const USAGE = `Agent Relay
@@ -78,9 +80,11 @@ Commands:
   capabilities       Print the generated harness capability registry
   canary             Prove the local fake-transport delivery loop
   telegram-canary    Prove a configured direct-Telegram reply loop
+  webhook-canary     Prove a configured outbound webhook delivery
+  webhook            Configure or inspect the outbound webhook
   notifications      Connect, inspect, or disconnect hosted Notifications
   runner-bridge      Inspect or select the experimental runner bridge
-  transport          Select fake, direct Telegram, or hosted Notifications
+  transport          Select a notification transport
 
 Run "agent-relay <command> --help" only where the command documents flags in
 the public guides. Agent Relay currently supports macOS on Apple silicon with
@@ -107,7 +111,7 @@ async function readStdin(limit = 256 * 1024): Promise<string> {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
     if (size > limit) {
-      throw new Error(`hook stdin exceeds ${limit} bytes`);
+      throw new Error(`stdin exceeds ${limit} bytes`);
     }
     chunks.push(buffer);
   }
@@ -211,7 +215,9 @@ async function main(): Promise<void> {
       transportFlagCount === 1 &&
       (transportFlag === undefined || transportFlag.startsWith("--"))
     ) {
-      throw new Error("--transport requires fake, telegram, or notifications");
+      throw new Error(
+        "--transport requires fake, telegram, notifications, or webhook",
+      );
     }
     const transportEnvironment = environment("AGENT_RELAY_TRANSPORT");
     if (demo && transportFlag !== undefined) {
@@ -236,6 +242,7 @@ async function main(): Promise<void> {
       selection: transportSelection,
       stateDirectory: commandStateDir,
       telegram: telegramReadinessInputFromEnvironment(process.env),
+      webhookEnvironment: process.env,
     });
     const databasePath =
       flag(args, "--db") ?? join(commandStateDir, "relay.sqlite");
@@ -304,6 +311,22 @@ async function main(): Promise<void> {
     ) {
       throw new Error(
         "selected Notifications transport is not ready; run agent-relay notifications connect",
+      );
+    }
+    const webhookConfiguration =
+      transportSelection.selected === "webhook"
+        ? await resolveWebhookConfiguration({
+            stateDirectory: commandStateDir,
+            environment: process.env,
+          })
+        : undefined;
+    if (
+      transportSelection.selected === "webhook" &&
+      (webhookConfiguration?.readiness.ready !== true ||
+        webhookConfiguration.runtime === undefined)
+    ) {
+      throw new Error(
+        "selected webhook transport is not ready; run agent-relay webhook configure",
       );
     }
     const stderrLogger = new JsonLineLogger();
@@ -394,6 +417,9 @@ async function main(): Promise<void> {
               },
             },
           }),
+      ...(webhookConfiguration?.runtime === undefined
+        ? {}
+        : { webhook: webhookConfiguration.runtime }),
       telegramUpdateMode:
         configuredTelegramUpdateMode === "webhook" ? "webhook" : "poll",
       coalescingWindowMs: integerFlag(
@@ -587,6 +613,7 @@ async function main(): Promise<void> {
       selection: transportSelection,
       stateDirectory: stateDir,
       telegram: telegramReadinessInputFromEnvironment(process.env),
+      webhookEnvironment: process.env,
     });
     const runnerBridgeConfiguration = await readRunnerBridgeConfiguration(
       runnerBridgePaths(stateDir).configuration,
@@ -669,6 +696,25 @@ async function main(): Promise<void> {
     }
     return;
   }
+  if (command === "webhook") {
+    const result = await runWebhookCommand({
+      args,
+      environment: process.env,
+      stateDirectory: stateDir,
+      readStdin: async () => await readStdin(1_024),
+    });
+    if (
+      typeof result === "object" &&
+      result !== null &&
+      "help" in result &&
+      result.help === WEBHOOK_COMMAND_USAGE
+    ) {
+      process.stdout.write(WEBHOOK_COMMAND_USAGE);
+    } else {
+      output(result);
+    }
+    return;
+  }
   if (command === "runner-bridge") {
     const result = await runRunnerBridgeCommand({
       args,
@@ -741,7 +787,15 @@ async function main(): Promise<void> {
     output(PUBLIC_COMPATIBILITY_RECORD);
     return;
   }
-  if (command === "canary") {
+  if (command === "canary" || command === "webhook-canary") {
+    if (command === "webhook-canary") {
+      const daemonStatus = await client.status();
+      if (daemonStatus.selectedTransport !== "webhook") {
+        throw new Error(
+          "webhook-canary requires a daemon using the webhook transport",
+        );
+      }
+    }
     await mkdir(stateDir, { recursive: true, mode: 0o700 });
     const machineId =
       environment("AGENT_RELAY_MACHINE_ID") ??
@@ -768,7 +822,10 @@ async function main(): Promise<void> {
       sessionId: "session_canary",
       project: makeProjectRef(process.cwd()),
       type: "turn.stopped",
-      summary: "Agent Relay local canary",
+      summary:
+        command === "webhook-canary"
+          ? "Agent Relay outbound webhook canary"
+          : "Agent Relay local canary",
       capabilities: {
         inlineContinue: true,
         lateResume: true,
@@ -776,7 +833,11 @@ async function main(): Promise<void> {
         permissionDecision: true,
       },
     } as const;
-    output(await runFakeCanary({ client, event }));
+    const result = await runFakeCanary({ client, event });
+    output(result);
+    if (command === "webhook-canary" && result.outcome !== "delivered") {
+      process.exitCode = 1;
+    }
     return;
   }
   if (command === "telegram-canary") {
