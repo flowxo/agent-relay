@@ -808,6 +808,7 @@ let nextMessageId = 100;
 let nextTopicId = 1000;
 let nextUpdateId = 1;
 const updates = [];
+let scopedCommands = [];
 const reply = ["relay", "canary", "ok"].join("-");
 const json = (value) => new Response(JSON.stringify(value), {
   headers: { "content-type": "application/json" },
@@ -829,6 +830,26 @@ globalThis.fetch = async (input, init = {}) => {
   }
   if (method === "getWebhookInfo") {
     return json({ ok: true, result: { url: "", pending_update_count: 0 } });
+  }
+  if (method === "setMyCommands") {
+    if (
+      body.scope?.type !== "chat" ||
+      String(body.scope.chat_id) !== "9001" ||
+      !Array.isArray(body.commands)
+    ) {
+      throw new Error("invalid synthetic Telegram command registration");
+    }
+    scopedCommands = body.commands;
+    return json({ ok: true, result: true });
+  }
+  if (method === "getMyCommands") {
+    if (
+      body.scope?.type !== "chat" ||
+      String(body.scope.chat_id) !== "9001"
+    ) {
+      throw new Error("invalid synthetic Telegram command verification");
+    }
+    return json({ ok: true, result: scopedCommands });
   }
   if (method === "createForumTopic") {
     const topicId = nextTopicId++;

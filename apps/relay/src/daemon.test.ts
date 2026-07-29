@@ -780,6 +780,26 @@ describe("startDaemon Telegram update mode", () => {
             }),
           );
         }
+        if (url.includes("/setMyCommands")) {
+          return new Response(JSON.stringify({ ok: true, result: true }));
+        }
+        if (url.includes("/getMyCommands")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: [
+                {
+                  command: "purge",
+                  description: "Review inactive session topics for deletion",
+                },
+                {
+                  command: "cleanup",
+                  description: "Review ended session topics for deletion",
+                },
+              ],
+            }),
+          );
+        }
         return await new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => {
             reject(new DOMException("Aborted", "AbortError"));
@@ -800,10 +820,10 @@ describe("startDaemon Telegram update mode", () => {
       retentionIntervalMs: 60_000,
     });
 
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
     await Promise.all([daemon.close(), daemon.close()]);
 
-    expect(String(fetchMock.mock.calls[3]?.[0])).toContain("/getUpdates");
+    expect(String(fetchMock.mock.calls[5]?.[0])).toContain("/getUpdates");
   });
 
   it("leaves update intake to the HTTP endpoint in webhook mode", async () => {
@@ -831,13 +851,33 @@ describe("startDaemon Telegram update mode", () => {
             }),
           );
         }
+        if (url.includes("/getWebhookInfo")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: {
+                url: "https://relay.invalid/v1/telegram/updates",
+                pending_update_count: 0,
+              },
+            }),
+          );
+        }
+        if (url.includes("/setMyCommands")) {
+          return new Response(JSON.stringify({ ok: true, result: true }));
+        }
         return new Response(
           JSON.stringify({
             ok: true,
-            result: {
-              url: "https://relay.invalid/v1/telegram/updates",
-              pending_update_count: 0,
-            },
+            result: [
+              {
+                command: "purge",
+                description: "Review inactive session topics for deletion",
+              },
+              {
+                command: "cleanup",
+                description: "Review ended session topics for deletion",
+              },
+            ],
           }),
         );
       });
@@ -858,7 +898,7 @@ describe("startDaemon Telegram update mode", () => {
 
     await daemon.close();
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes("/getUpdates"),

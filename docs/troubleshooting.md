@@ -84,24 +84,25 @@ error message. Use one synthetic request at the receiver and compare its
 
 Common stable provider codes:
 
-| Code                               | Meaning and safe action                                                    |
-| ---------------------------------- | -------------------------------------------------------------------------- |
-| `telegram-invalid-token`           | Replace the token from BotFather                                           |
-| `telegram-topics-disabled`         | Enable Threaded Mode in BotFather and verify `getMe`                       |
-| `telegram-private-chat-required`   | Use the intended one-to-one bot chat                                       |
-| `telegram-invalid-chat`            | Open the intended bot chat, send `/start`, and verify discovery            |
-| `telegram-bot-blocked`             | Unblock the bot and restart                                                |
-| `telegram-topic-permission`        | Restore topic-management permission                                        |
-| `telegram-topic-delete-permission` | Restore topic deletion permission and run `/cleanup` or `/prune` again     |
-| `telegram-webhook-conflict`        | Poll mode found an active webhook; inspect before changing it              |
-| `telegram-webhook-missing`         | Webhook mode has no configured Telegram HTTPS webhook                      |
-| `telegram-polling-conflict`        | Another process is consuming `getUpdates`; stop the unintended consumer    |
-| `telegram-topic-unavailable`       | A stored topic disappeared; allow the durable replacement path to complete |
+| Code                                     | Meaning and safe action                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `telegram-invalid-token`                 | Replace the token from BotFather                                                             |
+| `telegram-topics-disabled`               | Enable Threaded Mode in BotFather and verify `getMe`                                         |
+| `telegram-private-chat-required`         | Use the intended one-to-one bot chat                                                         |
+| `telegram-invalid-chat`                  | Open the intended bot chat, send `/start`, and verify discovery                              |
+| `telegram-bot-blocked`                   | Unblock the bot and restart                                                                  |
+| `telegram-topic-permission`              | Restore topic-management permission                                                          |
+| `telegram-topic-delete-permission`       | Restore topic deletion permission and run `/cleanup` or `/purge` again                       |
+| `telegram-command-registration-mismatch` | Restart after checking Bot API access; Telegram did not retain the private-chat command menu |
+| `telegram-webhook-conflict`              | Poll mode found an active webhook; inspect before changing it                                |
+| `telegram-webhook-missing`               | Webhook mode has no configured Telegram HTTPS webhook                                        |
+| `telegram-polling-conflict`              | Another process is consuming `getUpdates`; stop the unintended consumer                      |
+| `telegram-topic-unavailable`             | A stored topic disappeared; allow the durable replacement path to complete                   |
 
 Real Telegram fails closed and never falls back to an unthreaded conversation.
 See the [Telegram guide](telegram.md) for setup and preflight behavior.
 
-## `/cleanup` or `/prune` finds nothing, or deletion fails
+## `/cleanup` or `/purge` finds nothing, or deletion fails
 
 Cleanup accepts only topics whose sessions have an explicit End tombstone or a
 native `session.ended` event. Crashes, process exits, stopped turns, stale
@@ -119,13 +120,18 @@ access and run `/cleanup` again. Never manually remove the SQLite mapping to
 force success: Agent Relay removes it only after Telegram confirms deletion or
 reports the topic already absent.
 
-`/prune` is the separate path for inactive topics that are not proven dead. It
+`/purge` is the separate path for inactive topics that are not proven dead. It
 defaults to 24 hours and accepts a duration from one hour through thirty days,
-for example `/prune 6h` or `/prune 7d`. Active sessions, unexpired open
+for example `/purge 6h` or `/purge 7d`. Active sessions, unexpired open
 requests, claimed/running continuations, pending deliveries, and activity newer
 than the selected cutoff are excluded. Pruning does not End a session. A later
 event recreates its topic, although the old Telegram topic and messages remain
 permanently deleted.
+
+If `/purge` or `/cleanup` is missing from Telegram's slash-command menu, restart
+the daemon. Startup uses `setMyCommands` for the configured private chat and
+verifies the result with `getMyCommands`; a failure is reported instead of
+silently leaving a stale menu. `/prune` remains a non-menu compatibility alias.
 
 ## A Telegram reply is ignored
 

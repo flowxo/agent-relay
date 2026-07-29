@@ -1,13 +1,13 @@
 {
   "chat_id": "10001",
   "message_thread_id": 77,
-  "text": "Agent Relay inactive-topic prune\n\nPrune 2 session topic(s) inactive for at least 1 day? Inactivity does not prove that a session ended.",
+  "text": "Agent Relay inactive-topic purge\n\nPurge 2 session topic(s) inactive for at least 1 day? Inactivity does not prove that a session ended.",
   "disable_web_page_preview": true,
   "reply_markup": {
     "inline_keyboard": [
       [
         {
-          "text": "Prune 2 topics",
+          "text": "Purge 2 topics",
           "callback_data": "relay-c:v1:y:cleanup_0123456789abcdef0123456789abcdef"
         },
         {

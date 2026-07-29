@@ -40,6 +40,7 @@ import {
 } from "./callbacks/choice.js";
 import { multiSelectCallbackData } from "./callbacks/multi-select.js";
 import { questionSetCallbackData } from "./callbacks/question-set.js";
+import { AGENT_RELAY_TELEGRAM_BOT_COMMANDS } from "./bot-commands.js";
 
 const successSchema = z
   .object({
@@ -128,6 +129,20 @@ const getWebhookInfoSuccessSchema = z
         last_error_message: z.string().optional(),
       })
       .passthrough(),
+  })
+  .passthrough();
+
+const botCommandSchema = z
+  .object({
+    command: z.string().min(1).max(32),
+    description: z.string().min(1).max(256),
+  })
+  .strict();
+
+const getMyCommandsSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    result: z.array(botCommandSchema),
   })
   .passthrough();
 
@@ -463,6 +478,7 @@ export interface TelegramSetupReport {
   chatType: "private";
   updateMode: "poll" | "webhook";
   webhookConfigured: boolean;
+  commandsConfigured: true;
 }
 
 export class TelegramBotTransport
@@ -739,11 +755,50 @@ export class TelegramBotTransport
           false,
         );
       }
+
+      const commandScope = {
+        type: "chat",
+        chat_id: this.chatId,
+      } as const;
+      const commands = AGENT_RELAY_TELEGRAM_BOT_COMMANDS.map((command) => ({
+        ...command,
+      }));
+      const registered = trueSuccessSchema.safeParse(
+        await this.callApi("setMyCommands", {
+          commands,
+          scope: commandScope,
+        }),
+      );
+      if (!registered.success) {
+        throw new TransportError(
+          "Telegram setMyCommands response was malformed",
+          "telegram-malformed-response",
+          false,
+        );
+      }
+      const configured = getMyCommandsSuccessSchema.safeParse(
+        await this.callApi("getMyCommands", { scope: commandScope }),
+      );
+      if (!configured.success) {
+        throw new TransportError(
+          "Telegram getMyCommands response was malformed",
+          "telegram-malformed-response",
+          false,
+        );
+      }
+      if (JSON.stringify(configured.data.result) !== JSON.stringify(commands)) {
+        throw new TransportError(
+          "Telegram did not retain the Agent Relay command menu for the configured private chat",
+          "telegram-command-registration-mismatch",
+          false,
+        );
+      }
       return {
         topicsEnabled: true,
         chatType: "private",
         updateMode,
         webhookConfigured,
+        commandsConfigured: true,
       };
     } catch (error) {
       throw actionableSetupError(error);

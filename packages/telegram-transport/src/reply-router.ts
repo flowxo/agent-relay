@@ -225,12 +225,12 @@ function isTopicCleanupCommand(text: string): boolean {
 }
 
 function isTopicPruneCommand(text: string): boolean {
-  return /^\/prune(?:@[A-Za-z0-9_]+)?(?:\s|$)/iu.test(text.trim());
+  return /^\/(?:purge|prune)(?:@[A-Za-z0-9_]+)?(?:\s|$)/iu.test(text.trim());
 }
 
 function parseTopicPruneDuration(text: string): number | undefined {
   const match =
-    /^\/prune(?:@[A-Za-z0-9_]+)?(?:\s+([1-9][0-9]{0,2})([hd]))?$/iu.exec(
+    /^\/(?:purge|prune)(?:@[A-Za-z0-9_]+)?(?:\s+([1-9][0-9]{0,2})([hd]))?$/iu.exec(
       text.trim(),
     );
   if (match === null) {
@@ -697,7 +697,7 @@ export class TelegramReplyRouter {
       });
     }
     const message = {
-      text: "Agent Relay inactive-topic prune\n\nUsage: /prune, /prune 12h, or /prune 7d. The duration must be between 1 hour and 30 days. /prune defaults to 24 hours.",
+      text: "Agent Relay inactive-topic purge\n\nUsage: /purge, /purge 12h, or /purge 7d. The duration must be between 1 hour and 30 days. /purge defaults to 24 hours. The older /prune spelling remains supported.",
       buttons: [],
     };
     if (!isOperatorControlTransport(this.transport)) {
@@ -819,8 +819,8 @@ export class TelegramReplyRouter {
     await this.acknowledge(
       callback.id,
       route.outcome === "cleanup-previewed"
-        ? "Prune preview ready"
-        : "Could not open prune preview",
+        ? "Purge preview ready"
+        : "Could not open purge preview",
     );
     return route;
   }

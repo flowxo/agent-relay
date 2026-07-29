@@ -25,6 +25,23 @@ async function executable(directory: string, name: string, version: string) {
   return path;
 }
 
+async function verifiedHarnessExecutables() {
+  const directory = await mkdtemp(join(tmpdir(), "agent-relay-doctor-"));
+  return {
+    codex: await executable(directory, "codex", TESTED_HARNESS_VERSIONS.codex),
+    claude: await executable(
+      directory,
+      "claude",
+      TESTED_HARNESS_VERSIONS.claude,
+    ),
+    cursor: await executable(
+      directory,
+      "cursor",
+      TESTED_HARNESS_VERSIONS.cursor,
+    ),
+  };
+}
+
 describe("doctor version and installation checks", () => {
   it("distinguishes compatible versions, drift, and missing harnesses", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-doctor-"));
@@ -199,7 +216,10 @@ describe("doctor version and installation checks", () => {
         },
       },
     } satisfies TransportReadinessReport;
-    const report = await runDoctor({ transportReadiness: readiness });
+    const report = await runDoctor({
+      transportReadiness: readiness,
+      executables: await verifiedHarnessExecutables(),
+    });
     const serialized = JSON.stringify(report);
 
     expect(report.checks).toEqual(
@@ -272,7 +292,10 @@ describe("doctor version and installation checks", () => {
         },
       },
     } satisfies TransportReadinessReport;
-    const report = await runDoctor({ transportReadiness: readiness });
+    const report = await runDoctor({
+      transportReadiness: readiness,
+      executables: await verifiedHarnessExecutables(),
+    });
 
     expect(report.healthy).toBe(false);
     expect(report.checks).toEqual(

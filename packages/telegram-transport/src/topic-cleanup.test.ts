@@ -456,24 +456,24 @@ describe("Telegram proven-dead topic cleanup", () => {
 });
 
 describe("Telegram inactive-topic pruning", () => {
-  it("defaults to 24 hours, deletes only after confirmation, and recreates a later topic without ending the session", async () => {
+  it("accepts /purge, defaults to 24 hours, deletes only after confirmation, and recreates a later topic without ending the session", async () => {
     const runtime = setup();
     const original = await createWaitingTopic(
       runtime,
       "session_prune_recreate",
     );
 
-    const tooSoon = await preview(runtime, 200, "/prune");
+    const tooSoon = await preview(runtime, 200, "/purge");
     expect(tooSoon.result).toMatchObject({ outcome: "cleanup-previewed" });
     expect(tooSoon.control.message.text).toContain(
       "No safe session topics have been inactive for at least 1 day",
     );
 
     runtime.testClock.advance(24 * 60 * 60_000 + 1);
-    const shown = await preview(runtime, 201, "/prune", 4_201);
+    const shown = await preview(runtime, 201, "/purge", 4_201);
     expect(shown.control.context.topicId).toBe("4201");
     expect(shown.control.message.text).toContain(
-      "Prune 1 session topic(s) inactive for at least 1 day",
+      "Purge 1 session topic(s) inactive for at least 1 day",
     );
     expect(shown.control.message.text).toContain("session_prune_recreate");
     expect(shown.control.message.text).toContain(
@@ -521,11 +521,11 @@ describe("Telegram inactive-topic pruning", () => {
     await createWaitingTopic(runtime, "session_prune_duration");
     runtime.testClock.advance(2 * 60 * 60_000);
 
-    const threeHours = await preview(runtime, 203, "/prune 3h");
+    const threeHours = await preview(runtime, 203, "/purge 3h");
     expect(threeHours.control.message.text).toContain(
       "No safe session topics have been inactive for at least 3 hours",
     );
-    const oneHour = await preview(runtime, 204, "/prune 1h");
+    const oneHour = await preview(runtime, 204, "/purge@AgentRelayBot 1h");
     expect(oneHour.control.message.text).toContain("session_prune_duration");
 
     const malformed = await runtime.router.handle({
@@ -535,12 +535,15 @@ describe("Telegram inactive-topic pruning", () => {
         message_thread_id: 4_205,
         from: { id: 7001 },
         chat: { id: 9001 },
-        text: "/prune 31d",
+        text: "/purge 31d",
       },
     });
     expect(malformed).toMatchObject({ outcome: "cleanup-rejected" });
     expect(runtime.transport.operatorControls.at(-1)?.message.text).toContain(
       "between 1 hour and 30 days",
+    );
+    expect(runtime.transport.operatorControls.at(-1)?.message.text).toContain(
+      "Usage: /purge",
     );
     expect(runtime.transport.operatorControls.at(-1)?.context.topicId).toBe(
       "4205",
@@ -550,6 +553,17 @@ describe("Telegram inactive-topic pruning", () => {
         code: "telegram.topic-prune-invalid-duration",
       }),
     );
+    runtime.store.close();
+  });
+
+  it("retains /prune as a compatibility alias", async () => {
+    const runtime = setup();
+    await createWaitingTopic(runtime, "session_prune_compatibility");
+    runtime.testClock.advance(24 * 60 * 60_000 + 1);
+
+    const shown = await preview(runtime, 216, "/prune");
+    expect(shown.result).toMatchObject({ outcome: "cleanup-previewed" });
+    expect(shown.control.message.text).toContain("session_prune_compatibility");
     runtime.store.close();
   });
 
@@ -589,7 +603,7 @@ describe("Telegram inactive-topic pruning", () => {
     );
     expect(runtime.transport.callbackAcknowledgements.at(-1)).toEqual({
       callbackId: "callback_prune_start",
-      text: "Prune preview ready",
+      text: "Purge preview ready",
     });
     runtime.store.close();
   });
@@ -673,6 +687,39 @@ describe("Telegram inactive-topic pruning", () => {
       inactiveBefore: "2026-07-28T13:00:00.000Z",
       eligibleCount: 1,
     });
+    runtime.store.close();
+  });
+
+  it("treats /purge as a command instead of an answer to an open request", async () => {
+    const runtime = setup();
+    const sessionId = "session_purge_command_isolation";
+    const topic = await createWaitingTopic(runtime, sessionId);
+    runtime.service.ingest({
+      ...event(sessionId, 2, "input.required"),
+      request: {
+        correlationId: "correlation_purge_command_isolation",
+        kind: "input",
+        question: "What should happen next?",
+        expiresAt: "2026-07-31T12:00:00.000Z",
+      },
+    });
+    await runtime.service.drain();
+
+    await expect(
+      runtime.router.handle({
+        update_id: 217,
+        message: {
+          message_id: 1_217,
+          message_thread_id: Number(topic.topicId),
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "/purge",
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "cleanup-previewed" });
+    expect(
+      runtime.store.getPendingRequest("correlation_purge_command_isolation"),
+    ).toMatchObject({ state: "open" });
     runtime.store.close();
   });
 

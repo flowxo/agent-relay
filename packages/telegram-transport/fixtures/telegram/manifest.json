@@ -1,12 +1,22 @@
 {
   "schema": "agent-relay-telegram-fixtures.v1",
-  "capturedAt": "2026-07-28",
+  "capturedAt": "2026-07-29",
   "botApiVersion": "10.2",
   "source": "https://core.telegram.org/bots/api",
   "evidence": "sanitized-live-and-fake-transport-observation",
   "privacy": "All request fixtures contain synthetic chat, message, event, decision, and action values. Credentials and private operator content are excluded.",
   "scope": "private chat with topics enabled",
   "fixtures": [
+    {
+      "file": "private-chat-command-menu.v10.2.json",
+      "method": "setMyCommands/getMyCommands",
+      "evidence": "Bot API 10.2 private-chat command scope verified against the official method contracts, deterministic HTTP transport, and credentialed private-chat registration/read-back",
+      "sanitization": [
+        "chat ID replaced",
+        "command descriptions contain public product text only",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
     {
       "file": "private-topic-prune-command.v10.2.json",
       "method": "getUpdates",

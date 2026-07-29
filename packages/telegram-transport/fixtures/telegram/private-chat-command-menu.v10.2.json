@@ -1,0 +1,45 @@
+{
+  "setMyCommands": {
+    "request": {
+      "commands": [
+        {
+          "command": "purge",
+          "description": "Review inactive session topics for deletion"
+        },
+        {
+          "command": "cleanup",
+          "description": "Review ended session topics for deletion"
+        }
+      ],
+      "scope": {
+        "type": "chat",
+        "chat_id": "10001"
+      }
+    },
+    "response": {
+      "ok": true,
+      "result": true
+    }
+  },
+  "getMyCommands": {
+    "request": {
+      "scope": {
+        "type": "chat",
+        "chat_id": "10001"
+      }
+    },
+    "response": {
+      "ok": true,
+      "result": [
+        {
+          "command": "purge",
+          "description": "Review inactive session topics for deletion"
+        },
+        {
+          "command": "cleanup",
+          "description": "Review ended session topics for deletion"
+        }
+      ]
+    }
+  }
+}

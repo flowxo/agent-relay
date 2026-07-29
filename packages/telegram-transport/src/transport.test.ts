@@ -497,6 +497,26 @@ describe("TelegramBotTransport", () => {
             result: { url: "", pending_update_count: 0 },
           }),
         ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, result: true })),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: [
+              {
+                command: "purge",
+                description: "Review inactive session topics for deletion",
+              },
+              {
+                command: "cleanup",
+                description: "Review ended session topics for deletion",
+              },
+            ],
+          }),
+        ),
       );
     const transport = new TelegramBotTransport({
       token: "123456:synthetic-token-value",
@@ -509,12 +529,91 @@ describe("TelegramBotTransport", () => {
       chatType: "private",
       updateMode: "poll",
       webhookConfigured: false,
+      commandsConfigured: true,
     });
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       expect.stringContaining("/getMe"),
       expect.stringContaining("/getChat"),
       expect.stringContaining("/getWebhookInfo"),
+      expect.stringContaining("/setMyCommands"),
+      expect.stringContaining("/getMyCommands"),
     ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toEqual({
+      commands: [
+        {
+          command: "purge",
+          description: "Review inactive session topics for deletion",
+        },
+        {
+          command: "cleanup",
+          description: "Review ended session topics for deletion",
+        },
+      ],
+      scope: { type: "chat", chat_id: "10001" },
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body))).toEqual({
+      scope: { type: "chat", chat_id: "10001" },
+    });
+  });
+
+  it("fails setup when Telegram does not retain the scoped command menu", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: {
+              id: 10002,
+              is_bot: true,
+              has_topics_enabled: true,
+            },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { id: 10001, type: "private" },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { url: "", pending_update_count: 0 },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true, result: true })),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: [
+              {
+                command: "cleanup",
+                description: "Review ended session topics for deletion",
+              },
+            ],
+          }),
+        ),
+      );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await expect(transport.verifySetup("poll")).rejects.toMatchObject({
+      code: "telegram-command-registration-mismatch",
+      retryable: false,
+      message: expect.stringContaining("did not retain"),
+    });
   });
 
   it("rejects non-private and webhook-conflicted topic configurations", async () => {

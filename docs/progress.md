@@ -2,6 +2,26 @@
 
 ## Proven
 
+- The inactive-topic command is now `/purge`; `/prune` remains a compatibility
+  alias. The live defect was a routing gap, not a deletion-worker regression:
+  the prior router recognized only `/cleanup` and `/prune`, so `/purge` was
+  durably classified as unsupported/uncorrelated. Command parsing now accepts
+  the canonical name, optional bot suffix, and bounded hour/day duration before
+  any free-text request correlation. Tests prove the 24-hour default, malformed
+  input, the legacy alias, and that `/purge` cannot answer an open request.
+  Telegram startup now uses Bot API 10.2 `setMyCommands` with an exact
+  private-chat scope for `/purge` and `/cleanup`, reads the scope back with
+  `getMyCommands`, and fails visibly on malformed or mismatched registration.
+  The packed direct-Telegram runtime proof exercises the same registration.
+  Sanitized fixtures retain only public command text and synthetic IDs. On
+  2026-07-29 the configured private chat accepted and returned both commands,
+  and the restarted daemon reported `commandsConfigured: true`, healthy direct
+  Telegram polling, and no startup error. The complete gate passed formatting,
+  lint, all typechecks, 74 Vitest files/558 tests, both contract suites, package
+  isolation, hosted direct-Telegram canary, and the packed lifecycle. All three
+  Chromium scenarios passed, and `pnpm audit --prod` found no known
+  vulnerability. An operator-originated menu tap remains the final natural UX
+  observation; no synthetic update was injected into the private conversation.
 - FXO-1122 adds the approved private local session-adoption peer without
   changing Agent Relay's standalone transports or default-off runner bridge.
   Core candidate queries return only exact active/waiting Codex CLI checkpoints
