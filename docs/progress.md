@@ -24,7 +24,13 @@
   complete packed lifecycle. The first fully parallel run exposed two
   pre-existing load-sensitive integration budgets, so their test-only timeouts
   were bounded upward before the clean rerun. All three Chromium end-to-end
-  scenarios passed, and `pnpm audit --prod` found no known vulnerability.
+  scenarios passed, and `pnpm audit --prod` found no known vulnerability. PR #25
+  passed the exact-head CI, browser, and secret checks and merged as `37803c4`.
+  The checkout-backed install reconciled unchanged twice, credentialed doctor
+  was healthy, and exactly one direct-Telegram poller restarted after successful
+  private-topic and command-menu preflight. The queue, retry, active delivery,
+  and dead-letter counts were all zero. The next natural authorized one-shot tap
+  remains the live visual confirmation of the compact edit.
 - The inactive-topic command is now `/purge`; `/prune` remains a compatibility
   alias. The live defect was a routing gap, not a deletion-worker regression:
   the prior router recognized only `/cleanup` and `/prune`, so `/purge` was
