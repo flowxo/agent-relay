@@ -21,9 +21,9 @@ import {
 } from "@agent-relay/notification-contracts";
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
-  createNotificationsContractMock,
-  type NotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
+  createWhooshBangContractMock,
+  type WhooshBangContractMock,
+} from "@whooshbang/contract-mock";
 import {
   NotificationsContractTransport,
   NotificationsMachineInteractionSource,
@@ -269,7 +269,7 @@ class ParityRuntime {
   private readonly telegramApi: TelegramApiHarness | undefined;
   private readonly notificationsTransport:
     RecordingNotificationsTransport | undefined;
-  private readonly notificationsMock: NotificationsContractMock | undefined;
+  private readonly notificationsMock: WhooshBangContractMock | undefined;
   private readonly notificationsBodies: string[] = [];
   private notificationsSendFailures = 0;
   private closed = false;
@@ -293,7 +293,7 @@ class ParityRuntime {
       this.transport = this.telegramTransport;
       this.presentationCapability = "supported";
     } else {
-      this.notificationsMock = createNotificationsContractMock();
+      this.notificationsMock = createWhooshBangContractMock();
       const hostedFetch: typeof fetch = async (input, init) => {
         const request = new Request(input, init);
         const isMessageCreate =
@@ -501,7 +501,7 @@ class ParityRuntime {
     );
     const receipt = this.store.getDeliveryReceiptForEvent(event.eventId);
     if (mock === undefined || request === undefined || receipt === undefined) {
-      throw new Error("Notifications parity answer identity is unavailable");
+      throw new Error("WhooshBang parity answer identity is unavailable");
     }
     const response =
       answer.type === "confirm"
@@ -514,7 +514,7 @@ class ParityRuntime {
               );
               if (option === undefined) {
                 throw new Error(
-                  "Notifications parity option token is unavailable",
+                  "WhooshBang parity option token is unavailable",
                 );
               }
               return { type: "select", value: option.token } as const;
@@ -536,7 +536,7 @@ class ParityRuntime {
       resultingState === "open"
     ) {
       throw new Error(
-        `Notifications parity event was not resolved: ${JSON.stringify({
+        `WhooshBang parity event was not resolved: ${JSON.stringify({
           cursorCommits: mock.inspect().cursorCommits,
           poll: this.store.hostedPollStatus(
             notificationsStreamKey(NOTIFICATIONS_BASE_URL, MACHINE_CLIENT_ID),
@@ -557,7 +557,7 @@ class ParityRuntime {
   private async pollNotificationsUntilIdle(): Promise<void> {
     const mock = this.notificationsMock;
     if (mock === undefined) {
-      throw new Error("Notifications mock is unavailable");
+      throw new Error("WhooshBang mock is unavailable");
     }
     const baseSource = new NotificationsMachineInteractionSource({
       baseUrl: NOTIFICATIONS_BASE_URL,

@@ -131,7 +131,7 @@ function selectTransport(options: DaemonOptions): NotificationTransport {
     case "notifications":
       if (options.notifications === undefined) {
         throw new Error(
-          "selected Notifications transport requires an active narrow machine connection",
+          "selected WhooshBang transport requires an active narrow machine connection",
         );
       }
       return new NotificationsContractTransport(options.notifications);
@@ -224,7 +224,7 @@ export async function startDaemon(
     notificationsRuntime === undefined
   ) {
     throw new Error(
-      "selected Notifications transport requires machine interaction configuration",
+      "selected WhooshBang transport requires machine interaction configuration",
     );
   }
   const hostedStreamKey =
@@ -508,7 +508,7 @@ export async function startDaemon(
           message:
             error instanceof Error
               ? error.message
-              : "Notifications polling stopped unexpectedly",
+              : "WhooshBang polling stopped unexpectedly",
           at: new Date().toISOString(),
         });
       });

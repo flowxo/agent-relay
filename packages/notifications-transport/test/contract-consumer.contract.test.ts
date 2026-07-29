@@ -15,9 +15,9 @@ import { TelegramReplyRouter } from "@agent-relay/telegram-transport";
 import { makeProjectRef } from "@agent-relay/protocol";
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
-  createNotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
-import { NotificationsClient } from "@flowxo/notifications";
+  createWhooshBangContractMock,
+} from "@whooshbang/contract-mock";
+import { WhooshBangClient } from "@whooshbang/sdk";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -33,15 +33,15 @@ import type {
 import type {
   InteractionEvent,
   MachineEventPollResponse,
-} from "@flowxo/notifications-contracts";
+} from "@whooshbang/contracts";
 import type {
   ContractMockCredential,
   ContractMockMachineCredential,
   ContractMockProjectCredential,
-  NotificationsContractMock,
+  WhooshBangContractMock,
   InteractionControlInput,
   InteractionControlResult,
-} from "@flowxo/notifications-contract-mock";
+} from "@whooshbang/contract-mock";
 
 const occurredAt = "2026-07-25T17:45:00.000Z";
 const answeredAt = "2026-07-25T17:50:00.000Z";
@@ -103,12 +103,12 @@ function continuationEvent(suffix: string): AgentAttentionEventV1 {
   };
 }
 
-function fetchFor(mock: NotificationsContractMock): typeof fetch {
+function fetchFor(mock: WhooshBangContractMock): typeof fetch {
   return async (input, init) => mock.fetch(new Request(input, init));
 }
 
 async function callContractMock(
-  mock: NotificationsContractMock,
+  mock: WhooshBangContractMock,
   path: string,
   options: {
     readonly body?: unknown;
@@ -138,7 +138,7 @@ async function callContractMock(
 }
 
 async function provisionMachineClient(
-  mock: NotificationsContractMock,
+  mock: WhooshBangContractMock,
   projectCredential: ContractMockProjectCredential,
   machineCredential: ContractMockMachineCredential,
   idempotencyKey: string,
@@ -160,7 +160,7 @@ async function provisionMachineClient(
 }
 
 function machineClient(baseUrl: string, fetchImplementation?: typeof fetch) {
-  return new NotificationsClient({
+  return new WhooshBangClient({
     baseUrl,
     credential: CONTRACT_MOCK_FIXTURE_CREDENTIALS.machineA,
     ...(fetchImplementation === undefined
@@ -272,8 +272,7 @@ function requireInteractionEvent(batch: MachineEventPollResponse) {
 
 async function startPackedMock() {
   const require = createRequire(import.meta.url);
-  const packageJson =
-    require.resolve("@flowxo/notifications-contract-mock/package.json");
+  const packageJson = require.resolve("@whooshbang/contract-mock/package.json");
   const cli = resolve(dirname(packageJson), "dist/cli.js");
   const controlToken = "control-c0-07-12345678";
   const child = spawn(
@@ -328,7 +327,7 @@ async function startPackedMock() {
   };
 }
 
-describe("C0 Notifications consumer contract", () => {
+describe("C0 WhooshBang consumer contract", () => {
   it("keeps a machine B answer off machine A's stream", async () => {
     const projectCredential: ContractMockProjectCredential = {
       accountId: "account_synthetic",
@@ -378,7 +377,7 @@ describe("C0 Notifications consumer contract", () => {
       machineA,
       machineB,
     ];
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       credentials,
       scenario: "cross-machine-answer-origin",
     });
@@ -390,12 +389,12 @@ describe("C0 Notifications consumer contract", () => {
       "create-consumer-routing-machine-b",
     );
     const mockFetch = fetchFor(mock);
-    const clientA = new NotificationsClient({
+    const clientA = new WhooshBangClient({
       baseUrl: "https://notifications.mock.test",
       credential: machineA.token,
       fetch: mockFetch,
     });
-    const clientB = new NotificationsClient({
+    const clientB = new WhooshBangClient({
       baseUrl: "https://notifications.mock.test",
       credential: machineB.token,
       fetch: mockFetch,
@@ -511,7 +510,7 @@ describe("C0 Notifications consumer contract", () => {
         machineId: `machine_consumer_unavailable_${testCase.name}_origin`,
         token: `machine-consumer-unavailable-${testCase.name}-origin-token`,
       };
-      const mock = createNotificationsContractMock({
+      const mock = createWhooshBangContractMock({
         credentials: [projectCredential, decoy, origin],
         scenario: "cross-machine-answer-origin",
       });
@@ -523,12 +522,12 @@ describe("C0 Notifications consumer contract", () => {
         `create-consumer-unavailable-${testCase.name}-decoy`,
       );
       const mockFetch = fetchFor(mock);
-      const originClient = new NotificationsClient({
+      const originClient = new WhooshBangClient({
         baseUrl: "https://notifications.mock.test",
         credential: origin.token,
         fetch: mockFetch,
       });
-      const decoyClient = new NotificationsClient({
+      const decoyClient = new WhooshBangClient({
         baseUrl: "https://notifications.mock.test",
         credential: decoy.token,
         fetch: mockFetch,
@@ -589,7 +588,7 @@ describe("C0 Notifications consumer contract", () => {
     const directory = mkdtempSync(join(tmpdir(), "agent-relay-c0-07-"));
     temporaryDirectories.push(directory);
     const databasePath = join(directory, "relay.sqlite");
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       scenario: "interaction-input",
     });
     const mockFetch = fetchFor(mock);
@@ -723,7 +722,7 @@ describe("C0 Notifications consumer contract", () => {
   it("runs the exact packed mock as a guarded separate process", async () => {
     const running = await startPackedMock();
     expect(running.cli).toContain(
-      "@flowxo+notifications-contract-mock@file+vendor+notifications-c0+flowxo-notifications-contract-mock-1.0.0-rc.1.tgz",
+      "@whooshbang+contract-mock@file+vendor+whooshbang-rc4+whooshbang-contract-mock-1.0.0-rc.4.tgz",
     );
     const event = selectEvent("packed");
     const store = new RelayStore();
@@ -740,7 +739,7 @@ describe("C0 Notifications consumer contract", () => {
               method: "POST",
               headers: {
                 "content-type": "application/json",
-                "x-contract-mock-token": running.controlToken,
+                "whooshbang-contract-mock-token": running.controlToken,
               },
               body: JSON.stringify({
                 messageId,
@@ -787,7 +786,7 @@ describe("C0 Notifications consumer contract", () => {
   }, 15_000);
 
   it("records a safe durable quarantine before acknowledging poison data", async () => {
-    const mock = createNotificationsContractMock({
+    const mock = createWhooshBangContractMock({
       scenario: "nominal",
     });
     const mockFetch = fetchFor(mock);
@@ -797,7 +796,7 @@ describe("C0 Notifications consumer contract", () => {
     store.ingestEvent(event);
     const local = store.getPendingRequest(event.request!.correlationId)!;
     const poison: InteractionEvent = {
-      schema: "notifications.interaction-event.v1",
+      schema: "whooshbang.interaction-event.v1",
       id: "event_poison_answer_12345678",
       cursor: "mcur_poison_answer_12345678",
       type: "interaction.received",
@@ -888,7 +887,7 @@ describe("C0 Notifications consumer contract", () => {
       (option) => option.optionId === "option_beta_12345678",
     )!;
     const hostedEvent: InteractionEvent = {
-      schema: "notifications.interaction-event.v1",
+      schema: "whooshbang.interaction-event.v1",
       id: "event_hosted_parity_12345678",
       cursor: "mcur_hosted_parity_12345678",
       type: "interaction.received",

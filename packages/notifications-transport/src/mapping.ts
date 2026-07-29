@@ -1,6 +1,6 @@
-import { validateCreateMessageRequest } from "@flowxo/notifications-contracts";
+import { validateCreateMessageRequest } from "@whooshbang/contracts";
 
-import type { CreateMessageRequest } from "@flowxo/notifications";
+import type { CreateMessageRequest } from "@whooshbang/sdk";
 import type {
   DeliveryInteraction,
   DeliveryMessage,
@@ -73,7 +73,7 @@ function mapInteraction(
   }
   if (options.length < 2 || options.length > 6) {
     throw new NotificationsMappingError(
-      "Notifications select supports two through six options; a wider request must retain its negotiated local fallback.",
+      "WhooshBang select supports two through six options; a wider request must retain its negotiated local fallback.",
       "notifications-select-capability-unsupported",
     );
   }
@@ -108,7 +108,7 @@ export function mapDeliveryMessageToNotifications(
   assertOpaqueValue(message.eventId, "Event ID");
   if (message.multiSelect !== undefined) {
     throw new NotificationsMappingError(
-      "Multi-select remains on its negotiated local presentation until Notifications advertises equivalent capability.",
+      "Multi-select remains on its negotiated local presentation until WhooshBang advertises equivalent capability.",
       "notifications-multi-select-unsupported",
     );
   }
@@ -124,7 +124,7 @@ export function mapDeliveryMessageToNotifications(
   }
   if (message.interaction === undefined && message.questionSet !== undefined) {
     throw new NotificationsMappingError(
-      "The structured request has no compatible Notifications interaction projection.",
+      "The structured request has no compatible WhooshBang interaction projection.",
       "notifications-question-set-projection-missing",
     );
   }
@@ -148,7 +148,7 @@ export function mapDeliveryMessageToNotifications(
   };
   if (!validateCreateMessageRequest(request)) {
     throw new NotificationsMappingError(
-      "The Agent Relay projection does not match the pinned Notifications contract.",
+      "The Agent Relay projection does not match the pinned WhooshBang contract.",
       "notifications-request-contract-invalid",
     );
   }

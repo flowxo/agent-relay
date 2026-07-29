@@ -120,7 +120,7 @@ function hostedEvent(
 ): HostedInteractionEvent {
   const request = store.getPendingRequest(local.request!.correlationId)!;
   return {
-    schema: "notifications.interaction-event.v1",
+    schema: "whooshbang.interaction-event.v1",
     id: `hosted_event_notifications_${suffix}_12345678`,
     cursor: `cursor_notifications_${String(cursorIndex).padStart(2, "0")}_12345678`,
     type: "interaction.received",
@@ -148,7 +148,7 @@ class OrderedSource implements NotificationsInteractionSource {
   ) {}
 
   public async poll(options: PollHostedEventsOptions): Promise<{
-    schema: "notifications.machine-events.v1";
+    schema: "whooshbang.machine-events.v1";
     events: HostedInteractionEvent[];
     committed_cursor: string | null;
     server_time: string;
@@ -161,7 +161,7 @@ class OrderedSource implements NotificationsInteractionSource {
             (event) => event.cursor === this.committedCursor,
           ) + 1;
     return {
-      schema: "notifications.machine-events.v1",
+      schema: "whooshbang.machine-events.v1",
       events: this.events.slice(start),
       committed_cursor: this.committedCursor ?? null,
       server_time: "2026-07-26T19:10:00.000Z",
@@ -358,7 +358,7 @@ describe("NotificationsInteractionPoller", () => {
     const logger = new MemoryLogger();
     const unknownSource: NotificationsInteractionSource = {
       poll: vi.fn().mockResolvedValue({
-        schema: "notifications.machine-events.v1",
+        schema: "whooshbang.machine-events.v1",
         committed_cursor: null,
         server_time: "2026-07-26T19:10:00.000Z",
         events: [
@@ -410,7 +410,7 @@ describe("NotificationsInteractionPoller", () => {
     const firstAbort = new AbortController();
     const firstSource: NotificationsInteractionSource = {
       poll: vi.fn().mockResolvedValue({
-        schema: "notifications.machine-events.v1",
+        schema: "whooshbang.machine-events.v1",
         events: [hosted],
         committed_cursor: null,
         server_time: "2026-07-26T19:05:00.000Z",
@@ -503,7 +503,7 @@ describe("NotificationsInteractionPoller", () => {
     );
     const firstSource: NotificationsInteractionSource = {
       poll: vi.fn().mockResolvedValue({
-        schema: "notifications.machine-events.v1",
+        schema: "whooshbang.machine-events.v1",
         events: [hosted],
         committed_cursor: null,
         server_time: "2026-07-26T19:05:00.000Z",
@@ -743,7 +743,7 @@ describe("NotificationsInteractionPoller", () => {
         .mockImplementation(async () => {
           controller.abort();
           return {
-            schema: "notifications.machine-events.v1",
+            schema: "whooshbang.machine-events.v1",
             events: [],
             committed_cursor: null,
             server_time: "2026-07-26T19:10:00.000Z",

@@ -9,8 +9,8 @@ import {
   CANONICAL_POLICY_SHA256,
   CANONICAL_SCHEMA_SHA256,
   loadNotificationsContractLock,
-  NOTIFICATIONS_BASE_SOURCE_COMMIT,
-  NOTIFICATIONS_MOCK_SOURCE_COMMIT,
+  WHOOSHBANG_BASE_SOURCE_COMMIT,
+  WHOOSHBANG_MOCK_SOURCE_COMMIT,
 } from "../lib/notifications-preflight.mjs";
 
 const digest = "a".repeat(64);
@@ -25,14 +25,14 @@ const validateSchema = compileContractLockSchema(schema);
 
 function artifactPin(overrides = {}) {
   return {
-    owner: "flowxo-notifications",
-    artifact: "@flowxo/notifications-contracts",
+    owner: "whooshbang",
+    artifact: "@whooshbang/contracts",
     version: "1.0.0-draft.1",
-    source_repository: "flowxo/flowxo-notifications",
+    source_repository: "flowxo/whooshbang",
     source_commit: commit,
     sha256: digest,
     artifact_file:
-      "vendor/notifications/flowxo-notifications-contracts-1.0.0-draft.1.tgz",
+      "vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-draft.1.tgz",
     fixture_sets: [
       {
         id: "core-api-bodies",
@@ -126,16 +126,16 @@ describe("flowxo.contract-lock.v1", () => {
       })),
       [
         {
-          artifact: "@flowxo/notifications-contracts",
-          sourceCommit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
+          artifact: "@whooshbang/contracts",
+          sourceCommit: WHOOSHBANG_BASE_SOURCE_COMMIT,
         },
         {
-          artifact: "@flowxo/notifications",
-          sourceCommit: NOTIFICATIONS_BASE_SOURCE_COMMIT,
+          artifact: "@whooshbang/sdk",
+          sourceCommit: WHOOSHBANG_BASE_SOURCE_COMMIT,
         },
         {
-          artifact: "@flowxo/notifications-contract-mock",
-          sourceCommit: NOTIFICATIONS_MOCK_SOURCE_COMMIT,
+          artifact: "@whooshbang/contract-mock",
+          sourceCommit: WHOOSHBANG_MOCK_SOURCE_COMMIT,
         },
       ],
     );
@@ -147,7 +147,7 @@ describe("flowxo.contract-lock.v1", () => {
     assertRejected(missing, "missing digest pin");
 
     for (const artifact_file of [
-      "../flowxo-notifications/artifact.tgz",
+      "../whooshbang/artifact.tgz",
       "/tmp/artifact.tgz",
       "file:vendor/artifact.tgz",
       "vendor\\artifact.tgz",
@@ -168,7 +168,7 @@ describe("flowxo.contract-lock.v1", () => {
     assertRejected(empty, "empty lock");
 
     const selfDependency = validLock();
-    selfDependency.repository = "flowxo/flowxo-notifications";
+    selfDependency.repository = "flowxo/whooshbang";
     assert.equal(validateSchema(selfDependency), true);
     assert.match(
       validateContractLock(selfDependency).join("\n"),
@@ -203,7 +203,7 @@ describe("flowxo.contract-lock.v1", () => {
     for (const artifact of [
       "",
       `@a/${"b".repeat(212)}`,
-      "@flowxo/Notifications",
+      "@whooshbang/Contracts",
       7,
     ]) {
       assertRejected(

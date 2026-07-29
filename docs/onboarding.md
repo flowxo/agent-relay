@@ -57,7 +57,7 @@ pnpm build
 ```
 
 The scripts-disabled install prevents dependency lifecycle code from running
-before the exact vendored Notifications artifacts are inspected. The contract
+before the exact vendored WhooshBang artifacts are inspected. The contract
 preflight validates those archives and pins, then `pnpm rebuild` runs the
 approved native build needed by SQLite. No Telegram credentials are needed for
 these checks. Tests use sanitized fixtures and a fake transport.
@@ -346,7 +346,7 @@ on every event. Compact event cards and session-control edits show state in
 Telegram, while `status` exposes the reconciled current value. Crash and stale
 evidence remain visible even when routine notifications were muted.
 
-Notifications are rendered as compact plain-text cards with stable session
+WhooshBang are rendered as compact plain-text cards with stable session
 identity, event age, a bounded one-line summary, and fixed callback data that
 cannot be supplied by model text. Full long content remains in the local durable
 event record and receives a Details action. Question-choice buttons and card
@@ -446,17 +446,17 @@ contract, signature verification, HTTP retry rules, and the deliberate
 outbound-only boundary are documented in the
 [outbound webhook guide](./outbound-webhooks.md).
 
-### Optional hosted Notifications setup proof
+### Optional hosted WhooshBang setup proof
 
 The optional hosted adapter now has a mock-backed setup and explicit full daemon
 lifecycle, documented in the
-[hosted Notifications guide](./hosted-notifications.md). It can authorize a
+[hosted WhooshBang guide](./hosted-notifications.md). It can authorize a
 subscriber, generate and store a narrow credential, send a synthetic canary,
 rotate, revoke, erase, and deliver normal attention events when `notifications`
 is selected. Selected hosted mode also long-polls confirm/select/input answers,
 commits them to the exact local request before provider acknowledgement, and
 recovers cursor/acknowledgement work after restart. Terminal presentation is a
-separate durable worker; the pinned rc.1 contract reports that optional
+separate durable worker; the pinned RC.4 contract reports that optional
 capability as unsupported because it has no resolution-update endpoint. Safe
 status still exposes its queue/block counts and failure category. Local
 disconnect or revocation stops new hosted calls, retains SQLite authority, and
@@ -476,14 +476,14 @@ an unchanged direct-Telegram canary against a synthetic Bot API. It rejects
 workspace/sibling runtime dependencies and scans packed output and logs for
 private fixture values.
 
-Do not place a broad Notifications project credential in git or pass it as a
+Do not place a broad WhooshBang project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment
 injection, or hidden prompt. The local setup files are retained by uninstall;
 use `notifications disconnect --revoke` before explicit credential/configuration
-erasure. C0-09 approved the exact `1.0.0-rc.1` candidate, but it did not create
-or authorize a real service environment. Perform this setup only against the
-executable loopback mock until the Notifications owner supplies the approved AR3
-environment and bounded-canary authorization.
+erasure. Agent Relay now pins the exact WhooshBang `1.0.0-rc.4` candidate; no
+decision has created or authorized a real service environment. Perform this
+setup only against the executable loopback mock until the WhooshBang owner
+supplies the approved AR3 environment and bounded-canary authorization.
 
 ## 6. Prove the Telegram interaction loop
 

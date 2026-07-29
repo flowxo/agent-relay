@@ -1,4 +1,4 @@
-import { NotificationsClient } from "@flowxo/notifications";
+import { WhooshBangClient } from "@whooshbang/sdk";
 import { TransportError } from "@agent-relay/notification-contracts";
 import {
   InteractionProviderObservationV1Schema,
@@ -24,7 +24,7 @@ import type {
   InteractionCapabilityTransport,
   NotificationTransport,
 } from "@agent-relay/notification-contracts";
-import type { NotificationsFetch } from "@flowxo/notifications";
+import type { WhooshBangFetch } from "@whooshbang/sdk";
 
 const CONFIGURATION_TERMINAL_CODES = new Set([
   "notifications-authentication-required",
@@ -43,8 +43,8 @@ const CONFIGURATION_TERMINAL_CODES = new Set([
 ]);
 
 function noRedirectFetch(
-  fetchImplementation: NotificationsFetch | undefined,
-): NotificationsFetch {
+  fetchImplementation: WhooshBangFetch | undefined,
+): WhooshBangFetch {
   const runtimeFetch = fetchImplementation ?? globalThis.fetch;
   if (typeof runtimeFetch !== "function") {
     throw new TypeError("A Fetch-compatible implementation is required.");
@@ -59,7 +59,7 @@ export interface NotificationsContractTransportOptions extends NotificationsMess
   credential: string;
   machineClientId: string;
   connectionGuard?: () => boolean | Promise<boolean>;
-  fetch?: NotificationsFetch;
+  fetch?: WhooshBangFetch;
 }
 
 export interface HostedDeliveryIdentity {
@@ -94,7 +94,7 @@ export class NotificationsContractTransport
   implements NotificationTransport, InteractionCapabilityTransport
 {
   public readonly name = "notifications";
-  private readonly client: NotificationsClient;
+  private readonly client: WhooshBangClient;
   private readonly target: NotificationsMessageTarget;
   private readonly streamKey: string;
   private readonly connectionGuard:
@@ -112,7 +112,7 @@ export class NotificationsContractTransport
       baseUrl,
       options.machineClientId,
     );
-    this.client = new NotificationsClient({
+    this.client = new WhooshBangClient({
       baseUrl,
       credential: options.credential,
       fetch: noRedirectFetch(options.fetch),
@@ -157,8 +157,8 @@ export class NotificationsContractTransport
       },
       status: "proven",
       evidence: "official-docs",
-      observedVersion: "@flowxo/notifications@1.0.0-rc.1",
-      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.1",
+      observedVersion: "@whooshbang/sdk@1.0.0-rc.4",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.4",
       note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
     });
   }
@@ -176,7 +176,7 @@ export class NotificationsContractTransport
       const hosted = await this.client.getMessage(messageId);
       if (hosted.state === "outcome_unknown") {
         throw new NotificationsDeliveryError(
-          "Notifications cannot prove the provider outcome; no new hosted send is permitted.",
+          "WhooshBang cannot prove the provider outcome; no new hosted send is permitted.",
           "notifications-provider-outcome-unknown",
           false,
           "outcome_unknown",
@@ -205,7 +205,7 @@ export class NotificationsContractTransport
       context.idempotencyKey.length < 8
     ) {
       throw new TransportError(
-        "Notifications delivery requires the stable event ID as its idempotency key.",
+        "WhooshBang delivery requires the stable event ID as its idempotency key.",
         "notifications-idempotency-identity-mismatch",
         false,
       );
@@ -220,7 +220,7 @@ export class NotificationsContractTransport
         !(await this.connectionGuard())
       ) {
         throw new NotificationsDeliveryError(
-          "The configured Notifications machine connection is inactive.",
+          "The configured WhooshBang machine connection is inactive.",
           "notifications-connection-inactive",
           false,
           "terminal",
@@ -232,7 +232,7 @@ export class NotificationsContractTransport
       );
       if (hosted.state === "outcome_unknown") {
         throw new NotificationsDeliveryError(
-          "Notifications cannot prove the provider outcome; no new hosted send is permitted.",
+          "WhooshBang cannot prove the provider outcome; no new hosted send is permitted.",
           "notifications-provider-outcome-unknown",
           false,
           "outcome_unknown",

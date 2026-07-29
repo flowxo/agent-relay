@@ -60,7 +60,7 @@ function configuration(
     schema: "agent-relay-notifications-config.v1",
     status: "active",
     baseUrl: "https://notifications.example.test/",
-    contractVersion: "1.0.0-rc.1",
+    contractVersion: "1.0.0-rc.4",
     environment: "test",
     projectId: "project_synthetic_setup",
     machineClientId: "machine_client_synthetic_setup",
@@ -89,7 +89,7 @@ function credential(
   });
 }
 
-describe("Notifications private configuration", () => {
+describe("WhooshBang private configuration", () => {
   it("atomically stores only the narrow credential at mode 0600", async () => {
     const directory = await temporaryDirectory();
     const paths = notificationsConnectionPaths(join(directory, "state"));
@@ -272,7 +272,7 @@ describe("Notifications private configuration", () => {
       apiOrigin: "https://notifications.example.test",
       canaryRef: expect.stringMatching(/^[a-f0-9]{12}$/u),
       configured: true,
-      contractVersion: "1.0.0-rc.1",
+      contractVersion: "1.0.0-rc.4",
       credentialPresent: true,
       environment: "test",
       machineClientRef: expect.stringMatching(/^[a-f0-9]{12}$/u),

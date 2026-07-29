@@ -17,7 +17,7 @@ export function notificationsMachineStreamKey(
     })
   ) {
     throw new TypeError(
-      "Notifications machine client ID must be a bounded opaque value.",
+      "WhooshBang machine client ID must be a bounded opaque value.",
     );
   }
   return sha256(

@@ -11,7 +11,7 @@ future structured harness adapter exchange `runner.protocol/v1` frames with a
 session control plane while Agent Relay retains local execution authority.
 
 It is not a notification transport. It does not import direct Telegram, Flow XO
-Notifications, the local web companion, or rendered attention cards. Existing
+WhooshBang, the local web companion, or rendered attention cards. Existing
 standalone attention behavior continues through the current core and replaceable
 `NotificationTransport` boundary.
 
@@ -71,7 +71,7 @@ both conditions are true:
 
 Either condition without the other fails before daemon networking starts.
 Without both, no bridge store is opened and the existing fake, Telegram,
-Notifications, web, hook, and supervisor paths run unchanged.
+WhooshBang, web, hook, and supervisor paths run unchanged.
 
 The experimental local selection commands are:
 
@@ -94,8 +94,8 @@ integration development, not current end-user onboarding.
 product runner spawns it directly, without a shell, and exchanges strict
 `runner.session-adoption/local-v1` newline-delimited JSON over the child
 process's stdin/stdout. The process opens no listener, makes no provider call,
-and cannot change Telegram, Notifications, web, hook, or resume configuration.
-Its optional state-directory argument exists for an owner-only integration
+and cannot change Telegram, WhooshBang, web, hook, or resume configuration. Its
+optional state-directory argument exists for an owner-only integration
 composition and tests; normal operators do not copy IDs or hashes into it.
 
 ## Local state and privacy
@@ -117,7 +117,7 @@ transcripts, prompts, tool input/output, paths, environment, or credentials.
 Disablement preserves both bridge and standalone state. `erase --confirm`
 refuses while enabled and removes only the exact runner bridge selection,
 database, and SQLite sidecars. It never erases `relay.sqlite`, Telegram state,
-Notifications state, hooks, logs, web credentials, or fallback records.
+WhooshBang state, hooks, logs, web credentials, or fallback records.
 
 ## Durability and command safety
 
@@ -234,7 +234,7 @@ The resulting cross-repository record binds clean checkout commits, the protocol
 source commit, lock and artifact digests, 33/33 cases, the exact verified Codex
 version/schema, and separate package/standalone gates. It contains public
 versions, digests, counts, and enums only. It is internal Gate 3 evidence, not a
-public compatibility promise, npm release, Git tag, deployment, or Notifications
+public compatibility promise, npm release, Git tag, deployment, or WhooshBang
 integration.
 
 Rollback disables/revokes the bridge first. Reverting a contract/vendor commit

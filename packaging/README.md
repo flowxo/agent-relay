@@ -77,10 +77,10 @@ signature. It does not get a remote-control API. See the repository's outbound
 webhook guide for verification, acknowledgement, retry, and privacy details.
 
 Direct Telegram remains independent of the hosted service. It uses the
-operator's own bot and the setup documented in the repository. Hosted
-Notifications setup accepts the broad project bootstrap credential only from
-stdin, environment injection, or a hidden prompt. It generates and retains a
-narrow machine credential in a separate private mode-`0600` file:
+operator's own bot and the setup documented in the repository. Hosted WhooshBang
+setup accepts the broad project bootstrap credential only from stdin,
+environment injection, or a hidden prompt. It generates and retains a narrow
+machine credential in a separate private mode-`0600` file:
 
 ```sh
 credential_command | agent-relay notifications connect \
@@ -118,7 +118,7 @@ credential_command | agent-relay notifications disconnect \
 This operation and package uninstall retain SQLite state. After an interrupted
 daemon, restart with the same selected transport to recover durable delivery,
 poll, and acknowledgement work. After a disconnect or rotation, reconnect and
-restart explicitly. Production hosted use remains gated on the Notifications C0
+restart explicitly. Production hosted use remains gated on the WhooshBang C0
 release decision and a later real-service dogfood phase; the current release
 proof uses the exact pinned executable mock.
 

@@ -1,15 +1,15 @@
 import {
   CONTRACT_MOCK_FIXTURE_CREDENTIALS,
-  createNotificationsContractMock,
-} from "@flowxo/notifications-contract-mock";
+  createWhooshBangContractMock,
+} from "@whooshbang/contract-mock";
 import { describe, expect, it, vi } from "vitest";
 
 import { NotificationsMachineInteractionSource } from "./interaction-source.js";
 
-import type { InteractionEvent } from "@flowxo/notifications-contracts";
+import type { InteractionEvent } from "@whooshbang/contracts";
 
 const event: InteractionEvent = {
-  schema: "notifications.interaction-event.v1",
+  schema: "whooshbang.interaction-event.v1",
   id: "event_interaction_source_12345678",
   cursor: "mcur_interaction_source_12345678",
   type: "interaction.received",
@@ -26,9 +26,9 @@ const event: InteractionEvent = {
   expires_at: "2026-07-26T20:30:00.000Z",
 };
 
-describe("Notifications machine interaction source", () => {
+describe("WhooshBang machine interaction source", () => {
   it("polls and acknowledges the pinned authenticated contract", async () => {
-    const mock = createNotificationsContractMock({ scenario: "nominal" });
+    const mock = createWhooshBangContractMock({ scenario: "nominal" });
     mock.control.enqueueMachineEvent({
       event,
       machineClientId: "machine_client_synthetic_001",
@@ -79,7 +79,7 @@ describe("Notifications machine interaction source", () => {
         redirects.push(init?.redirect);
         return new Response(
           JSON.stringify({
-            schema: "notifications.machine-events.v1",
+            schema: "whooshbang.machine-events.v1",
             events: [],
             committed_cursor: null,
             server_time: "2026-07-26T20:00:00.000Z",

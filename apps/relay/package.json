@@ -32,6 +32,6 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@flowxo/notifications-contract-mock": "file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz"
+    "@whooshbang/contract-mock": "file:../../vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz"
   }
 }

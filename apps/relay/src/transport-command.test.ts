@@ -60,7 +60,7 @@ async function configureNotifications(stateDirectory: string) {
       schema: "agent-relay-notifications-config.v1",
       status: "active",
       baseUrl: "https://notifications.example.test/",
-      contractVersion: "1.0.0-rc.1",
+      contractVersion: "1.0.0-rc.4",
       environment: "test",
       projectId: "project_private_full_identity",
       machineClientId: "machine_client_private_full_identity",

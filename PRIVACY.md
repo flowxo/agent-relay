@@ -56,14 +56,14 @@ from that paused observation. The resulting event is suppressed locally and is
 not sent to a notification transport.
 
 The experimental runner bridge is not a notification transport and does not send
-through Telegram or Notifications. When explicitly composed later, it initiates
-its own versioned outbound connection. Its status and doctor output exclude
-private native session references, proof material, leases, frame payloads,
-source, transcript, prompts, tool input/output, paths, environment, and
-credentials. Approval command text, paths, patches, reasons, and raw native
-request bodies stay inside the driver process; runner events contain only the
-normalized action kind, SHA-256 target/parameter digests, generic summary,
-product IDs, expiry, and capability digest.
+through Telegram or WhooshBang. When explicitly composed later, it initiates its
+own versioned outbound connection. Its status and doctor output exclude private
+native session references, proof material, leases, frame payloads, source,
+transcript, prompts, tool input/output, paths, environment, and credentials.
+Approval command text, paths, patches, reasons, and raw native request bodies
+stay inside the driver process; runner events contain only the normalized action
+kind, SHA-256 target/parameter digests, generic summary, product IDs, expiry,
+and capability digest.
 
 The installer may create private timestamped backups next to changed harness
 configuration files. The default files are:
@@ -92,8 +92,8 @@ Telegram's own storage and retention policies apply. Telegram retains
 unconfirmed Bot API updates for no longer than 24 hours, and messages remain in
 Telegram until removed there.
 
-The optional Notifications adapter is replaceable and is not required for local
-or direct-Telegram operation. When configured, it receives the bounded transport
+The optional WhooshBang adapter is replaceable and is not required for local or
+direct-Telegram operation. When configured, it receives the bounded transport
 contract described above, not a full repository or transcript. Provider-specific
 credentials, endpoints, retention, and account terms must be documented before
 that adapter is promoted for production use.

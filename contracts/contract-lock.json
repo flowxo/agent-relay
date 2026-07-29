@@ -5,82 +5,82 @@
   "repository": "flowxo/agent-relay",
   "dependencies": [
     {
-      "owner": "flowxo-notifications",
-      "artifact": "@flowxo/notifications-contracts",
-      "version": "1.0.0-rc.1",
-      "source_repository": "flowxo/flowxo-notifications",
-      "source_commit": "0e0198fc248468ec9f0cd8e06997faee55a2cb25",
-      "sha256": "02814c4ce1a963dbd8362eb270e42d9a42383f9257671a02f9f791bddfb00dc2",
-      "artifact_file": "vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz",
+      "owner": "whooshbang",
+      "artifact": "@whooshbang/contracts",
+      "version": "1.0.0-rc.4",
+      "source_repository": "flowxo/whooshbang",
+      "source_commit": "c6f4eb3bee2391137c15364e7cb84e468728aab8",
+      "sha256": "eeee4c3b31bd3c976d26359e5fb48ce196e7b7dac788b5ee7bb1ccfb5de950ed",
+      "artifact_file": "vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz",
       "fixture_sets": [
         {
           "id": "core-api-bodies",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "core-semantic-scenarios",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "interaction-message-api-bodies",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "interaction-contract-bodies",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "machine-api-bodies",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "provider-capability-bodies",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "interaction-machine-semantic-scenarios",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "customer-event-bodies",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "webhook-signing-vectors",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "webhook-delivery-cases",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         },
         {
           "id": "core-fixture-index",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         }
       ]
     },
     {
-      "owner": "flowxo-notifications",
-      "artifact": "@flowxo/notifications",
-      "version": "1.0.0-rc.1",
-      "source_repository": "flowxo/flowxo-notifications",
-      "source_commit": "0e0198fc248468ec9f0cd8e06997faee55a2cb25",
-      "sha256": "82d2136c35e0f9e5aa0ea3d67f1bae9c535f871c2bb13aa2e4cadcdbcb612c44",
-      "artifact_file": "vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz",
+      "owner": "whooshbang",
+      "artifact": "@whooshbang/sdk",
+      "version": "1.0.0-rc.4",
+      "source_repository": "flowxo/whooshbang",
+      "source_commit": "c6f4eb3bee2391137c15364e7cb84e468728aab8",
+      "sha256": "27080980b8f1766345c217ed63d17dbcc75b1b0ba6b774f59a26aa7b276c0054",
+      "artifact_file": "vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz",
       "fixture_sets": []
     },
     {
-      "owner": "flowxo-notifications",
-      "artifact": "@flowxo/notifications-contract-mock",
-      "version": "1.0.0-rc.1",
-      "source_repository": "flowxo/flowxo-notifications",
-      "source_commit": "0e0198fc248468ec9f0cd8e06997faee55a2cb25",
-      "sha256": "9868dc62363b8119e001362c9c95be94dcadec370410f2a04bc86e9b49312e5e",
-      "artifact_file": "vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz",
+      "owner": "whooshbang",
+      "artifact": "@whooshbang/contract-mock",
+      "version": "1.0.0-rc.4",
+      "source_repository": "flowxo/whooshbang",
+      "source_commit": "c6f4eb3bee2391137c15364e7cb84e468728aab8",
+      "sha256": "6163f68fa6bb7c2953428db8a9dfc36f87e2e24522d0610dbf7316e4f7bae454",
+      "artifact_file": "vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz",
       "fixture_sets": [
         {
           "id": "contract-mock-scenarios.v1",
-          "version": "1.0.0-rc.1"
+          "version": "1.0.0-rc.4"
         }
       ]
     }

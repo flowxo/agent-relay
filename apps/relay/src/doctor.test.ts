@@ -170,7 +170,7 @@ describe("doctor version and installation checks", () => {
     );
   });
 
-  it("reports only safe selected Notifications readiness details", async () => {
+  it("reports only safe selected WhooshBang readiness details", async () => {
     const readiness = {
       schema: "agent-relay-transport-readiness.v1",
       selectedTransport: "notifications",
@@ -188,7 +188,7 @@ describe("doctor version and installation checks", () => {
           canaryRef: "canary_safe12",
           configured: true,
           connectionStatus: "active",
-          contractVersion: "1.0.0-rc.1",
+          contractVersion: "1.0.0-rc.4",
           credentialPermissions: "pinned-machine-scopes",
           credentialPresent: true,
           environment: "test",

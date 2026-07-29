@@ -62,7 +62,7 @@ export const NotificationsConnectionConfigurationSchema = z
         } catch {
           return false;
         }
-      }, "must be a canonical safe Notifications base URL"),
+      }, "must be a canonical safe WhooshBang base URL"),
     contractVersion: z.literal(NOTIFICATIONS_CONTRACT_VERSION),
     environment: z.enum(["test", "live"]),
     projectId: opaqueIdentifier,
@@ -88,14 +88,14 @@ export const NotificationsConnectionConfigurationSchema = z
     if (value.status === "active" && value.disconnectedAt !== undefined) {
       context.addIssue({
         code: "custom",
-        message: "active Notifications configuration cannot be disconnected",
+        message: "active WhooshBang configuration cannot be disconnected",
         path: ["disconnectedAt"],
       });
     }
     if (value.status !== "active" && value.disconnectedAt === undefined) {
       context.addIssue({
         code: "custom",
-        message: "inactive Notifications configuration requires a timestamp",
+        message: "inactive WhooshBang configuration requires a timestamp",
         path: ["disconnectedAt"],
       });
     }
@@ -170,12 +170,12 @@ async function ensurePrivateDirectory(path: string): Promise<void> {
   const metadata = await lstat(path);
   if (!metadata.isDirectory()) {
     throw new Error(
-      "Notifications configuration parent is not a private directory",
+      "WhooshBang configuration parent is not a private directory",
     );
   }
   if ((metadata.mode & 0o077) !== 0) {
     throw new Error(
-      "Notifications configuration parent must not be accessible by group or others",
+      "WhooshBang configuration parent must not be accessible by group or others",
     );
   }
 }
@@ -225,7 +225,7 @@ async function readPrivateJson(
 async function atomicWritePrivate(path: string, value: unknown): Promise<void> {
   const parent = dirname(path);
   await ensurePrivateDirectory(parent);
-  await inspectPrivateFile(path, "Notifications private configuration");
+  await inspectPrivateFile(path, "WhooshBang private configuration");
   const temporaryPath = `${path}.tmp-${randomUUID()}`;
   let handle;
   try {
@@ -248,14 +248,14 @@ async function atomicWritePrivate(path: string, value: unknown): Promise<void> {
       if (!isErrorCode(cleanupError, "ENOENT")) {
         throw new AggregateError(
           [error, cleanupError],
-          "Notifications atomic write and cleanup both failed",
+          "WhooshBang atomic write and cleanup both failed",
           { cause: cleanupError },
         );
       }
     }
     throw error;
   }
-  await inspectPrivateFile(path, "Notifications private configuration");
+  await inspectPrivateFile(path, "WhooshBang private configuration");
 }
 
 async function unlinkPrivate(path: string, label: string): Promise<boolean> {
@@ -281,16 +281,16 @@ export async function readNotificationsConnection(
 ): Promise<StoredNotificationsConnection | undefined> {
   const configurationValue = await readPrivateJson(
     paths.configurationPath,
-    "Notifications configuration",
+    "WhooshBang configuration",
   );
   const credentialValue = await readPrivateJson(
     paths.credentialPath,
-    "Notifications credential",
+    "WhooshBang credential",
   );
   if (configurationValue === undefined) {
     if (credentialValue !== undefined) {
       throw new Error(
-        "Notifications credential exists without its non-secret configuration",
+        "WhooshBang credential exists without its non-secret configuration",
       );
     }
     return undefined;
@@ -306,12 +306,12 @@ export async function readNotificationsConnection(
     credential.credentialId !== configuration.currentCredentialId
   ) {
     throw new Error(
-      "Notifications credential does not match the configured machine client",
+      "WhooshBang credential does not match the configured machine client",
     );
   }
   if (configuration.status === "active" && credential === undefined) {
     throw new Error(
-      "Active Notifications configuration is missing its narrow credential",
+      "Active WhooshBang configuration is missing its narrow credential",
     );
   }
   return {
@@ -330,21 +330,18 @@ export async function writeNotificationsConnection(
   const credential =
     NotificationsMachineCredentialSchema.parse(credentialInput);
   if (configuration.status !== "active") {
-    throw new Error("A new Notifications connection must be active");
+    throw new Error("A new WhooshBang connection must be active");
   }
   if (configuration.currentCredentialId !== credential.credentialId) {
     throw new Error(
-      "Notifications configuration and narrow credential do not match",
+      "WhooshBang configuration and narrow credential do not match",
     );
   }
 
-  await inspectPrivateFile(
-    paths.configurationPath,
-    "Notifications configuration",
-  );
+  await inspectPrivateFile(paths.configurationPath, "WhooshBang configuration");
   const previousCredentialValue = await readPrivateJson(
     paths.credentialPath,
-    "Notifications credential",
+    "WhooshBang credential",
   );
   const previousCredential =
     previousCredentialValue === undefined
@@ -365,14 +362,14 @@ export async function writeNotificationsConnection(
     }
     try {
       if (previousCredential === undefined) {
-        await unlinkPrivate(paths.credentialPath, "Notifications credential");
+        await unlinkPrivate(paths.credentialPath, "WhooshBang credential");
       } else {
         await atomicWritePrivate(paths.credentialPath, previousCredential);
       }
     } catch (rollbackError) {
       throw new AggregateError(
         [error, rollbackError],
-        "Notifications connection write and credential rollback both failed",
+        "WhooshBang connection write and credential rollback both failed",
         { cause: rollbackError },
       );
     }
@@ -389,14 +386,14 @@ export async function updateNotificationsConfiguration(
     NotificationsConnectionConfigurationSchema.parse(configurationInput);
   const current = await readNotificationsConnection(paths);
   if (current === undefined) {
-    throw new Error("Notifications is not configured");
+    throw new Error("WhooshBang is not configured");
   }
   if (
     current.credential !== undefined &&
     current.credential.credentialId !== configuration.currentCredentialId
   ) {
     throw new Error(
-      "Updated Notifications configuration does not match the stored credential",
+      "Updated WhooshBang configuration does not match the stored credential",
     );
   }
   await atomicWritePrivate(paths.configurationPath, configuration);
@@ -413,7 +410,7 @@ export async function markNotificationsDisconnected(
 ): Promise<StoredNotificationsConnection> {
   const current = await readNotificationsConnection(paths);
   if (current === undefined) {
-    throw new Error("Notifications is not configured");
+    throw new Error("WhooshBang is not configured");
   }
   const configuration = NotificationsConnectionConfigurationSchema.parse({
     ...current.configuration,
@@ -422,7 +419,7 @@ export async function markNotificationsDisconnected(
   });
   await atomicWritePrivate(paths.configurationPath, configuration);
   if (input.eraseCredential === true) {
-    await unlinkPrivate(paths.credentialPath, "Notifications credential");
+    await unlinkPrivate(paths.credentialPath, "WhooshBang credential");
     return { configuration };
   }
   return {
@@ -438,22 +435,19 @@ export async function eraseNotificationsConnection(
   input: { configuration: boolean; credential: boolean },
 ): Promise<{ configurationErased: boolean; credentialErased: boolean }> {
   if (input.credential) {
-    await inspectPrivateFile(paths.credentialPath, "Notifications credential");
+    await inspectPrivateFile(paths.credentialPath, "WhooshBang credential");
   }
   if (input.configuration) {
     await inspectPrivateFile(
       paths.configurationPath,
-      "Notifications configuration",
+      "WhooshBang configuration",
     );
   }
   const credentialErased = input.credential
-    ? await unlinkPrivate(paths.credentialPath, "Notifications credential")
+    ? await unlinkPrivate(paths.credentialPath, "WhooshBang credential")
     : false;
   const configurationErased = input.configuration
-    ? await unlinkPrivate(
-        paths.configurationPath,
-        "Notifications configuration",
-      )
+    ? await unlinkPrivate(paths.configurationPath, "WhooshBang configuration")
     : false;
   return { configurationErased, credentialErased };
 }

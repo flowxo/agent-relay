@@ -8,7 +8,7 @@ import type {
   HostedStreamProof,
   LocalHostedRequest,
 } from "./hosted-answer.js";
-import type { InteractionEvent } from "@flowxo/notifications-contracts";
+import type { InteractionEvent } from "@whooshbang/contracts";
 import type { OperatorInteractionRequestV1 } from "@agent-relay/protocol";
 
 const expiresAt = "2026-07-25T18:00:00.000Z";
@@ -59,7 +59,7 @@ const stream: HostedStreamProof = {
 };
 
 const event: InteractionEvent = {
-  schema: "notifications.interaction-event.v1",
+  schema: "whooshbang.interaction-event.v1",
   id: "event_hosted_answer_12345678",
   cursor: "mcur_synthetic_12345678",
   type: "interaction.received",

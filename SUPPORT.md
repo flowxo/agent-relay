@@ -36,9 +36,9 @@ remains disabled and false at runtime pending a current sanitized live fixture.
 
 Direct Telegram, the signed outbound webhook, and the fake transport are
 available without a hosted Flow XO account. The local web companion is optional
-and loopback-only. Flow XO Notifications is an optional replaceable transport
-and is not required for local operation. The outbound webhook has no inbound
-response API in V1.
+and loopback-only. WhooshBang is an optional replaceable transport and is not
+required for local operation. The outbound webhook has no inbound response API
+in V1.
 
 ## Before opening an issue
 

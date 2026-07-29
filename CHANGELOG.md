@@ -34,11 +34,11 @@ breaking changes and required operator action.
 - A native Apple-silicon Node.js 22.23.1 release-exit gate that verifies the
   exact bundle, installs without workspace links in a temporary home/prefix,
   proves doctor and one fake delivery, and removes owned hooks and the package.
-- An optional hosted Notifications adapter with secret-safe narrow machine
+- An optional hosted WhooshBang adapter with secret-safe narrow machine
   bootstrap, explicit transport selection, durable confirm/select/input polling,
   crash-safe acknowledgement replay, safe diagnosis, explicit revocation, and
   retained local authority.
-- A common fake/direct-Telegram/Notifications behavior matrix covering delivery
+- A common fake/direct-Telegram/WhooshBang behavior matrix covering delivery
   identity, retries, answers, expiry, races, restart, and single-owner resume.
 - A clean-home packed hosted proof covering setup, interaction, crash-before-ack
   replay, disconnect/erasure, retained SQLite state, direct-Telegram canary,
@@ -60,6 +60,15 @@ breaking changes and required operator action.
 
 ### Changed
 
+- The optional hosted transport now consumes WhooshBang's exact
+  `@whooshbang/contracts`, `@whooshbang/sdk`, and `@whooshbang/contract-mock`
+  `1.0.0-rc.4` artifacts. WhooshBang's pre-alpha hard cut retired the pre-rename
+  `@flowxo/notifications*` `1.0.0-rc.1` packages with no compatibility alias, so
+  the contract lock, vendored artifacts, imports, contract discriminators,
+  Problem Details namespace, and mock control header all moved to the WhooshBang
+  identities. Hosted diagnostics now name WhooshBang. The `notifications`
+  transport selector, CLI commands, local SQLite state, and every stored
+  configuration key are unchanged, so no operator action is required.
 - Notification delivery contracts now live in a provider-neutral internal
   package, generic presentation code is grouped under core notifications, and
   direct Telegram owns a separate adapter package. The end-user distribution

@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  "@flowxo/notifications-contracts@1.0.0-rc.1": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+  "@whooshbang/contracts@1.0.0-rc.4": file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
   "@session/contracts@0.0.0": file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
   "@session/protocol-runner@0.0.0": file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz
 
@@ -84,9 +84,9 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
-      "@flowxo/notifications-contract-mock":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
+      "@whooshbang/contract-mock":
+        specifier: file:../../vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
+        version: file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
 
   packages/codex-app-server-driver:
     dependencies:
@@ -152,12 +152,12 @@ importers:
       "@agent-relay/protocol":
         specifier: workspace:*
         version: link:../protocol
-      "@flowxo/notifications":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz
-      "@flowxo/notifications-contracts":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
+      "@whooshbang/contracts":
+        specifier: file:../../vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
+        version: file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
+      "@whooshbang/sdk":
+        specifier: file:../../vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz
+        version: file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz
     devDependencies:
       "@agent-relay/core":
         specifier: workspace:*
@@ -165,12 +165,12 @@ importers:
       "@agent-relay/telegram-transport":
         specifier: workspace:*
         version: link:../telegram-transport
-      "@flowxo/notifications-contract-mock":
-        specifier: file:../../vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
-        version: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz
       "@types/node":
         specifier: 24.13.3
         version: 24.13.3
+      "@whooshbang/contract-mock":
+        specifier: file:../../vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
+        version: file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
 
   packages/protocol:
     dependencies:
@@ -532,34 +532,6 @@ packages:
         integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==,
       }
     engines: { node: ^20.19.0 || ^22.13.0 || >=24 }
-
-  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz":
-    resolution:
-      {
-        integrity: sha512-w8jMpSlgDU6ZG8Xv7wDRGAXpzMU0orhRLAT4BGM5vGsDmrUVbi5J3tfjatHa6/y8VMt6rrxh3od7EJho+5diHw==,
-        tarball: file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz,
-      }
-    version: 1.0.0-rc.1
-    engines: { node: ">=22.13.0 <23" }
-    hasBin: true
-
-  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz":
-    resolution:
-      {
-        integrity: sha512-TLCNNfgB+jvnSg/ItvcncbmlUi1hW4RgY89tzVtvDZ9WX5nyPOSagZLKPp2b8T49NTPUnNyzcpViigN7JoPYfg==,
-        tarball: file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz,
-      }
-    version: 1.0.0-rc.1
-    engines: { node: ">=22.13.0 <23" }
-
-  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz":
-    resolution:
-      {
-        integrity: sha512-VOcIIal9q7ffYt+6Gi7X5U4ZyZ3HAbSAXXzObFHJLtjYM0RSMhbXbU5/XAjxVovl90mMVnfSE1DTY7U0OiAmoA==,
-        tarball: file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz,
-      }
-    version: 1.0.0-rc.1
-    engines: { node: ">=22.13.0 <23" }
 
   "@humanfs/core@0.19.2":
     resolution:
@@ -1019,6 +991,34 @@ packages:
       {
         integrity: sha512-x6BDOd7dyo3PFLY3I9/HJ25X/6OurhGXk2/B9gOZNPF7XDVjeBK4k01lQE5uvDpbuheErh91qYuE1E2OEjK3Rw==,
       }
+
+  "@whooshbang/contract-mock@file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz":
+    resolution:
+      {
+        integrity: sha512-oYtfjUsmbaiwtP6uMRe2Tek96PgJzbpKPEBT8goJFKo3OVNnNG1UNcJwUn/lIdkRJjPh86o9DPLaE+TSkp/QVg==,
+        tarball: file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz,
+      }
+    version: 1.0.0-rc.4
+    engines: { node: ">=22.13.0 <23" }
+    hasBin: true
+
+  "@whooshbang/contracts@file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz":
+    resolution:
+      {
+        integrity: sha512-UsVwLlapo0FItLjJJl1j7O+egG3DzIDoeEbGRed9ESjU0KB6T7XZlr0v+Tl1J1ZmPGGpfMNbQtYOGcEJW5/b1A==,
+        tarball: file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz,
+      }
+    version: 1.0.0-rc.4
+    engines: { node: ">=22.13.0 <23" }
+
+  "@whooshbang/sdk@file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz":
+    resolution:
+      {
+        integrity: sha512-iHsSKHp1r819rSX71DVIJGomaS1+ciNSBkvI8Wbsy4DBzazowNT1gWPcJGULp4++oCNjWOB1Pq0RcF0eHgdXug==,
+        tarball: file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz,
+      }
+    version: 1.0.0-rc.4
+    engines: { node: ">=22.13.0 <23" }
 
   acorn-jsx@5.3.2:
     resolution:
@@ -1961,18 +1961,6 @@ snapshots:
       "@eslint/core": 1.2.1
       levn: 0.4.1
 
-  "@flowxo/notifications-contract-mock@file:vendor/notifications-c0/flowxo-notifications-contract-mock-1.0.0-rc.1.tgz":
-    dependencies:
-      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
-      hono: 4.12.32
-
-  "@flowxo/notifications-contracts@file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz":
-    {}
-
-  "@flowxo/notifications@file:vendor/notifications-c0/flowxo-notifications-1.0.0-rc.1.tgz":
-    dependencies:
-      "@flowxo/notifications-contracts": file:vendor/notifications-c0/flowxo-notifications-contracts-1.0.0-rc.1.tgz
-
   "@humanfs/core@0.19.2":
     dependencies:
       "@humanfs/types": 0.15.0
@@ -2230,6 +2218,18 @@ snapshots:
       "@vitest/pretty-format": 3.2.7
       loupe: 3.2.1
       tinyrainbow: 2.0.0
+
+  "@whooshbang/contract-mock@file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz":
+    dependencies:
+      "@whooshbang/contracts": file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
+      hono: 4.12.32
+
+  "@whooshbang/contracts@file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz":
+    {}
+
+  "@whooshbang/sdk@file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz":
+    dependencies:
+      "@whooshbang/contracts": file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
 
   acorn-jsx@5.3.2(acorn@8.17.0):
     dependencies:

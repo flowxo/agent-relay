@@ -6,7 +6,7 @@ import {
   PinnedNotificationsResolutionPresenter,
 } from "./presentation-source.js";
 
-describe("Notifications resolution presentation boundary", () => {
+describe("WhooshBang resolution presentation boundary", () => {
   it("derives one stable operation identity without exposing the event id", () => {
     const eventId = "event_resolution_presentation_12345678";
     expect(notificationsResolutionOperationId(eventId)).toBe(

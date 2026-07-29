@@ -1,9 +1,9 @@
 import {
-  NotificationsContractError,
-  NotificationsProblemError,
-  NotificationsProtocolError,
-  NotificationsTransportError,
-} from "@flowxo/notifications";
+  WhooshBangContractError,
+  WhooshBangProblemError,
+  WhooshBangProtocolError,
+  WhooshBangTransportError,
+} from "@whooshbang/sdk";
 import { TransportError } from "@agent-relay/notification-contracts";
 
 import { NotificationsMappingError } from "./mapping.js";
@@ -160,25 +160,25 @@ export function notificationsFailurePolicy(
 }
 
 const SAFE_PROBLEM_MESSAGES = {
-  authentication_required: "Notifications authentication is required.",
-  cancellation_too_late:
-    "The Notifications operation can no longer be canceled.",
-  credential_invalid: "The Notifications credential is invalid or revoked.",
+  authentication_required: "WhooshBang authentication is required.",
+  cancellation_too_late: "The WhooshBang operation can no longer be canceled.",
+  credential_invalid: "The WhooshBang credential is invalid or revoked.",
   environment_mismatch:
-    "The Notifications credential targets another environment.",
+    "The WhooshBang credential targets another environment.",
   idempotency_conflict:
-    "Notifications rejected a conflicting idempotent operation.",
-  idempotency_key_required: "Notifications requires an idempotency key.",
+    "WhooshBang rejected a conflicting idempotent operation.",
+  idempotency_key_required: "WhooshBang requires an idempotency key.",
+  project_slug_conflict: "WhooshBang rejected the requested project slug.",
   provider_outcome_unknown:
-    "Notifications cannot prove the provider outcome; no new hosted send is permitted.",
-  provider_retryable: "Notifications reported a retryable provider failure.",
-  provider_terminal: "Notifications reported a terminal provider rejection.",
-  rate_limited: "Notifications rate limited the request.",
-  request_invalid: "Notifications rejected the request contract.",
-  resource_expired: "The Notifications resource has expired.",
-  resource_not_found: "The Notifications resource was not found.",
-  scope_forbidden: "The Notifications credential lacks the required scope.",
-  subscriber_unbound: "The Notifications subscriber is not bound.",
+    "WhooshBang cannot prove the provider outcome; no new hosted send is permitted.",
+  provider_retryable: "WhooshBang reported a retryable provider failure.",
+  provider_terminal: "WhooshBang reported a terminal provider rejection.",
+  rate_limited: "WhooshBang rate limited the request.",
+  request_invalid: "WhooshBang rejected the request contract.",
+  resource_expired: "The WhooshBang resource has expired.",
+  resource_not_found: "The WhooshBang resource was not found.",
+  scope_forbidden: "The WhooshBang credential lacks the required scope.",
+  subscriber_unbound: "The WhooshBang subscriber is not bound.",
 } as const;
 
 export function asNotificationsDeliveryError(
@@ -187,7 +187,7 @@ export function asNotificationsDeliveryError(
   if (error instanceof NotificationsDeliveryError) {
     return error;
   }
-  if (error instanceof NotificationsProblemError) {
+  if (error instanceof WhooshBangProblemError) {
     const outcomeUnknown = error.problem.code === "provider_outcome_unknown";
     const retryable = !outcomeUnknown && error.retryable;
     return new NotificationsDeliveryError(
@@ -206,9 +206,9 @@ export function asNotificationsDeliveryError(
       },
     );
   }
-  if (error instanceof NotificationsTransportError) {
+  if (error instanceof WhooshBangTransportError) {
     return new NotificationsDeliveryError(
-      "The Notifications response was not received; retry only with the original event identity.",
+      "The WhooshBang response was not received; retry only with the original event identity.",
       error.outcomeUnknown
         ? "notifications-transport-outcome-unknown"
         : "notifications-transport-unavailable",
@@ -216,19 +216,19 @@ export function asNotificationsDeliveryError(
       "retry_same_operation",
     );
   }
-  if (error instanceof NotificationsContractError) {
+  if (error instanceof WhooshBangContractError) {
     return new NotificationsDeliveryError(
-      "Notifications returned data outside the pinned contract.",
+      "WhooshBang returned data outside the pinned contract.",
       "notifications-contract-invalid",
       false,
       "terminal",
     );
   }
-  if (error instanceof NotificationsProtocolError) {
+  if (error instanceof WhooshBangProtocolError) {
     const status = error.status;
     if (status !== undefined && status >= 300 && status < 400) {
       return new NotificationsDeliveryError(
-        "Notifications refused a credential-bearing redirect.",
+        "WhooshBang refused a credential-bearing redirect.",
         "notifications-redirect-refused",
         false,
         "terminal",
@@ -237,7 +237,7 @@ export function asNotificationsDeliveryError(
     }
     if (status === undefined || (status >= 200 && status < 300)) {
       return new NotificationsDeliveryError(
-        "Notifications returned a malformed response outside the pinned contract.",
+        "WhooshBang returned a malformed response outside the pinned contract.",
         "notifications-protocol-malformed",
         false,
         "terminal",
@@ -245,7 +245,7 @@ export function asNotificationsDeliveryError(
       );
     }
     return new NotificationsDeliveryError(
-      "Notifications returned an unclassified protocol response.",
+      "WhooshBang returned an unclassified protocol response.",
       "notifications-protocol-unclassified",
       status >= 500 || status === 408 || status === 429,
       status >= 500 || status === 408 || status === 429
@@ -256,14 +256,14 @@ export function asNotificationsDeliveryError(
   }
   if (error instanceof NotificationsMappingError) {
     return new NotificationsDeliveryError(
-      "Agent Relay cannot safely project this interaction into the pinned Notifications contract.",
+      "Agent Relay cannot safely project this interaction into the pinned WhooshBang contract.",
       error.code,
       false,
       "terminal",
     );
   }
   return new NotificationsDeliveryError(
-    "Notifications delivery failed with an unclassified response.",
+    "WhooshBang delivery failed with an unclassified response.",
     "notifications-unclassified",
     true,
     "retry_same_operation",
