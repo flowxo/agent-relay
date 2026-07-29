@@ -167,24 +167,29 @@ Telegram confirms deletion or absence. Permanent failures and control-message
 edit failures remain visible in diagnostics. `/v1/status` exposes safe aggregate
 counts under `topicCleanups`. Re-run `/cleanup` for additional eligible topics.
 
-### Prune inactive topics
+### Purge inactive topics
 
-Use `/prune` when a topic is no longer useful but the relay cannot prove that
-its session ended. `/prune` defaults to 24 hours; `/prune 12h` and `/prune 7d`
+Use `/purge` when a topic is no longer useful but the relay cannot prove that
+its session ended. `/purge` defaults to 24 hours; `/purge 12h` and `/purge 7d`
 select other inactivity windows from one hour through thirty days. Start the
 command from **New Chat** or send it in an existing topic. The preview returns
 to that same topic. When `/cleanup` finds no proven-dead topics, its result also
 offers a **Review topics inactive 24h** button in the same topic.
 
+The daemon registers `/purge` and `/cleanup` in Telegram's slash-command menu
+for the configured private chat during startup and reads the menu back before
+starting update intake. `/prune` remains an accepted compatibility alias but is
+not shown as a duplicate menu entry.
+
 Inactivity scopes the exact preview; it never becomes evidence that the session
-ended. A prune candidate must have had no relay topic activity since the
+ended. A purge candidate must have had no relay topic activity since the
 selected cutoff and must satisfy the same active-session, open-request,
 continuation, pending-delivery, ready-mapping, and per-candidate revalidation
 guards as `/cleanup`.
 
 The preview states the inactivity threshold and lists at most twenty candidates.
-Tapping **Prune topics** authorizes permanent Telegram deletion of that exact
-set. Successful pruning removes only the transport topic mapping. It does not
+Tapping **Purge topics** authorizes permanent Telegram deletion of that exact
+set. Successful purging removes only the transport topic mapping. It does not
 create an End tombstone or change the retained session state. If that session
 emits another event later, Agent Relay creates a fresh Telegram topic. The
 deleted topic's Telegram message history cannot be recovered.
@@ -198,7 +203,7 @@ acknowledgement; `telegram.reply-cleanup-previewed` and the retained
 `telegram_updates` outcome provide local evidence.
 
 While a deletion is claimed, normal delivery cannot reuse that exact mapping.
-New work queued before the provider call makes revalidation skip the prune; work
+New work queued before the provider call makes revalidation skip the purge; work
 that races an in-flight provider deletion retries and provisions a fresh topic
 after deletion completes.
 

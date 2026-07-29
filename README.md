@@ -236,9 +236,10 @@ automatically delete the Telegram topic.
 ### Clean up old topics
 
 Send `/cleanup` to preview topics for sessions that Agent Relay can prove have
-ended. Send `/prune`, `/prune 12h`, or `/prune 7d` to preview inactive topics
-whose sessions were never explicitly ended. Both commands require button
-confirmation before Telegram permanently deletes anything.
+ended. Send `/purge`, `/purge 12h`, or `/purge 7d` to preview inactive topics
+whose sessions were never explicitly ended. Both commands appear in the bot's
+slash-command menu and require button confirmation before Telegram permanently
+deletes anything. The older `/prune` spelling remains supported.
 
 You can send either command from Telegram's **New Chat** surface or an existing
 topic. Agent Relay posts the preview back where the command arrived. Telegram
