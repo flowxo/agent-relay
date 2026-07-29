@@ -16,7 +16,13 @@
   and stale input. A stored exact claim can recover forward after offer expiry,
   while a new expired claim remains rejected. The command opens no listener,
   makes no provider call, adds no product dependency, and offers no reverse
-  ownership transfer.
+  ownership transfer. On 2026-07-28 the complete serial `pnpm check` passed with
+  71 Vitest files/518 tests, immutable runner-protocol verification, 33/33
+  bridge contract cases, package isolation, and packed install/upgrade/
+  uninstall lifecycle proof. The product-owned built-CLI canary also passed
+  against real temporary Agent Relay core and bridge stores, proving readiness,
+  numbered selection, monotonic ownership, a usable exact-profile binding,
+  content-safe output, unchanged standalone transports, and exact cleanup.
 - The public README now follows the developer journey: the product experience,
   source setup, credential-free canary, safe hook installation, direct Telegram
   activation, everyday controls, the local web board, supervised runs, and only
@@ -1006,8 +1012,9 @@ also remain free of silent delivery, hook, or correlation failures.
 - The runner bridge remains an internal, default-off Gate 3 component. Its
   `runner.protocol/v1` artifacts are immutable development inputs with an
   `internal-until-gate-5` commitment, and the actuator claim covers only exact
-  `codex-cli 0.145.0`. Public adoption UX and reverse ownership
-  transfer/recovery remain explicitly owned by FXO-1122.
+  `codex-cli 0.145.0`. Public promotion remains a Gate 5 decision; reverse
+  ownership transfer remains unsupported under the monotonic policy delivered by
+  FXO-1122.
 
 ## Next action
 
