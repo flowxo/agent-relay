@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDaemonTransportStatus,
   classifyNotificationsErrorCode,
+  classifyWebhookErrorCode,
 } from "./transport-status.js";
 
 describe("safe transport runtime status", () => {
@@ -28,6 +29,19 @@ describe("safe transport runtime status", () => {
     ["notifications-future-additive-error", "transient"],
   ] as const)("classifies %s as %s", (code, expected) => {
     expect(classifyNotificationsErrorCode(code)).toBe(expected);
+  });
+
+  it.each([
+    ["webhook-timeout", "retryable"],
+    ["webhook-network-failure", "retryable"],
+    ["webhook-http-408", "retryable"],
+    ["webhook-http-429", "retryable"],
+    ["webhook-http-503", "retryable"],
+    ["webhook-http-400", "terminal"],
+    ["webhook-redirect-refused", "terminal"],
+    ["webhook-ack-invalid", "terminal"],
+  ] as const)("classifies %s as %s", (code, expected) => {
+    expect(classifyWebhookErrorCode(code)).toBe(expected);
   });
 
   it("reports a classified code and counts without retaining the failure message", async () => {

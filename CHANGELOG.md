@@ -52,6 +52,11 @@ breaking changes and required operator action.
 - A private, local-only session-adoption peer with privacy-safe candidate
   choices, exact live-checkpoint comparison, monotonic ownership transfer, and
   durable forward recovery after process exit or offer expiry.
+- A provider-neutral signed outbound webhook with strict v1 request and
+  acknowledgement contracts, exact-byte HMAC authentication, stable idempotency,
+  bounded retries and `Retry-After`, private file/stdin configuration, safe
+  status/doctor output, a loopback canary, and an authenticated local-web
+  handoff for questions.
 
 ### Changed
 

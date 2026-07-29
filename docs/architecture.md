@@ -22,7 +22,7 @@ local daemon ─── SQLite queue, requests, claims, diagnostics
     │                         ▲
     │ bounded card            │ correlated answer
     ▼                         │
-fake transport / Telegram / optional Notifications / local web
+fake / Telegram / signed webhook / optional Notifications / local web
           │
           ▼
 inline native hook response OR one owned late-resume command
@@ -34,19 +34,19 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 
 ## Components
 
-| Component                 | Responsibility                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                         |
-| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling           |
-| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback                  |
-| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention                |
-| SQLite store              | Persist identity, event order, attempts, requests, answers, topics, cleanup, and resume ownership |
-| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts           |
-| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core                      |
-| Provider adapters         | Project cards to Telegram, Notifications, or a fake without owning request state                  |
-| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume                |
-| Web companion             | Present authenticated projections and submit typed decisions to the same store                    |
-| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation                 |
+| Component                 | Responsibility                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                          |
+| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling            |
+| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback                   |
+| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention                 |
+| SQLite store              | Persist identity, event order, attempts, requests, answers, topics, cleanup, and resume ownership  |
+| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts            |
+| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core                       |
+| Provider adapters         | Project cards to Telegram, a signed webhook, Notifications, or a fake without owning request state |
+| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume                 |
+| Web companion             | Present authenticated projections and submit typed decisions to the same store                     |
+| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation                  |
 
 ## Notification dependency direction
 
@@ -58,7 +58,7 @@ authority, not features embedded in core:
             ▲                ▲
             │                │
   @agent-relay/core    provider adapter packages
-            ▲          (telegram / Notifications)
+            ▲          (telegram / webhook / Notifications)
             └──────────────┬─┘
                            │
                     apps/relay composition
@@ -69,13 +69,21 @@ authority, not features embedded in core:
 negotiation, deterministic action identity, and the in-memory fake adapter.
 `packages/telegram-transport` owns Bot API calls, callbacks, reply routing, and
 sanitized Telegram fixtures. `packages/notifications-transport` owns the
-optional hosted mapping. Only `apps/relay` selects and assembles a concrete
-provider.
+optional hosted mapping. `packages/webhook-transport` owns the strict outbound
+envelope, exact-byte signing, response validation, and HTTP failure policy. Only
+`apps/relay` selects and assembles a concrete provider.
 
 Provider adapters may depend inward on core application services when handling
 an inbound answer. Core never imports a concrete provider adapter. This keeps
 SQLite request authority reusable while allowing a provider to translate its
 authenticated callback into the existing first-writer-wins transition.
+
+The generic webhook is intentionally outbound-only in V1. Its opaque action
+values do not grant callback authority. For open requests, it can carry a
+credential-free local web handoff; the browser still authenticates with the
+independent bearer and CSRF credential. A future inbound integration API
+requires a separate threat model rather than exposing the current local routes
+through a reverse proxy by implication.
 
 The packages remain ordinary Node.js/macOS code. A transport may call a hosted
 service, but protocol, hooks, SQLite, the installer, the daemon, and
@@ -218,22 +226,28 @@ different payload reusing an operation ID conflicts.
 - Telegram has no caller-supplied send idempotency key. A crash after Telegram
   accepts a message but before its receipt commits leaves a narrow at-least-once
   duplicate window.
+- Outbound webhooks reuse a stable delivery ID on every retry. Each attempt
+  signs its exact JSON bytes as `<unix-seconds>.<body>` with HMAC-SHA256,
+  refuses redirects, validates bounded acknowledgements, honors bounded
+  `Retry-After`, and retains terminal or exhausted failure as a visible dead
+  letter.
 - Delivery or card-edit failure never silently reverses a committed operator
   decision.
 
 ## Data and trust boundaries
 
-| Boundary             | Default posture                                                                  |
-| -------------------- | -------------------------------------------------------------------------------- |
-| Harness to hook      | Bounded stdin, runtime validation, safe native no-op on failure                  |
-| Hook to daemon       | Loopback HTTP; optional independent daemon bearer                                |
-| Local persistence    | Private state directory, SQLite, redacted rotating logs, explicit retention      |
-| Browser to daemon    | Loopback, generated bearer + CSRF, same-origin mutations, no CORS                |
-| Telegram             | Bounded plain-text card and opaque buttons; configured bot/chat/operator only    |
-| Hosted Notifications | Optional bounded transport contract; local SQLite retains decision authority     |
-| Resume process       | Discrete argv, exact session, fail-closed initial authority, at-most-once claim  |
-| Public diagnostics   | Synthetic reproduction only; no databases, raw logs, credentials, or transcripts |
-| Runner bridge        | Outbound versioned frames; local binding and execution authority; no generic RPC |
+| Boundary             | Default posture                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| Harness to hook      | Bounded stdin, runtime validation, safe native no-op on failure                     |
+| Hook to daemon       | Loopback HTTP; optional independent daemon bearer                                   |
+| Local persistence    | Private state directory, SQLite, redacted rotating logs, explicit retention         |
+| Browser to daemon    | Loopback, generated bearer + CSRF, same-origin mutations, no CORS                   |
+| Telegram             | Bounded plain-text card and opaque buttons; configured bot/chat/operator only       |
+| Outbound webhook     | Strict bounded JSON, HTTPS/loopback endpoint, exact-byte HMAC, no inbound authority |
+| Hosted Notifications | Optional bounded transport contract; local SQLite retains decision authority        |
+| Resume process       | Discrete argv, exact session, fail-closed initial authority, at-most-once claim     |
+| Public diagnostics   | Synthetic reproduction only; no databases, raw logs, credentials, or transcripts    |
+| Runner bridge        | Outbound versioned frames; local binding and execution authority; no generic RPC    |
 
 See [PRIVACY.md](../PRIVACY.md) for exact local files, outbound fields,
 retention, and erasure, and [SECURITY.md](../SECURITY.md) for private reporting.

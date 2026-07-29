@@ -26,6 +26,10 @@ import {
   type NotificationsResolutionPresenter,
 } from "@agent-relay/notifications-transport";
 import type { StandaloneSessionAuthorityPort } from "@agent-relay/runner-bridge";
+import {
+  WebhookNotificationTransport,
+  type WebhookTransportOptions,
+} from "@agent-relay/webhook-transport";
 
 import { createRelayHttpServer } from "./http-server.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
@@ -77,6 +81,7 @@ export interface DaemonOptions {
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
   notifications?: DaemonNotificationsOptions;
+  webhook?: WebhookTransportOptions;
   runnerBridgeEnabled?: boolean;
   runnerBridge?: DaemonRunnerBridge;
   coalescingWindowMs?: number;
@@ -130,7 +135,23 @@ function selectTransport(options: DaemonOptions): NotificationTransport {
         );
       }
       return new NotificationsContractTransport(options.notifications);
+    case "webhook":
+      if (options.webhook === undefined) {
+        throw new Error(
+          "selected webhook transport requires a valid webhook configuration",
+        );
+      }
+      return new WebhookNotificationTransport(options.webhook);
   }
+}
+
+function localWebBaseUrl(host: string, port: number): string {
+  const reachableHost =
+    host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
+  const formattedHost = reachableHost.includes(":")
+    ? `[${reachableHost}]`
+    : reachableHost;
+  return `http://${formattedHost}:${String(port)}`;
 }
 
 export async function startDaemon(
@@ -243,6 +264,21 @@ export async function startDaemon(
     ...(options.coalescingWindowMs === undefined
       ? {}
       : { coalescingWindowMs: options.coalescingWindowMs }),
+    ...(transport instanceof WebhookNotificationTransport
+      ? {
+          interactionHandoff: {
+            ...(webEnabled
+              ? {
+                  baseUrl: localWebBaseUrl(
+                    options.host ?? "127.0.0.1",
+                    options.port ?? 4317,
+                  ),
+                }
+              : {}),
+            fallbackWhenTransportUnavailable: true,
+          },
+        }
+      : {}),
   });
   service.recover();
   if (options.runnerBridge !== undefined) {
@@ -258,6 +294,7 @@ export async function startDaemon(
   }
   const replyRouter =
     transport instanceof NotificationsContractTransport ||
+    transport instanceof WebhookNotificationTransport ||
     options.telegramOperatorUserId === undefined ||
     options.telegramReplyChatId === undefined
       ? undefined
@@ -271,7 +308,7 @@ export async function startDaemon(
     ...(options.token === undefined ? {} : { token: options.token }),
     ...(replyRouter === undefined ? {} : { replyRouter }),
     ...(options.telegramWebhookSecret === undefined ||
-    transport instanceof NotificationsContractTransport
+    !(transport instanceof TelegramBotTransport)
       ? {}
       : { telegramWebhookSecret: options.telegramWebhookSecret }),
     webEnabled,

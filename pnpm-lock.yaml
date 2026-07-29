@@ -77,6 +77,9 @@ importers:
       "@agent-relay/telegram-transport":
         specifier: workspace:*
         version: link:../../packages/telegram-transport
+      "@agent-relay/webhook-transport":
+        specifier: workspace:*
+        version: link:../../packages/webhook-transport
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -215,6 +218,22 @@ importers:
       better-sqlite3:
         specifier: 13.0.1
         version: 13.0.1
+
+  packages/webhook-transport:
+    dependencies:
+      "@agent-relay/notification-contracts":
+        specifier: workspace:*
+        version: link:../notification-contracts
+      "@agent-relay/protocol":
+        specifier: workspace:*
+        version: link:../protocol
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      "@types/node":
+        specifier: 24.13.3
+        version: 24.13.3
 
 packages:
   "@esbuild/aix-ppc64@0.28.1":

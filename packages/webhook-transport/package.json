@@ -1,0 +1,27 @@
+{
+  "name": "@agent-relay/webhook-transport",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Signed outbound webhook notification transport for Agent Relay",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agent-relay/notification-contracts": "workspace:*",
+    "@agent-relay/protocol": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3"
+  }
+}

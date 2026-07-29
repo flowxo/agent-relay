@@ -1,0 +1,9 @@
+{
+  "schema": "agent-relay-fixture-manifest.v1",
+  "recordedAt": "2026-07-28",
+  "source": "Agent Relay outbound webhook v1 runtime contract",
+  "sourceVersion": "agent-relay-webhook.v1",
+  "evidence": "synthetic-contract-fixture",
+  "privacy": "All identifiers and content are synthetic; the fixture contains no endpoint, signature, credential, machine path, transcript, or private account identifier.",
+  "fixtures": ["delivery-v1.json"]
+}

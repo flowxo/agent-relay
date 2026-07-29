@@ -26,6 +26,21 @@ export interface DaemonTransportStatus {
   selectedTransport: AgentRelayTransport;
   transportReadiness?: TransportReadinessReport;
   transportRuntime: {
+    webhook: {
+      delivery: {
+        lastError: {
+          at: string;
+          classification: "retryable" | "terminal";
+          code: string;
+        } | null;
+        lastSuccessfulSendAt: string | null;
+      };
+      spool: {
+        deadLetter: number;
+        pending: number;
+        retrying: number;
+      };
+    };
     notifications: {
       circuit: {
         blocked: boolean;
@@ -75,6 +90,24 @@ export interface DaemonTransportStatus {
     };
     selection: ResolvedTransportSelection;
   };
+}
+
+export function classifyWebhookErrorCode(
+  code: string,
+): "retryable" | "terminal" {
+  if (
+    code === "webhook-timeout" ||
+    code === "webhook-network-failure" ||
+    code === "webhook-http-408" ||
+    code === "webhook-http-425" ||
+    code === "webhook-http-429"
+  ) {
+    return "retryable";
+  }
+  const status = /^webhook-http-(\d{3})$/.exec(code)?.[1];
+  return status !== undefined && Number(status) >= 500
+    ? "retryable"
+    : "terminal";
 }
 
 const AUTHENTICATION_ERRORS = new Set([
@@ -176,6 +209,8 @@ export function buildDaemonTransportStatus(input: {
   const storeStatus = input.service.store.status();
   const notificationsDelivery =
     input.service.store.transportDeliverySummary("notifications");
+  const webhookDelivery =
+    input.service.store.transportDeliverySummary("webhook");
   const notificationsCircuit =
     input.service.transport instanceof NotificationsContractTransport
       ? input.service.transport.circuitState()
@@ -192,6 +227,25 @@ export function buildDaemonTransportStatus(input: {
       : { transportReadiness: input.readiness }),
     transportRuntime: {
       selection: input.selection,
+      webhook: {
+        delivery: {
+          lastSuccessfulSendAt: webhookDelivery.lastSuccessfulSendAt ?? null,
+          lastError:
+            webhookDelivery.lastError === undefined
+              ? null
+              : {
+                  ...webhookDelivery.lastError,
+                  classification: classifyWebhookErrorCode(
+                    webhookDelivery.lastError.code,
+                  ),
+                },
+        },
+        spool: {
+          pending: storeStatus.events.queued + storeStatus.events.delivering,
+          retrying: storeStatus.events.retry,
+          deadLetter: storeStatus.events.dead_letter,
+        },
+      },
       notifications: {
         circuit: notificationsCircuit,
         delivery: {

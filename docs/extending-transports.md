@@ -3,6 +3,13 @@
 A transport delivers a bounded presentation. It does not own requests, decide
 answers, select sessions, execute commands, or resume a harness.
 
+Before writing one, check the [signed outbound webhook](outbound-webhooks.md).
+Most custom dashboards, notifiers, queues, and automation need only receive the
+strict JSON envelope; they do not need a new package inside Agent Relay. Build
+an adapter when a provider needs native topics, message edits, buttons,
+authenticated callbacks, or another capability the generic webhook cannot
+honestly claim.
+
 Start with the repository [contribution workflow](../CONTRIBUTING.md) and
 [safe fixture guide](fixtures.md). A transport change uses the dedicated issue
 and pull-request paths so authentication, callback correlation, default outbound
@@ -23,7 +30,8 @@ interface NotificationTransport {
 
 `DeliveryMessage` contains already-rendered title/text plus optional typed
 interaction, multi-select, question-set, and action controls. `DeliveryContext`
-contains a stable idempotency key and optional durable topic ID.
+contains a stable idempotency key, sanitized source/session routing metadata, an
+optional local web handoff, and an optional durable topic ID.
 
 ## Optional capabilities
 
@@ -66,7 +74,8 @@ Classify failures with `TransportError`:
 - retryable network, timeout, rate-limit, provider-availability, and unknown
   failures keep the event durable;
 - authentication, scope, validation, and known terminal failures dead-letter;
-  and
+- a provider `Retry-After` can be carried as a bounded `retryAfterMs` without
+  replacing the stable attempt identity; and
 - an ambiguous accepted/not-recorded outcome must be visible and must not
   trigger a fresh identity automatically.
 
@@ -122,6 +131,11 @@ The in-memory fake transport in
 The adapter in `packages/telegram-transport` demonstrates topics, buttons,
 edits, polling/webhook correlation, and provider error classification without
 placing Telegram Bot API code in core.
+
+The adapter in `packages/webhook-transport` demonstrates the smallest outbound
+package: strict request/acknowledgement schemas, exact-byte HMAC signing,
+loopback-or-HTTPS endpoint validation, redirect refusal, response bounds,
+idempotent retry identity, and no inbound authority.
 
 The Notifications adapter in `packages/notifications-transport` demonstrates a
 provider-neutral contract mapping, explicit daemon selection, safe readiness

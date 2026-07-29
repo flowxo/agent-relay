@@ -1193,6 +1193,8 @@ function retryDelay(policy: RetryPolicy, attemptNumber: number): number {
   return Math.min(policy.maxDelayMs, exponential);
 }
 
+const MAX_PROVIDER_RETRY_AFTER_MS = 60 * 60_000;
+
 function assertIsoCutoff(value: string, name: string): void {
   const timestamp = Date.parse(value);
   if (
@@ -3845,13 +3847,22 @@ export class RelayStore {
     retryable: boolean,
     now: string,
     policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+    retryAfterMs?: number,
   ): DeliveryStatus {
+    if (
+      retryAfterMs !== undefined &&
+      (!Number.isSafeInteger(retryAfterMs) || retryAfterMs < 0)
+    ) {
+      throw new Error("provider retry delay must be a non-negative integer");
+    }
     const exhausted = attemptNumber >= policy.maxAttempts;
     const status: DeliveryStatus =
       retryable && !exhausted ? "retry" : "dead_letter";
-    const nextAttemptAt = new Date(
-      Date.parse(now) + retryDelay(policy, attemptNumber),
-    ).toISOString();
+    const delay = Math.max(
+      retryDelay(policy, attemptNumber),
+      Math.min(retryAfterMs ?? 0, MAX_PROVIDER_RETRY_AFTER_MS),
+    );
+    const nextAttemptAt = new Date(Date.parse(now) + delay).toISOString();
     const changes = this.database.transaction(() => {
       const update = this.database
         .prepare(

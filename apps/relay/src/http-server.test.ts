@@ -215,7 +215,7 @@ describe("relay HTTP daemon", () => {
     await expect(meta.json()).resolves.toEqual({
       schema: "agent-relay-web-meta.v1",
       apiVersion: "1",
-      assetVersion: "1",
+      assetVersion: "2",
       commandSchemas: [
         "agent-relay-web-resolve.v1",
         "agent-relay-web-session-action.v1",

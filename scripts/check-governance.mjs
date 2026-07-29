@@ -25,6 +25,7 @@ const packageManifests = [
   "packages/protocol/package.json",
   "packages/runner-bridge/package.json",
   "packages/telegram-transport/package.json",
+  "packages/webhook-transport/package.json",
 ];
 
 async function text(path) {

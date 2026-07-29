@@ -14,7 +14,8 @@ activation canary changes.
 For the shorter public entry points, see the
 [installation lifecycle](./install-upgrade-uninstall.md),
 [Telegram guide](./telegram.md), [web companion guide](./web-companion.md), and
-[troubleshooting guide](./troubleshooting.md).
+[troubleshooting guide](./troubleshooting.md). Developers sending alerts to
+their own tools should use the [outbound webhook guide](./outbound-webhooks.md).
 
 Do not add real tokens, account identifiers, private messages, session IDs,
 usernames, hostnames, or machine-specific paths to this document.
@@ -29,6 +30,7 @@ usernames, hostnames, or machine-specific paths to this document.
 | Claude Code | `2.1.219 (Claude Code)`   |
 | Cursor CLI  | `2026.07.23-e383d2b`      |
 | Telegram    | Bot API 10.2              |
+| Webhook     | `agent-relay-webhook.v1`  |
 
 The exact harness observations and evidence boundaries live in
 [`harness-evidence.md`](./harness-evidence.md). Run `doctor` rather than
@@ -428,6 +430,17 @@ answered by ordinary topic chatter. Some Telegram clients attach automatic reply
 metadata to ordinary topic text. When that metadata does not identify a retained
 request, Agent Relay still applies the exact-topic, exactly-one-open request
 rule. A known stale or cross-topic request remains rejected.
+
+### Optional custom outbound webhook
+
+The `webhook` transport sends every deliverable alert as strict signed JSON to
+one explicitly configured receiver. It is useful for a developer's own
+dashboard, notifier, or queue and needs no Telegram or hosted account. Configure
+the secret through `agent-relay webhook configure --secret-stdin`, select
+`webhook`, restart, and run `webhook-canary`. Focused setup, the receiver
+contract, signature verification, HTTP retry rules, and the deliberate
+outbound-only boundary are documented in the
+[outbound webhook guide](./outbound-webhooks.md).
 
 ### Optional hosted Notifications setup proof
 
