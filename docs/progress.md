@@ -39,20 +39,28 @@
   live store is healthy on schema `6` with 28 ready topics and no queued,
   retrying, delivering, or dead-letter events. Eight fallback records written
   while the daemon was unavailable replayed visibly: four valid events delivered
-  and four malformed payloads produced diagnostics. Live provider deletion
-  remains unclaimed until the operator reviews and confirms an exact `/prune`
-  preview. The first live **New Chat** invocation then exposed that the command
-  was durably consumed but the control response omitted its `message_thread_id`,
-  causing Telegram to create a different topic; Telegram's ordinary Bot API also
-  provides no read-marking method for standard private bot messages. The
-  follow-up now echoes the invocation topic and accepts authorized
-  message-correlated callbacks inside private topics. The follow-up `pnpm check`
-  passed 69 Vitest files/506 tests, 24 contract and supply-chain tests, the
-  six-test isolated Notifications consumer, all workspace builds, the
-  220,067-byte packed/1,366,853-byte unpacked 11-file artifact, hosted proof
-  digest `809dc9e81331aea85ea4588decd3a29763ea08e83667d99ac8e406db5f3cb8c8`, and
-  the complete packed lifecycle. All three Chromium scenarios passed, and
-  `pnpm audit --prod` found no known vulnerability.
+  and four malformed payloads produced diagnostics. The first live **New Chat**
+  invocation then exposed that the command was durably consumed but the control
+  response omitted its `message_thread_id`, causing Telegram to create a
+  different topic; Telegram's ordinary Bot API also provides no read-marking
+  method for standard private bot messages. The follow-up now echoes the
+  invocation topic and accepts authorized message-correlated callbacks inside
+  private topics. Its `pnpm check` passed 69 Vitest files/506 tests, 24 contract
+  and supply-chain tests, the six-test isolated Notifications consumer, all
+  workspace builds, the 220,067-byte packed/1,366,853-byte unpacked 11-file
+  artifact, hosted proof digest
+  `809dc9e81331aea85ea4588decd3a29763ea08e83667d99ac8e406db5f3cb8c8`, and the
+  complete packed lifecycle. All three Chromium scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability. PR #17 merged that
+  correction as `72d50e1`; the install reconciled unchanged, credentialed doctor
+  was healthy, and exactly one poller restarted after private-topic preflight.
+  The second live **New Chat** command returned its exact nine-candidate preview
+  in the invocation topic. The operator confirmed it; all nine provider topics
+  deleted, ready mappings moved from 28 to 19, all 71 sessions remained
+  `waiting`, and the operation completed without skip, retry, or failure. The
+  queue and dead-letter counts remained zero. Live later-event recreation for
+  one of those pruned sessions remains unclaimed; the deterministic suite proves
+  it.
 - FXO-1350 replaces native-hook fingerprint pseudo-sequences with a durable
   per-machine/harness/session allocator in the authoritative local SQLite store.
   Exact source-fingerprint retries reuse one event sequence; distinct hooks
@@ -101,13 +109,14 @@
   artifact, hosted proof digest
   `8da7c1d724a3d5e0658c944edb8acfd2f94ee20262a0258601ec6f49aadd1417`, and the
   complete packed lifecycle. All three Chromium scenarios passed, and
-  `pnpm audit --prod` found no known vulnerability. Natural suppression on the
-  installed `2.1.220` Claude Code build remains explicitly unclaimed until the
-  next background-work dogfood Stop occurs. PR #11 merged the exact candidate as
-  `bd7f54a`; the checkout-backed launcher was rebuilt and reconciled, doctor
-  reported a healthy direct-Telegram installation, and the single polling daemon
-  restarted after a successful private-topic preflight with no pending
-  deliveries.
+  `pnpm audit --prod` found no known vulnerability. PR #11 merged the exact
+  candidate as `bd7f54a`; the checkout-backed launcher was rebuilt and
+  reconciled, doctor reported a healthy direct-Telegram installation, and the
+  single polling daemon restarted after a successful private-topic preflight
+  with no pending deliveries. Natural dogfood on the installed `2.1.220` build
+  later produced three consecutive monotonic `turn.activity` events with
+  `notification.suppressed` evidence and no operator delivery, followed by the
+  next-sequence truly-idle `turn.stopped` event and its ordinary Telegram card.
 - Direct-Telegram baseline dogfood began on 2026-07-28 with explicit transport
   selection and healthy Bot API private-topic preflight. It immediately exposed
   a historical fallback hazard: first activation replayed 395 bounded records
@@ -931,19 +940,18 @@ also remain free of silent delivery, hook, or correlation failures.
   received through a Telegram business connection have a Bot API read-marking
   method. The same-topic control response and durable update outcome are
   therefore the acknowledgement boundary.
-- Telegram deletion is locally proven through the fake transport and sanitized
-  Bot API fixtures, but live deletion against the private activation chat is not
-  yet claimed. `/cleanup` still requires an explicit End or native
-  `session.ended`; age, inactivity, crash, process exit, and stopped turns never
-  prove death. `/prune` deliberately uses inactivity only to scope an exact set
-  whose deletion the operator explicitly authorizes. The 24-hour default is an
-  operator-workflow policy, not a liveness claim.
-- Claude Code's structured background-work fields are official-contract and
-  fixture proven on the locally installed `2.1.220` build, but the natural
-  private-session suppression and later truly-idle Stop are not yet live
-  claimed. The installed durable allocator is active and its retained hook
-  sequences match; only the background-specific activity-to-idle transition
-  remains pending the natural canary.
+- Telegram inactive-topic deletion is fake-transport, sanitized-fixture, and
+  live-private-chat proven for one operator-confirmed nine-topic exact set.
+  `/cleanup` still requires an explicit End or native `session.ended`; age,
+  inactivity, crash, process exit, and stopped turns never prove death. `/prune`
+  deliberately uses inactivity only to scope an exact set whose deletion the
+  operator explicitly authorizes. The 24-hour default is an operator-workflow
+  policy, not a liveness claim. A live later event recreating one pruned session
+  topic remains to be observed naturally.
+- Claude Code's structured background-work suppression and the subsequent
+  truly-idle Stop are fixture, deterministic-test, and natural private-session
+  proven on the installed `2.1.220` build. The installed durable allocator
+  retained strictly increasing sequences across the activity-to-idle transition.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.
@@ -979,18 +987,10 @@ also remain free of silent delivery, hook, or correlation failures.
 
 ## Next action
 
-Observe the next natural Claude Code Stop with structured background work. It
-should create a local `background-work` suppression diagnostic and no operator
-card; the later Stop with empty collections should create the ordinary waiting
-card. Confirm both events retain monotonic sequence and lane state after the
-schema-5 live upgrade.
-
-After the FXO-1357 same-topic follow-up is merged and the single schema-6
-dogfood daemon is restarted, start **New Chat**, send `/prune`, and verify that
-the bounded exact set returns inside that exact new topic. Confirm only the
-topics whose Telegram history may be permanently removed. A later event for any
-pruned session should create a fresh topic without changing that session's lane
-state. `/cleanup` remains available for explicitly ended sessions.
+Continue bounded direct-Telegram dogfood. If any pruned session emits another
+event, verify that it provisions a fresh topic without changing its retained
+lane state; this is the only FXO-1357 behavior still waiting for a natural live
+observation. `/cleanup` remains available for explicitly ended sessions.
 
 Continue bounded local direct-Telegram dogfood while the Notifications owner
 prepares the approved hosted environment. Hosted AR3 evidence begins only after
