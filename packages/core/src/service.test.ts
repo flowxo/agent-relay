@@ -171,9 +171,9 @@ describe("RelayService durable delivery loop", () => {
     const logger = new MemoryLogger();
     const providerMessageId = "message_private_provider_12345678";
     const transport: NotificationTransport = {
-      name: "notifications",
+      name: "whooshbang",
       deliver: async () => ({
-        transport: "notifications",
+        transport: "whooshbang",
         messageId: providerMessageId,
       }),
     };
@@ -191,11 +191,8 @@ describe("RelayService durable delivery loop", () => {
     );
     expect(delivered?.details).toEqual({
       eventRef: sha256(input.eventId).slice(0, 12),
-      transport: "notifications",
-      messageRef: sha256(`notifications\u001f${providerMessageId}`).slice(
-        0,
-        12,
-      ),
+      transport: "whooshbang",
+      messageRef: sha256(`whooshbang\u001f${providerMessageId}`).slice(0, 12),
     });
     expect(JSON.stringify(delivered)).not.toContain(input.eventId);
     expect(JSON.stringify(delivered)).not.toContain(providerMessageId);
@@ -351,11 +348,11 @@ describe("RelayService durable delivery loop", () => {
     const store = new RelayStore();
     const logger = new MemoryLogger();
     const transport: NotificationTransport = {
-      name: "notifications",
+      name: "whooshbang",
       deliver: async () => {
         throw new TransportError(
           "WhooshBang connection is inactive.",
-          "notifications-connection-inactive",
+          "whooshbang-connection-inactive",
           false,
         );
       },
@@ -399,7 +396,7 @@ describe("RelayService durable delivery loop", () => {
     );
     expect(failureLogs).toHaveLength(2);
     expect(failureLogs[1]?.details).toMatchObject({
-      errorCode: "notifications-connection-inactive",
+      errorCode: "whooshbang-connection-inactive",
       suppressedSinceLast: 1,
     });
     expect(store.status().events.dead_letter).toBe(3);

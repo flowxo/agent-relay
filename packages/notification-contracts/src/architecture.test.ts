@@ -40,7 +40,7 @@ describe("notification package boundaries", () => {
       "@agent-relay/telegram-transport",
     );
     expect(manifest.dependencies).not.toHaveProperty(
-      "@agent-relay/notifications-transport",
+      "@agent-relay/whooshbang-transport",
     );
 
     for (const sourcePath of productionTypeScript(
@@ -48,7 +48,7 @@ describe("notification package boundaries", () => {
     )) {
       const source = readFileSync(join(repositoryRoot, sourcePath), "utf8");
       expect(source, sourcePath).not.toMatch(
-        /@agent-relay\/(?:core|telegram-transport|notifications-transport)/u,
+        /@agent-relay\/(?:core|telegram-transport|whooshbang-transport)/u,
       );
     }
   });
@@ -62,13 +62,13 @@ describe("notification package boundaries", () => {
       "@agent-relay/telegram-transport",
     );
     expect(manifest.dependencies).not.toHaveProperty(
-      "@agent-relay/notifications-transport",
+      "@agent-relay/whooshbang-transport",
     );
 
     for (const sourcePath of productionTypeScript("packages/core/src")) {
       const source = readFileSync(join(repositoryRoot, sourcePath), "utf8");
       expect(source, sourcePath).not.toMatch(
-        /@agent-relay\/(?:telegram-transport|notifications-transport)/u,
+        /@agent-relay\/(?:telegram-transport|whooshbang-transport)/u,
       );
     }
 
@@ -90,12 +90,12 @@ describe("notification package boundaries", () => {
     );
     expect(telegram.dependencies).toHaveProperty("@agent-relay/core");
 
-    const notifications = packageManifest("packages/notifications-transport");
-    expect(notifications.dependencies).toHaveProperty(
+    const whooshbang = packageManifest("packages/whooshbang-transport");
+    expect(whooshbang.dependencies).toHaveProperty(
       "@agent-relay/notification-contracts",
     );
-    expect(notifications.dependencies).not.toHaveProperty("@agent-relay/core");
-    expect(notifications.dependencies).not.toHaveProperty(
+    expect(whooshbang.dependencies).not.toHaveProperty("@agent-relay/core");
+    expect(whooshbang.dependencies).not.toHaveProperty(
       "@agent-relay/telegram-transport",
     );
 
@@ -108,7 +108,7 @@ describe("notification package boundaries", () => {
       "@agent-relay/telegram-transport",
     );
     expect(relay.dependencies).toHaveProperty(
-      "@agent-relay/notifications-transport",
+      "@agent-relay/whooshbang-transport",
     );
   });
 });

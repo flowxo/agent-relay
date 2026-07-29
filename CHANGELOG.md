@@ -66,9 +66,23 @@ breaking changes and required operator action.
   `@flowxo/notifications*` `1.0.0-rc.1` packages with no compatibility alias, so
   the contract lock, vendored artifacts, imports, contract discriminators,
   Problem Details namespace, and mock control header all moved to the WhooshBang
-  identities. Hosted diagnostics now name WhooshBang. The `notifications`
-  transport selector, CLI commands, local SQLite state, and every stored
-  configuration key are unchanged, so no operator action is required.
+  identities. Hosted diagnostics now name WhooshBang.
+- **Breaking (pre-alpha):** the hosted transport is now identified as
+  `whooshbang` rather than `notifications` everywhere it is selected, stored, or
+  diagnosed. `agent-relay whooshbang connect|status|disconnect` replaces
+  `agent-relay notifications …`, `transport select whooshbang` and
+  `AGENT_RELAY_TRANSPORT=whooshbang` replace their former values, and the local
+  files are `~/.agent-relay/whooshbang.json` and
+  `~/.agent-relay/whooshbang-credential.json`. Local SQLite migrates forward
+  automatically at schema version 7, preserving retained answers, resolution
+  sources, delivery mappings, acknowledgement state, and committed cursors.
+  **Required operator action:** anyone who had connected the hosted transport
+  against the executable mock must rerun `whooshbang connect` and
+  `transport select whooshbang`; a stale `notifications` selection fails closed
+  rather than silently choosing another transport. Direct Telegram, the fake
+  transport, the outbound webhook, the web board, hooks, and the supervisor are
+  unaffected. The provider-neutral notification transport seam keeps its generic
+  name because it is not WhooshBang-specific.
 - Notification delivery contracts now live in a provider-neutral internal
   package, generic presentation code is grouped under core notifications, and
   direct Telegram owns a separate adapter package. The end-user distribution

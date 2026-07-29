@@ -977,7 +977,7 @@ describe("relay HTTP daemon", () => {
       surfaceSync: "updated",
     });
     expect(runtime.transport.messageEdits.at(-1)?.text).toContain(
-      "routine notifications muted",
+      "routine whooshbang muted",
     );
     const replay = await submit(command);
     expect(replay.status).toBe(200);

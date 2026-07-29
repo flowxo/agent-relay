@@ -274,9 +274,8 @@ completed turn, stopped its owned process, and removed the temporary project and
 generated schemas. The committed evidence contains only booleans, enums, the
 public version, and schema digest. No prompt, response, transcript, native
 identifier, credential, account value, or machine path was retained. The same
-bounded canary passed again on 2026-07-28 after merging the current
-Notifications RC.1 and release-readiness baseline into the Phase 3 integration
-candidate.
+bounded canary passed again on 2026-07-28 after merging the current WhooshBang
+RC.1 and release-readiness baseline into the Phase 3 integration candidate.
 
 The verified structured-driver capabilities are deterministic interrupt,
 follow-up turn, approval decision, resume, active steer, terminal failure, and
@@ -320,7 +319,7 @@ tests prove our parser and emitted JSON match the documented contracts. The live
 evidence above is limited to the exact installed versions, CLI surfaces,
 installed user hooks, and private-chat transport tested. Cursor permission
 automation remains fixture-backed and disabled by default. Native hooks still do
-not prove process crashes; the delivered crash notifications were produced only
+not prove process crashes; the delivered crash whooshbang were produced only
 because Agent Relay owned and observed the child processes.
 
 The Claude background-work fixture is official-contract-derived, not a retained

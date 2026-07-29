@@ -29,13 +29,13 @@ import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
 import {
-  NOTIFICATIONS_COMMAND_USAGE,
-  runNotificationsCommand,
-} from "./notifications-command.js";
+  WHOOSHBANG_COMMAND_USAGE,
+  runWhooshBangCommand,
+} from "./whooshbang-command.js";
 import {
-  notificationsConnectionPaths,
-  readNotificationsConnection,
-} from "./notifications-config.js";
+  whooshbangConnectionPaths,
+  readWhooshBangConnection,
+} from "./whooshbang-config.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
 import {
   RUNNER_BRIDGE_COMMAND_USAGE,
@@ -82,7 +82,7 @@ Commands:
   telegram-canary    Prove a configured direct-Telegram reply loop
   webhook-canary     Prove a configured outbound webhook delivery
   webhook            Configure or inspect the outbound webhook
-  notifications      Connect, inspect, or disconnect hosted WhooshBang
+  whooshbang      Connect, inspect, or disconnect hosted WhooshBang
   runner-bridge      Inspect or select the experimental runner bridge
   transport          Select a notification transport
 
@@ -216,7 +216,7 @@ async function main(): Promise<void> {
       (transportFlag === undefined || transportFlag.startsWith("--"))
     ) {
       throw new Error(
-        "--transport requires fake, telegram, notifications, or webhook",
+        "--transport requires fake, telegram, whooshbang, or webhook",
       );
     }
     const transportEnvironment = environment("AGENT_RELAY_TRANSPORT");
@@ -290,12 +290,12 @@ async function main(): Promise<void> {
       transportSelection.selected === "telegram"
         ? optionalInteger(telegramChatId, "AGENT_RELAY_TELEGRAM_CHAT_ID", true)
         : undefined;
-    let notificationsConnection:
-      Awaited<ReturnType<typeof readNotificationsConnection>> | undefined;
-    if (transportSelection.selected === "notifications") {
+    let whooshbangConnection:
+      Awaited<ReturnType<typeof readWhooshBangConnection>> | undefined;
+    if (transportSelection.selected === "whooshbang") {
       try {
-        notificationsConnection = await readNotificationsConnection(
-          notificationsConnectionPaths(commandStateDir),
+        whooshbangConnection = await readWhooshBangConnection(
+          whooshbangConnectionPaths(commandStateDir),
         );
       } catch {
         throw new Error(
@@ -304,13 +304,13 @@ async function main(): Promise<void> {
       }
     }
     if (
-      transportSelection.selected === "notifications" &&
-      (notificationsConnection === undefined ||
-        notificationsConnection.configuration.status !== "active" ||
-        notificationsConnection.credential === undefined)
+      transportSelection.selected === "whooshbang" &&
+      (whooshbangConnection === undefined ||
+        whooshbangConnection.configuration.status !== "active" ||
+        whooshbangConnection.credential === undefined)
     ) {
       throw new Error(
-        "selected WhooshBang transport is not ready; run agent-relay notifications connect",
+        "selected WhooshBang transport is not ready; run agent-relay whooshbang connect",
       );
     }
     const webhookConfiguration =
@@ -360,12 +360,12 @@ async function main(): Promise<void> {
           environmentValue: environment("AGENT_RELAY_WEB_ENABLED"),
           disabledByFlag: args.includes("--no-web"),
         });
-    const notificationsMachineId =
-      transportSelection.selected === "notifications"
+    const whooshbangMachineId =
+      transportSelection.selected === "whooshbang"
         ? await loadOrCreateMachineId(join(commandStateDir, "machine-id"))
         : undefined;
-    const notificationsCredentialId =
-      notificationsConnection?.credential?.credentialId;
+    const whooshbangCredentialId =
+      whooshbangConnection?.credential?.credentialId;
     const daemon = await startDaemon({
       databasePath,
       webEnabled,
@@ -382,34 +382,32 @@ async function main(): Promise<void> {
         : { telegramOperatorUserId }),
       ...(telegramReplyChatId === undefined ? {} : { telegramReplyChatId }),
       ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
-      ...(transportSelection.selected !== "notifications" ||
-      notificationsConnection?.credential === undefined ||
-      notificationsMachineId === undefined
+      ...(transportSelection.selected !== "whooshbang" ||
+      whooshbangConnection?.credential === undefined ||
+      whooshbangMachineId === undefined
         ? {}
         : {
-            notifications: {
-              baseUrl: notificationsConnection.configuration.baseUrl,
-              credential: notificationsConnection.credential.bearerToken,
-              subscriberId: notificationsConnection.configuration.subscriberId,
-              notifierId: notificationsConnection.configuration.notifierId,
-              bindingId: notificationsConnection.configuration.bindingId,
+            whooshbang: {
+              baseUrl: whooshbangConnection.configuration.baseUrl,
+              credential: whooshbangConnection.credential.bearerToken,
+              subscriberId: whooshbangConnection.configuration.subscriberId,
+              notifierId: whooshbangConnection.configuration.notifierId,
+              bindingId: whooshbangConnection.configuration.bindingId,
               machineClientId:
-                notificationsConnection.configuration.machineClientId,
-              machineId: notificationsMachineId,
+                whooshbangConnection.configuration.machineClientId,
+              machineId: whooshbangMachineId,
               connectionGuard: async () => {
                 try {
-                  const current = await readNotificationsConnection(
-                    notificationsConnectionPaths(commandStateDir),
+                  const current = await readWhooshBangConnection(
+                    whooshbangConnectionPaths(commandStateDir),
                   );
                   return (
                     current?.configuration.status === "active" &&
                     current.configuration.machineClientId ===
-                      notificationsConnection.configuration.machineClientId &&
+                      whooshbangConnection.configuration.machineClientId &&
                     current.configuration.currentCredentialId ===
-                      notificationsConnection.configuration
-                        .currentCredentialId &&
-                    current.credential?.credentialId ===
-                      notificationsCredentialId
+                      whooshbangConnection.configuration.currentCredentialId &&
+                    current.credential?.credentialId === whooshbangCredentialId
                   );
                 } catch {
                   return false;
@@ -674,8 +672,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "notifications") {
-    const result = await runNotificationsCommand({
+  if (command === "whooshbang") {
+    const result = await runWhooshBangCommand({
       args,
       environment: process.env,
       stateDirectory: stateDir,
@@ -688,9 +686,9 @@ async function main(): Promise<void> {
       typeof result === "object" &&
       result !== null &&
       "help" in result &&
-      result.help === NOTIFICATIONS_COMMAND_USAGE
+      result.help === WHOOSHBANG_COMMAND_USAGE
     ) {
-      process.stdout.write(NOTIFICATIONS_COMMAND_USAGE);
+      process.stdout.write(WHOOSHBANG_COMMAND_USAGE);
     } else {
       output(result);
     }

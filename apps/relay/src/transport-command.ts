@@ -12,7 +12,7 @@ export const TRANSPORT_COMMAND_USAGE = `Agent Relay Transport Selection
 
 Usage:
   agent-relay transport status
-  agent-relay transport select <fake|telegram|notifications|webhook>
+  agent-relay transport select <fake|telegram|whooshbang|webhook>
 
 Selection is durable and affects a daemon after its next start. Credentials
 never select a transport. A daemon-only --transport override takes precedence
@@ -107,7 +107,7 @@ export async function runTransportCommand(
   if (subcommand === "select") {
     if (args.length !== 1) {
       throw new Error(
-        "Transport select requires exactly fake, telegram, notifications, or webhook",
+        "Transport select requires exactly fake, telegram, whooshbang, or webhook",
       );
     }
     const selected = AgentRelayTransportSchema.parse(args[0]);

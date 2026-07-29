@@ -137,7 +137,7 @@ package: strict request/acknowledgement schemas, exact-byte HMAC signing,
 loopback-or-HTTPS endpoint validation, redirect refusal, response bounds,
 idempotent retry identity, and no inbound authority.
 
-The WhooshBang adapter in `packages/notifications-transport` demonstrates a
+The WhooshBang adapter in `packages/whooshbang-transport` demonstrates a
 provider-neutral contract mapping, explicit daemon selection, safe readiness
 diagnosis, authenticated contract validation against pinned artifacts, and a
 durable poll/claim/resolve/ack loop. Its optional resolution presenter is
@@ -146,7 +146,7 @@ the pinned rc.1 implementation reports unsupported because that exact client has
 no resolved-message update method. Its failure policy distinguishes retry,
 configuration, security, quarantine, and operator action without permitting a
 new identity. It does not claim a detached response signature that the C0 poll
-contract does not provide. See the [hosted boundary](hosted-notifications.md).
+contract does not provide. See the [hosted boundary](hosted-whooshbang.md).
 
 ## Minimum tests
 

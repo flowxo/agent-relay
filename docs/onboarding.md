@@ -332,7 +332,7 @@ defaults.
 
 Starting after an offline period may replay previously spooled events. Stable
 event IDs keep replay idempotent, but events that were never delivered before
-the restart may produce historical notifications.
+the restart may produce historical whooshbang.
 
 The first event for a session records a `topic.created` log before
 `delivery.succeeded`. Inspect `status` to see `topics` counts and
@@ -344,7 +344,7 @@ Each topic record also reports a durable `laneState`: `running`, `waiting`,
 `muted`, `crashed`, `ended`, or `stale`. The stable topic name is not rewritten
 on every event. Compact event cards and session-control edits show state in
 Telegram, while `status` exposes the reconciled current value. Crash and stale
-evidence remain visible even when routine notifications were muted.
+evidence remain visible even when routine whooshbang were muted.
 
 WhooshBang are rendered as compact plain-text cards with stable session
 identity, event age, a bounded one-line summary, and fixed callback data that
@@ -449,18 +449,17 @@ outbound-only boundary are documented in the
 ### Optional hosted WhooshBang setup proof
 
 The optional hosted adapter now has a mock-backed setup and explicit full daemon
-lifecycle, documented in the
-[hosted WhooshBang guide](./hosted-notifications.md). It can authorize a
-subscriber, generate and store a narrow credential, send a synthetic canary,
-rotate, revoke, erase, and deliver normal attention events when `notifications`
-is selected. Selected hosted mode also long-polls confirm/select/input answers,
-commits them to the exact local request before provider acknowledgement, and
-recovers cursor/acknowledgement work after restart. Terminal presentation is a
-separate durable worker; the pinned RC.4 contract reports that optional
-capability as unsupported because it has no resolution-update endpoint. Safe
-status still exposes its queue/block counts and failure category. Local
-disconnect or revocation stops new hosted calls, retains SQLite authority, and
-requires explicit reconnect/rotation plus daemon restart.
+lifecycle, documented in the [hosted WhooshBang guide](./hosted-whooshbang.md).
+It can authorize a subscriber, generate and store a narrow credential, send a
+synthetic canary, rotate, revoke, erase, and deliver normal attention events
+when `whooshbang` is selected. Selected hosted mode also long-polls
+confirm/select/input answers, commits them to the exact local request before
+provider acknowledgement, and recovers cursor/acknowledgement work after
+restart. Terminal presentation is a separate durable worker; the pinned RC.4
+contract reports that optional capability as unsupported because it has no
+resolution-update endpoint. Safe status still exposes its queue/block counts and
+failure category. Local disconnect or revocation stops new hosted calls, retains
+SQLite authority, and requires explicit reconnect/rotation plus daemon restart.
 
 Maintainers can prove the complete installed boundary without a real hosted
 account or bot token:
@@ -479,7 +478,7 @@ private fixture values.
 Do not place a broad WhooshBang project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment
 injection, or hidden prompt. The local setup files are retained by uninstall;
-use `notifications disconnect --revoke` before explicit credential/configuration
+use `whooshbang disconnect --revoke` before explicit credential/configuration
 erasure. Agent Relay now pins the exact WhooshBang `1.0.0-rc.4` candidate; no
 decision has created or authorized a real service environment. Perform this
 setup only against the executable loopback mock until the WhooshBang owner
@@ -521,8 +520,8 @@ The canary output deliberately excludes the private question and answer.
 
 ## 7. Run a supervised agent interaction
 
-Installed hooks alone provide lifecycle notifications. Use `agent-relay run`
-when crash evidence or late CLI resume is required.
+Installed hooks alone provide lifecycle whooshbang. Use `agent-relay run` when
+crash evidence or late CLI resume is required.
 
 ### Codex
 

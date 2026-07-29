@@ -48,7 +48,7 @@ describe("pinned runner protocol", () => {
     for (const file of files) {
       const source = await readFile(resolve(sourceRoot, file), "utf8");
       expect(source).not.toMatch(
-        /@agent-relay\/(?:core|notifications-transport)|telegram|apps\/relay/u,
+        /@agent-relay\/(?:core|whooshbang-transport)|telegram|apps\/relay/u,
       );
     }
   });

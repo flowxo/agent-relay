@@ -24,7 +24,7 @@ describe("Codex app-server adapter boundary", () => {
     expect(source).toContain('"@agent-relay/runner-bridge"');
     for (const forbidden of [
       "@agent-relay/core",
-      "@agent-relay/notifications-transport",
+      "@agent-relay/whooshbang-transport",
       "telegram",
       "flowxo",
       "apps/relay",

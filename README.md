@@ -418,7 +418,7 @@ for the part you are changing:
 - [Prerelease builds and publication](docs/releasing.md)
 - [Release-readiness evidence](docs/release-readiness.md)
 - [Safe fixtures and evidence](docs/fixtures.md)
-- [Hosted WhooshBang boundary](docs/hosted-notifications.md)
+- [Hosted WhooshBang boundary](docs/hosted-whooshbang.md)
 - [Experimental runner bridge](docs/runner-bridge.md)
 - [Troubleshooting and doctor](docs/troubleshooting.md)
 

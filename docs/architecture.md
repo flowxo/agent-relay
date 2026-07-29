@@ -65,12 +65,12 @@ authority, not features embedded in core:
 ```
 
 `packages/notification-contracts` owns the provider-neutral transport protocol.
-`packages/core/src/notifications` owns canonical presentation, interaction
+`packages/core/src/whooshbang` owns canonical presentation, interaction
 negotiation, deterministic action identity, and the in-memory fake adapter.
 `packages/telegram-transport` owns Bot API calls, callbacks, reply routing, and
-sanitized Telegram fixtures. `packages/notifications-transport` owns the
-optional hosted mapping. `packages/webhook-transport` owns the strict outbound
-envelope, exact-byte signing, response validation, and HTTP failure policy. Only
+sanitized Telegram fixtures. `packages/whooshbang-transport` owns the optional
+hosted mapping. `packages/webhook-transport` owns the strict outbound envelope,
+exact-byte signing, response validation, and HTTP failure policy. Only
 `apps/relay` selects and assembles a concrete provider.
 
 Provider adapters may depend inward on core application services when handling

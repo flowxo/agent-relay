@@ -19,8 +19,8 @@
     "turn/steer",
     "turn/interrupt"
   ],
-  "clientNotifications": ["initialized"],
-  "serverNotifications": [
+  "clientWhooshBang": ["initialized"],
+  "serverWhooshBang": [
     "thread/started",
     "turn/started",
     "turn/completed",

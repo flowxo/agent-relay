@@ -65,9 +65,9 @@ importers:
       "@agent-relay/notification-contracts":
         specifier: workspace:*
         version: link:../../packages/notification-contracts
-      "@agent-relay/notifications-transport":
+      "@agent-relay/whooshbang-transport":
         specifier: workspace:*
-        version: link:../../packages/notifications-transport
+        version: link:../../packages/whooshbang-transport
       "@agent-relay/protocol":
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -144,7 +144,7 @@ importers:
         specifier: 24.13.3
         version: 24.13.3
 
-  packages/notifications-transport:
+  packages/whooshbang-transport:
     dependencies:
       "@agent-relay/notification-contracts":
         specifier: workspace:*

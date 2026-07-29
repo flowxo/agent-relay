@@ -45,7 +45,7 @@ its child process and implements session start/resume, turn
 start/follow-up/steer/interrupt, and exact pending approval resolution.
 Project/artifact/diagnose and session-pause operations remain unsupported.
 
-Native notifications become content-free structured observations containing only
+Native whooshbang become content-free structured observations containing only
 opaque native references, lifecycle status, item/approval kind, timestamp, and
 safe code. The bridge resolves those local references through durable
 session/turn/item/approval correlation and emits only product-qualified,

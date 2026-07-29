@@ -51,7 +51,7 @@ node apps/relay/dist/cli.js status
 ```
 
 Configuration never selects a transport. Likewise, setting webhook environment
-variables does not override a durable `fake`, `telegram`, or `notifications`
+variables does not override a durable `fake`, `telegram`, or `whooshbang`
 selection unless `AGENT_RELAY_TRANSPORT=webhook` is also explicit.
 
 You can inject configuration instead of writing the file:

@@ -40,7 +40,7 @@ continue.
 
 Binding beyond loopback is not a supported security boundary.
 
-Outbound notifications can link to `/ui/?request=<opaque-request-id>`. After the
+Outbound whooshbang can link to `/ui/?request=<opaque-request-id>`. After the
 operator enters the normal web credential, the board scrolls to and focuses that
 exact retained request. The URL contains no bearer, CSRF secret, answer, or
 callback authority; it is a navigation hint only. See the

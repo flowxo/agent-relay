@@ -21,7 +21,7 @@ const packageManifests = [
   "packages/core/package.json",
   "packages/harnesses/package.json",
   "packages/notification-contracts/package.json",
-  "packages/notifications-transport/package.json",
+  "packages/whooshbang-transport/package.json",
   "packages/protocol/package.json",
   "packages/runner-bridge/package.json",
   "packages/telegram-transport/package.json",

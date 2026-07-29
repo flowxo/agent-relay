@@ -18,7 +18,7 @@ const focusedDocuments = [
   "docs/extending-transports.md",
   "docs/outbound-webhooks.md",
   "docs/extending-harnesses.md",
-  "docs/hosted-notifications.md",
+  "docs/hosted-whooshbang.md",
   "docs/runner-bridge.md",
 ];
 
@@ -149,7 +149,7 @@ for (const pattern of [
   );
 }
 
-const hosted = await text("docs/hosted-notifications.md");
+const hosted = await text("docs/hosted-whooshbang.md");
 for (const pattern of [
   /optional, replaceable/,
   /not required for local SQLite/,

@@ -12,17 +12,17 @@ import { join } from "node:path";
 
 import {
   createMachineCredentialMaterial,
-  NOTIFICATIONS_MACHINE_SCOPES,
-} from "@agent-relay/notifications-transport";
+  WHOOSHBANG_MACHINE_SCOPES,
+} from "@agent-relay/whooshbang-transport";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runTransportCommand } from "./transport-command.js";
 import {
-  notificationsConnectionPaths,
-  NotificationsConnectionConfigurationSchema,
-  NotificationsMachineCredentialSchema,
-  writeNotificationsConnection,
-} from "./notifications-config.js";
+  whooshbangConnectionPaths,
+  WhooshBangConnectionConfigurationSchema,
+  WhooshBangMachineCredentialSchema,
+  writeWhooshBangConnection,
+} from "./whooshbang-config.js";
 import {
   readTransportSelection,
   resolveTransportSelection,
@@ -52,14 +52,14 @@ afterEach(async () => {
   );
 });
 
-async function configureNotifications(stateDirectory: string) {
+async function configureWhooshBang(stateDirectory: string) {
   const material = await createMachineCredentialMaterial();
-  await writeNotificationsConnection(
-    notificationsConnectionPaths(stateDirectory),
-    NotificationsConnectionConfigurationSchema.parse({
-      schema: "agent-relay-notifications-config.v1",
+  await writeWhooshBangConnection(
+    whooshbangConnectionPaths(stateDirectory),
+    WhooshBangConnectionConfigurationSchema.parse({
+      schema: "agent-relay-whooshbang-config.v1",
       status: "active",
-      baseUrl: "https://notifications.example.test/",
+      baseUrl: "https://whooshbang.example.test/",
       contractVersion: "1.0.0-rc.4",
       environment: "test",
       projectId: "project_private_full_identity",
@@ -68,14 +68,14 @@ async function configureNotifications(stateDirectory: string) {
       notifierId: "notifier_private_full_identity",
       bindingId: "binding_private_full_identity",
       currentCredentialId: material.credentialId,
-      scopeSummary: [...NOTIFICATIONS_MACHINE_SCOPES],
+      scopeSummary: [...WHOOSHBANG_MACHINE_SCOPES],
       connectedAt: "2026-07-26T18:00:00.000Z",
       canaryMessageId: "message_private_full_identity",
       canaryDiagnosticId: "diagnostic_private_full_identity",
       pendingRevocations: [],
     }),
-    NotificationsMachineCredentialSchema.parse({
-      schema: "agent-relay-notifications-credential.v1",
+    WhooshBangMachineCredentialSchema.parse({
+      schema: "agent-relay-whooshbang-credential.v1",
       credentialId: material.credentialId,
       bearerToken: material.bearerToken,
       createdAt: "2026-07-26T18:00:00.000Z",
@@ -88,7 +88,7 @@ async function configureNotifications(stateDirectory: string) {
 describe("durable transport selection", () => {
   it("defaults to fake even when every transport credential set is present", async () => {
     const stateDirectory = await temporaryDirectory();
-    const material = await configureNotifications(stateDirectory);
+    const material = await configureWhooshBang(stateDirectory);
 
     const report = await runTransportCommand({
       args: ["status"],
@@ -118,7 +118,7 @@ describe("durable transport selection", () => {
           replyReady: true,
           ready: true,
         },
-        notifications: {
+        whooshbang: {
           configured: true,
           credentialPresent: true,
           ready: true,
@@ -144,14 +144,14 @@ describe("durable transport selection", () => {
     const path = transportSelectionPath(stateDirectory);
     await writeTransportSelection(
       path,
-      "notifications",
+      "whooshbang",
       new Date("2026-07-26T19:00:00.000Z"),
     );
 
     expect((await lstat(path)).mode & 0o777).toBe(0o600);
     await expect(readTransportSelection(path)).resolves.toEqual({
       schema: "agent-relay-transport-selection.v1",
-      selected: "notifications",
+      selected: "whooshbang",
       updatedAt: "2026-07-26T19:00:00.000Z",
     });
     await expect(

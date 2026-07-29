@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import {
-  notificationsConnectionPaths,
-  readNotificationsConnection,
-  safeNotificationsConnectionSummary,
-} from "./notifications-config.js";
+  whooshbangConnectionPaths,
+  readWhooshBangConnection,
+  safeWhooshBangConnectionSummary,
+} from "./whooshbang-config.js";
 import { atomicWritePrivateJson, readPrivateJson } from "./private-config.js";
 import {
   resolveWebhookConfiguration,
@@ -22,7 +22,7 @@ const TRANSPORT_FILE_OPTIONS = {
 export const AgentRelayTransportSchema = z.enum([
   "fake",
   "telegram",
-  "notifications",
+  "whooshbang",
   "webhook",
 ]);
 export type AgentRelayTransport = z.infer<typeof AgentRelayTransportSchema>;
@@ -59,7 +59,7 @@ export interface TelegramReadiness {
   webhookReady: boolean;
 }
 
-export interface NotificationsReadiness {
+export interface WhooshBangReadiness {
   apiOrigin?: string;
   binding: "verified-at-connect" | "inactive" | "unavailable";
   canaryRef?: string;
@@ -82,7 +82,7 @@ export interface TransportReadinessReport {
   selection: ResolvedTransportSelection;
   transports: {
     fake: { ready: true };
-    notifications: NotificationsReadiness;
+    whooshbang: WhooshBangReadiness;
     telegram: TelegramReadiness;
     webhook: WebhookReadiness;
   };
@@ -230,12 +230,12 @@ function telegramReadiness(input: TelegramReadinessInput): TelegramReadiness {
   };
 }
 
-async function notificationsReadiness(
+async function whooshbangReadiness(
   stateDirectory: string,
-): Promise<NotificationsReadiness> {
+): Promise<WhooshBangReadiness> {
   try {
-    const connection = await readNotificationsConnection(
-      notificationsConnectionPaths(stateDirectory),
+    const connection = await readWhooshBangConnection(
+      whooshbangConnectionPaths(stateDirectory),
     );
     if (connection === undefined) {
       return {
@@ -243,13 +243,13 @@ async function notificationsReadiness(
         configured: false,
         credentialPermissions: "unavailable",
         credentialPresent: false,
-        issueCodes: ["notifications-not-configured"],
+        issueCodes: ["whooshbang-not-configured"],
         pendingRevocations: 0,
         ready: false,
         resolutionPresentation: "unsupported-in-pinned-contract",
       };
     }
-    const safe = safeNotificationsConnectionSummary(connection);
+    const safe = safeWhooshBangConnectionSummary(connection);
     const ready =
       connection.configuration.status === "active" &&
       connection.credential !== undefined;
@@ -265,10 +265,10 @@ async function notificationsReadiness(
       environment: safe.environment,
       issueCodes: [
         ...(connection.configuration.status !== "active"
-          ? [`notifications-${connection.configuration.status}`]
+          ? [`whooshbang-${connection.configuration.status}`]
           : []),
         ...(connection.credential === undefined
-          ? ["notifications-credential-missing"]
+          ? ["whooshbang-credential-missing"]
           : []),
       ],
       machineClientRef: safe.machineClientRef,
@@ -283,7 +283,7 @@ async function notificationsReadiness(
       credentialPermissions: "unavailable",
       connectionStatus: "invalid",
       credentialPresent: false,
-      issueCodes: ["notifications-configuration-invalid"],
+      issueCodes: ["whooshbang-configuration-invalid"],
       pendingRevocations: 0,
       ready: false,
       resolutionPresentation: "unsupported-in-pinned-contract",
@@ -307,7 +307,7 @@ export async function inspectTransportReadiness(input: {
     selection: input.selection,
     transports: {
       fake: { ready: true },
-      notifications: await notificationsReadiness(input.stateDirectory),
+      whooshbang: await whooshbangReadiness(input.stateDirectory),
       telegram: telegramReadiness(input.telegram ?? {}),
       webhook: webhook.readiness,
     },

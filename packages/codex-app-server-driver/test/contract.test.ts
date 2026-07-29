@@ -25,7 +25,7 @@ interface ContractFixture {
     readonly sha256: string;
   };
   readonly clientRequests: readonly string[];
-  readonly serverNotifications: readonly string[];
+  readonly serverWhooshBang: readonly string[];
   readonly serverRequests: readonly string[];
   readonly unsupportedRunnerCommands: readonly string[];
 }
@@ -87,7 +87,7 @@ describe("Codex app-server 0.145.0 contract fixtures", () => {
         "turn/interrupt",
       ]),
     );
-    expect(contract.serverNotifications).toEqual(
+    expect(contract.serverWhooshBang).toEqual(
       expect.arrayContaining([
         "thread/started",
         "turn/started",

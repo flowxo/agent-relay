@@ -219,7 +219,7 @@ Provider data is separate. Revoke a hosted WhooshBang machine client before
 local erasure:
 
 ```sh
-credential_command | node apps/relay/dist/cli.js notifications disconnect \
+credential_command | node apps/relay/dist/cli.js whooshbang disconnect \
   --revoke \
   --erase-credential \
   --erase-configuration \

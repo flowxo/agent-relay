@@ -221,28 +221,25 @@ export async function runDoctor(
           }`,
     });
 
-    const notifications = readiness.transports.notifications;
-    if (
-      notifications.configured ||
-      readiness.selectedTransport === "notifications"
-    ) {
+    const whooshbang = readiness.transports.whooshbang;
+    if (whooshbang.configured || readiness.selectedTransport === "whooshbang") {
       checks.push({
-        name: "notifications-transport",
-        ok: notifications.ready,
-        level: notifications.ready
+        name: "whooshbang-transport",
+        ok: whooshbang.ready,
+        level: whooshbang.ready
           ? "pass"
-          : readiness.selectedTransport === "notifications"
+          : readiness.selectedTransport === "whooshbang"
             ? "fail"
             : "warn",
         detail: JSON.stringify({
-          apiOrigin: notifications.apiOrigin ?? null,
-          binding: notifications.binding,
-          contractVersion: notifications.contractVersion ?? null,
-          credentialPermissions: notifications.credentialPermissions,
-          credentialPresent: notifications.credentialPresent,
-          issueCodes: notifications.issueCodes,
-          machineClientRef: notifications.machineClientRef ?? null,
-          resolutionPresentation: notifications.resolutionPresentation,
+          apiOrigin: whooshbang.apiOrigin ?? null,
+          binding: whooshbang.binding,
+          contractVersion: whooshbang.contractVersion ?? null,
+          credentialPermissions: whooshbang.credentialPermissions,
+          credentialPresent: whooshbang.credentialPresent,
+          issueCodes: whooshbang.issueCodes,
+          machineClientRef: whooshbang.machineClientRef ?? null,
+          resolutionPresentation: whooshbang.resolutionPresentation,
         }),
       });
     }

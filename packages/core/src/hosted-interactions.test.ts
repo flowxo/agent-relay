@@ -13,7 +13,7 @@ import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 const occurredAt = "2026-07-26T18:00:00.000Z";
 const handledAt = "2026-07-26T18:01:00.000Z";
 const expiresAt = "2026-07-26T18:30:00.000Z";
-const streamKey = sha256("notifications-hosted-test-stream");
+const streamKey = sha256("whooshbang-hosted-test-stream");
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -73,7 +73,7 @@ function deliver(
   store.markDelivered(
     input.eventId,
     claimed.attemptNumber,
-    "notifications",
+    "whooshbang",
     messageId,
     "2026-07-26T18:00:02.000Z",
     {
@@ -110,7 +110,7 @@ describe("durable hosted interaction authority", () => {
         resolution: {
           correlationId: request.correlationId,
           answer: "option_hosted_beta_12345678",
-          resolvedBy: "notifications",
+          resolvedBy: "whooshbang",
           now: "2026-07-26T18:00:30.000Z",
           expected: {
             machineId: request.machineId,
@@ -128,7 +128,7 @@ describe("durable hosted interaction authority", () => {
     });
     expect(store.getPendingRequest(request.correlationId)).toMatchObject({
       answer: "option_hosted_beta_12345678",
-      resolvedBy: "notifications",
+      resolvedBy: "whooshbang",
       state: "answered",
     });
     expect(
@@ -212,7 +212,7 @@ describe("durable hosted interaction authority", () => {
     expect(messageUpdate).toMatchObject({
       eventId: claim.eventId,
       outcome: "answered",
-      resolutionSource: "notifications",
+      resolutionSource: "whooshbang",
       state: "updating",
       attemptCount: 1,
     });
@@ -231,7 +231,7 @@ describe("durable hosted interaction authority", () => {
     store.markHostedMessageUpdateFailed({
       streamKey,
       eventId: claim.eventId,
-      errorCode: "notifications-provider-retryable",
+      errorCode: "whooshbang-provider-retryable",
       retryable: true,
       retryAt: "2026-07-26T18:02:10.000Z",
       now: "2026-07-26T18:02:03.000Z",
@@ -253,7 +253,7 @@ describe("durable hosted interaction authority", () => {
     });
     expect(store.getPendingRequest(request.correlationId)).toMatchObject({
       answer: "option_hosted_beta_12345678",
-      resolvedBy: "notifications",
+      resolvedBy: "whooshbang",
       state: "answered",
     });
     expect(store.hostedPollStatus(streamKey).messageUpdates).toEqual({
@@ -316,7 +316,7 @@ describe("durable hosted interaction authority", () => {
       reasonCode: "invalid_option",
     });
 
-    const isolatedStream = sha256("notifications-integrity-stop-stream");
+    const isolatedStream = sha256("whooshbang-integrity-stop-stream");
     expect(
       store.recordHostedEventClaim({
         streamKey: isolatedStream,
@@ -459,8 +459,8 @@ describe("durable hosted interaction authority", () => {
     const store = new RelayStore();
     const first = event("scope_first");
     const second = event("scope_second");
-    const firstStream = sha256("notifications-first-machine-stream");
-    const secondStream = sha256("notifications-second-machine-stream");
+    const firstStream = sha256("whooshbang-first-machine-stream");
+    const secondStream = sha256("whooshbang-second-machine-stream");
     const sharedMessageId = "message_hosted_shared_12345678";
     deliver(store, first, "scope_first", firstStream, sharedMessageId);
     deliver(store, second, "scope_second", secondStream, sharedMessageId);

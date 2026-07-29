@@ -203,6 +203,79 @@ describe("SQLite schema compatibility", () => {
     upgraded.close();
   });
 
+  it("renames the retained hosted transport identity to whooshbang once", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+
+    const prior = new Database(databasePath);
+    prior
+      .prepare(
+        `
+        INSERT INTO topic_cleanup_operations (
+          operation_id, transport_name, transport_scope, selection_mode,
+          inactive_before, state, eligible_count, candidates_json, created_at,
+          expires_at, finished_at, updated_at
+        ) VALUES (?, 'notifications', 'hosted:stream', 'proven-dead', NULL,
+          'completed', 0, '[]', ?, ?, ?, ?)
+      `,
+      )
+      .run(
+        "cleanup_fedcba9876543210fedcba9876543210",
+        "2026-07-29T12:00:00.000Z",
+        "2026-07-29T12:10:00.000Z",
+        "2026-07-29T12:00:00.000Z",
+        "2026-07-29T12:00:00.000Z",
+      );
+    prior.pragma("user_version = 6");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare(
+          "SELECT transport_name FROM topic_cleanup_operations WHERE operation_id = ?",
+        )
+        .pluck()
+        .get("cleanup_fedcba9876543210fedcba9876543210"),
+    ).toBe("whooshbang");
+    for (const [table, column] of [
+      ["session_topics", "transport_name"],
+      ["events", "transport_name"],
+      ["topic_cleanup_operations", "transport_name"],
+      ["notification_groups", "transport_name"],
+      ["hosted_delivery_mappings", "transport_name"],
+      ["pending_requests", "resolved_by"],
+    ]) {
+      expect(
+        upgraded
+          .prepare(
+            `SELECT COUNT(*) FROM ${String(table)} WHERE ${String(column)} = 'notifications'`,
+          )
+          .pluck()
+          .get(),
+      ).toBe(0);
+    }
+    upgraded.close();
+
+    // Reopening an already-migrated database leaves the renamed value alone.
+    new RelayStore(databasePath).close();
+    const reopened = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(reopened)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      reopened
+        .prepare(
+          "SELECT transport_name FROM topic_cleanup_operations WHERE operation_id = ?",
+        )
+        .pluck()
+        .get("cleanup_fedcba9876543210fedcba9876543210"),
+    ).toBe("whooshbang");
+    reopened.close();
+  });
+
   it("refuses to open a newer schema and leaves it untouched", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");
