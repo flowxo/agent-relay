@@ -2,6 +2,15 @@
 
 ## Proven
 
+- The public README now follows the developer journey: the product experience,
+  source setup, credential-free canary, safe hook installation, direct Telegram
+  activation, everyday controls, the local web board, supervised runs, and only
+  then architecture and compatibility detail. Release-evaluator prose remains in
+  its focused guides instead of dominating the entry point. The rewrite
+  preserves every generated support claim, governance link, installation
+  disclosure, privacy boundary, and extension reference. On 2026-07-28 the
+  complete `pnpm check` passed, including 69 Vitest files/506 tests, all
+  contract, distribution, hosted-package, and packed-lifecycle proofs.
 - FXO-1357 adds a separate operator-authorized inactive-topic prune without
   weakening proven-dead `/cleanup`. `/prune` defaults to 24 hours, accepts
   bounded hour/day thresholds from one hour through thirty days, and produces a
