@@ -1101,7 +1101,7 @@ also remain free of silent delivery, hook, or correlation failures.
   registration contains only the ID/digest. Real digest verification and human
   subscription activation remain contract-backed assumptions until AR3 runs
   against the approved real service.
-- The private pinned Notifications client/contract artifacts declare no
+- The private pinned WhooshBang client/contract artifacts declare no
   distributable license metadata. They are bundled only into an unpublished
   local candidate today. Public package publication must still resolve the final
   artifact license/notice boundary.
