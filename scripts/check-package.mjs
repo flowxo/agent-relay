@@ -455,7 +455,7 @@ try {
         status: 200,
         schema: "agent-relay-web-meta.v1",
         apiVersion: "1",
-        assetVersion: "1",
+        assetVersion: "2",
       },
       "packed web API/assets are not version-compatible",
     );

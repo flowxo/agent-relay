@@ -33,7 +33,7 @@ places where Agent Relay keeps its source of truth.
 - Native hooks for ordinary use, plus an opt-in supervisor when you need proven
   process exits or late CLI resume.
 - Replaceable notification transports. Direct Telegram works without a hosted
-  Agent Relay account.
+  Agent Relay account, and a signed outbound webhook can feed your own tools.
 
 ## Get started
 
@@ -174,6 +174,37 @@ Agent Relay creates a Telegram topic and asks for the exact reply
 `relay-canary-ok`. When that succeeds, start Codex, Claude Code, or Cursor as
 usual. Their installed hooks will send attention events to the daemon.
 
+## Send alerts to your own tools
+
+You do not need to write an Agent Relay adapter package to receive alerts in an
+internal dashboard, desktop app, queue, or custom notifier. Select the built-in
+outbound webhook and point it at any small HTTP receiver:
+
+```sh
+WEBHOOK_SECRET="$(openssl rand -hex 32)"
+printf '%s' "$WEBHOOK_SECRET" |
+  node apps/relay/dist/cli.js webhook configure \
+    --url http://127.0.0.1:4319/agent-relay \
+    --secret-stdin
+
+node apps/relay/dist/cli.js transport select webhook
+node apps/relay/dist/cli.js daemon
+```
+
+In another terminal, run `node apps/relay/dist/cli.js webhook-canary`. Every
+delivery is strict JSON with a stable idempotency key and an HMAC-SHA256
+signature over the exact request bytes. Loopback HTTP is allowed for local
+development; non-loopback receivers require HTTPS.
+
+This transport is outbound only. Questions include a credential-free link to the
+exact request on the authenticated local web board. A public inbound response
+API is intentionally deferred until its authentication, replay, proxy, and
+authorization model has been designed.
+
+The [outbound webhook guide](docs/outbound-webhooks.md) includes the full
+payload, a working Node.js receiver, signature verification, acknowledgement
+rules, retries, privacy boundaries, and environment-based setup.
+
 ## Use it day to day
 
 ### Follow sessions in Telegram
@@ -280,6 +311,7 @@ Codex / Claude Code / Cursor
       durable SQLite spool
             │
             ├──── Telegram session topics
+            ├──── signed outbound webhook
             ├──── local web board
             └──── hosted Notifications (optional)
 ```
@@ -295,10 +327,11 @@ daemon replays it later. Malformed input and exhausted deliveries become
 diagnostics or dead letters instead of disappearing silently.
 
 Only the selected transport receives an event. The fake transport remains local,
-direct Telegram receives bounded cards, and the optional hosted Notifications
-adapter receives the same provider-neutral contract. Agent Relay does not
-require a hosted account, public callback, or Cloudflare runtime for local or
-Telegram operation.
+direct Telegram receives bounded cards, the outbound webhook sends signed
+runtime-validated JSON, and the optional hosted Notifications adapter receives
+the same provider-neutral contract. Agent Relay does not require a hosted
+account, public callback, or Cloudflare runtime for local, webhook, or Telegram
+operation.
 
 For the deeper design, read
 [architecture and threat boundaries](docs/architecture.md). To add another

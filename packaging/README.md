@@ -39,14 +39,16 @@ transcripts or machine paths.
 
 ## Choose one transport explicitly
 
-Agent Relay supports three exclusive transport choices: `fake`, direct
-`telegram`, and hosted `notifications`. Credentials affect readiness but never
-select a transport. There is no dual send or automatic failover.
+Agent Relay supports four exclusive transport choices: `fake`, direct
+`telegram`, signed outbound `webhook`, and hosted `notifications`. Credentials
+affect readiness but never select a transport. There is no dual send or
+automatic failover.
 
 ```sh
 agent-relay transport status
 agent-relay transport select fake
 agent-relay transport select telegram
+agent-relay transport select webhook
 agent-relay transport select notifications
 ```
 
@@ -55,6 +57,24 @@ retains the local SQLite spool, pending requests, answers, and continuation
 authority. To fall back during a provider incident, explicitly select `fake` or
 `telegram`; Agent Relay will not send an event to a second provider
 automatically.
+
+For a custom receiver, configure the shared secret through stdin, select the
+webhook, restart, and run its canary:
+
+```sh
+printf '%s' "$AGENT_RELAY_RECEIVER_SECRET" |
+  agent-relay webhook configure \
+    --url https://alerts.example.test/agent-relay \
+    --secret-stdin
+agent-relay transport select webhook
+agent-relay daemon
+agent-relay webhook-canary
+```
+
+The receiver gets one strict `agent-relay-webhook.v1` JSON envelope with a
+stable idempotency key, safe routing metadata, and an exact-byte HMAC-SHA256
+signature. It does not get a remote-control API. See the repository's outbound
+webhook guide for verification, acknowledgement, retry, and privacy details.
 
 Direct Telegram remains independent of the hosted service. It uses the
 operator's own bot and the setup documented in the repository. Hosted

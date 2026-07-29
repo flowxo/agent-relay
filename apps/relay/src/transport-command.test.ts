@@ -29,6 +29,10 @@ import {
   transportSelectionPath,
   writeTransportSelection,
 } from "./transport-config.js";
+import {
+  webhookConfigurationPath,
+  writeWebhookConfiguration,
+} from "./webhook-config.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -82,7 +86,7 @@ async function configureNotifications(stateDirectory: string) {
 }
 
 describe("durable transport selection", () => {
-  it("defaults to fake even when both transport credential sets are present", async () => {
+  it("defaults to fake even when every transport credential set is present", async () => {
     const stateDirectory = await temporaryDirectory();
     const material = await configureNotifications(stateDirectory);
 
@@ -92,6 +96,9 @@ describe("durable transport selection", () => {
         AGENT_RELAY_TELEGRAM_TOKEN: "123456:synthetic-token",
         AGENT_RELAY_TELEGRAM_CHAT_ID: "10001",
         AGENT_RELAY_TELEGRAM_OPERATOR_ID: "10002",
+        AGENT_RELAY_WEBHOOK_URL:
+          "https://receiver.example.test/private/path?tenant=private",
+        AGENT_RELAY_WEBHOOK_SECRET: "synthetic-private-webhook-secret-material",
       },
       stateDirectory,
     });
@@ -116,12 +123,20 @@ describe("durable transport selection", () => {
           credentialPresent: true,
           ready: true,
         },
+        webhook: {
+          endpointOrigin: "https://receiver.example.test",
+          ready: true,
+          secretPresent: true,
+          source: "environment",
+        },
       },
     });
     expect(serialized).not.toContain(material.bearerToken);
     expect(serialized).not.toContain("project_private_full_identity");
     expect(serialized).not.toContain("subscriber_private_full_identity");
     expect(serialized).not.toContain("binding_private_full_identity");
+    expect(serialized).not.toContain("synthetic-private-webhook");
+    expect(serialized).not.toContain("tenant=private");
   });
 
   it("writes a strict mode-0600 selection and resolves override precedence", async () => {
@@ -200,6 +215,36 @@ describe("durable transport selection", () => {
       },
     });
     await expect(readFile(databasePath, "utf8")).resolves.toBe(sentinel);
+  });
+
+  it("selects a ready file-backed webhook without exposing its secret or URL path", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const secret = "synthetic-file-webhook-secret-material-001";
+    await writeWebhookConfiguration(webhookConfigurationPath(stateDirectory), {
+      endpoint:
+        "https://receiver.example.test/private/agent-relay?tenant=private",
+      secret,
+    });
+
+    const result = await runTransportCommand({
+      args: ["select", "webhook"],
+      environment: {},
+      stateDirectory,
+    });
+    expect(result).toMatchObject({
+      durableSelection: "webhook",
+      selectedTransport: "webhook",
+      transports: {
+        webhook: {
+          endpointOrigin: "https://receiver.example.test",
+          ready: true,
+          source: "file",
+        },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain(secret);
+    expect(JSON.stringify(result)).not.toContain("/private/agent-relay");
+    expect(JSON.stringify(result)).not.toContain("tenant=private");
   });
 
   it("rejects permissive and symlinked selection files without touching referents", async () => {

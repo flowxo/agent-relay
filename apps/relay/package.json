@@ -28,6 +28,7 @@
     "@agent-relay/protocol": "workspace:*",
     "@agent-relay/runner-bridge": "workspace:*",
     "@agent-relay/telegram-transport": "workspace:*",
+    "@agent-relay/webhook-transport": "workspace:*",
     "zod": "4.4.3"
   },
   "devDependencies": {

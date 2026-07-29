@@ -22,6 +22,11 @@ const fixtureSets = [
     root: "packages/protocol/fixtures/interactions",
     manifest: "packages/protocol/fixtures/interactions/manifest.json",
   },
+  {
+    name: "outbound webhook",
+    root: "packages/webhook-transport/fixtures/webhook",
+    manifest: "packages/webhook-transport/fixtures/webhook/manifest.json",
+  },
 ];
 
 const forbiddenText = [

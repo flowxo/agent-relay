@@ -640,6 +640,11 @@ code {
   cursor: pointer;
 }
 
+.attention-item.is-deep-linked {
+  border-color: #7eaa98;
+  box-shadow: 0 0 0 3px rgb(18 102 79 / 12%);
+}
+
 .attention-item:hover,
 .attention-item:focus-visible {
   background: #f7f7f1;

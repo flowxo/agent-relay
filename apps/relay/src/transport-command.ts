@@ -12,7 +12,7 @@ export const TRANSPORT_COMMAND_USAGE = `Agent Relay Transport Selection
 
 Usage:
   agent-relay transport status
-  agent-relay transport select <fake|telegram|notifications>
+  agent-relay transport select <fake|telegram|notifications|webhook>
 
 Selection is durable and affects a daemon after its next start. Credentials
 never select a transport. A daemon-only --transport override takes precedence
@@ -81,6 +81,7 @@ async function status(
     selection,
     stateDirectory: runtime.stateDirectory,
     telegram: telegramReadinessInputFromEnvironment(environment),
+    webhookEnvironment: environment,
   });
 }
 
@@ -106,7 +107,7 @@ export async function runTransportCommand(
   if (subcommand === "select") {
     if (args.length !== 1) {
       throw new Error(
-        "Transport select requires exactly fake, telegram, or notifications",
+        "Transport select requires exactly fake, telegram, notifications, or webhook",
       );
     }
     const selected = AgentRelayTransportSchema.parse(args[0]);

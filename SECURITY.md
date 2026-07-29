@@ -80,3 +80,17 @@ General bugs and support questions belong in the
 [public issue chooser](https://github.com/flowxo/agent-relay/issues/new/choose)
 once the repository is public. Follow [SUPPORT.md](SUPPORT.md) when preparing a
 sanitized report.
+
+## Custom webhook boundary
+
+The V1 custom webhook is outbound-only. Agent Relay authenticates each attempt
+with an exact-body HMAC and stable idempotency key, but the receiver must verify
+the signature before parsing, reject stale timestamps, deduplicate the delivery
+ID, bound the body, and protect any onward delivery it performs. The local web
+handoff contains no credential and does not weaken normal browser
+authentication.
+
+Do not expose the daemon's existing local hook or browser routes as a public
+inbound integration API. Configurable inbound authentication, replay protection,
+request/option authorization, reverse-proxy behavior, and rate limits are
+deferred to a separately reviewed post-release design.

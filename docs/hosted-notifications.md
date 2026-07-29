@@ -42,9 +42,9 @@ Notifications C0 artifacts. They prove:
 - one common fake/direct-Telegram/Notifications behavior matrix; and
 - a scripts-disabled clean-home proof from the packed release artifact.
 
-The daemon can now select `fake`, direct `telegram`, or `notifications`
-explicitly. Hosted mode runs outbound delivery plus the authenticated
-machine-event poll/claim/resolve/ack loop.
+The daemon can select `fake`, direct `telegram`, outbound `webhook`, or
+`notifications` explicitly. Hosted mode runs outbound delivery plus the
+authenticated machine-event poll/claim/resolve/ack loop.
 
 Credential presence never selects a transport.
 
@@ -125,8 +125,8 @@ node apps/relay/dist/cli.js daemon
 The durable selection is a strict mode-`0600` `~/.agent-relay/transport.json`.
 `AGENT_RELAY_TRANSPORT` overrides it for one process environment, and
 `daemon --transport notifications` is the highest-precedence daemon-only
-override. Exact accepted values are `fake`, `telegram`, and `notifications`;
-unknown values fail closed.
+override. Exact accepted values are `fake`, `telegram`, `webhook`, and
+`notifications`; unknown values fail closed.
 
 The daemon refuses a selected hosted mode unless the retained narrow
 configuration is active and its credential is present. It never reads or retains

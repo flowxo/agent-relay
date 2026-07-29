@@ -1,4 +1,4 @@
-/* global AbortController, Blob, CSS, FormData, Option, TextDecoder, URL, clearTimeout, crypto, document, fetch, setInterval, setTimeout */
+/* global AbortController, Blob, CSS, FormData, Option, TextDecoder, URL, clearTimeout, crypto, document, fetch, location, setInterval, setTimeout */
 
 import {
   buildResponse,
@@ -70,6 +70,8 @@ const model = {
   lastContact: 0,
   highlightedSession: "",
   openSessionKey: "",
+  requestedAttentionId:
+    new URL(location.href).searchParams.get("request") ?? "",
   filters: {
     query: "",
     state: "all",
@@ -399,9 +401,14 @@ function renderAttention() {
       const displayId = session?.displayId ?? item.sessionKey.slice(-10);
       return `
         <article
-          class="attention-item"
+          class="attention-item ${
+            model.requestedAttentionId === item.requestId
+              ? "is-deep-linked"
+              : ""
+          }"
           tabindex="0"
           data-attention-session="${escapeHtml(item.sessionKey)}"
+          data-attention-request="${escapeHtml(item.requestId)}"
           aria-label="${escapeHtml(item.requestKind)} request for session ${escapeHtml(item.sessionKey.slice(-10))}"
         >
           <div class="attention-item-head">
@@ -438,6 +445,17 @@ function render() {
   renderFilters();
   renderSessions();
   renderAttention();
+}
+
+function focusRequestedAttention() {
+  if (model.requestedAttentionId.length === 0) return;
+  const item = document.querySelector(
+    `[data-attention-request="${CSS.escape(model.requestedAttentionId)}"]`,
+  );
+  if (item === null) return;
+  model.highlightedSession = item.dataset.attentionSession;
+  item.scrollIntoView({ behavior: "smooth", block: "center" });
+  item.querySelector("input, textarea, select, button")?.focus();
 }
 
 function renderTimeline(timeline) {
@@ -882,6 +900,7 @@ elements.connectForm.addEventListener("submit", async (event) => {
     elements.connectForm.reset();
     elements.connectPanel.hidden = true;
     elements.console.hidden = false;
+    setTimeout(focusRequestedAttention, 0);
     reconnectStream();
   } catch (error) {
     model.token = "";

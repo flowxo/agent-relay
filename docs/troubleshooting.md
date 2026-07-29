@@ -56,6 +56,30 @@ A durable selection change never deletes SQLite or request state.
 A partial selected configuration fails clearly; it never silently routes real
 work through another provider.
 
+## The outbound webhook does not deliver
+
+Inspect safe configuration and runtime state without printing the secret or URL
+path:
+
+```sh
+agent-relay webhook status
+agent-relay transport status
+agent-relay status
+agent-relay doctor
+```
+
+The selected transport must be `webhook`, and webhook readiness must be true.
+Restart the daemon after configuring, disconnecting, or changing selection.
+Non-loopback endpoints require HTTPS; redirects are refused.
+
+`webhook-timeout`, `webhook-network-failure`, HTTP `408`, `425`, `429`, and
+`5xx` are retryable. Other `4xx`, redirects, malformed or oversized
+acknowledgements, and mismatched acknowledgement delivery IDs are terminal.
+Agent Relay never copies the receiver's response body into its safe status or
+error message. Use one synthetic request at the receiver and compare its
+`Idempotency-Key`, raw-body signature, and acknowledgement against the
+[outbound webhook guide](outbound-webhooks.md).
+
 ## Telegram preflight fails
 
 Common stable provider codes:
@@ -140,12 +164,12 @@ not block the harness or silently discard the failure.
 
 ## Historical fallback events become dead letters
 
-For Telegram or Notifications, the installed daemon defaults
-`AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS` to one hour. After interrupted-delivery
-recovery and fallback replay—but before automatic drain—older queued work is
-marked `dead_letter` with `delivery-stale-backlog`. One bounded
-`delivery.stale-backlog-quarantined` diagnostic records the count without event
-text.
+For Telegram, the outbound webhook, or Notifications, the installed daemon
+defaults `AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS` to one hour. After
+interrupted-delivery recovery and fallback replay—but before automatic
+drain—older queued work is marked `dead_letter` with `delivery-stale-backlog`.
+One bounded `delivery.stale-backlog-quarantined` diagnostic records the count
+without event text.
 
 This is deliberate flood protection, not silent loss. Still-open unexpired
 requests and `process.exited` events carrying proven `owned-child` evidence are

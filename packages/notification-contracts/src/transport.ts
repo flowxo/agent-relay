@@ -1,6 +1,9 @@
 import type {
+  AgentAttentionEventV1,
+  Harness,
   InteractionPresentationMode,
   InteractionProviderObservationV1,
+  Surface,
 } from "@agent-relay/protocol";
 
 import type { CardActionKind } from "./card-action.js";
@@ -64,9 +67,29 @@ export interface DeliveryMessage {
   actions?: DeliveryAction[];
 }
 
+export interface DeliverySource {
+  occurredAt: string;
+  eventType: AgentAttentionEventV1["type"];
+  harness: Harness;
+  surface: Surface;
+  repository: string;
+  branch?: string;
+  sessionKey: string;
+  shortSessionId: string;
+}
+
+export interface DeliveryHandoff {
+  mode: "local-web";
+  requestId: string;
+  expiresAt: string;
+  url: string;
+}
+
 export interface DeliveryContext {
   idempotencyKey: string;
   topicId?: string;
+  source?: DeliverySource;
+  handoff?: DeliveryHandoff;
 }
 
 export interface DeliveryReceipt {
@@ -227,6 +250,7 @@ export class TransportError extends Error {
     public readonly code: string,
     public readonly retryable: boolean,
     public readonly status?: number,
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
   }

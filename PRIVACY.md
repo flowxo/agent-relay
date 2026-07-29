@@ -26,6 +26,8 @@ stores:
   diagnostics;
 - `web-credential.json`, containing independent local bearer and CSRF secrets
   when the local web companion is enabled;
+- optional `webhook.json`, containing the explicitly configured outbound URL,
+  shared HMAC secret, timeout, and configuration timestamp;
 - `install.json` and `bin/agent-relay`, which record and launch the owned
   user-level installation; and
 - optional experimental `runner-bridge.json` and `runner-bridge.sqlite`, which
@@ -95,6 +97,17 @@ or direct-Telegram operation. When configured, it receives the bounded transport
 contract described above, not a full repository or transcript. Provider-specific
 credentials, endpoints, retention, and account terms must be documented before
 that adapter is promoted for production use.
+
+The optional outbound webhook sends a strict `agent-relay-webhook.v1` JSON
+envelope to the operator-configured endpoint. It contains the same bounded
+rendered card, sanitized repository/branch and session projection, event type,
+opaque delivery/request/action values, and, for an open request, a local web
+handoff URL without credentials. It does not send the raw machine ID, harness
+session ID, absolute project path, daemon/web credential, HMAC secret, answer,
+resume command, or raw hook payload. The endpoint necessarily receives request
+headers, timestamp, stable idempotency key, and HMAC signature. Storage,
+retention, logging, and onward delivery at that custom endpoint are controlled
+by its operator.
 
 The local web companion binds to loopback by default. Its browser receives
 sanitized session/timeline data, bounded event details, and request forms from

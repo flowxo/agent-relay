@@ -75,6 +75,10 @@ await build({
       root,
       "packages/telegram-transport/src/index.ts",
     ),
+    "@agent-relay/webhook-transport": resolve(
+      root,
+      "packages/webhook-transport/src/index.ts",
+    ),
   },
   logLevel: "warning",
 });
