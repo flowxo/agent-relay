@@ -75,11 +75,12 @@ discrete argv value and is never shell-interpreted.
 Telegram's official Bot API documentation was rechecked on 2026-07-29 against
 Bot API 10.2. The current contract documents `createForumTopic` for forum
 supergroups and private bot chats, a 1-128-character topic name, and
-`message_thread_id` and `disable_notification` on `sendMessage`. Agent Relay's
-deterministic HTTP fixtures cover the documented success, silent-delivery, and
-malformed-response shapes. A credentialed 2026-07-25 activation also created and
-reused private topics for several independent Codex sessions; no live identifier
-or message was retained.
+`editForumTopic` for both scopes, plus `message_thread_id`,
+`disable_notification`, and explicit UTF-16 `entities` on `sendMessage`. Agent
+Relay's deterministic HTTP fixtures cover the documented create, state-title
+edit, literal rich-text, silent-delivery, and malformed-response shapes. A
+credentialed 2026-07-25 activation also created and reused private topics for
+several independent Codex sessions; no live identifier or message was retained.
 
 Local reply intake defaults to `getUpdates` long polling because the daemon
 binds to loopback. The implementation sends an offset one greater than the
@@ -111,8 +112,11 @@ machine/harness/session identity, and the 128-character name bound preserves
 that suffix. Fixtures prove that two sessions ending in the same eight
 characters still receive distinguishable names. `topicRecords` expose `running`,
 `waiting`, `muted`, `crashed`, `ended`, and `stale` lane states from durable
-session, latest-event, and control records without renaming the topic on every
-event. Existing SQLite files add and backfill the latest-event field on open.
+session, latest-event, and control records. Schema 8 keeps the stable base name
+separate from the applied and desired display title; state changes schedule
+bounded leased edits, and file-backed fixtures prove retry and restart recovery.
+Existing SQLite files backfill their current provider title before the first
+state reconciliation.
 
 The Telegram HTTP fixtures classify a
 `400 Bad Request: message thread not found` response only when `sendMessage`
@@ -127,12 +131,13 @@ A second fixture classifies a scoped `400` response proving that a message
 thread is closed and runs the same replacement path. Bot API 10.2 documents
 `closeForumTopic` and `reopenForumTopic` for forum supergroups, while its
 private-chat topic support explicitly covers creation, editing, deletion, and
-unpinning. Agent Relay does not call the supergroup-only close method or the
-destructive private-chat-capable `deleteForumTopic` method. Fake restart
-fixtures recover interrupted topic creation with an explicit batch limit. Ended
-lanes suppress all later events and cancel delayed requests; both a native
-`session.ended` event and the End button are covered. Their Telegram topics
-currently remain visible.
+unpinning. Agent Relay does not call the supergroup-only close method.
+`deleteForumTopic` is isolated behind the existing exact-set, operator-confirmed
+cleanup and purge controls. Fake restart fixtures recover interrupted topic
+creation and title editing with explicit batch limits. Ended lanes suppress all
+later events and cancel delayed requests; both a native `session.ended` event
+and the End button are covered. Their Telegram topics remain visible until
+confirmed cleanup, while their displayed title becomes `⚫` ended.
 
 Real-Telegram daemon startup calls `getMe`, `getChat`, and `getWebhookInfo`
 before opening the local service. Sanitized fixtures require
@@ -148,8 +153,9 @@ Compact card fixtures enforce Telegram's 4,096-character message boundary and
 64-byte callback-data boundary before the request. Card action payloads use a
 fixed `relay-card:v1` namespace, a one-character action code, and an opaque
 deterministic token that is registered against the full local event. Telegram
-receives no parse mode, so untrusted model text remains normalized plain text
-and cannot create formatting or callback payloads.
+receives no parse mode. Explicit entities style only trusted structural ranges
+over the final bounded UTF-16 text, so untrusted model text remains literal and
+cannot create formatting or callback payloads.
 
 Card callback fixtures include Telegram's originating message and
 `message_thread_id`. The router validates the versioned payload, configured

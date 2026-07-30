@@ -218,6 +218,9 @@ different payload reusing an operation ID conflicts.
   replayed.
 - Telegram topic mappings survive restarts and are reconciled when the provider
   proves a topic is unavailable.
+- Stable topic identity and displayed state title are stored separately. Title
+  edits have independent leases, retries, restart recovery, and diagnostics, so
+  a cosmetic provider failure cannot corrupt session correlation.
 - Destructive topic cleanup requires a durable exact-set preview and authorized
   confirmation, then revalidates each explicit terminal tombstone immediately
   before provider deletion.
@@ -245,18 +248,18 @@ different payload reusing an operation ID conflicts.
 
 ## Data and trust boundaries
 
-| Boundary           | Default posture                                                                     |
-| ------------------ | ----------------------------------------------------------------------------------- |
-| Harness to hook    | Bounded stdin, runtime validation, safe native no-op on failure                     |
-| Hook to daemon     | Loopback HTTP; optional independent daemon bearer                                   |
-| Local persistence  | Private state directory, SQLite, redacted rotating logs, explicit retention         |
-| Browser to daemon  | Loopback, generated bearer + CSRF, same-origin mutations, no CORS                   |
-| Telegram           | Bounded plain-text card and opaque buttons; configured bot/chat/operator only       |
-| Outbound webhook   | Strict bounded JSON, HTTPS/loopback endpoint, exact-byte HMAC, no inbound authority |
-| Hosted WhooshBang  | Optional bounded transport contract; local SQLite retains decision authority        |
-| Resume process     | Discrete argv, exact session, fail-closed initial authority, at-most-once claim     |
-| Public diagnostics | Synthetic reproduction only; no databases, raw logs, credentials, or transcripts    |
-| Runner bridge      | Outbound versioned frames; local binding and execution authority; no generic RPC    |
+| Boundary           | Default posture                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| Harness to hook    | Bounded stdin, runtime validation, safe native no-op on failure                                      |
+| Hook to daemon     | Loopback HTTP; optional independent daemon bearer                                                    |
+| Local persistence  | Private state directory, SQLite, redacted rotating logs, explicit retention                          |
+| Browser to daemon  | Loopback, generated bearer + CSRF, same-origin mutations, no CORS                                    |
+| Telegram           | Bounded literal text, explicit style entities, and opaque buttons; configured bot/chat/operator only |
+| Outbound webhook   | Strict bounded JSON, HTTPS/loopback endpoint, exact-byte HMAC, no inbound authority                  |
+| Hosted WhooshBang  | Optional bounded transport contract; local SQLite retains decision authority                         |
+| Resume process     | Discrete argv, exact session, fail-closed initial authority, at-most-once claim                      |
+| Public diagnostics | Synthetic reproduction only; no databases, raw logs, credentials, or transcripts                     |
+| Runner bridge      | Outbound versioned frames; local binding and execution authority; no generic RPC                     |
 
 See [PRIVACY.md](../PRIVACY.md) for exact local files, outbound fields,
 retention, and erasure, and [SECURITY.md](../SECURITY.md) for private reporting.
