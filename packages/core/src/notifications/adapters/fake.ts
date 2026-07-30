@@ -61,6 +61,7 @@ export class FakeNotificationTransport
   // Retain the pre-refactor durable transport identity so existing local
   // delivery summaries remain continuous across this code-ownership change.
   public readonly name = "fake-telegram";
+  public readonly supportedDeliveryModes = ["notify", "silent"] as const;
   public readonly topicScope = "fake:private-chat";
 
   public observeInteractionCapabilities(

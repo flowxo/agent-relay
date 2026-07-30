@@ -1,0 +1,8 @@
+{
+  "session_id": "claude-session-lifecycle-0001",
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl",
+  "cwd": "/workspace/example",
+  "hook_event_name": "SessionStart",
+  "source": "resume",
+  "model": "claude-sonnet-5"
+}

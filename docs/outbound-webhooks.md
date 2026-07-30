@@ -126,7 +126,12 @@ createServer((request, response) => {
     }
 
     // Commit delivery.deliveryId before doing non-idempotent downstream work.
-    console.log(delivery.message.title, delivery.message.text);
+    // "silent" is a visible history update; "notify" should attract attention.
+    console.log(
+      delivery.deliveryMode,
+      delivery.message.title,
+      delivery.message.text,
+    );
 
     response.writeHead(202, { "content-type": "application/json" }).end(
       JSON.stringify({
@@ -165,10 +170,11 @@ The strict v1 envelope is:
 {
   "schema": "agent-relay-webhook.v1",
   "deliveryId": "event_fixture_webhook_12345678",
+  "deliveryMode": "notify",
   "message": {
     "eventId": "event_fixture_webhook_12345678",
     "title": "Codex · agent-relay",
-    "text": "Waiting for your next instruction · now\nmain · session 12345678-a1b2c3"
+    "text": "main · session 12345678-a1b2c3\ncodex/cli · turn.stopped\n\nSummary: Synthetic fixture notification\n\nWaiting for your next instruction · now"
   },
   "source": {
     "occurredAt": "2026-07-28T14:00:00.000Z",
@@ -186,6 +192,13 @@ The strict v1 envelope is:
 `message` can also contain the provider-neutral `interaction`, `multiSelect`,
 `questionSet`, and `actions` structures. Their values are opaque presentation
 handles, not commands and not an inbound API.
+
+`deliveryMode` is `notify` for an event that requires operator attention and
+`silent` for routine lifecycle history such as a session opening, a prompt being
+submitted, or structured background work continuing. A custom receiver should
+keep silent events visible without producing a device alert. The field is
+advisory at the HTTP boundary; the receiver owns its downstream notification
+behavior.
 
 When an open request can be answered in the local web companion, the envelope
 also includes:

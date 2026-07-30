@@ -169,8 +169,7 @@ describe("compact attention cards", () => {
 
     expect(card.title).toBe("Codex · example");
     expect(card.text).toContain("time unknown");
-    expect(summary).not.toContain("\n");
-    expect(summary).toContain("…[truncated]");
+    expect(summary).toContain("\n…\n");
     expect(rendered.length).toBeLessThanOrEqual(DELIVERY_MESSAGE_LIMIT);
     expect(card.actions?.map((action) => action.kind)).toContain("details");
     expect({
@@ -186,6 +185,39 @@ describe("compact attention cards", () => {
       expect(action.token).not.toContain("forged");
       expect(action.token).not.toContain("fake bold");
     }
+  });
+
+  it("puts a short head-and-tail summary before the waiting state", () => {
+    const card = renderDeliveryMessage(
+      {
+        ...eventFor("turn.stopped"),
+        lastAssistantMessage: [
+          "Opening line one.",
+          "Opening line two.",
+          "Middle detail one should stay behind Details.",
+          "Middle detail two should stay behind Details.",
+          "Closing line one.",
+          "Closing line two.",
+        ].join("\n"),
+      },
+      { now },
+    );
+
+    expect(card.text).toContain(
+      [
+        "Summary: Opening line one.",
+        "Opening line two.",
+        "…",
+        "Closing line one.",
+        "Closing line two.",
+      ].join("\n"),
+    );
+    expect(card.text).not.toContain("Middle detail one");
+    expect(card.text.indexOf("Summary:")).toBeLessThan(
+      card.text.indexOf("Waiting for your next instruction"),
+    );
+    expect(card.text.trimEnd().endsWith("· 1m ago")).toBe(true);
+    expect(card.actions?.map((action) => action.kind)).toContain("details");
   });
 
   it("derives valid, deterministic, action-specific opaque tokens", () => {

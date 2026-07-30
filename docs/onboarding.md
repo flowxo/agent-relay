@@ -202,6 +202,13 @@ The installer:
 - preserves unrelated hooks and settings; and
 - records an ownership manifest for safe upgrades and uninstall.
 
+Codex and Claude Code installs include `SessionStart` and `UserPromptSubmit` in
+addition to their attention hooks. Agent Relay uses those events only to show a
+quiet “session opened” or “operator submitted work” update; it validates the
+native prompt field but never stores or forwards its contents. Automatic
+compaction starts are excluded from the installed matcher because they do not
+represent new operator work. Cursor remains on its evidence-backed stop surface.
+
 Review or trust newly installed hooks through each harness's supported UI. Codex
 exposes `/hooks`; Claude Code and Cursor expose their corresponding hook
 configuration views.
@@ -346,19 +353,21 @@ on every event. Compact event cards and session-control edits show state in
 Telegram, while `status` exposes the reconciled current value. Crash and stale
 evidence remain visible even when routine whooshbang were muted.
 
-WhooshBang are rendered as compact plain-text cards with stable session
-identity, event age, a bounded one-line summary, and fixed callback data that
-cannot be supplied by model text. Full long content remains in the local durable
-event record and receives a Details action. Question-choice buttons and card
-actions are active:
+Notifications are rendered as compact plain-text cards with stable session
+identity, event age, and fixed callback data that cannot be supplied by model
+text. A stop card keeps at most two lines from the beginning and two from the
+end, separated by an omission marker, then puts the waiting state at the bottom.
+Full long content remains in the local durable event record and receives a
+Details action. Question-choice buttons and card actions are active:
 
 Claude Code `Stop` events with a non-empty structured `background_tasks` or
 `session_crons` collection are not operator attention. Agent Relay retains only
-the two bounded counts, keeps the lane running, and records a durable
-`background-work` suppression. It does not inspect assistant prose, task
-descriptions, commands, scheduled prompts, or transcripts. A later Stop with
-both collections empty produces the ordinary waiting card. Missing fields retain
-the older deterministic Stop behavior.
+the two bounded counts and keeps the lane running. Telegram and other
+silent-capable transports receive a quiet activity card; notify-only transports
+record a durable `background-work` suppression instead. It does not inspect
+assistant prose, task descriptions, commands, scheduled prompts, or transcripts.
+A later Stop with both collections empty produces the ordinary notifying waiting
+card. Missing fields retain the older deterministic Stop behavior.
 
 Exact-equivalent `turn.started`, `turn.activity`, and request-free
 `turn.stopped` events reuse one visible card during a rolling 60-second window.

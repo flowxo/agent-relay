@@ -21,7 +21,9 @@ import type {
 import { sessionTopicMetadata } from "../topic.js";
 
 export const DELIVERY_MESSAGE_LIMIT = 4_096;
-const CARD_SUMMARY_LIMIT = 480;
+const CARD_SUMMARY_LIMIT = 320;
+const SUMMARY_EDGE_LINES = 2;
+const SUMMARY_OMISSION_MARKER = "…";
 const TRUNCATION_MARKER = " …[truncated]";
 
 function shortOpaqueId(value: string): string {
@@ -114,31 +116,101 @@ function oneLineUntrusted(value: string): string {
     .trim();
 }
 
-function truncateSummary(value: string): {
+function untrustedSummaryLines(value: string): string[] {
+  return redactText(value, 16_000)
+    .replaceAll("\r\n", "\n")
+    .replaceAll("\r", "\n")
+    .split("\n")
+    .map((line) =>
+      [...line]
+        .map((character) => {
+          const code = character.codePointAt(0) ?? 0;
+          return code <= 31 || code === 127 ? " " : character;
+        })
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter((line) => line.length > 0);
+}
+
+function boundedHeadTail(head: string, tail: string): string {
+  const marker = `\n${SUMMARY_OMISSION_MARKER}\n`;
+  const available = CARD_SUMMARY_LIMIT - [...marker].length;
+  const headLimit = Math.ceil(available / 2);
+  const tailLimit = Math.floor(available / 2);
+  const headCharacters = [...head];
+  const tailCharacters = [...tail];
+  return `${headCharacters.slice(0, headLimit).join("").trimEnd()}${marker}${tailCharacters
+    .slice(Math.max(0, tailCharacters.length - tailLimit))
+    .join("")
+    .trimStart()}`;
+}
+
+function compactSummary(
+  value: string,
+  preserveTail: boolean,
+): {
   summary: string;
   truncated: boolean;
 } {
-  const characters = [...value];
-  if (characters.length <= CARD_SUMMARY_LIMIT) {
-    return { summary: value, truncated: false };
+  const lines = untrustedSummaryLines(value);
+  if (lines.length === 0) {
+    return {
+      summary: "No bounded summary was supplied.",
+      truncated: false,
+    };
   }
-  const markerLength = [...TRUNCATION_MARKER].length;
+  const normalized = lines.join("\n");
+  if (
+    lines.length <= SUMMARY_EDGE_LINES * 2 &&
+    [...normalized].length <= CARD_SUMMARY_LIMIT
+  ) {
+    return { summary: normalized, truncated: false };
+  }
+  if (!preserveTail) {
+    const markerLength = [...TRUNCATION_MARKER].length;
+    return {
+      summary: `${[...normalized]
+        .slice(0, CARD_SUMMARY_LIMIT - markerLength)
+        .join("")
+        .trimEnd()}${TRUNCATION_MARKER}`,
+      truncated: true,
+    };
+  }
+  const headLineCount = Math.min(
+    SUMMARY_EDGE_LINES,
+    Math.ceil(lines.length / 2),
+  );
+  const tailLineCount = Math.min(
+    SUMMARY_EDGE_LINES,
+    lines.length - headLineCount,
+  );
+  const head = lines.slice(0, headLineCount).join("\n");
+  const tail =
+    tailLineCount === 0 ? normalized : lines.slice(-tailLineCount).join("\n");
+  const candidate = `${head}\n${SUMMARY_OMISSION_MARKER}\n${tail}`;
   return {
-    summary: `${characters
-      .slice(0, CARD_SUMMARY_LIMIT - markerLength)
-      .join("")
-      .trimEnd()}${TRUNCATION_MARKER}`,
+    summary:
+      [...candidate].length <= CARD_SUMMARY_LIMIT
+        ? candidate
+        : boundedHeadTail(head, tail),
     truncated: true,
   };
 }
 
-function eventContent(event: AgentAttentionEventV1): string {
-  const summary =
+function eventSummary(event: AgentAttentionEventV1): string {
+  return (
     (event.type === "turn.stopped" ? event.lastAssistantMessage : undefined) ??
     event.summary ??
     event.failure?.message ??
     event.lastAssistantMessage ??
-    "No bounded summary was supplied.";
+    "No bounded summary was supplied."
+  );
+}
+
+function eventContent(event: AgentAttentionEventV1): string {
+  const summary = eventSummary(event);
   return event.request === undefined || event.request.question === summary
     ? summary
     : `${summary} Question: ${event.request.question}`;
@@ -304,10 +376,15 @@ export function renderDeliveryMessage(
   options: AttentionCardOptions = {},
 ): DeliveryMessage {
   const metadata = sessionTopicMetadata(event);
-  const content = oneLineUntrusted(eventContent(event));
-  const { summary, truncated } = truncateSummary(
-    content.length === 0 ? "No bounded summary was supplied." : content,
+  const { summary, truncated } = compactSummary(
+    eventSummary(event),
+    event.type === "turn.stopped",
   );
+  const question =
+    event.request === undefined ||
+    event.request.question === eventSummary(event)
+      ? undefined
+      : oneLineUntrusted(event.request.question);
   const state =
     options.resolutionState === undefined
       ? EVENT_STATE_LABELS[event.type]
@@ -317,15 +394,25 @@ export function renderDeliveryMessage(
     options.coalesced === undefined
       ? `${state} · ${ageLabel(event.occurredAt, now)}`
       : `${state} · ${String(options.coalesced.count)} equivalent events · latest ${options.coalesced.latestAt}`;
-  const text = [
-    stateLine,
+  const identityLines = [
     `${
       metadata.branch === undefined ? "branch unknown" : metadata.branch
     } · session ${metadata.shortSessionId}`,
     `${event.harness}/${event.surface} · ${event.type}`,
-    "",
+  ];
+  const contentLines = [
     `Summary: ${summary}`,
-  ].join("\n");
+    ...(question === undefined || question.length === 0
+      ? []
+      : [`Question: ${question}`]),
+  ];
+  const waitingStateAtBottom =
+    event.type === "turn.stopped" && options.resolutionState === undefined;
+  const text = (
+    waitingStateAtBottom
+      ? [...identityLines, "", ...contentLines, "", stateLine]
+      : [stateLine, ...identityLines, "", ...contentLines]
+  ).join("\n");
   const actions = actionsFor(event, truncated || options.forceDetails === true);
   const interaction =
     options.resolutionState === undefined

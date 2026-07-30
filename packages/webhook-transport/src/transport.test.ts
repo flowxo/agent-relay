@@ -36,6 +36,7 @@ const message: DeliveryMessage = {
 
 const context: DeliveryContext = {
   idempotencyKey: "event_webhook_delivery_12345678",
+  deliveryMode: "notify",
   source: {
     occurredAt: "2026-07-28T14:00:00.000Z",
     eventType: "input.required",
@@ -101,6 +102,7 @@ describe("signed outbound webhook transport", () => {
     expect(JSON.parse(body)).toEqual({
       schema: "agent-relay-webhook.v1",
       deliveryId: context.idempotencyKey,
+      deliveryMode: "notify",
       message,
       source: context.source,
       handoff: context.handoff,
@@ -113,6 +115,10 @@ describe("signed outbound webhook transport", () => {
       webhookSignature(secret, "1785247200", body),
     );
     expect(body).not.toContain(secret);
+    expect(transport(request).supportedDeliveryModes).toEqual([
+      "notify",
+      "silent",
+    ]);
   });
 
   it("accepts a matching acknowledgement and rejects malformed or mismatched acknowledgements", async () => {

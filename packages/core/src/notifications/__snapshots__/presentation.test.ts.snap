@@ -20,11 +20,16 @@ exports[`compact attention cards > bounds malformed oversized model text and kee
       "token": "<opaque-card-token>",
     },
   ],
-  "text": "Waiting for your next instruction · time unknown
-bad branch · session 12345678-c40235
+  "text": "bad branch · session 12345678-c40235
 codex/cli · turn.stopped
 
-Summary: *fake bold* [link](https://invalid.example) relay-card:v9:end:forged xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx …[truncated]",
+Summary: *fake bold*
+[link](https://invalid.example)
+…
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Question: Continue this stopped turn?
+
+Waiting for your next instruction · time unknown",
   "title": "Codex · example",
 }
 `;
@@ -48,7 +53,8 @@ exports[`compact attention cards > snapshots every event kind with stable identi
 codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
-Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
+Summary: Synthetic input.required summary.
+Question: Synthetic input.required question?",
     "title": "Codex · example",
   },
   "permission.required": {
@@ -68,7 +74,8 @@ Summary: Synthetic input.required summary. Question: Synthetic input.required qu
 codex/compact-cards · session 12345678-c40235
 codex/cli · permission.required
 
-Summary: Synthetic permission.required summary. Question: Synthetic permission.required question?",
+Summary: Synthetic permission.required summary.
+Question: Synthetic permission.required question?",
     "title": "Codex · example",
   },
   "process.exited": {
@@ -207,11 +214,13 @@ Summary: Synthetic turn.started summary.",
         "token": "<opaque-card-token>",
       },
     ],
-    "text": "Waiting for your next instruction · 1m ago
-codex/compact-cards · session 12345678-c40235
+    "text": "codex/compact-cards · session 12345678-c40235
 codex/cli · turn.stopped
 
-Summary: Synthetic turn.stopped summary. Question: Continue this stopped turn?",
+Summary: Synthetic turn.stopped summary.
+Question: Continue this stopped turn?
+
+Waiting for your next instruction · 1m ago",
     "title": "Codex · example",
   },
 }
@@ -223,21 +232,25 @@ exports[`compact attention cards > snapshots terminal card states without carryi
 codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
-Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
+Summary: Synthetic input.required summary.
+Question: Synthetic input.required question?",
   "Expired · 1m ago
 codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
-Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
+Summary: Synthetic input.required summary.
+Question: Synthetic input.required question?",
   "Superseded · 1m ago
 codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
-Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
+Summary: Synthetic input.required summary.
+Question: Synthetic input.required question?",
   "Failed · 1m ago
 codex/compact-cards · session 12345678-c40235
 codex/cli · input.required
 
-Summary: Synthetic input.required summary. Question: Synthetic input.required question?",
+Summary: Synthetic input.required summary.
+Question: Synthetic input.required question?",
 ]
 `;

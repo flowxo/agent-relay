@@ -13,6 +13,7 @@ import {
 import type {
   CardActionKind,
   DeliveryContext,
+  DeliveryMode,
   NotificationTransport,
   OperatorControlMessage,
   TopicNotificationTransport,
@@ -24,6 +25,7 @@ import {
   isOperatorControlTransport,
   isTopicDeletionTransport,
   isTopicTransport,
+  supportsDeliveryMode,
   TopicUnavailableError,
   TransportError,
 } from "@agent-relay/notification-contracts";
@@ -154,6 +156,23 @@ function notificationFingerprint(
       event.lastAssistantMessage ?? null,
     ]),
   );
+}
+
+function deliveryModeForEvent(event: AgentAttentionEventV1): DeliveryMode {
+  switch (event.type) {
+    case "session.started":
+    case "turn.started":
+    case "turn.activity":
+    case "session.ended":
+      return "silent";
+    case "turn.stopped":
+    case "turn.failed":
+    case "input.required":
+    case "permission.required":
+    case "process.exited":
+    case "process.stale":
+      return "notify";
+  }
 }
 
 function safeLogRef(value: string): string {
@@ -1352,6 +1371,7 @@ export class RelayService {
     const metadata = sessionTopicMetadata(event);
     const context: DeliveryContext = {
       idempotencyKey: event.eventId,
+      deliveryMode: deliveryModeForEvent(event),
       source: {
         occurredAt: event.occurredAt,
         eventType: event.type,
@@ -1518,7 +1538,12 @@ export class RelayService {
     for (const item of claimed) {
       let deliveryTopicId: string | undefined;
       try {
-        const suppressionReason = this.store.suppressionReason(item.event);
+        const suppressionReason = this.store.suppressionReason(item.event, {
+          allowBackgroundWorkDelivery: supportsDeliveryMode(
+            this.transport,
+            "silent",
+          ),
+        });
         if (suppressionReason !== undefined) {
           this.store.markDeliverySuppressed(
             item.event.eventId,

@@ -7,6 +7,7 @@ import {
   isOperatorControlTransport,
   isTopicDeletionTransport,
   isTopicTransport,
+  supportsDeliveryMode,
   TopicUnavailableError,
   TransportError,
   type NotificationTransport,
@@ -26,9 +27,11 @@ describe("notification transport contracts", () => {
     expect(isInteractionCapabilityTransport(requiredTransport)).toBe(false);
     expect(isTopicDeletionTransport(requiredTransport)).toBe(false);
     expect(isOperatorControlTransport(requiredTransport)).toBe(false);
+    expect(supportsDeliveryMode(requiredTransport, "silent")).toBe(false);
 
     const capableTransport = {
       ...requiredTransport,
+      supportedDeliveryModes: ["notify", "silent"] as const,
       topicScope: "example:scope",
       async createTopic() {
         return { transport: "example", topicId: "topic-1" };
@@ -46,6 +49,8 @@ describe("notification transport contracts", () => {
     expect(isInteractionCapabilityTransport(capableTransport)).toBe(true);
     expect(isTopicDeletionTransport(capableTransport)).toBe(false);
     expect(isOperatorControlTransport(capableTransport)).toBe(false);
+    expect(supportsDeliveryMode(capableTransport, "notify")).toBe(true);
+    expect(supportsDeliveryMode(capableTransport, "silent")).toBe(true);
   });
 
   it("detects optional topic deletion and operator controls", () => {

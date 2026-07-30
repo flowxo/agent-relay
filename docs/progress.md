@@ -2,6 +2,26 @@
 
 ## Proven
 
+- Routine lifecycle delivery now keeps Telegram session history current without
+  creating an attention ping. Provider-neutral delivery context classifies
+  session starts, prompt submissions, structured background work, and session
+  ends as `silent`; attention events remain `notify`. Telegram projects the
+  former with Bot API `disable_notification`, the signed outbound webhook
+  exposes the mode, and notify-only transports retain the prior durable
+  background-work suppression. Codex and Claude Code installers add
+  evidence-backed `SessionStart` and `UserPromptSubmit` hooks while excluding
+  automatic compaction and retaining no prompt text; Cursor remains unchanged
+  pending current lifecycle evidence. Stop cards now show a 320-character
+  beginning/end excerpt with the waiting state at the bottom and full bounded
+  text behind Details. Sanitized lifecycle and Telegram fixtures contain only
+  synthetic data. On 2026-07-29 all eight directly affected suites passed
+  117/117 tests, then the complete `pnpm check` passed formatting, governance,
+  public-doc, fixture, secret, release-policy, lint, and type gates; 74 Vitest
+  files/571 tests; both pinned contract suites; all workspace builds; the
+  245,932-byte packed/1,556,566-byte unpacked 11-file artifact; hosted package
+  privacy and interaction proof; and the complete packed lifecycle. All three
+  Chromium end-to-end scenarios passed, and `pnpm audit --prod` found no known
+  vulnerability.
 - Direct Telegram button feedback is now separated from slower downstream work.
   After authorization and the authoritative SQLite transition, one-shot choices,
   session controls, cleanup confirmations, and terminal structured controls
@@ -1079,10 +1099,12 @@ also remain free of silent delivery, hook, or correlation failures.
   operator explicitly authorizes. The 24-hour default is an operator-workflow
   policy, not a liveness claim. A live later event recreating one pruned session
   topic remains to be observed naturally.
-- Claude Code's structured background-work suppression and the subsequent
+- Claude Code's structured background-work transition and the subsequent
   truly-idle Stop are fixture, deterministic-test, and natural private-session
   proven on the installed `2.1.220` build. The installed durable allocator
   retained strictly increasing sequences across the activity-to-idle transition.
+  The new silent Telegram projection is deterministic-fixture proven and awaits
+  its next natural background-work event in dogfooding.
 - Resume claims are deliberately at-most-once. A supervisor crash after the
   durable claim but before spawn leaves a visible `claimed` command for manual
   recovery instead of risking a duplicate resume.

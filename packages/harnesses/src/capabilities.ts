@@ -45,7 +45,7 @@ const EvidenceSchema = z
       .max(120)
       .regex(/^[a-z0-9][a-z0-9.-]+$/),
     verifiedAt: z.iso.date().optional(),
-    fixturePaths: z.array(z.string().min(1).max(240)).max(4),
+    fixturePaths: z.array(z.string().min(1).max(240)).max(6),
     record: z.string().min(1).max(240),
     officialSources: z.array(z.url().max(500)).min(1).max(4),
   })
@@ -167,7 +167,7 @@ export type HarnessCompatibilityRecord = z.infer<
 
 export const HARNESS_COMPATIBILITY = CompatibilityRegistrySchema.parse({
   schema: "agent-relay-compatibility.v1",
-  evidenceRecheckedAt: "2026-07-26",
+  evidenceRecheckedAt: "2026-07-29",
   runtimeTarget: {
     operatingSystem: "macOS",
     platform: "darwin",
@@ -206,14 +206,18 @@ export const HARNESS_COMPATIBILITY = CompatibilityRegistrySchema.parse({
       evidence: {
         id: "codex-cli-0.145.0-2026-07-25",
         verifiedAt: "2026-07-25",
-        fixturePaths: ["packages/harnesses/fixtures/codex/stop.json"],
+        fixturePaths: [
+          "packages/harnesses/fixtures/codex/session-start.json",
+          "packages/harnesses/fixtures/codex/user-prompt-submit.json",
+          "packages/harnesses/fixtures/codex/stop.json",
+        ],
         record: "docs/harness-evidence.md#live-harness-activation",
         officialSources: [
           "https://learn.chatgpt.com/docs/hooks",
           "https://developers.openai.com/codex/noninteractive",
         ],
       },
-      note: "Stop and read-only late resume are live-proven; crash proof requires supervision.",
+      note: "Stop and read-only late resume are live-proven; privacy-safe session and prompt lifecycle cards are fixture-proven.",
     },
     {
       harness: "codex",
@@ -268,6 +272,8 @@ export const HARNESS_COMPATIBILITY = CompatibilityRegistrySchema.parse({
         id: "claude-cli-2.1.219-2026-07-25",
         verifiedAt: "2026-07-25",
         fixturePaths: [
+          "packages/harnesses/fixtures/claude/session-start.json",
+          "packages/harnesses/fixtures/claude/user-prompt-submit.json",
           "packages/harnesses/fixtures/claude/stop.json",
           "packages/harnesses/fixtures/claude/stop-background-work.json",
           "packages/harnesses/fixtures/claude/stop-failure.json",
@@ -275,7 +281,7 @@ export const HARNESS_COMPATIBILITY = CompatibilityRegistrySchema.parse({
         record: "docs/harness-evidence.md#live-harness-activation",
         officialSources: ["https://code.claude.com/docs/en/hooks"],
       },
-      note: "Stop and plan-mode late resume are live-proven; structured background-work suppression and StopFailure remain fixture-proven.",
+      note: "Stop and plan-mode late resume are live-proven; quiet lifecycle, structured background work, and StopFailure are fixture-proven.",
     },
     {
       harness: "claude",

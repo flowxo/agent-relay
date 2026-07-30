@@ -5248,6 +5248,9 @@ export class RelayStore {
 
   public suppressionReason(
     event: AgentAttentionEventV1,
+    options: {
+      allowBackgroundWorkDelivery?: boolean;
+    } = {},
   ): "muted" | "ended" | "background-work" | undefined {
     const control = this.getSessionControl(event);
     if (
@@ -5260,7 +5263,10 @@ export class RelayStore {
     if (event.type === "session.ended") {
       return undefined;
     }
-    if (event.backgroundWork !== undefined) {
+    if (
+      event.backgroundWork !== undefined &&
+      options.allowBackgroundWorkDelivery !== true
+    ) {
       return "background-work";
     }
     if (

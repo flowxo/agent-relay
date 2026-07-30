@@ -643,9 +643,9 @@ describe.each(providers)(
   ({ provider, resolvedBy }) => {
     it("bounds delivery, deduplicates ingestion, and retries the same local identity", async () => {
       const relay = await runtime(provider);
-      const hiddenTail = "TAIL_MUST_NOT_CROSS_THE_DELIVERY_BOUND";
+      const tailMarker = "TAIL_MUST_REMAIN_VISIBLE";
       const event = attentionEvent("bounded_retry", undefined, {
-        lastAssistantMessage: `${"bounded result ".repeat(250)}${hiddenTail}`,
+        lastAssistantMessage: `${"bounded result ".repeat(250)}${tailMarker}`,
       });
 
       expect(relay.service.ingest(event).inserted).toBe(true);
@@ -667,9 +667,9 @@ describe.each(providers)(
       expect(relay.logicalMessageCount()).toBe(1);
       expect(relay.store.getEvent(event.eventId)?.status).toBe("delivered");
       expect(relay.deliveredBodies()).toEqual([
-        expect.stringContaining("…[truncated]"),
+        expect.stringContaining("\n…\n"),
       ]);
-      expect(relay.deliveredBodies().join("")).not.toContain(hiddenTail);
+      expect(relay.deliveredBodies()[0]).toContain(tailMarker);
     });
 
     it("resolves confirm, select, and input with explicit presentation capability", async () => {

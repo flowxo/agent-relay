@@ -1,0 +1,10 @@
+{
+  "session_id": "codex-session-lifecycle-0001",
+  "transcript_path": null,
+  "cwd": "/workspace/example",
+  "hook_event_name": "UserPromptSubmit",
+  "model": "gpt-5.6-sol",
+  "permission_mode": "default",
+  "turn_id": "codex-turn-lifecycle-0001",
+  "prompt": "SYNTHETIC_PRIVATE_CODEX_PROMPT_MUST_NOT_PERSIST"
+}

@@ -125,6 +125,7 @@ export const WebhookDeliveryEnvelopeV1Schema = z
   .object({
     schema: z.literal("agent-relay-webhook.v1"),
     deliveryId: identifier,
+    deliveryMode: z.enum(["notify", "silent"]).optional(),
     message: WebhookDeliveryMessageV1Schema,
     source: WebhookDeliverySourceV1Schema.optional(),
     handoff: WebhookDeliveryHandoffV1Schema.optional(),

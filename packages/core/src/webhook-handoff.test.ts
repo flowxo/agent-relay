@@ -150,6 +150,7 @@ describe("provider-neutral outbound metadata and local web handoff", () => {
     expect(transport.deliveries).toHaveLength(1);
     expect(transport.deliveries[0]?.context).toEqual({
       idempotencyKey: event.eventId,
+      deliveryMode: "notify",
       source: {
         occurredAt: now,
         eventType: "input.required",
