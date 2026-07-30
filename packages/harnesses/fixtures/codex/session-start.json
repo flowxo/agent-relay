@@ -1,0 +1,9 @@
+{
+  "session_id": "codex-session-lifecycle-0001",
+  "transcript_path": null,
+  "cwd": "/workspace/example",
+  "hook_event_name": "SessionStart",
+  "model": "gpt-5.6-sol",
+  "permission_mode": "default",
+  "source": "resume"
+}

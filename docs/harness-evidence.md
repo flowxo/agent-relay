@@ -1,10 +1,10 @@
 # Harness contract evidence
 
-Recorded on 2026-07-24 through 2026-07-27 on macOS arm64. The fixture corpora
+Recorded on 2026-07-24 through 2026-07-29 on macOS arm64. The fixture corpora
 under `packages/harnesses/fixtures` and
 `packages/codex-app-server-driver/fixtures` contain only synthetic identifiers,
 paths, and messages. Primary Codex, Claude Code, Cursor, and Telegram
-documentation was rechecked through 2026-07-27 for the public guides; no support
+documentation was rechecked through 2026-07-29 for the public guides; no support
 claim was widened without new fixture and canary evidence. The generated
 compatibility matrix is the authoritative support summary; this ledger provides
 its linked provenance.
@@ -23,28 +23,36 @@ structured transport. Cursor was initially observed as `3.12.30`; its login flow
 auto-updated the launcher to the version recorded above before the live
 stop/resume canary. These checks do not invoke a model or incur API cost.
 
-A non-model maintenance check on 2026-07-26 observed Claude Code
-`2.1.220 (Claude Code)`. No hook or live continuation canary was rerun, so that
-installed version is deliberately `compatible-unverified`; `2.1.219` remains the
-exact verified claim. This is the expected doctor warning path, not evidence for
-silently advancing the support table.
+A non-model maintenance check on 2026-07-29 observed Codex `codex-cli 0.146.0`
+and Claude Code `2.1.220 (Claude Code)`. No model-backed continuation canary was
+rerun for either update, so those installed versions are deliberately
+`compatible-unverified`; `0.145.0` and `2.1.219` remain the exact verified
+claims. This is the expected doctor warning path, not evidence for silently
+advancing the support table.
 
 ## Installer observations
 
-The official hook references were rechecked on 2026-07-24 before implementing
-the installer:
+The official hook references were rechecked on 2026-07-29 before extending the
+installer:
 
 - Codex discovers user hooks at `~/.codex/hooks.json`, uses nested matcher
   groups and command handlers, and requires non-managed hooks to be reviewed and
-  trusted.
+  trusted. Agent Relay installs `SessionStart` for startup/resume/clear,
+  `UserPromptSubmit`, `Stop`, and `PermissionRequest`.
 - Claude Code stores user hooks inside `~/.claude/settings.json` under the same
-  nested event/group/handler shape.
+  nested event/group/handler shape. Agent Relay installs `SessionStart` for
+  startup/resume/clear/fork, `UserPromptSubmit`, `Stop`, `StopFailure`, and
+  `PermissionRequest`.
 - Cursor stores user hooks in `~/.cursor/hooks.json` with `version: 1` and flat
   command-handler arrays per event.
 
-The installer fixtures preserve unrelated entries in each of those shapes.
-Cursor permission hooks remain excluded from the default patch because their
-evolving payload still lacks a sanitized live capture in this repository.
+The lifecycle parsers retain only the session/source transition and a constant
+prompt-submitted summary; tests prove a private sentinel in the native prompt is
+never copied into the normalized event. Automatic compaction is excluded from
+the installed SessionStart matchers. The installer fixtures preserve unrelated
+entries in each shape. Cursor permission and lifecycle expansion remain excluded
+because their evolving payloads still lack current sanitized evidence in this
+repository.
 
 ## Supervisor observations
 
@@ -64,13 +72,14 @@ discrete argv value and is never shell-interpreted.
 
 ## Telegram adapter observations
 
-Telegram's official Bot API documentation was rechecked on 2026-07-25 against
+Telegram's official Bot API documentation was rechecked on 2026-07-29 against
 Bot API 10.2. The current contract documents `createForumTopic` for forum
 supergroups and private bot chats, a 1-128-character topic name, and
-`message_thread_id` on `sendMessage`. Agent Relay's deterministic HTTP fixtures
-cover the documented success and malformed-response shapes. A credentialed
-2026-07-25 activation also created and reused private topics for several
-independent Codex sessions; no live identifier or message was retained.
+`message_thread_id` and `disable_notification` on `sendMessage`. Agent Relay's
+deterministic HTTP fixtures cover the documented success, silent-delivery, and
+malformed-response shapes. A credentialed 2026-07-25 activation also created and
+reused private topics for several independent Codex sessions; no live identifier
+or message was retained.
 
 Local reply intake defaults to `getUpdates` long polling because the daemon
 binds to loopback. The implementation sends an offset one greater than the
@@ -287,15 +296,17 @@ adoption, ownership, and restart-reconciliation suites.
 
 ## Official contract sources
 
-- [Codex hooks](https://learn.chatgpt.com/docs/hooks) documents `Stop` input,
-  `decision: "block"` continuation, hook trust, and permission decisions.
+- [Codex hooks](https://learn.chatgpt.com/docs/hooks) documents `SessionStart`,
+  `UserPromptSubmit`, `Stop`, `decision: "block"` continuation, hook trust, and
+  permission decisions.
 - [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive)
   documents `codex exec resume`.
 - [Codex App Server](https://developers.openai.com/codex/app-server) documents
   `thread/resume`, `turn/start`, and `turn/steer`.
-- [Claude Code hooks](https://code.claude.com/docs/en/hooks) documents `Stop`,
-  its `background_tasks` and `session_crons` pause evidence, `StopFailure`,
-  `Notification`, and permission wire contracts.
+- [Claude Code hooks](https://code.claude.com/docs/en/hooks) documents
+  `SessionStart`, `UserPromptSubmit`, `Stop`, its `background_tasks` and
+  `session_crons` pause evidence, `StopFailure`, `Notification`, and permission
+  wire contracts.
 - [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)
   documents programmatic hooks, permissions, streaming input, and session
   resume.
@@ -306,8 +317,8 @@ adoption, ownership, and restart-reconciliation suites.
   resume.
 - [Telegram Bot API](https://core.telegram.org/bots/api) documents
   `createForumTopic`, private-chat `message_thread_id`, `getUpdates`, offsets,
-  long-poll timeouts, update limits, allowed update filters, webhook
-  exclusivity, and webhook secret headers.
+  long-poll timeouts, update limits, allowed update filters,
+  `disable_notification`, webhook exclusivity, and webhook secret headers.
 - [Telegram Bot FAQ](https://core.telegram.org/bots/faq) documents the 24-hour
   pending-update retention boundary.
 
@@ -326,8 +337,16 @@ The Claude background-work fixture is official-contract-derived, not a retained
 private Stop payload. It proves the parser keeps only in-flight and scheduled
 counts and discards task identity, description, command, agent type, schedule,
 prompt, transcript path, working path, and the assistant message. The exact
-installed `2.1.220` build is contract-compatible but a natural live suppression
-and later truly-idle Stop remain pending dogfood evidence.
+installed `2.1.220` build naturally produced background work followed by a
+truly-idle Stop under the previous suppression policy. Silent Telegram
+projection is deterministic HTTP-fixture evidence until another natural
+background-work event exercises the updated installed daemon.
+
+The Codex and Claude lifecycle fixtures are official-contract-derived and
+synthetic. They prove SessionStart and UserPromptSubmit parsing, prompt-content
+non-retention, stable constant summaries, malformed-input diagnosis, and
+transport mode selection. They do not promote the currently installed harness
+versions or claim equivalent Cursor lifecycle hooks.
 
 Native-hook ordering is implementation evidence, not an additional harness
 payload claim. Deterministic file-backed SQLite tests assign distinct hooks

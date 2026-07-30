@@ -1,10 +1,11 @@
 {
   "schema": "agent-relay-webhook.v1",
   "deliveryId": "event_fixture_webhook_12345678",
+  "deliveryMode": "notify",
   "message": {
     "eventId": "event_fixture_webhook_12345678",
     "title": "Codex · agent-relay",
-    "text": "Waiting for your next instruction · now\nmain · session 12345678-a1b2c3\ncodex/cli · turn.stopped\n\nSummary: Synthetic fixture notification"
+    "text": "main · session 12345678-a1b2c3\ncodex/cli · turn.stopped\n\nSummary: Synthetic fixture notification\n\nWaiting for your next instruction · now"
   },
   "source": {
     "occurredAt": "2026-07-28T14:00:00.000Z",

@@ -60,6 +60,12 @@ breaking changes and required operator action.
 
 ### Changed
 
+- Routine session, prompt-submission, background-work, and session-end lifecycle
+  events now use provider-neutral silent delivery; Telegram projects that as
+  `disable_notification`, and outbound webhooks expose the requested mode. Codex
+  and Claude Code installs add privacy-safe `SessionStart` and
+  `UserPromptSubmit` hooks without retaining prompt text. Stop cards now keep a
+  compact beginning/end excerpt and place the waiting state at the bottom.
 - The optional hosted transport now consumes WhooshBang's exact
   `@whooshbang/contracts`, `@whooshbang/sdk`, and `@whooshbang/contract-mock`
   `1.0.0-rc.4` artifacts. WhooshBang's pre-alpha hard cut retired the pre-rename

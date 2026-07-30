@@ -205,6 +205,7 @@ async function readBoundedResponse(
 
 export class WebhookNotificationTransport implements NotificationTransport {
   public readonly name = "webhook";
+  public readonly supportedDeliveryModes = ["notify", "silent"] as const;
   private readonly endpoint: URL;
   private readonly secret: string;
   private readonly timeoutMs: number;
@@ -226,6 +227,9 @@ export class WebhookNotificationTransport implements NotificationTransport {
     const parsed = WebhookDeliveryEnvelopeV1Schema.safeParse({
       schema: "agent-relay-webhook.v1",
       deliveryId: context.idempotencyKey,
+      ...(context.deliveryMode === undefined
+        ? {}
+        : { deliveryMode: context.deliveryMode }),
       message,
       ...(context.source === undefined ? {} : { source: context.source }),
       ...(context.handoff === undefined ? {} : { handoff: context.handoff }),

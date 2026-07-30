@@ -101,7 +101,7 @@ describe("hook entrypoint", () => {
     store.close();
   });
 
-  it("does not offer continuation or notify while structured Claude background work remains", async () => {
+  it("does not offer continuation and delivers structured Claude background work silently", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();
@@ -152,7 +152,8 @@ describe("hook entrypoint", () => {
     });
     expect(ingested?.request).toBeUndefined();
     await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
-    expect(transport.deliveries).toHaveLength(0);
+    expect(transport.deliveries).toHaveLength(1);
+    expect(transport.deliveries[0]?.context.deliveryMode).toBe("silent");
     expect(store.listSessions()[0]?.state).toBe("active");
     store.close();
   });
@@ -216,8 +217,12 @@ describe("hook entrypoint", () => {
       claimed: 2,
       delivered: 2,
     });
-    expect(transport.deliveries).toHaveLength(1);
-    expect(transport.deliveries[0]?.message.eventId).toBe(events[1]?.eventId);
+    expect(transport.deliveries).toHaveLength(2);
+    expect(
+      transport.deliveries.map((delivery) => delivery.message.eventId),
+    ).toEqual([events[0]?.eventId, events[1]?.eventId]);
+    expect(transport.deliveries[0]?.context.deliveryMode).toBe("silent");
+    expect(transport.deliveries[1]?.context.deliveryMode).toBe("notify");
     store.close();
   });
 
@@ -301,7 +306,7 @@ describe("hook entrypoint", () => {
       lastSequence: 2,
     });
     await service.drain();
-    expect(transport.deliveries).toHaveLength(1);
+    expect(transport.deliveries).toHaveLength(2);
     store.close();
   });
 

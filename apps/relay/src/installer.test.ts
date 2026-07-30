@@ -101,9 +101,11 @@ describe("agent relay harness installer", () => {
     expect(claude).toMatchObject({ permissions: { allow: ["Read"] } });
     expect(JSON.stringify(codex)).toContain("user-stop-hook");
     expect(JSON.stringify(cursor)).toContain("user-cursor-hook");
-    expect(markerCount(codex)).toBe(2);
-    expect(markerCount(claude)).toBe(3);
+    expect(markerCount(codex)).toBe(4);
+    expect(markerCount(claude)).toBe(5);
     expect(markerCount(cursor)).toBe(1);
+    expect(JSON.stringify(codex)).toContain("startup|resume|clear");
+    expect(JSON.stringify(claude)).toContain("startup|resume|clear|fork");
     expect((await stat(runtime.paths.launcherPath)).mode & 0o777).toBe(0o700);
     expect(await readJson(runtime.paths.manifestPath)).toMatchObject({
       packageVersion: "0.1.0-alpha.1",
@@ -145,7 +147,7 @@ describe("agent relay harness installer", () => {
       upgraded.actions.some((action) => action.backupPath !== undefined),
     ).toBe(true);
     const codex = await readJson(runtime.paths.configs.codex);
-    expect(markerCount(codex)).toBe(2);
+    expect(markerCount(codex)).toBe(4);
     expect(JSON.stringify(codex)).toContain("codex-cli 0.146.0");
     expect(JSON.stringify(codex)).not.toContain("codex-cli 0.145.0");
   });

@@ -108,6 +108,77 @@ describe("TelegramBotTransport", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("sends routine lifecycle events silently without muting attention events", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({ ok: true, result: { message_id: 42, date: 0 } }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+    const silentMessage = {
+      eventId: "evt_telegram_lifecycle_12345678",
+      title: "Codex · example",
+      text: [
+        "Working · now",
+        "main · session 12345678-a1b2c3",
+        "codex/cli · turn.started",
+        "",
+        "Summary: Operator submitted a prompt; the agent is working.",
+      ].join("\n"),
+      actions: [
+        {
+          kind: "mute" as const,
+          label: "Mute",
+          token: "card_0123456789abcdef0123456789abcdef",
+        },
+        {
+          kind: "end" as const,
+          label: "End",
+          token: "card_0123456789abcdef0123456789abcdef",
+        },
+      ],
+    };
+
+    await transport.deliver(silentMessage, {
+      idempotencyKey: silentMessage.eventId,
+      deliveryMode: "silent",
+      topicId: "77",
+    });
+    await transport.deliver(
+      { ...message, eventId: "evt_telegram_attention_12345678" },
+      {
+        idempotencyKey: "evt_telegram_attention_12345678",
+        deliveryMode: "notify",
+      },
+    );
+
+    const silent = JSON.parse(
+      String(fetchMock.mock.calls[0]?.[1]?.body),
+    ) as Record<string, unknown>;
+    const notifying = JSON.parse(
+      String(fetchMock.mock.calls[1]?.[1]?.body),
+    ) as Record<string, unknown>;
+    expect(silent).toEqual(
+      JSON.parse(
+        readFileSync(
+          join(fixtures, "silent-lifecycle-send-message.v10.2.json"),
+          "utf8",
+        ),
+      ),
+    );
+    expect(notifying).not.toHaveProperty("disable_notification");
+    expect(transport.supportedDeliveryModes).toEqual(["notify", "silent"]);
+  });
+
   it("enforces Telegram's text limit with a visible truncation marker", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

@@ -1,6 +1,6 @@
 {
   "schema": "agent-relay-fixture-manifest.v1",
-  "recordedAt": "2026-07-28",
+  "recordedAt": "2026-07-29",
   "source": "Agent Relay outbound webhook v1 runtime contract",
   "sourceVersion": "agent-relay-webhook.v1",
   "evidence": "synthetic-contract-fixture",

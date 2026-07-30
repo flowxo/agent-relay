@@ -39,6 +39,18 @@
       ]
     },
     {
+      "file": "silent-lifecycle-send-message.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Bot API 10.2 disable_notification contract projected from a privacy-safe turn.started lifecycle event and exercised against the deterministic HTTP transport",
+      "sanitization": [
+        "chat and message thread IDs replaced",
+        "session and event content replaced",
+        "card tokens replaced",
+        "operator prompt excluded from the normalized event",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
       "file": "multi-select-send-message.v10.2.json",
       "method": "sendMessage",
       "evidence": "Sanitized Bot API 10.2 projection exercised against the fake HTTP transport",

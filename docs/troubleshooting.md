@@ -189,9 +189,10 @@ provider operation.
 Claude Code can emit its main `Stop` hook while background tasks or scheduled
 wakeups remain. On Claude Code 2.1.145 or newer, Agent Relay reads the official
 `background_tasks` and `session_crons` arrays. A non-empty collection keeps the
-lane active and produces a local `notification.suppressed` diagnostic with
-reason `background-work`; it must not create a Telegram/WhooshBang card or a
-continuation request.
+lane active and never creates a continuation request. Telegram receives a silent
+activity card (`disable_notification=true`) so the topic no longer looks paused
+without pinging the operator. A notify-only transport instead produces a local
+`notification.suppressed` diagnostic with reason `background-work`.
 
 Agent Relay uses only the collection counts. It does not inspect the assistant
 message, terminal status text, task descriptions, commands, prompts, or

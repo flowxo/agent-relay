@@ -489,6 +489,7 @@ export class TelegramBotTransport
     TopicNotificationTransport
 {
   public readonly name = "telegram";
+  public readonly supportedDeliveryModes = ["notify", "silent"] as const;
   public readonly topicScope: string;
   private readonly token: string;
   private readonly chatId: string;
@@ -559,6 +560,9 @@ export class TelegramBotTransport
       chat_id: this.chatId,
       text,
       disable_web_page_preview: true,
+      ...(context.deliveryMode === "silent"
+        ? { disable_notification: true }
+        : {}),
       ...(context.topicId === undefined
         ? {}
         : { message_thread_id: this.parseTopicId(context.topicId) }),

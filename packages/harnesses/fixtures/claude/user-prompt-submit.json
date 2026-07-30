@@ -1,0 +1,8 @@
+{
+  "session_id": "claude-session-lifecycle-0001",
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl",
+  "cwd": "/workspace/example",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "SYNTHETIC_PRIVATE_CLAUDE_PROMPT_MUST_NOT_PERSIST"
+}

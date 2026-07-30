@@ -100,7 +100,7 @@ describe("RelayService durable delivery loop", () => {
     store.close();
   });
 
-  it("suppresses structured background-work pauses without affecting another session", async () => {
+  it("delivers structured background work silently without affecting another session", async () => {
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();
     const logger = new MemoryLogger();
@@ -131,8 +131,17 @@ describe("RelayService durable delivery loop", () => {
       delivered: 2,
     });
 
-    expect(transport.deliveries).toHaveLength(1);
-    expect(transport.deliveries[0]?.message.eventId).toBe(idle.eventId);
+    expect(transport.deliveries).toHaveLength(2);
+    expect(
+      transport.deliveries.find(
+        (delivery) => delivery.message.eventId === paused.eventId,
+      )?.context.deliveryMode,
+    ).toBe("silent");
+    expect(
+      transport.deliveries.find(
+        (delivery) => delivery.message.eventId === idle.eventId,
+      )?.context.deliveryMode,
+    ).toBe("notify");
     expect(store.getEvent(paused.eventId)).toMatchObject({
       status: "delivered",
       event: {
@@ -148,6 +157,38 @@ describe("RelayService durable delivery loop", () => {
         .find((session) => session.sessionId === paused.sessionId)?.state,
     ).toBe("active");
     expect(
+      logger.records.find(
+        (record) =>
+          record.code === "delivery.suppressed" &&
+          record.details?.["eventId"] === paused.eventId,
+      ),
+    ).toBeUndefined();
+    store.close();
+  });
+
+  it("retains background-work suppression for transports without silent delivery", async () => {
+    const store = new RelayStore();
+    const deliveries: AgentAttentionEventV1["eventId"][] = [];
+    const transport: NotificationTransport = {
+      name: "notify-only",
+      deliver: async (message) => {
+        deliveries.push(message.eventId);
+        return { transport: "notify-only", messageId: message.eventId };
+      },
+    };
+    const service = new RelayService(store, transport);
+    const background = event({
+      eventId: "event_background_notify_only_12345678",
+      harness: "claude",
+      type: "turn.activity",
+      backgroundWork: { inFlightCount: 1, scheduledCount: 0 },
+    });
+    service.ingest(background);
+
+    await expect(service.drain()).resolves.toMatchObject({ delivered: 1 });
+
+    expect(deliveries).toEqual([]);
+    expect(
       store
         .listDiagnostics()
         .find(
@@ -156,13 +197,51 @@ describe("RelayService durable delivery loop", () => {
             diagnostic.message.includes("background work"),
         ),
     ).toBeDefined();
+    store.close();
+  });
+
+  it("classifies lifecycle updates as silent and operator attention as notifying", async () => {
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const service = new RelayService(store, transport);
+    const routineTypes = [
+      "session.started",
+      "turn.started",
+      "turn.activity",
+      "session.ended",
+    ] as const;
+    for (const [index, type] of routineTypes.entries()) {
+      service.ingest(
+        event({
+          eventId: `event_delivery_mode_${type.replace(".", "_")}_12345678`,
+          sessionId: `session_delivery_mode_${String(index)}_12345678`,
+          sequence: index + 1,
+          type,
+        }),
+      );
+    }
+    const attention = event({
+      eventId: "event_delivery_mode_attention_12345678",
+      sessionId: "session_delivery_mode_attention_12345678",
+      sequence: 10,
+    });
+    service.ingest(attention);
+
+    await expect(service.drain()).resolves.toMatchObject({
+      claimed: 5,
+      delivered: 5,
+    });
+
     expect(
-      logger.records.find(
-        (record) =>
-          record.code === "delivery.suppressed" &&
-          record.details?.["eventId"] === paused.eventId,
-      )?.details,
-    ).toMatchObject({ reason: "background-work" });
+      transport.deliveries
+        .filter((delivery) => delivery.message.eventId !== attention.eventId)
+        .map((delivery) => delivery.context.deliveryMode),
+    ).toEqual(["silent", "silent", "silent", "silent"]);
+    expect(
+      transport.deliveries.find(
+        (delivery) => delivery.message.eventId === attention.eventId,
+      )?.context.deliveryMode,
+    ).toBe("notify");
     store.close();
   });
 
@@ -225,7 +304,7 @@ describe("RelayService durable delivery loop", () => {
     store.close();
   });
 
-  it("keeps a long assistant message retrievable behind a compact Details action", async () => {
+  it("shows the beginning and ending of a long assistant message and keeps Details", async () => {
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
@@ -243,11 +322,11 @@ describe("RelayService durable delivery loop", () => {
     const details = delivery?.actions?.find(
       (action) => action.kind === "details",
     );
-    expect(delivery?.text).not.toContain(finalSentence);
+    expect(delivery?.text).toContain(finalSentence);
     expect(delivery?.text).not.toContain(
       "A shortened summary that must not win.",
     );
-    expect(delivery?.text).toContain("…[truncated]");
+    expect(delivery?.text).toContain("\n…\n");
     expect(details).toBeDefined();
     const registered =
       details === undefined ? undefined : store.getCardAction(details.token);
@@ -263,7 +342,7 @@ describe("RelayService durable delivery loop", () => {
     store.close();
   });
 
-  it("marks an assistant message that exceeds the delivery content bound", async () => {
+  it("marks an assistant message that exceeds the compact content bound", async () => {
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
@@ -276,7 +355,7 @@ describe("RelayService durable delivery loop", () => {
 
     await service.drain();
 
-    expect(transport.deliveries[0]?.message.text).toContain("…[truncated]");
+    expect(transport.deliveries[0]?.message.text).toContain("\n…\n");
     store.close();
   });
 

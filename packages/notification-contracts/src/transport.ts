@@ -85,11 +85,14 @@ export interface DeliveryHandoff {
   url: string;
 }
 
+export type DeliveryMode = "notify" | "silent";
+
 export interface DeliveryContext {
   idempotencyKey: string;
   topicId?: string;
   source?: DeliverySource;
   handoff?: DeliveryHandoff;
+  deliveryMode?: DeliveryMode;
 }
 
 export interface DeliveryReceipt {
@@ -141,6 +144,7 @@ export interface OperatorControlContext {
 
 export interface NotificationTransport {
   readonly name: string;
+  readonly supportedDeliveryModes?: readonly DeliveryMode[];
   deliver(
     message: DeliveryMessage,
     context: DeliveryContext,
@@ -240,6 +244,13 @@ export function isInteractionCapabilityTransport(
     "observeInteractionCapabilities" in transport &&
     typeof transport.observeInteractionCapabilities === "function"
   );
+}
+
+export function supportsDeliveryMode(
+  transport: NotificationTransport,
+  mode: DeliveryMode,
+): boolean {
+  return transport.supportedDeliveryModes?.includes(mode) === true;
 }
 
 export class TransportError extends Error {

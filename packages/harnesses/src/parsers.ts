@@ -19,6 +19,26 @@ const common = {
   cwd: z.string().min(1),
 };
 
+const codexSessionStartSchema = z
+  .object({
+    ...common,
+    hook_event_name: z.literal("SessionStart"),
+    source: z.enum(["startup", "resume", "clear", "compact"]),
+  })
+  .passthrough();
+
+const codexUserPromptSubmitSchema = z
+  .object({
+    ...common,
+    hook_event_name: z.literal("UserPromptSubmit"),
+    turn_id: z.string().min(1),
+    prompt: z
+      .string()
+      .min(1)
+      .max(256 * 1_024),
+  })
+  .passthrough();
+
 const codexStopSchema = z
   .object({
     ...common,
@@ -48,6 +68,25 @@ const claudeStopSchema = z
     last_assistant_message: z.string().nullable(),
     background_tasks: z.array(z.unknown()).max(1_000).optional(),
     session_crons: z.array(z.unknown()).max(1_000).optional(),
+  })
+  .passthrough();
+
+const claudeSessionStartSchema = z
+  .object({
+    ...common,
+    hook_event_name: z.literal("SessionStart"),
+    source: z.enum(["startup", "resume", "clear", "compact", "fork"]),
+  })
+  .passthrough();
+
+const claudeUserPromptSubmitSchema = z
+  .object({
+    ...common,
+    hook_event_name: z.literal("UserPromptSubmit"),
+    prompt: z
+      .string()
+      .min(1)
+      .max(256 * 1_024),
   })
   .passthrough();
 
@@ -221,6 +260,55 @@ function parseCodex(
       ? payload.hook_event_name
       : undefined;
 
+  if (eventName === "SessionStart") {
+    const parsed = codexSessionStartSchema.safeParse(payload);
+    if (!parsed.success) {
+      return malformed(
+        "codex",
+        "invalid Codex SessionStart payload",
+        parsed.error,
+      );
+    }
+    return eventFromAdapter(
+      "codex",
+      {
+        cwd: parsed.data.cwd,
+        sessionId: parsed.data.session_id,
+        type:
+          parsed.data.source === "compact"
+            ? "turn.activity"
+            : "session.started",
+        summary:
+          parsed.data.source === "compact"
+            ? "Context compacted; the session remains active."
+            : `Session opened (${parsed.data.source}).`,
+      },
+      context,
+    );
+  }
+
+  if (eventName === "UserPromptSubmit") {
+    const parsed = codexUserPromptSubmitSchema.safeParse(payload);
+    if (!parsed.success) {
+      return malformed(
+        "codex",
+        "invalid Codex UserPromptSubmit payload",
+        parsed.error,
+      );
+    }
+    return eventFromAdapter(
+      "codex",
+      {
+        cwd: parsed.data.cwd,
+        sessionId: parsed.data.session_id,
+        turnId: parsed.data.turn_id,
+        type: "turn.started",
+        summary: "Operator submitted a prompt; the agent is working.",
+      },
+      context,
+    );
+  }
+
   if (eventName === "Stop") {
     const parsed = codexStopSchema.safeParse(payload);
     if (!parsed.success) {
@@ -290,6 +378,54 @@ function parseClaude(
     "hook_event_name" in payload
       ? payload.hook_event_name
       : undefined;
+
+  if (eventName === "SessionStart") {
+    const parsed = claudeSessionStartSchema.safeParse(payload);
+    if (!parsed.success) {
+      return malformed(
+        "claude",
+        "invalid Claude SessionStart payload",
+        parsed.error,
+      );
+    }
+    return eventFromAdapter(
+      "claude",
+      {
+        cwd: parsed.data.cwd,
+        sessionId: parsed.data.session_id,
+        type:
+          parsed.data.source === "compact"
+            ? "turn.activity"
+            : "session.started",
+        summary:
+          parsed.data.source === "compact"
+            ? "Context compacted; the session remains active."
+            : `Session opened (${parsed.data.source}).`,
+      },
+      context,
+    );
+  }
+
+  if (eventName === "UserPromptSubmit") {
+    const parsed = claudeUserPromptSubmitSchema.safeParse(payload);
+    if (!parsed.success) {
+      return malformed(
+        "claude",
+        "invalid Claude UserPromptSubmit payload",
+        parsed.error,
+      );
+    }
+    return eventFromAdapter(
+      "claude",
+      {
+        cwd: parsed.data.cwd,
+        sessionId: parsed.data.session_id,
+        type: "turn.started",
+        summary: "Operator submitted a prompt; the agent is working.",
+      },
+      context,
+    );
+  }
 
   if (eventName === "Stop") {
     const parsed = claudeStopSchema.safeParse(payload);

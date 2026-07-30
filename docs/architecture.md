@@ -114,14 +114,23 @@ Claude Code `StopFailure` and Cursor failure status can report a turn-level
 failure. A native hook does not own the harness process and cannot prove that
 the process crashed.
 
+Codex and Claude Code `SessionStart` and `UserPromptSubmit` hooks also provide
+privacy-safe lifecycle evidence. Agent Relay records that a session opened or an
+operator submitted work, but never copies the submitted prompt into the
+normalized event. These routine events use the transport's silent delivery mode;
+stops, questions, permission decisions, failures, and stale-process warnings
+remain notifying deliveries.
+
 Claude Code Stop payloads also expose structured `background_tasks` and
 `session_crons` collections. When either is non-empty, the adapter records only
-their bounded counts as `turn.activity`, keeps the lane active, and suppresses
-operator delivery with a durable diagnostic. It never classifies background work
-from assistant prose, task descriptions, commands, prompts, or a private
-transcript. A later Stop with both collections empty follows the ordinary
-waiting path. Equivalent behavior is not claimed for another harness without an
-official structured signal.
+their bounded counts as `turn.activity` and keeps the lane active. Transports
+that advertise silent delivery receive the update without an operator ping.
+Notify-only transports retain the durable `background-work` suppression guard.
+Agent Relay never classifies background work from assistant prose, task
+descriptions, commands, prompts, or a private transcript. A later Stop with both
+collections empty follows the ordinary notifying waiting path. Equivalent
+behavior is not claimed for another harness without an official structured
+signal.
 
 Malformed, oversized, or unknown input produces a bounded diagnostic. The raw
 payload is not copied into SQLite, logs, the fallback spool, or a transport.

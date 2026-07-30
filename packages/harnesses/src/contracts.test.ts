@@ -136,6 +136,76 @@ describe("Claude structured background-work Stop contract", () => {
   });
 });
 
+describe.each([
+  ["codex", "codex/session-start.json"],
+  ["claude", "claude/session-start.json"],
+] as const)("%s session lifecycle contract", (harness, path) => {
+  it("normalizes a sanitized session-open event without transcript data", () => {
+    const result = parseHarnessJson(harness, fixture(path), context());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event).toMatchObject({
+        harness,
+        type: "session.started",
+        summary: "Session opened (resume).",
+      });
+      expect(JSON.stringify(result.event)).not.toContain("transcript");
+    }
+  });
+});
+
+describe.each([
+  [
+    "codex",
+    "codex/user-prompt-submit.json",
+    "SYNTHETIC_PRIVATE_CODEX_PROMPT_MUST_NOT_PERSIST",
+  ],
+  [
+    "claude",
+    "claude/user-prompt-submit.json",
+    "SYNTHETIC_PRIVATE_CLAUDE_PROMPT_MUST_NOT_PERSIST",
+  ],
+] as const)(
+  "%s prompt-submit lifecycle contract",
+  (harness, path, privatePrompt) => {
+    it("marks the turn working without retaining the operator prompt", () => {
+      const result = parseHarnessJson(harness, fixture(path), context());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.event).toMatchObject({
+          harness,
+          type: "turn.started",
+          summary: "Operator submitted a prompt; the agent is working.",
+        });
+        expect(JSON.stringify(result.event)).not.toContain(privatePrompt);
+      }
+    });
+
+    it("rejects a malformed lifecycle payload instead of guessing", () => {
+      const payload = JSON.parse(fixture(path)) as Record<string, unknown>;
+      delete payload["prompt"];
+      const result = parseHarnessJson(
+        harness,
+        JSON.stringify(payload),
+        context(),
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.diagnostic).toMatchObject({
+          code: "malformed-payload",
+          safeBehavior: "native-prompt",
+        });
+        expect(result.diagnostic.issues).toContainEqual(
+          expect.objectContaining({ path: "prompt" }),
+        );
+      }
+    });
+  },
+);
+
 describe("failure and diagnostic contracts", () => {
   it("normalizes Claude StopFailure without claiming a process crash", () => {
     const result = parseHarnessJson(

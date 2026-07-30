@@ -21,6 +21,7 @@ interface is:
 ```ts
 interface NotificationTransport {
   readonly name: string;
+  readonly supportedDeliveryModes?: readonly ("notify" | "silent")[];
   deliver(
     message: DeliveryMessage,
     context: DeliveryContext,
@@ -31,7 +32,16 @@ interface NotificationTransport {
 `DeliveryMessage` contains already-rendered title/text plus optional typed
 interaction, multi-select, question-set, and action controls. `DeliveryContext`
 contains a stable idempotency key, sanitized source/session routing metadata, an
-optional local web handoff, and an optional durable topic ID.
+optional local web handoff, an optional durable topic ID, and the requested
+`deliveryMode`.
+
+Advertise `silent` only when the provider can actually deliver without an
+attention ping, or when the transport explicitly exposes the mode to a receiver
+that owns that behavior. Agent Relay sends session starts, submitted-prompt
+activity, structured background work, and session ends as `silent`; stops,
+questions, permission decisions, failures, and stale-process warnings as
+`notify`. A notify-only transport may suppress structured background-work cards
+to preserve the existing anti-noise guard.
 
 ## Optional capabilities
 

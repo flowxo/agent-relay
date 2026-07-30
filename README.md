@@ -24,6 +24,8 @@ where Agent Relay keeps its source of truth.
 
 - One private Telegram topic for each agent session.
 - Clear alerts when an agent stops, asks a question, or has a proven crash.
+- Quiet lifecycle updates when a session starts or the operator sends more work,
+  so an unattended topic does not look falsely paused.
 - Buttons for choices and common actions such as **Continue**, **Details**,
   **Mute**, and **End**.
 - Free-text answers routed to the exact request that opened them.
@@ -194,7 +196,9 @@ node apps/relay/dist/cli.js daemon
 In another terminal, run `node apps/relay/dist/cli.js webhook-canary`. Every
 delivery is strict JSON with a stable idempotency key and an HMAC-SHA256
 signature over the exact request bytes. Loopback HTTP is allowed for local
-development; non-loopback receivers require HTTPS.
+development; non-loopback receivers require HTTPS. The envelope marks each
+delivery as `notify` or `silent`, allowing a receiver to mirror Agent Relay's
+attention policy.
 
 This transport is outbound only. Questions include a credential-free link to the
 exact request on the authenticated local web board. A public inbound response
@@ -212,6 +216,17 @@ rules, retries, privacy boundaries, and environment-based setup.
 The first event from a session creates a topic named with the harness,
 repository, optional branch, and a short session suffix. Later events from the
 same session return to that topic, even after the daemon restarts.
+
+Events that need attention—stops, questions, permission decisions, proven
+failures, and stale-process warnings—use ordinary Telegram notifications.
+Session starts, submitted prompts, and structured background-work updates are
+sent silently. They keep the topic's visible history current without pinging
+your phone.
+
+Stop cards show a compact excerpt: up to two lines from the start, an omission
+marker, and up to two lines from the end. The waiting state appears after that
+excerpt, where the agent actually stopped. Tap **Details** for the bounded
+long-form text.
 
 Structured choices appear as buttons. For a free-text question, type in the
 session topic when it has one compatible open request. If several requests are
@@ -352,9 +367,9 @@ machine.
 
 | Harness / surface | Exact verified version  | Classification          | Important boundary                                                                                                               |
 | ----------------- | ----------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Codex CLI         | `codex-cli 0.145.0`     | `verified`              | Stop and read-only late resume are live-proven; crash proof requires supervision.                                                |
+| Codex CLI         | `codex-cli 0.145.0`     | `verified`              | Stop and read-only late resume are live-proven; privacy-safe session and prompt lifecycle cards are fixture-proven.              |
 | Codex App Server  | `codex-cli 0.145.0`     | `verified`              | The owned stdio driver, durable correlation, and local adoption recovery are exact-version proven behind the default-off bridge. |
-| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; structured background-work suppression and StopFailure remain fixture-proven.    |
+| Claude Code CLI   | `2.1.219 (Claude Code)` | `verified`              | Stop and plan-mode late resume are live-proven; quiet lifecycle, structured background work, and StopFailure are fixture-proven. |
 | Claude Agent SDK  | —                       | `compatible-unverified` | The streaming SDK contract is understood but is not the installed V1 user path.                                                  |
 | Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.                                     |
 | Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                    |

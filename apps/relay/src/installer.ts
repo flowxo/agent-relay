@@ -143,8 +143,14 @@ interface MutableJsonObject {
 }
 
 const TARGET_EVENTS: Record<Harness, readonly string[]> = {
-  codex: ["Stop", "PermissionRequest"],
-  claude: ["Stop", "StopFailure", "PermissionRequest"],
+  codex: ["SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest"],
+  claude: [
+    "SessionStart",
+    "UserPromptSubmit",
+    "Stop",
+    "StopFailure",
+    "PermissionRequest",
+  ],
   cursor: ["stop"],
 };
 
@@ -274,6 +280,18 @@ function commandHandler(command: string): MutableJsonObject {
   };
 }
 
+function eventMatcher(
+  harness: "codex" | "claude",
+  eventName: string,
+): string | undefined {
+  if (eventName !== "SessionStart") {
+    return undefined;
+  }
+  return harness === "codex"
+    ? "startup|resume|clear"
+    : "startup|resume|clear|fork";
+}
+
 function cursorHandler(command: string): MutableJsonObject {
   return {
     command,
@@ -333,6 +351,9 @@ function filterNestedEvent(hooks: MutableJsonObject, eventName: string): void {
       filteredGroups.push({ ...group, hooks: filteredHandlers });
       continue;
     }
+    if (handlers.length > 0) {
+      continue;
+    }
     const otherKeys = Object.keys(group).filter((key) => key !== "hooks");
     if (otherKeys.length > 0) {
       filteredGroups.push({ ...group, hooks: [] });
@@ -370,7 +391,12 @@ function patchNestedConfig(
       }
       hooks[eventName] = [
         ...existingGroups,
-        { hooks: [commandHandler(command)] },
+        {
+          ...(eventMatcher(harness, eventName) === undefined
+            ? {}
+            : { matcher: eventMatcher(harness, eventName) }),
+          hooks: [commandHandler(command)],
+        },
       ];
     }
   }
