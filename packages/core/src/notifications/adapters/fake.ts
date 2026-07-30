@@ -11,6 +11,9 @@ import type {
   TopicDeletionContext,
   TopicDeletionReceipt,
   TopicDeletionTransport,
+  TopicEditContext,
+  TopicEditingTransport,
+  TopicEditReceipt,
   TopicNotificationTransport,
   TopicReceipt,
 } from "@agent-relay/notification-contracts";
@@ -51,11 +54,19 @@ export interface FakeOperatorControl {
   receipt: DeliveryReceipt;
 }
 
+export interface FakeTopicEdit {
+  topicId: string;
+  topic: TopicCreation;
+  context: TopicEditContext;
+  receipt: TopicEditReceipt;
+}
+
 export class FakeNotificationTransport
   implements
     InteractiveNotificationTransport,
     OperatorControlTransport,
     TopicDeletionTransport,
+    TopicEditingTransport,
     TopicNotificationTransport
 {
   // Retain the pre-refactor durable transport identity so existing local
@@ -112,6 +123,11 @@ export class FakeNotificationTransport
     topicId: string;
     outcome: "deleted" | "already-missing" | "failed" | "deduplicated";
   }> = [];
+  public readonly topicEditAttempts: Array<{
+    idempotencyKey: string;
+    topicId: string;
+    outcome: "updated" | "failed" | "deduplicated";
+  }> = [];
   private readonly deliveriesByKey = new Map<string, FakeDelivery>();
   private readonly operatorControlsByKey = new Map<
     string,
@@ -122,9 +138,11 @@ export class FakeNotificationTransport
     string,
     TopicDeletionReceipt
   >();
+  private readonly topicEditsByKey = new Map<string, FakeTopicEdit>();
   private readonly failures: PlannedFailure[] = [];
   private readonly topicFailures: PlannedFailure[] = [];
   private readonly topicDeletionFailures: PlannedFailure[] = [];
+  private readonly topicEditFailures: PlannedFailure[] = [];
   private readonly closedTopicIds = new Set<string>();
   private nextMessageId = 1;
   private nextTopicId = 1_000;
@@ -186,6 +204,19 @@ export class FakeNotificationTransport
     }
   }
 
+  public failNextTopicEdit(
+    count: number,
+    failure: PlannedFailure = {
+      code: "fake-topic-edit-timeout",
+      message: "fake topic edit timed out",
+      retryable: true,
+    },
+  ): void {
+    for (let index = 0; index < count; index += 1) {
+      this.topicEditFailures.push(failure);
+    }
+  }
+
   public get deliveries(): readonly FakeDelivery[] {
     return [...this.deliveriesByKey.values()];
   }
@@ -196,6 +227,10 @@ export class FakeNotificationTransport
 
   public get operatorControls(): readonly FakeOperatorControl[] {
     return [...this.operatorControlsByKey.values()];
+  }
+
+  public get topicEdits(): readonly FakeTopicEdit[] {
+    return [...this.topicEditsByKey.values()];
   }
 
   public simulateTopicDeletion(topicId: string): boolean {
@@ -320,6 +355,79 @@ export class FakeNotificationTransport
     this.topicAttempts.push({
       idempotencyKey: context.idempotencyKey,
       outcome: "created",
+    });
+    return receipt;
+  }
+
+  public async editTopic(
+    topicId: string,
+    topic: TopicCreation,
+    context: TopicEditContext,
+  ): Promise<TopicEditReceipt> {
+    const existing = this.topicEditsByKey.get(context.idempotencyKey);
+    if (existing !== undefined) {
+      this.topicEditAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        topicId,
+        outcome: "deduplicated",
+      });
+      return existing.receipt;
+    }
+    if (!this.online) {
+      this.topicEditAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        topicId,
+        outcome: "failed",
+      });
+      throw new TransportError(
+        "fake Telegram is offline",
+        "fake-offline",
+        true,
+      );
+    }
+    const failure = this.topicEditFailures.shift();
+    if (failure !== undefined) {
+      this.topicEditAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        topicId,
+        outcome: "failed",
+      });
+      throw new TransportError(
+        failure.message,
+        failure.code,
+        failure.retryable,
+      );
+    }
+    const entry = [...this.topicsByKey.entries()].find(
+      ([, candidate]) => candidate.receipt.topicId === topicId,
+    );
+    if (entry === undefined) {
+      this.topicEditAttempts.push({
+        idempotencyKey: context.idempotencyKey,
+        topicId,
+        outcome: "failed",
+      });
+      throw new TopicUnavailableError(
+        this.closedTopicIds.has(topicId)
+          ? "fake message thread is closed"
+          : "fake message thread not found",
+        this.closedTopicIds.has(topicId)
+          ? "fake-topic-closed"
+          : "fake-topic-unavailable",
+      );
+    }
+    entry[1].topic = topic;
+    const receipt = {
+      transport: this.name,
+      topicId,
+      topicName: topic.name,
+    };
+    const edit = { topicId, topic, context, receipt };
+    this.topicEditsByKey.set(context.idempotencyKey, edit);
+    this.topicEditAttempts.push({
+      idempotencyKey: context.idempotencyKey,
+      topicId,
+      outcome: "updated",
     });
     return receipt;
   }

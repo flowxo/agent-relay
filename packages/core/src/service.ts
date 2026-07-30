@@ -24,6 +24,7 @@ import {
   isInteractiveTransport,
   isOperatorControlTransport,
   isTopicDeletionTransport,
+  isTopicEditingTransport,
   isTopicTransport,
   supportsDeliveryMode,
   TopicUnavailableError,
@@ -111,6 +112,16 @@ export interface TopicCleanupDrainResult {
   failed: number;
   skipped: number;
   completedOperations: number;
+}
+
+export interface TopicTitleDrainResult {
+  supported: boolean;
+  scheduled: number;
+  claimed: number;
+  updated: number;
+  retrying: number;
+  failed: number;
+  unavailable: number;
 }
 
 export type BrowserSurfaceSyncResult =
@@ -312,6 +323,8 @@ export class RelayService {
     const now = this.now().toISOString();
     const recovered = this.store.recoverInterruptedDeliveries(now);
     const recoveredTopics = this.store.recoverInterruptedTopics(now);
+    const recoveredTopicTitles =
+      this.store.recoverInterruptedTopicTitleUpdates(now);
     const recoveredTopicCleanups =
       this.store.recoverInterruptedTopicCleanups(now);
     if (recovered > 0) {
@@ -339,6 +352,15 @@ export class RelayService {
         message: `recovered ${recoveredTopicCleanups} interrupted topic deletion attempts`,
         at: now,
         details: { recovered: recoveredTopicCleanups },
+      });
+    }
+    if (recoveredTopicTitles > 0) {
+      this.logger.log({
+        level: "warn",
+        code: "topic-title.recovered",
+        message: `recovered ${recoveredTopicTitles} interrupted topic title update attempts`,
+        at: now,
+        details: { recovered: recoveredTopicTitles },
       });
     }
     return recovered;
@@ -804,6 +826,176 @@ export class RelayService {
           result.completedOperations += 1;
           await this.syncTopicCleanupPresentation(completion.operation);
         }
+      }
+    }
+    return result;
+  }
+
+  public async drainTopicTitleUpdates(
+    limit = 25,
+  ): Promise<TopicTitleDrainResult> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("topic title drain limit must be between 1 and 100");
+    }
+    const result: TopicTitleDrainResult = {
+      supported: isTopicEditingTransport(this.transport),
+      scheduled: 0,
+      claimed: 0,
+      updated: 0,
+      retrying: 0,
+      failed: 0,
+      unavailable: 0,
+    };
+    if (!isTopicEditingTransport(this.transport)) {
+      return result;
+    }
+    result.scheduled = this.store.reconcileSessionTopicTitles({
+      transportName: this.transport.name,
+      transportScope: this.transport.topicScope,
+      now: this.now().toISOString(),
+    });
+    for (let index = 0; index < limit; index += 1) {
+      const claim = this.store.claimNextSessionTopicTitleUpdate({
+        transportName: this.transport.name,
+        transportScope: this.transport.topicScope,
+        now: this.now().toISOString(),
+      });
+      if (claim === undefined) {
+        break;
+      }
+      result.claimed += 1;
+      const { topic, attemptNumber } = claim;
+      if (topic.topicId === undefined) {
+        throw new Error("claimed topic title update is missing its topic id");
+      }
+      const idempotencyKey = `topic_title_${sha256(
+        [
+          topic.machineId,
+          topic.harness,
+          topic.sessionId,
+          topic.transportName,
+          topic.transportScope,
+          topic.topicId,
+          topic.desiredTopicName,
+        ].join("\u001f"),
+      ).slice(0, 40)}`;
+      try {
+        await this.transport.editTopic(
+          topic.topicId,
+          { name: topic.desiredTopicName },
+          { idempotencyKey },
+        );
+        this.store.markSessionTopicTitleUpdated({
+          machineId: topic.machineId,
+          harness: topic.harness,
+          sessionId: topic.sessionId,
+          transportName: topic.transportName,
+          transportScope: topic.transportScope,
+          topicId: topic.topicId,
+          desiredTopicName: topic.desiredTopicName,
+          attemptNumber,
+          now: this.now().toISOString(),
+        });
+        result.updated += 1;
+        this.logger.log({
+          level: "info",
+          code: "topic-title.updated",
+          message: "session topic title updated",
+          at: this.now().toISOString(),
+          details: {
+            harness: topic.harness,
+            repository: topic.repository,
+            shortSessionId: topic.shortSessionId,
+            transport: topic.transportName,
+            topicId: topic.topicId,
+          },
+        });
+      } catch (error) {
+        const transportError = asTransportError(error);
+        const failedAt = this.now().toISOString();
+        if (error instanceof TopicUnavailableError) {
+          this.store.reconcileUnavailableSessionTopic({
+            machineId: topic.machineId,
+            harness: topic.harness,
+            sessionId: topic.sessionId,
+            transportName: topic.transportName,
+            transportScope: topic.transportScope,
+            topicId: topic.topicId,
+            errorCode: transportError.code,
+            errorMessage: redactText(transportError.message, 2_000),
+            now: failedAt,
+          });
+          result.unavailable += 1;
+          this.reportDiagnostic({
+            schema: "agent-relay-diagnostic.v1",
+            diagnosticId: `diag_topic_title_unavailable_${sha256(
+              `${topic.topicId}\u001f${String(attemptNumber)}`,
+            ).slice(0, 36)}`,
+            recordedAt: failedAt,
+            source: "daemon",
+            level: "warn",
+            code: "topic-title.topic-unavailable",
+            message:
+              "Topic title update found a missing or closed topic; the durable mapping was reset",
+          });
+          continue;
+        }
+        const failed = this.store.markSessionTopicTitleFailed(
+          {
+            machineId: topic.machineId,
+            harness: topic.harness,
+            sessionId: topic.sessionId,
+            transportName: topic.transportName,
+            transportScope: topic.transportScope,
+            topicId: topic.topicId,
+            desiredTopicName: topic.desiredTopicName,
+            attemptNumber,
+            errorCode: transportError.code,
+            errorMessage: redactText(transportError.message, 2_000),
+            retryable: transportError.retryable,
+            now: failedAt,
+          },
+          this.retryPolicy,
+        );
+        this.reportDiagnostic({
+          schema: "agent-relay-diagnostic.v1",
+          diagnosticId: `diag_topic_title_attempt_${sha256(
+            `${topic.topicId}\u001f${topic.desiredTopicName}\u001f${String(
+              attemptNumber,
+            )}`,
+          ).slice(0, 36)}`,
+          recordedAt: failedAt,
+          source: "daemon",
+          level: failed.titleUpdateStatus === "retry" ? "warn" : "error",
+          code:
+            failed.titleUpdateStatus === "retry"
+              ? "topic-title.update-retrying"
+              : "topic-title.update-failed",
+          message:
+            failed.titleUpdateStatus === "retry"
+              ? `Topic title update will retry: ${transportError.code}`
+              : `Topic title update failed permanently: ${transportError.code}`,
+        });
+        if (failed.titleUpdateStatus === "retry") {
+          result.retrying += 1;
+        } else {
+          result.failed += 1;
+        }
+        this.logger.log({
+          level: failed.titleUpdateStatus === "retry" ? "warn" : "error",
+          code:
+            failed.titleUpdateStatus === "retry"
+              ? "topic-title.retry-scheduled"
+              : "topic-title.update-failed",
+          message: transportError.message,
+          at: failedAt,
+          details: {
+            errorCode: transportError.code,
+            attemptNumber,
+            retryable: transportError.retryable,
+            shortSessionId: topic.shortSessionId,
+          },
+        });
       }
     }
     return result;
@@ -1452,7 +1644,7 @@ export class RelayService {
     const ready = await (async () => {
       try {
         const receipt = await topicTransport.createTopic(
-          { name: claim.topic.topicName },
+          { name: claim.topic.desiredTopicName },
           { idempotencyKey: topicKey },
         );
         return this.store.markSessionTopicReady({
@@ -1463,6 +1655,7 @@ export class RelayService {
           transportScope: identity.transportScope,
           attemptNumber: claim.attemptNumber,
           topicId: receipt.topicId,
+          displayTopicName: claim.topic.desiredTopicName,
           now: this.now().toISOString(),
         });
       } catch (error) {

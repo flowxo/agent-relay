@@ -1004,4 +1004,133 @@ describe("Telegram reply correlation", () => {
     ).toBe("open");
     runtime.store.close();
   });
+
+  it("records topic-title service messages without calling them unauthorized", async () => {
+    const runtime = await setup();
+
+    await expect(
+      runtime.router.handle({
+        update_id: 130,
+        message: {
+          message_id: 530,
+          from: { id: 9999 },
+          chat: { id: 9001 },
+          message_thread_id: 123,
+          forum_topic_edited: {
+            name: "🟡 WAIT · codex/cli · relay · abc123",
+          },
+        },
+      }),
+    ).resolves.toEqual({ outcome: "ignored-service", updateId: 130 });
+
+    runtime.store.close();
+  });
+
+  it("shows exact SQLite-backed status inside a coding-session topic", async () => {
+    const runtime = await setup();
+    const input = questionEvent(
+      "correlation_status_topic",
+      "session_status_topic",
+      9,
+    );
+    runtime.service.ingest(input);
+    await runtime.service.drain();
+    const topicId = Number(runtime.transport.deliveries[0]?.context.topicId);
+
+    await expect(
+      runtime.router.handle({
+        update_id: 130,
+        message: {
+          message_id: 530,
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          message_thread_id: topicId,
+          text: "/status",
+        },
+      }),
+    ).resolves.toEqual({ outcome: "status-delivered", updateId: 130 });
+
+    expect(runtime.transport.operatorControls).toHaveLength(1);
+    expect(runtime.transport.operatorControls[0]).toMatchObject({
+      context: { topicId: String(topicId) },
+      message: {
+        text: expect.stringContaining("🟡 Waiting"),
+        buttons: [],
+      },
+    });
+    const statusText =
+      runtime.transport.operatorControls[0]?.message.text ?? "";
+    expect(statusText).toContain("Project: session_status_topic");
+    expect(statusText).toContain("Last event: input.required");
+    expect(statusText).toContain("Open requests: 1");
+    expect(
+      runtime.store.getPendingRequest("correlation_status_topic")?.state,
+    ).toBe("open");
+    runtime.store.close();
+  });
+
+  it("shows an aligned open-session table from New Chat or a non-coding topic", async () => {
+    const runtime = await setup();
+    runtime.service.ingest(
+      questionEvent("correlation_status_one", "session_status_one", 11),
+    );
+    runtime.service.ingest(
+      questionEvent("correlation_status_two", "session_status_two", 12),
+    );
+    runtime.service.ingest({
+      ...questionEvent("correlation_status_ended", "session_status_ended", 13),
+      type: "session.ended",
+      request: undefined,
+    });
+    await runtime.service.drain();
+
+    await expect(
+      runtime.router.handle({
+        update_id: 131,
+        message: {
+          message_id: 531,
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          message_thread_id: 9_999,
+          text: "/status@agent_relay_bot",
+        },
+      }),
+    ).resolves.toEqual({ outcome: "status-delivered", updateId: 131 });
+
+    const control = runtime.transport.operatorControls[0];
+    expect(control?.context.topicId).toBe("9999");
+    expect(control?.message.text).toContain("Open Agent Relay sessions · 2");
+    expect(control?.message.text).toContain("STATE  AGENT   PROJECT");
+    expect(control?.message.text).toContain("WAIT");
+    expect(control?.message.text).toContain("codex");
+    expect(control?.message.text).toContain("claude");
+    expect(control?.message.text).not.toContain("session_status_ended");
+    runtime.store.close();
+  });
+
+  it("records a status delivery failure instead of swallowing it", async () => {
+    const runtime = await setup();
+    runtime.transport.failNext(1);
+
+    await expect(
+      runtime.router.handle({
+        update_id: 132,
+        message: {
+          message_id: 532,
+          from: { id: 7001 },
+          chat: { id: 9001 },
+          text: "/status",
+        },
+      }),
+    ).resolves.toEqual({ outcome: "status-rejected", updateId: 132 });
+    expect(runtime.store.listDiagnostics()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "error",
+          code: "telegram.status-delivery-failed",
+        }),
+      ]),
+    );
+    runtime.store.close();
+  });
 });

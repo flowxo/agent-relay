@@ -783,6 +783,10 @@ describe("startDaemon Telegram update mode", () => {
               ok: true,
               result: [
                 {
+                  command: "status",
+                  description: "Show this session or all open sessions",
+                },
+                {
                   command: "purge",
                   description: "Review inactive session topics for deletion",
                 },
@@ -863,6 +867,10 @@ describe("startDaemon Telegram update mode", () => {
           JSON.stringify({
             ok: true,
             result: [
+              {
+                command: "status",
+                description: "Show this session or all open sessions",
+              },
               {
                 command: "purge",
                 description: "Review inactive session topics for deletion",

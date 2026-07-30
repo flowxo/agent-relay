@@ -61,6 +61,7 @@ import {
   type ParsedTopicCleanupCallback,
   type ParsedTopicPruneStartCallback,
 } from "./callbacks/topic-cleanup.js";
+import { renderOpenSessionStatus, renderSessionStatus } from "./status.js";
 
 const userSchema = z
   .object({
@@ -81,6 +82,7 @@ const messageSchema = z
     from: userSchema.optional(),
     chat: chatSchema,
     text: z.string().max(4_096).optional(),
+    forum_topic_edited: z.object({}).passthrough().optional(),
     reply_to_message: z
       .object({
         message_id: z.number().int(),
@@ -135,7 +137,10 @@ export type ReplyRouteOutcome =
   | "cleanup-cancelled"
   | "cleanup-duplicate"
   | "cleanup-expired"
-  | "cleanup-rejected";
+  | "cleanup-rejected"
+  | "status-delivered"
+  | "status-rejected"
+  | "ignored-service";
 
 export interface ReplyRouteResult {
   outcome: ReplyRouteOutcome;
@@ -222,6 +227,10 @@ function cardResolutionState(
 
 function isTopicCleanupCommand(text: string): boolean {
   return /^\/cleanup(?:@[A-Za-z0-9_]+)?$/iu.test(text.trim());
+}
+
+function isStatusCommand(text: string): boolean {
+  return /^\/status(?:@[A-Za-z0-9_]+)?$/iu.test(text.trim());
 }
 
 function isTopicPruneCommand(text: string): boolean {
@@ -548,6 +557,67 @@ export class TelegramReplyRouter {
           retryable: transportError.retryable,
         },
       });
+    }
+  }
+
+  private async handleStatusCommand(
+    updateId: number,
+    topicId?: string,
+  ): Promise<ReplyRouteResult> {
+    if (
+      !isTopicTransport(this.transport) ||
+      !isOperatorControlTransport(this.transport)
+    ) {
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.status-unsupported",
+        "The active transport cannot render topic status",
+        "error",
+      );
+      return { outcome: "status-rejected", updateId };
+    }
+    const topic =
+      topicId === undefined
+        ? undefined
+        : this.store.getSessionTopicByTopicId({
+            transportName: this.transport.name,
+            transportScope: this.transport.topicScope,
+            topicId,
+          });
+    const message =
+      topic === undefined
+        ? renderOpenSessionStatus(
+            this.store,
+            this.transport.name,
+            this.transport.topicScope,
+          )
+        : renderSessionStatus(this.store, topic, this.now());
+    try {
+      await this.transport.deliverOperatorControl(message, {
+        idempotencyKey: `telegram_status_${String(updateId)}`,
+        ...(topicId === undefined ? {} : { topicId }),
+      });
+      return { outcome: "status-delivered", updateId };
+    } catch (error) {
+      const transportError = asTransportError(error);
+      this.diagnoseTextCorrelation(
+        updateId,
+        "telegram.status-delivery-failed",
+        `Status response delivery failed: ${transportError.code}`,
+        "error",
+      );
+      this.logger.log({
+        level: "error",
+        code: "telegram.status-delivery-failed",
+        message: transportError.message,
+        at: this.now().toISOString(),
+        details: {
+          updateId,
+          errorCode: transportError.code,
+          retryable: transportError.retryable,
+        },
+      });
+      return { outcome: "status-rejected", updateId };
     }
   }
 
@@ -2254,7 +2324,12 @@ export class TelegramReplyRouter {
       }
     } else if (update.message !== undefined) {
       const message = update.message;
-      if (!this.authorized(message.from?.id, message.chat.id)) {
+      if (
+        message.text === undefined &&
+        message.forum_topic_edited !== undefined
+      ) {
+        route = { outcome: "ignored-service", updateId: update.update_id };
+      } else if (!this.authorized(message.from?.id, message.chat.id)) {
         this.diagnoseTextCorrelation(
           update.update_id,
           "telegram.topic-text-unauthorized",
@@ -2263,6 +2338,13 @@ export class TelegramReplyRouter {
         route = { outcome: "unauthorized", updateId: update.update_id };
       } else if (message.text === undefined) {
         route = { outcome: "unsupported", updateId: update.update_id };
+      } else if (isStatusCommand(message.text)) {
+        route = await this.handleStatusCommand(
+          update.update_id,
+          message.message_thread_id === undefined
+            ? undefined
+            : String(message.message_thread_id),
+        );
       } else if (isTopicCleanupCommand(message.text)) {
         route = await this.handleTopicCleanupCommand(update.update_id, {
           ...(message.message_thread_id === undefined
@@ -2457,7 +2539,9 @@ export class TelegramReplyRouter {
         route.outcome === "cleanup-previewed" ||
         route.outcome === "cleanup-confirmed" ||
         route.outcome === "cleanup-cancelled" ||
-        route.outcome === "cleanup-duplicate"
+        route.outcome === "cleanup-duplicate" ||
+        route.outcome === "status-delivered" ||
+        route.outcome === "ignored-service"
           ? "info"
           : "warn",
       code: `telegram.reply-${route.outcome}`,

@@ -1,6 +1,28 @@
 {
   "chat_id": "10001",
-  "text": "Codex · example\n\nWorking · now\nmain · session 12345678-a1b2c3\ncodex/cli · turn.started\n\nSummary: Operator submitted a prompt; the agent is working.",
+  "text": "Codex · example\n\nSummary: Operator submitted a prompt; the agent is working.\n\nWorking · now\n\nturn.started · codex/cli · main · session 12345678-a1b2c3",
+  "entities": [
+    {
+      "type": "bold",
+      "offset": 0,
+      "length": 15
+    },
+    {
+      "type": "bold",
+      "offset": 17,
+      "length": 8
+    },
+    {
+      "type": "bold",
+      "offset": 78,
+      "length": 13
+    },
+    {
+      "type": "italic",
+      "offset": 93,
+      "length": 57
+    }
+  ],
   "disable_web_page_preview": true,
   "disable_notification": true,
   "message_thread_id": 77,

@@ -276,6 +276,78 @@ describe("SQLite schema compatibility", () => {
     reopened.close();
   });
 
+  it("migrates version-seven topics to durable display-title state", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+
+    const prior = new Database(databasePath);
+    prior.exec(`
+      DROP INDEX session_topics_title_status_idx;
+      ALTER TABLE session_topics DROP COLUMN title_last_error_message;
+      ALTER TABLE session_topics DROP COLUMN title_last_error_code;
+      ALTER TABLE session_topics DROP COLUMN title_lease_started_at;
+      ALTER TABLE session_topics DROP COLUMN title_next_attempt_at;
+      ALTER TABLE session_topics DROP COLUMN title_attempt_count;
+      ALTER TABLE session_topics DROP COLUMN title_update_status;
+      ALTER TABLE session_topics DROP COLUMN desired_topic_name;
+      ALTER TABLE session_topics DROP COLUMN display_topic_name;
+
+      INSERT INTO sessions (
+        machine_id, harness, session_id, bridge_session_id, surface,
+        harness_version, project_json, capabilities_json, state,
+        last_event_type, last_seen_at, last_sequence, updated_at
+      ) VALUES (
+        'machine_schema_topic_12345678', 'codex',
+        'session_schema_topic_12345678', 'bridge_schema_topic_12345678',
+        'cli', 'test',
+        '{"displayName":"example","cwdHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+        '{}', 'waiting', 'turn.stopped', '2026-07-29T12:00:00.000Z', 2,
+        '2026-07-29T12:00:00.000Z'
+      );
+
+      INSERT INTO session_topics (
+        machine_id, harness, session_id, transport_name, transport_scope,
+        provider, repository, branch, short_session_id, lifecycle_state,
+        topic_name, topic_id, provisioning_status, next_attempt_at,
+        created_at, updated_at
+      ) VALUES (
+        'machine_schema_topic_12345678', 'codex',
+        'session_schema_topic_12345678', 'telegram', 'chat:synthetic',
+        'codex', 'example', 'main', '12345678-a1b2c3', 'waiting',
+        'Codex · example · main · 12345678-a1b2c3', '77', 'ready',
+        '2026-07-29T12:00:00.000Z', '2026-07-29T12:00:00.000Z',
+        '2026-07-29T12:00:00.000Z'
+      );
+    `);
+    prior.pragma("user_version = 7");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare(
+          `
+          SELECT
+            display_topic_name, desired_topic_name, title_update_status,
+            title_attempt_count, title_next_attempt_at
+          FROM session_topics
+        `,
+        )
+        .get(),
+    ).toEqual({
+      display_topic_name: "Codex · example · main · 12345678-a1b2c3",
+      desired_topic_name: "Codex · example · main · 12345678-a1b2c3",
+      title_update_status: "ready",
+      title_attempt_count: 0,
+      title_next_attempt_at: "2026-07-29T12:00:00.000Z",
+    });
+    upgraded.close();
+  });
+
   it("refuses to open a newer schema and leaves it untouched", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");

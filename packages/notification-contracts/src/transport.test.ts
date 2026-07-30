@@ -6,6 +6,7 @@ import {
   isInteractiveTransport,
   isOperatorControlTransport,
   isTopicDeletionTransport,
+  isTopicEditingTransport,
   isTopicTransport,
   supportsDeliveryMode,
   TopicUnavailableError,
@@ -26,6 +27,7 @@ describe("notification transport contracts", () => {
     expect(isInteractiveTransport(requiredTransport)).toBe(false);
     expect(isInteractionCapabilityTransport(requiredTransport)).toBe(false);
     expect(isTopicDeletionTransport(requiredTransport)).toBe(false);
+    expect(isTopicEditingTransport(requiredTransport)).toBe(false);
     expect(isOperatorControlTransport(requiredTransport)).toBe(false);
     expect(supportsDeliveryMode(requiredTransport, "silent")).toBe(false);
 
@@ -36,6 +38,13 @@ describe("notification transport contracts", () => {
       async createTopic() {
         return { transport: "example", topicId: "topic-1" };
       },
+      async editTopic() {
+        return {
+          transport: "example",
+          topicId: "topic-1",
+          topicName: "renamed",
+        };
+      },
       async acknowledgeCallback() {},
       async editDeliveryMessage() {},
       async editResolvedMessage() {},
@@ -45,6 +54,7 @@ describe("notification transport contracts", () => {
     };
 
     expect(isTopicTransport(capableTransport)).toBe(true);
+    expect(isTopicEditingTransport(capableTransport)).toBe(true);
     expect(isInteractiveTransport(capableTransport)).toBe(true);
     expect(isInteractionCapabilityTransport(capableTransport)).toBe(true);
     expect(isTopicDeletionTransport(capableTransport)).toBe(false);
@@ -70,6 +80,7 @@ describe("notification transport contracts", () => {
     };
 
     expect(isTopicDeletionTransport(capableTransport)).toBe(true);
+    expect(isTopicEditingTransport(capableTransport)).toBe(false);
     expect(isOperatorControlTransport(capableTransport)).toBe(true);
   });
 

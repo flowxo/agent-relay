@@ -526,6 +526,7 @@ export async function startDaemon(
     activeDrain = service
       .drain()
       .then(async () => {
+        await service.drainTopicTitleUpdates();
         await service.drainTopicCleanups();
       })
       .then(() => undefined)

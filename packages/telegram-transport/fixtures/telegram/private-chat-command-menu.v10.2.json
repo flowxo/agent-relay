@@ -3,6 +3,10 @@
     "request": {
       "commands": [
         {
+          "command": "status",
+          "description": "Show this session or all open sessions"
+        },
+        {
           "command": "purge",
           "description": "Review inactive session topics for deletion"
         },
@@ -31,6 +35,10 @@
     "response": {
       "ok": true,
       "result": [
+        {
+          "command": "status",
+          "description": "Show this session or all open sessions"
+        },
         {
           "command": "purge",
           "description": "Review inactive session topics for deletion"

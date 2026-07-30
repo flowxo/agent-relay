@@ -394,25 +394,16 @@ export function renderDeliveryMessage(
     options.coalesced === undefined
       ? `${state} · ${ageLabel(event.occurredAt, now)}`
       : `${state} · ${String(options.coalesced.count)} equivalent events · latest ${options.coalesced.latestAt}`;
-  const identityLines = [
-    `${
-      metadata.branch === undefined ? "branch unknown" : metadata.branch
-    } · session ${metadata.shortSessionId}`,
-    `${event.harness}/${event.surface} · ${event.type}`,
-  ];
   const contentLines = [
     `Summary: ${summary}`,
     ...(question === undefined || question.length === 0
       ? []
       : [`Question: ${question}`]),
   ];
-  const waitingStateAtBottom =
-    event.type === "turn.stopped" && options.resolutionState === undefined;
-  const text = (
-    waitingStateAtBottom
-      ? [...identityLines, "", ...contentLines, "", stateLine]
-      : [stateLine, ...identityLines, "", ...contentLines]
-  ).join("\n");
+  const footer = `${event.type} · ${event.harness}/${event.surface} · ${
+    metadata.branch === undefined ? "branch unknown" : metadata.branch
+  } · session ${metadata.shortSessionId}`;
+  const text = [...contentLines, "", stateLine, "", footer].join("\n");
   const actions = actionsFor(event, truncated || options.forceDetails === true);
   const interaction =
     options.resolutionState === undefined
