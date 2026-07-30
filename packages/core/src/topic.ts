@@ -6,6 +6,15 @@ import { redactText } from "./redaction.js";
 export type SessionLifecycleState =
   "active" | "waiting" | "stopped" | "suspected_stalled" | "exited";
 
+export type SessionLanePresentationState =
+  "running" | "waiting" | "muted" | "crashed" | "ended" | "stale";
+
+export interface SessionLanePresentation {
+  emoji: string;
+  label: string;
+  shortLabel: string;
+}
+
 export interface SessionTopicMetadata {
   provider: Harness;
   repository: string;
@@ -19,6 +28,18 @@ const HARNESS_NAMES: Record<Harness, string> = {
   codex: "Codex",
   claude: "Claude",
   cursor: "Cursor",
+};
+
+const SESSION_LANE_PRESENTATIONS: Record<
+  SessionLanePresentationState,
+  SessionLanePresentation
+> = {
+  running: { emoji: "🟢", label: "Running", shortLabel: "RUN" },
+  waiting: { emoji: "🟡", label: "Waiting", shortLabel: "WAIT" },
+  muted: { emoji: "🔕", label: "Muted", shortLabel: "MUTE" },
+  crashed: { emoji: "🔴", label: "Crashed", shortLabel: "CRASH" },
+  stale: { emoji: "🟠", label: "Possibly stalled", shortLabel: "STALE" },
+  ended: { emoji: "⚫", label: "Ended", shortLabel: "END" },
 };
 
 function lifecycleStateForEvent(
@@ -96,6 +117,29 @@ function boundTopicName(prefix: string, identity: string): string {
     .trimEnd()}…${suffix}`;
 }
 
+function boundDisplayedTopicName(
+  statePrefix: string,
+  stableTopicName: string,
+): string {
+  const maximumCharacters = 128;
+  const full = `${statePrefix} ${stableTopicName}`;
+  if ([...full].length <= maximumCharacters) {
+    return full;
+  }
+  const separator = " · ";
+  const suffixIndex = stableTopicName.lastIndexOf(separator);
+  if (suffixIndex < 0) {
+    return [...full].slice(0, maximumCharacters).join("").trimEnd();
+  }
+  const suffix = stableTopicName.slice(suffixIndex);
+  const available = maximumCharacters - [...`${statePrefix} …${suffix}`].length;
+  const prefix = [...stableTopicName.slice(0, suffixIndex)]
+    .slice(0, Math.max(1, available))
+    .join("")
+    .trimEnd();
+  return `${statePrefix} ${prefix}…${suffix}`;
+}
+
 function shortSessionIdentity(event: AgentAttentionEventV1): string {
   const readableSuffix = event.sessionId
     .slice(-8)
@@ -114,6 +158,26 @@ export function sessionPublicKey(input: {
   return sha256(
     `${input.machineId}\u001f${input.harness}\u001f${input.sessionId}`,
   ).slice(0, 24);
+}
+
+export function sessionLanePresentation(
+  state: SessionLanePresentationState,
+): SessionLanePresentation {
+  return SESSION_LANE_PRESENTATIONS[state];
+}
+
+/**
+ * Adds a visual state prefix while preserving the stable session suffix.
+ * `stableTopicName` remains the durable identity stored by the registry.
+ */
+export function sessionTopicDisplayName(
+  stableTopicName: string,
+  state: SessionLanePresentationState,
+): string {
+  return boundDisplayedTopicName(
+    sessionLanePresentation(state).emoji,
+    stableTopicName,
+  );
 }
 
 export function sessionTopicMetadata(

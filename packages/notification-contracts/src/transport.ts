@@ -118,6 +118,16 @@ export interface TopicReceipt {
   topicId: string;
 }
 
+export interface TopicEditContext {
+  idempotencyKey: string;
+}
+
+export interface TopicEditReceipt {
+  transport: string;
+  topicId: string;
+  topicName: string;
+}
+
 export interface TopicDeletionContext {
   idempotencyKey: string;
 }
@@ -172,6 +182,14 @@ export interface TopicDeletionTransport extends TopicNotificationTransport {
   ): Promise<TopicDeletionReceipt>;
 }
 
+export interface TopicEditingTransport extends TopicNotificationTransport {
+  editTopic(
+    topicId: string,
+    topic: TopicCreation,
+    context: TopicEditContext,
+  ): Promise<TopicEditReceipt>;
+}
+
 export interface InteractiveNotificationTransport extends NotificationTransport {
   acknowledgeCallback(callbackId: string, text: string): Promise<void>;
   editDeliveryMessage(
@@ -223,6 +241,16 @@ export function isTopicDeletionTransport(
     isTopicTransport(transport) &&
     "deleteTopic" in transport &&
     typeof transport.deleteTopic === "function"
+  );
+}
+
+export function isTopicEditingTransport(
+  transport: NotificationTransport,
+): transport is TopicEditingTransport {
+  return (
+    isTopicTransport(transport) &&
+    "editTopic" in transport &&
+    typeof transport.editTopic === "function"
   );
 }
 

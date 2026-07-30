@@ -1,0 +1,20 @@
+{
+  "chat_id": "10001",
+  "text": "Open Agent Relay sessions · 1\n\nSTATE  AGENT   PROJECT           BRANCH          SESSION\n─────  ──────  ────────────────  ──────────────  ───────────────\nWAIT   codex   agent-relay       main            12345678-a1b2c3",
+  "entities": [
+    {
+      "type": "bold",
+      "offset": 0,
+      "length": 29
+    },
+    {
+      "type": "pre",
+      "offset": 31,
+      "length": 186
+    }
+  ],
+  "disable_web_page_preview": true,
+  "reply_markup": {
+    "inline_keyboard": []
+  }
+}

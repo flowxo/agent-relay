@@ -18,6 +18,28 @@
       ]
     },
     {
+      "file": "status-command-send-message.v10.2.json",
+      "method": "sendMessage",
+      "evidence": "Bot API 10.2 explicit MessageEntity projection for the contextual open-session status command, exercised against the deterministic HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "repository, branch, and short session identity replaced",
+        "table contains no transcript or full local identifier",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
+      "file": "edit-forum-topic-title.v10.2.json",
+      "method": "editForumTopic",
+      "evidence": "Bot API 10.2 private-chat topic-title request and response shape verified against the official method contract and deterministic HTTP transport",
+      "sanitization": [
+        "chat ID replaced",
+        "message thread ID replaced",
+        "repository and short session identity replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
       "file": "private-topic-prune-command.v10.2.json",
       "method": "getUpdates",
       "evidence": "Sanitized from the private-topic command shape accepted during the credentialed New Chat dogfood canary and checked against the Bot API 10.2 Message contract",

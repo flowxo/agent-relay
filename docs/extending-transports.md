@@ -48,6 +48,8 @@ to preserve the existing anti-noise guard.
 Implement only what the provider can prove:
 
 - `TopicNotificationTransport` creates and returns one durable topic ID;
+- `TopicEditingTransport` applies a bounded displayed name to an existing topic
+  without changing its durable identity;
 - `TopicDeletionTransport` deletes one provider topic with an idempotent
   `deleted` or `already-missing` receipt;
 - `InteractiveNotificationTransport` acknowledges callbacks and edits original
@@ -77,7 +79,8 @@ message ID. Topic creation uses its separate stable idempotency key and persists
 the returned topic before later messages use it. Topic deletion must be
 idempotent from the caller's perspective: an already-absent provider topic is a
 successful outcome, and the local topic mapping is retained until that receipt
-commits.
+commits. Topic-title edits receive a stable target-derived key; providers may
+apply the same title more than once and must return the exact applied name.
 
 Classify failures with `TransportError`:
 

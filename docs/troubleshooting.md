@@ -128,10 +128,11 @@ than the selected cutoff are excluded. Pruning does not End a session. A later
 event recreates its topic, although the old Telegram topic and messages remain
 permanently deleted.
 
-If `/purge` or `/cleanup` is missing from Telegram's slash-command menu, restart
-the daemon. Startup uses `setMyCommands` for the configured private chat and
-verifies the result with `getMyCommands`; a failure is reported instead of
-silently leaving a stale menu. `/prune` remains a non-menu compatibility alias.
+If `/status`, `/purge`, or `/cleanup` is missing from Telegram's slash-command
+menu, restart the daemon. Startup uses `setMyCommands` for the configured
+private chat and verifies the result with `getMyCommands`; a failure is reported
+instead of silently leaving a stale menu. `/prune` remains a non-menu
+compatibility alias.
 
 ## A Telegram reply is ignored
 

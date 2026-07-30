@@ -25,6 +25,9 @@ import type {
   TopicDeletionContext,
   TopicDeletionReceipt,
   TopicDeletionTransport,
+  TopicEditContext,
+  TopicEditingTransport,
+  TopicEditReceipt,
   TopicNotificationTransport,
   TopicReceipt,
 } from "@agent-relay/notification-contracts";
@@ -41,6 +44,7 @@ import {
 import { multiSelectCallbackData } from "./callbacks/multi-select.js";
 import { questionSetCallbackData } from "./callbacks/question-set.js";
 import { AGENT_RELAY_TELEGRAM_BOT_COMMANDS } from "./bot-commands.js";
+import { formattedTelegramPayload } from "./formatting.js";
 
 const successSchema = z
   .object({
@@ -153,7 +157,7 @@ function identifiesUnavailableTopic(
   description: string,
 ): boolean {
   if (
-    method !== "sendMessage" ||
+    !["sendMessage", "editForumTopic"].includes(method) ||
     !("message_thread_id" in payload) ||
     status !== 400
   ) {
@@ -169,6 +173,11 @@ function identifiesUnavailableTopic(
     "message thread was closed",
     "topic is closed",
     "topic was closed",
+    "topic not found",
+    "topic is not found",
+    "forum topic not found",
+    "forum topic is not found",
+    "topic_id_invalid",
   ].some((fragment) => normalized.includes(fragment));
 }
 
@@ -234,7 +243,7 @@ function telegramFailureCode(
     return "telegram-polling-conflict";
   }
   if (
-    method === "createForumTopic" &&
+    (method === "createForumTopic" || method === "editForumTopic") &&
     (normalized.includes("not enough rights") ||
       normalized.includes("manage topics") ||
       normalized.includes("forum_create_forbidden") ||
@@ -486,6 +495,7 @@ export class TelegramBotTransport
     InteractiveNotificationTransport,
     OperatorControlTransport,
     TopicDeletionTransport,
+    TopicEditingTransport,
     TopicNotificationTransport
 {
   public readonly name = "telegram";
@@ -555,10 +565,11 @@ export class TelegramBotTransport
     context: DeliveryContext,
   ): Promise<DeliveryReceipt> {
     const text = renderDeliveryText(message);
+    const formatted = formattedTelegramPayload(text);
     const keyboard = inlineKeyboard(message);
     const body = await this.callApi("sendMessage", {
       chat_id: this.chatId,
-      text,
+      ...formatted,
       disable_web_page_preview: true,
       ...(context.deliveryMode === "silent"
         ? { disable_notification: true }
@@ -646,13 +657,46 @@ export class TelegramBotTransport
     }
   }
 
+  public async editTopic(
+    topicId: string,
+    topic: TopicCreation,
+    _context: TopicEditContext,
+  ): Promise<TopicEditReceipt> {
+    const name = [...topic.name].slice(0, 128).join("").trim();
+    if (name.length === 0) {
+      throw new TransportError(
+        "Telegram topic name must not be empty",
+        "telegram-invalid-topic",
+        false,
+      );
+    }
+    const body = await this.callApi("editForumTopic", {
+      chat_id: this.chatId,
+      message_thread_id: this.parseTopicId(topicId),
+      name,
+    });
+    if (!trueSuccessSchema.safeParse(body).success) {
+      throw new TransportError(
+        "Telegram editForumTopic response was malformed",
+        "telegram-malformed-response",
+        false,
+      );
+    }
+    return {
+      transport: this.name,
+      topicId,
+      topicName: name,
+    };
+  }
+
   public async deliverOperatorControl(
     message: OperatorControlMessage,
     context: OperatorControlContext,
   ): Promise<DeliveryReceipt> {
+    const formatted = formattedTelegramPayload(redactText(message.text, 4_000));
     const body = await this.callApi("sendMessage", {
       chat_id: this.chatId,
-      text: redactText(message.text, 4_000),
+      ...formatted,
       disable_web_page_preview: true,
       ...(context.topicId === undefined
         ? {}
@@ -677,10 +721,11 @@ export class TelegramBotTransport
     messageId: string,
     message: OperatorControlMessage,
   ): Promise<void> {
+    const formatted = formattedTelegramPayload(redactText(message.text, 4_000));
     await this.callApi("editMessageText", {
       chat_id: this.chatId,
       message_id: Number(messageId),
-      text: redactText(message.text, 4_000),
+      ...formatted,
       disable_web_page_preview: true,
       reply_markup: { inline_keyboard: operatorInlineKeyboard(message) },
     });
@@ -813,10 +858,11 @@ export class TelegramBotTransport
     messageId: string,
     message: DeliveryMessage,
   ): Promise<void> {
+    const formatted = formattedTelegramPayload(renderDeliveryText(message));
     await this.callApi("editMessageText", {
       chat_id: this.chatId,
       message_id: Number(messageId),
-      text: renderDeliveryText(message),
+      ...formatted,
       disable_web_page_preview: true,
       reply_markup: { inline_keyboard: inlineKeyboard(message) },
     });
@@ -826,10 +872,11 @@ export class TelegramBotTransport
     messageId: string,
     text: string,
   ): Promise<void> {
+    const formatted = formattedTelegramPayload(redactText(text, 4_000));
     await this.callApi("editMessageText", {
       chat_id: this.chatId,
       message_id: Number(messageId),
-      text: redactText(text, 4_000),
+      ...formatted,
       reply_markup: { inline_keyboard: [] },
     });
   }

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "chat_id": "10001",
+    "message_thread_id": 77,
+    "name": "🟡 Codex · example · 12345678-a1b2c3"
+  },
+  "response": {
+    "ok": true,
+    "result": true
+  }
+}

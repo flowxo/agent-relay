@@ -348,17 +348,22 @@ and as durable `topic.create-failed` diagnostics. Retryable failures keep the
 owning event in the normal delivery spool.
 
 Each topic record also reports a durable `laneState`: `running`, `waiting`,
-`muted`, `crashed`, `ended`, or `stale`. The stable topic name is not rewritten
-on every event. Compact event cards and session-control edits show state in
-Telegram, while `status` exposes the reconciled current value. Crash and stale
-evidence remain visible even when routine whooshbang were muted.
+`muted`, `crashed`, `ended`, or `stale`. SQLite keeps the stable topic identity
+separate from its displayed name. Telegram prefixes the display name with 🟢,
+🟡, 🔕, 🔴, 🟠, or ⚫ and updates it only when the derived lane state changes.
+Title updates have their own durable lease, bounded retry, restart recovery, and
+diagnostic state; they never change request or session correlation. Crash and
+stale evidence remain visible even when routine whooshbang were muted.
 
-Notifications are rendered as compact plain-text cards with stable session
-identity, event age, and fixed callback data that cannot be supplied by model
+Notifications are rendered as compact literal-text cards with explicit Telegram
+formatting entities and fixed callback data that cannot be supplied by model
 text. A stop card keeps at most two lines from the beginning and two from the
-end, separated by an omission marker, then puts the waiting state at the bottom.
-Full long content remains in the local durable event record and receives a
-Details action. Question-choice buttons and card actions are active:
+end, separated by an omission marker, then puts the waiting state and an
+italicized event/session footer at the bottom. Bold headings and labels are
+calculated over the final bounded text; Markdown-looking model output is never
+parsed as markup. Full long content remains in the local durable event record
+and receives a Details action. Question-choice buttons and card actions are
+active:
 
 Claude Code `Stop` events with a non-empty structured `background_tasks` or
 `session_crons` collection are not operator attention. Agent Relay retains only
@@ -416,9 +421,9 @@ deletes the Telegram topic but does not mark the session ended, so later session
 activity creates a fresh topic. An empty `/cleanup` result also includes a
 one-tap 24-hour purge preview in that same topic.
 
-Agent Relay installs `/purge` and `/cleanup` into the configured private chat's
-Telegram command menu on every daemon start and verifies the result. The older
-`/prune` spelling remains accepted for compatibility.
+Agent Relay installs `/status`, `/purge`, and `/cleanup` into the configured
+private chat's Telegram command menu on every daemon start and verifies the
+result. The older `/prune` spelling remains accepted for compatibility.
 
 Telegram may continue to show an ordinary private bot command as unread after
 the daemon consumes it. Standard Bot API polling confirms an update by advancing
@@ -431,6 +436,14 @@ the stored result without repeating the action. `status` exposes aggregate
 control/session counts and safe transport diagnosis; detailed session state is
 available through the authenticated local web companion rather than raw
 identities in CLI output.
+
+Telegram also has a contextual `/status` command. Inside a ready coding-session
+topic it returns that exact session's current lane state, project, branch,
+harness/surface, short identity, last event, last-seen age, and open-request
+count. From **New Chat** or any topic not owned by Agent Relay it returns an
+aligned preformatted table of open topics in the current private chat. The
+command reads SQLite at invocation time and is handled before free-text answer
+correlation, so it cannot accidentally answer an open request.
 
 Free-text and continuation requests can be answered without Telegram's Reply
 gesture when correlation is unambiguous. Type directly in the session topic when

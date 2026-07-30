@@ -216,7 +216,15 @@ describe("compact attention cards", () => {
     expect(card.text.indexOf("Summary:")).toBeLessThan(
       card.text.indexOf("Waiting for your next instruction"),
     );
-    expect(card.text.trimEnd().endsWith("· 1m ago")).toBe(true);
+    expect(card.text.indexOf("Waiting for your next instruction")).toBeLessThan(
+      card.text.indexOf("turn.stopped ·"),
+    );
+    expect(card.text.trimEnd()).toMatch(
+      /turn\.stopped · codex\/cli · codex\/compact-cards · session 12345678-[a-f0-9]{6}$/u,
+    );
+    expect(card.text.split("\n").slice(0, 2).join("\n")).not.toContain(
+      "session ",
+    );
     expect(card.actions?.map((action) => action.kind)).toContain("details");
   });
 

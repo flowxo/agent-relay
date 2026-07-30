@@ -556,7 +556,7 @@ describe("durable session topic registry", () => {
     store.close();
   });
 
-  it("exposes stable lane states without renaming the topic on every event", async () => {
+  it("keeps stable topic identity while synchronizing state titles", async () => {
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
@@ -573,6 +573,9 @@ describe("durable session topic registry", () => {
       throw new Error("missing original topic name");
     }
     expect(store.listSessionTopics()[0]?.laneState).toBe("running");
+    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
+      `🟢 ${originalName}`,
+    );
 
     service.ingest(
       event("evt_topic_state_waiting_12345678", {
@@ -582,7 +585,14 @@ describe("durable session topic registry", () => {
       }),
     );
     await service.drain();
+    await expect(service.drainTopicTitleUpdates()).resolves.toMatchObject({
+      scheduled: 1,
+      updated: 1,
+    });
     expect(store.listSessionTopics()[0]?.laneState).toBe("waiting");
+    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
+      `🟡 ${originalName}`,
+    );
 
     const muteAction = transport.deliveries
       .at(-1)
@@ -599,6 +609,10 @@ describe("durable session topic registry", () => {
       }).outcome,
     ).toBe("succeeded");
     expect(store.listSessionTopics()[0]?.laneState).toBe("muted");
+    await service.drainTopicTitleUpdates();
+    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
+      `🔕 ${originalName}`,
+    );
 
     service.ingest(
       event("evt_topic_state_crashed_12345678", {
@@ -612,7 +626,11 @@ describe("durable session topic registry", () => {
       }),
     );
     await service.drain();
+    await service.drainTopicTitleUpdates();
     expect(store.listSessionTopics()[0]?.laneState).toBe("crashed");
+    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
+      `🔴 ${originalName}`,
+    );
 
     service.ingest(
       event("evt_topic_state_stale_12345678", {
@@ -622,7 +640,11 @@ describe("durable session topic registry", () => {
       }),
     );
     await service.drain();
+    await service.drainTopicTitleUpdates();
     expect(store.listSessionTopics()[0]?.laneState).toBe("stale");
+    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
+      `🟠 ${originalName}`,
+    );
 
     service.ingest(
       event("evt_topic_state_ended_12345678", {
@@ -632,12 +654,205 @@ describe("durable session topic registry", () => {
       }),
     );
     await service.drain();
+    await service.drainTopicTitleUpdates();
     expect(store.listSessionTopics()[0]).toMatchObject({
       laneState: "ended",
       topicName: originalName,
+      displayTopicName: `⚫ ${originalName}`,
     });
     expect(transport.topics).toHaveLength(1);
-    expect(transport.topics[0]?.topic.name).toBe(originalName);
+    expect(transport.topics[0]?.topic.name).toBe(`⚫ ${originalName}`);
+    expect(transport.topicEdits).toHaveLength(5);
+    store.close();
+  });
+
+  it("durably retries a transient state-title failure", async () => {
+    const testClock = clock();
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const service = new RelayService(store, transport, {
+      now: testClock.now,
+      retryPolicy: {
+        maxAttempts: 3,
+        baseDelayMs: 1_000,
+        maxDelayMs: 5_000,
+      },
+    });
+    const sessionId = "session_topic_title_retry_12345678";
+    service.ingest(
+      event("evt_topic_title_retry_started_12345678", {
+        sessionId,
+        sequence: 1,
+        type: "turn.started",
+      }),
+    );
+    await service.drain();
+    transport.failNextTopicEdit(1);
+    service.ingest(
+      event("evt_topic_title_retry_waiting_12345678", {
+        sessionId,
+        sequence: 2,
+        type: "turn.stopped",
+      }),
+    );
+    await service.drain();
+
+    await expect(service.drainTopicTitleUpdates()).resolves.toMatchObject({
+      claimed: 1,
+      retrying: 1,
+      updated: 0,
+    });
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      titleUpdateStatus: "retry",
+      titleAttemptCount: 1,
+      titleLastErrorCode: "fake-topic-edit-timeout",
+    });
+    expect(store.listDiagnostics()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "warn",
+          code: "topic-title.update-retrying",
+        }),
+      ]),
+    );
+
+    testClock.advance(1_000);
+    await expect(service.drainTopicTitleUpdates()).resolves.toMatchObject({
+      claimed: 1,
+      updated: 1,
+      retrying: 0,
+    });
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      titleUpdateStatus: "ready",
+      titleAttemptCount: 2,
+      displayTopicName: expect.stringMatching(/^🟡 /u),
+    });
+    store.close();
+  });
+
+  it("recovers an interrupted state-title lease after restart", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-title-"));
+    const databasePath = join(directory, "relay.sqlite");
+    const testClock = clock();
+    const transport = new FakeNotificationTransport();
+    const sessionId = "session_topic_title_recovery_12345678";
+    try {
+      const firstStore = new RelayStore(databasePath);
+      const firstService = new RelayService(firstStore, transport, {
+        now: testClock.now,
+      });
+      firstService.ingest(
+        event("evt_topic_title_recovery_started_12345678", {
+          sessionId,
+          sequence: 1,
+          type: "turn.started",
+        }),
+      );
+      await firstService.drain();
+      firstService.ingest(
+        event("evt_topic_title_recovery_waiting_12345678", {
+          sessionId,
+          sequence: 2,
+          type: "turn.stopped",
+        }),
+      );
+      await firstService.drain();
+      expect(
+        firstStore.reconcileSessionTopicTitles({
+          transportName: transport.name,
+          transportScope: transport.topicScope,
+          now: testClock.now().toISOString(),
+        }),
+      ).toBe(1);
+      expect(
+        firstStore.claimNextSessionTopicTitleUpdate({
+          transportName: transport.name,
+          transportScope: transport.topicScope,
+          now: testClock.now().toISOString(),
+        }),
+      ).toMatchObject({
+        attemptNumber: 1,
+        topic: { titleUpdateStatus: "updating" },
+      });
+      firstStore.close();
+
+      testClock.advance(1_000);
+      const secondStore = new RelayStore(databasePath);
+      const secondService = new RelayService(secondStore, transport, {
+        now: testClock.now,
+      });
+      secondService.recover();
+      expect(secondStore.listSessionTopics()[0]).toMatchObject({
+        titleUpdateStatus: "retry",
+        titleLastErrorCode: "topic-title-update-interrupted",
+      });
+      await expect(
+        secondService.drainTopicTitleUpdates(),
+      ).resolves.toMatchObject({
+        claimed: 1,
+        updated: 1,
+      });
+      expect(secondStore.listSessionTopics()[0]).toMatchObject({
+        titleUpdateStatus: "ready",
+        displayTopicName: expect.stringMatching(/^🟡 /u),
+      });
+      secondStore.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reconciles a topic that disappears during a state-title edit", async () => {
+    const store = new RelayStore();
+    const transport = new FakeNotificationTransport();
+    const service = new RelayService(store, transport);
+    const sessionId = "session_topic_title_missing_12345678";
+    service.ingest(
+      event("evt_topic_title_missing_started_12345678", {
+        sessionId,
+        sequence: 1,
+        type: "turn.started",
+      }),
+    );
+    await service.drain();
+    const topicId = store.listSessionTopics()[0]?.topicId;
+    const muteAction = transport.deliveries[0]?.message.actions?.find(
+      (action) => action.kind === "mute",
+    );
+    if (muteAction === undefined) {
+      throw new Error("missing synthetic mute action");
+    }
+    expect(
+      store.executeCardAction({
+        token: muteAction.token,
+        kind: "mute",
+        updateId: 402,
+        now: "2026-07-25T12:00:01.000Z",
+      }).outcome,
+    ).toBe("succeeded");
+    if (topicId === undefined || !transport.simulateTopicDeletion(topicId)) {
+      throw new Error("missing synthetic topic");
+    }
+
+    await expect(service.drainTopicTitleUpdates()).resolves.toMatchObject({
+      claimed: 1,
+      unavailable: 1,
+      updated: 0,
+    });
+    expect(store.listSessionTopics()[0]).toMatchObject({
+      provisioningStatus: "retry",
+      titleUpdateStatus: "ready",
+      lastErrorCode: "fake-topic-unavailable",
+    });
+    expect(store.listSessionTopics()[0]?.topicId).toBeUndefined();
+    expect(store.listDiagnostics()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: "warn",
+          code: "topic-title.topic-unavailable",
+        }),
+      ]),
+    );
     store.close();
   });
 

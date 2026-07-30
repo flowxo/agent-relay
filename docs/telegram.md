@@ -120,11 +120,17 @@ name containing:
 
 The absolute working path, transcript, bot identity, and full session ID are not
 used in the topic name. SQLite retains the provider topic mapping across
-restarts.
+restarts. The displayed title adds one state prefix without changing that
+identity: 🟢 running, 🟡 waiting, 🔕 muted, 🔴 crashed, 🟠 possibly stalled, or
+⚫ ended. Title edits are leased and retried from SQLite, recovered after a
+daemon restart, and diagnosed if Telegram rejects them.
 
-Cards are plain text and bounded below Telegram's message limit. They show
-session identity, event kind/age, and a bounded summary or question. Model text
-cannot create a button: callback data is a versioned opaque local token.
+Cards are literal text bounded below Telegram's message limit. Trusted headings,
+labels, state, and the final event footer use explicit Bot API message entities;
+Agent Relay does not enable a parse mode. Markdown or HTML-looking model output
+therefore stays literal. The summary comes first, while event kind, harness,
+branch, and short session identity appear in the footer. Model text cannot
+create a button: callback data is a versioned opaque local token.
 
 Available controls depend on durable event state:
 
@@ -135,6 +141,21 @@ Available controls depend on durable event state:
 
 End does not claim to terminate an unowned harness process, and it does not
 delete the Telegram topic or its message history.
+
+### Inspect current status
+
+Send `/status` inside an Agent Relay session topic to read that session's
+current SQLite state. The response includes its lane state, project, branch,
+harness/surface, short identity, last event, last-seen age, and open-request
+count.
+
+Send `/status` from **New Chat** or a topic that is not mapped to a coding
+session to receive an aligned preformatted table of open topics. Ended topics
+are omitted; waiting and failure states sort ahead of routine running or muted
+lanes. Telegram does not implement GitHub-flavored Markdown tables, so Agent
+Relay sends the table as a literal `pre` entity rather than fragile MarkdownV2.
+The daemon handles `/status` before ordinary text correlation, so it cannot be
+consumed as an answer.
 
 ### Delete proven-dead topics
 
@@ -176,10 +197,10 @@ command from **New Chat** or send it in an existing topic. The preview returns
 to that same topic. When `/cleanup` finds no proven-dead topics, its result also
 offers a **Review topics inactive 24h** button in the same topic.
 
-The daemon registers `/purge` and `/cleanup` in Telegram's slash-command menu
-for the configured private chat during startup and reads the menu back before
-starting update intake. `/prune` remains an accepted compatibility alias but is
-not shown as a duplicate menu entry.
+The daemon registers `/status`, `/purge`, and `/cleanup` in Telegram's
+slash-command menu for the configured private chat during startup and reads the
+menu back before starting update intake. `/prune` remains an accepted
+compatibility alias but is not shown as a duplicate menu entry.
 
 Inactivity scopes the exact preview; it never becomes evidence that the session
 ended. A purge candidate must have had no relay topic activity since the

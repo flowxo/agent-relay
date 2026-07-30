@@ -108,6 +108,41 @@ describe("TelegramBotTransport", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("edits a private topic title through the documented Bot API method", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, result: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+
+    await expect(
+      transport.editTopic(
+        "77",
+        { name: "🟡 Codex · example · 12345678-a1b2c3" },
+        { idempotencyKey: "topic_title_12345678" },
+      ),
+    ).resolves.toEqual({
+      transport: "telegram",
+      topicId: "77",
+      topicName: "🟡 Codex · example · 12345678-a1b2c3",
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("editForumTopic");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual(
+      JSON.parse(
+        readFileSync(
+          join(fixtures, "edit-forum-topic-title.v10.2.json"),
+          "utf8",
+        ),
+      ).request,
+    );
+  });
+
   it("sends routine lifecycle events silently without muting attention events", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(
       async () =>
@@ -128,11 +163,11 @@ describe("TelegramBotTransport", () => {
       eventId: "evt_telegram_lifecycle_12345678",
       title: "Codex · example",
       text: [
-        "Working · now",
-        "main · session 12345678-a1b2c3",
-        "codex/cli · turn.started",
-        "",
         "Summary: Operator submitted a prompt; the agent is working.",
+        "",
+        "Working · now",
+        "",
+        "turn.started · codex/cli · main · session 12345678-a1b2c3",
       ].join("\n"),
       actions: [
         {
@@ -205,6 +240,50 @@ describe("TelegramBotTransport", () => {
     };
     expect(body.text.length).toBeLessThanOrEqual(4_096);
     expect(body.text.endsWith("…[truncated]")).toBe(true);
+  });
+
+  it("uses explicit entities without parsing untrusted Markdown or HTML", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ ok: true, result: { message_id: 44, date: 0 } }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+    const literal = {
+      ...message,
+      text: [
+        "Summary: literal *bold* [link](https://invalid.example) <b>tag</b>",
+        "",
+        "Waiting for your next instruction · now",
+        "",
+        "turn.stopped · codex/cli · main · session 12345678-a1b2c3",
+      ].join("\n"),
+    };
+
+    await transport.deliver(literal, {
+      idempotencyKey: literal.eventId,
+      topicId: "77",
+    });
+
+    const payload = JSON.parse(
+      String(fetchMock.mock.calls[0]?.[1]?.body),
+    ) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("parse_mode");
+    expect(payload["text"]).toContain("*bold*");
+    expect(payload["text"]).toContain("<b>tag</b>");
+    expect(payload["entities"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "bold", offset: 0 }),
+        expect.objectContaining({ type: "italic" }),
+      ]),
+    );
   });
 
   it("classifies rate limits as retryable and never exposes the bot token", async () => {
@@ -361,6 +440,36 @@ describe("TelegramBotTransport", () => {
         idempotencyKey: message.eventId,
         topicId: "77",
       }),
+    ).rejects.toMatchObject({
+      name: "TopicUnavailableError",
+      code: "telegram-topic-unavailable",
+      retryable: true,
+      status: 400,
+    });
+  });
+
+  it("classifies a missing topic during title editing for reconciliation", async () => {
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: "Bad Request: TOPIC_ID_INVALID",
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    });
+
+    await expect(
+      transport.editTopic(
+        "77",
+        { name: "🟡 Codex · example" },
+        { idempotencyKey: "topic_title_missing_12345678" },
+      ),
     ).rejects.toMatchObject({
       name: "TopicUnavailableError",
       code: "telegram-topic-unavailable",
@@ -538,6 +647,46 @@ describe("TelegramBotTransport", () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("editMessageText");
   });
 
+  it("formats an open-session status table as preformatted literal text", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, result: { message_id: 92 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const transport = new TelegramBotTransport({
+      token: "123456:synthetic-token-value",
+      chatId: "10001",
+      fetch: fetchMock,
+    });
+    const text = [
+      "Open Agent Relay sessions · 1",
+      "",
+      "STATE  AGENT   PROJECT           BRANCH          SESSION",
+      "─────  ──────  ────────────────  ──────────────  ───────────────",
+      "WAIT   codex   agent-relay       main            12345678-a1b2c3",
+    ].join("\n");
+
+    await transport.deliverOperatorControl(
+      { text, buttons: [] },
+      { idempotencyKey: "status_global_12345678" },
+    );
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      text: string;
+      entities: Array<{ type: string; offset: number; length: number }>;
+    };
+    expect(payload).not.toHaveProperty("parse_mode");
+    expect(payload).toEqual(
+      JSON.parse(
+        readFileSync(
+          join(fixtures, "status-command-send-message.v10.2.json"),
+          "utf8",
+        ),
+      ),
+    );
+  });
+
   it("verifies private topic capability and matching polling mode", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -578,6 +727,10 @@ describe("TelegramBotTransport", () => {
             ok: true,
             result: [
               {
+                command: "status",
+                description: "Show this session or all open sessions",
+              },
+              {
                 command: "purge",
                 description: "Review inactive session topics for deletion",
               },
@@ -611,6 +764,10 @@ describe("TelegramBotTransport", () => {
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toEqual({
       commands: [
+        {
+          command: "status",
+          description: "Show this session or all open sessions",
+        },
         {
           command: "purge",
           description: "Review inactive session topics for deletion",

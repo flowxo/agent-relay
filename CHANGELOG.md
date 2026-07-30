@@ -57,9 +57,16 @@ breaking changes and required operator action.
   bounded retries and `Retry-After`, private file/stdin configuration, safe
   status/doctor output, a loopback canary, and an authenticated local-web
   handoff for questions.
+- Contextual Telegram `/status`: exact session state inside a coding topic and
+  an aligned open-session table from New Chat or any non-coding topic.
+- Durable state-prefixed topic titles with independent SQLite leases, bounded
+  retry, restart recovery, unavailable-topic reconciliation, and diagnostics.
 
 ### Changed
 
+- Telegram cards now put summary content first and event/session metadata in a
+  final footer. Trusted headings, state, and labels use explicit Bot API
+  entities without parsing Markdown or HTML from agent text.
 - Routine session, prompt-submission, background-work, and session-end lifecycle
   events now use provider-neutral silent delivery; Telegram projects that as
   `disable_notification`, and outbound webhooks expose the requested mode. Codex

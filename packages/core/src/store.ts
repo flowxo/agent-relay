@@ -36,6 +36,8 @@ import {
   type CardActionKind,
 } from "@agent-relay/notification-contracts";
 
+import { sessionTopicDisplayName } from "./topic.js";
+
 export type DeliveryStatus =
   "queued" | "retry" | "delivering" | "delivered" | "dead_letter";
 
@@ -51,7 +53,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 7;
+export const RELAY_STORE_SCHEMA_VERSION = 8;
 
 // Schema 7 renamed the hosted transport identity from `notifications` to
 // `whooshbang`. These columns retain that value, so an existing database is
@@ -186,6 +188,9 @@ export type SessionLaneState =
 export type TopicProvisioningStatus =
   "pending" | "creating" | "ready" | "retry" | "failed";
 
+export type TopicTitleUpdateStatus =
+  "ready" | "pending" | "updating" | "retry" | "failed";
+
 export interface SessionTopicRecord {
   machineId: string;
   harness: Harness;
@@ -199,14 +204,26 @@ export interface SessionTopicRecord {
   lifecycleState: SessionRecord["state"];
   laneState: SessionLaneState;
   topicName: string;
+  displayTopicName?: string;
+  desiredTopicName: string;
   topicId?: string;
   provisioningStatus: TopicProvisioningStatus;
   attemptCount: number;
   nextAttemptAt: string;
   lastErrorCode?: string;
   lastErrorMessage?: string;
+  titleUpdateStatus: TopicTitleUpdateStatus;
+  titleAttemptCount: number;
+  titleNextAttemptAt: string;
+  titleLastErrorCode?: string;
+  titleLastErrorMessage?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ClaimedTopicTitleUpdate {
+  topic: SessionTopicRecord;
+  attemptNumber: number;
 }
 
 export interface CardActionRecord {
@@ -972,12 +989,19 @@ interface SessionTopicRow {
   short_session_id: string;
   lifecycle_state: SessionRecord["state"];
   topic_name: string;
+  display_topic_name: string | null;
+  desired_topic_name: string;
   topic_id: string | null;
   provisioning_status: TopicProvisioningStatus;
   attempt_count: number;
   next_attempt_at: string;
   last_error_code: string | null;
   last_error_message: string | null;
+  title_update_status: TopicTitleUpdateStatus;
+  title_attempt_count: number;
+  title_next_attempt_at: string;
+  title_last_error_code: string | null;
+  title_last_error_message: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1402,6 +1426,8 @@ export class RelayStore {
         short_session_id TEXT NOT NULL,
         lifecycle_state TEXT NOT NULL,
         topic_name TEXT NOT NULL,
+        display_topic_name TEXT,
+        desired_topic_name TEXT NOT NULL,
         topic_id TEXT,
         provisioning_status TEXT NOT NULL,
         attempt_count INTEGER NOT NULL DEFAULT 0,
@@ -1409,6 +1435,12 @@ export class RelayStore {
         lease_started_at TEXT,
         last_error_code TEXT,
         last_error_message TEXT,
+        title_update_status TEXT NOT NULL DEFAULT 'ready',
+        title_attempt_count INTEGER NOT NULL DEFAULT 0,
+        title_next_attempt_at TEXT NOT NULL,
+        title_lease_started_at TEXT,
+        title_last_error_code TEXT,
+        title_last_error_message TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (
@@ -2082,6 +2114,75 @@ export class RelayStore {
         "ALTER TABLE topic_cleanup_operations ADD COLUMN inactive_before TEXT",
       );
     }
+    const sessionTopicColumns = this.database
+      .prepare("PRAGMA table_info(session_topics)")
+      .all() as Array<{ name: string }>;
+    const hasSessionTopicColumn = (name: string): boolean =>
+      sessionTopicColumns.some((column) => column.name === name);
+    if (!hasSessionTopicColumn("display_topic_name")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN display_topic_name TEXT",
+      );
+    }
+    if (!hasSessionTopicColumn("desired_topic_name")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN desired_topic_name TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    if (!hasSessionTopicColumn("title_update_status")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN title_update_status TEXT NOT NULL DEFAULT 'ready'",
+      );
+    }
+    if (!hasSessionTopicColumn("title_attempt_count")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN title_attempt_count INTEGER NOT NULL DEFAULT 0",
+      );
+    }
+    if (!hasSessionTopicColumn("title_next_attempt_at")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN title_next_attempt_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'",
+      );
+    }
+    if (!hasSessionTopicColumn("title_lease_started_at")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN title_lease_started_at TEXT",
+      );
+    }
+    if (!hasSessionTopicColumn("title_last_error_code")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN title_last_error_code TEXT",
+      );
+    }
+    if (!hasSessionTopicColumn("title_last_error_message")) {
+      this.database.exec(
+        "ALTER TABLE session_topics ADD COLUMN title_last_error_message TEXT",
+      );
+    }
+    this.database.exec(`
+      UPDATE session_topics
+      SET
+        display_topic_name = CASE
+          WHEN provisioning_status = 'ready' AND topic_id IS NOT NULL
+            THEN COALESCE(display_topic_name, topic_name)
+          ELSE display_topic_name
+        END,
+        desired_topic_name = CASE
+          WHEN desired_topic_name = '' THEN topic_name
+          ELSE desired_topic_name
+        END,
+        title_next_attempt_at = CASE
+          WHEN title_next_attempt_at = '1970-01-01T00:00:00.000Z'
+            THEN updated_at
+          ELSE title_next_attempt_at
+        END
+    `);
+    this.database.exec(`
+      CREATE INDEX IF NOT EXISTS session_topics_title_status_idx
+        ON session_topics(
+          title_update_status, title_next_attempt_at, updated_at
+        )
+    `);
     if (observedSchemaVersion < 7) {
       const rename = this.database.transaction(() => {
         for (const [table, column] of HOSTED_TRANSPORT_IDENTITY_COLUMNS) {
@@ -2212,6 +2313,10 @@ export class RelayStore {
         sessionId: row.session_id,
       }),
       topicName: row.topic_name,
+      ...(row.display_topic_name === null
+        ? {}
+        : { displayTopicName: row.display_topic_name }),
+      desiredTopicName: row.desired_topic_name,
       ...(row.topic_id === null ? {} : { topicId: row.topic_id }),
       provisioningStatus: row.provisioning_status,
       attemptCount: row.attempt_count,
@@ -2222,6 +2327,15 @@ export class RelayStore {
       ...(row.last_error_message === null
         ? {}
         : { lastErrorMessage: row.last_error_message }),
+      titleUpdateStatus: row.title_update_status,
+      titleAttemptCount: row.title_attempt_count,
+      titleNextAttemptAt: row.title_next_attempt_at,
+      ...(row.title_last_error_code === null
+        ? {}
+        : { titleLastErrorCode: row.title_last_error_code }),
+      ...(row.title_last_error_message === null
+        ? {}
+        : { titleLastErrorMessage: row.title_last_error_message }),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -2240,9 +2354,11 @@ export class RelayStore {
         SELECT
           machine_id, harness, session_id, transport_name, transport_scope,
           provider, repository, branch, short_session_id, lifecycle_state,
-          topic_name, topic_id, provisioning_status, attempt_count,
-          next_attempt_at, last_error_code, last_error_message, created_at,
-          updated_at
+          topic_name, display_topic_name, desired_topic_name, topic_id,
+          provisioning_status, attempt_count, next_attempt_at, last_error_code,
+          last_error_message, title_update_status, title_attempt_count,
+          title_next_attempt_at, title_last_error_code,
+          title_last_error_message, created_at, updated_at
         FROM session_topics
         WHERE machine_id = @machineId
           AND harness = @harness
@@ -2332,19 +2448,26 @@ export class RelayStore {
           topic: this.topicFromRow(existingRow),
         };
       }
-      const metadata = { ...input, lifecycleState: session.state };
+      const metadata = {
+        ...input,
+        lifecycleState: session.state,
+        desiredTopicName: sessionTopicDisplayName(
+          input.topicName,
+          this.getSessionLaneState(input),
+        ),
+      };
       this.database
         .prepare(
           `
           INSERT OR IGNORE INTO session_topics (
             machine_id, harness, session_id, transport_name, transport_scope,
             provider, repository, branch, short_session_id, lifecycle_state,
-            topic_name, provisioning_status, next_attempt_at, created_at,
-            updated_at
+            topic_name, desired_topic_name, provisioning_status,
+            next_attempt_at, title_next_attempt_at, created_at, updated_at
           ) VALUES (
             @machineId, @harness, @sessionId, @transportName, @transportScope,
             @provider, @repository, @branch, @shortSessionId, @lifecycleState,
-            @topicName, 'pending', @now, @now, @now
+            @topicName, @desiredTopicName, 'pending', @now, @now, @now, @now
           )
         `,
         )
@@ -2364,6 +2487,14 @@ export class RelayStore {
             topic_name = CASE
               WHEN provisioning_status = 'ready' THEN topic_name
               ELSE @topicName
+            END,
+            desired_topic_name = CASE
+              WHEN provisioning_status = 'ready' THEN desired_topic_name
+              ELSE @desiredTopicName
+            END,
+            title_next_attempt_at = CASE
+              WHEN provisioning_status = 'ready' THEN title_next_attempt_at
+              ELSE @now
             END,
             updated_at = @now
           WHERE machine_id = @machineId
@@ -2448,21 +2579,36 @@ export class RelayStore {
     transportScope: string;
     attemptNumber: number;
     topicId: string;
+    displayTopicName: string;
     now: string;
   }): SessionTopicRecord {
     assertIsoCutoff(input.now, "topic ready time");
     if (input.topicId.trim().length === 0 || input.topicId.length > 128) {
       throw new Error("topic id is outside supported bounds");
     }
+    if (
+      input.displayTopicName.trim().length === 0 ||
+      [...input.displayTopicName].length > 128
+    ) {
+      throw new Error("display topic name is outside supported bounds");
+    }
     const changes = this.database
       .prepare(
         `
         UPDATE session_topics SET
           topic_id = @topicId,
+          display_topic_name = @displayTopicName,
+          desired_topic_name = @displayTopicName,
           provisioning_status = 'ready',
           lease_started_at = NULL,
           last_error_code = NULL,
           last_error_message = NULL,
+          title_update_status = 'ready',
+          title_attempt_count = 0,
+          title_next_attempt_at = @now,
+          title_lease_started_at = NULL,
+          title_last_error_code = NULL,
+          title_last_error_message = NULL,
           updated_at = @now
         WHERE machine_id = @machineId
           AND harness = @harness
@@ -2570,11 +2716,18 @@ export class RelayStore {
           `
           UPDATE session_topics SET
             topic_id = NULL,
+            display_topic_name = NULL,
             provisioning_status = 'retry',
             next_attempt_at = @now,
             lease_started_at = NULL,
             last_error_code = @errorCode,
             last_error_message = @errorMessage,
+            title_update_status = 'ready',
+            title_attempt_count = 0,
+            title_next_attempt_at = @now,
+            title_lease_started_at = NULL,
+            title_last_error_code = NULL,
+            title_last_error_message = NULL,
             updated_at = @now
           WHERE machine_id = @machineId
             AND harness = @harness
@@ -2653,9 +2806,11 @@ export class RelayStore {
         SELECT
           machine_id, harness, session_id, transport_name, transport_scope,
           provider, repository, branch, short_session_id, lifecycle_state,
-          topic_name, topic_id, provisioning_status, attempt_count,
-          next_attempt_at, last_error_code, last_error_message, created_at,
-          updated_at
+          topic_name, display_topic_name, desired_topic_name, topic_id,
+          provisioning_status, attempt_count, next_attempt_at, last_error_code,
+          last_error_message, title_update_status, title_attempt_count,
+          title_next_attempt_at, title_last_error_code,
+          title_last_error_message, created_at, updated_at
         FROM session_topics
         WHERE transport_name = @transportName
           AND transport_scope = @transportScope
@@ -2674,15 +2829,317 @@ export class RelayStore {
         SELECT
           machine_id, harness, session_id, transport_name, transport_scope,
           provider, repository, branch, short_session_id, lifecycle_state,
-          topic_name, topic_id, provisioning_status, attempt_count,
-          next_attempt_at, last_error_code, last_error_message, created_at,
-          updated_at
+          topic_name, display_topic_name, desired_topic_name, topic_id,
+          provisioning_status, attempt_count, next_attempt_at, last_error_code,
+          last_error_message, title_update_status, title_attempt_count,
+          title_next_attempt_at, title_last_error_code,
+          title_last_error_message, created_at, updated_at
         FROM session_topics
         ORDER BY updated_at DESC, machine_id, harness, session_id
       `,
       )
       .all() as SessionTopicRow[];
     return rows.map((row) => this.topicFromRow(row));
+  }
+
+  public reconcileSessionTopicTitles(input: {
+    transportName: string;
+    transportScope: string;
+    now: string;
+  }): number {
+    assertIsoCutoff(input.now, "topic title reconciliation time");
+    const topics = this.listSessionTopics().filter(
+      (topic) =>
+        topic.transportName === input.transportName &&
+        topic.transportScope === input.transportScope &&
+        topic.provisioningStatus === "ready" &&
+        topic.topicId !== undefined,
+    );
+    return this.database.transaction(() => {
+      let scheduled = 0;
+      for (const topic of topics) {
+        if (topic.titleUpdateStatus === "updating") {
+          continue;
+        }
+        const desiredTopicName = sessionTopicDisplayName(
+          topic.topicName,
+          topic.laneState,
+        );
+        if (topic.displayTopicName === desiredTopicName) {
+          if (
+            topic.desiredTopicName !== desiredTopicName ||
+            topic.titleUpdateStatus !== "ready"
+          ) {
+            this.database
+              .prepare(
+                `
+                UPDATE session_topics SET
+                  desired_topic_name = @desiredTopicName,
+                  title_update_status = 'ready',
+                  title_attempt_count = 0,
+                  title_next_attempt_at = @now,
+                  title_lease_started_at = NULL,
+                  title_last_error_code = NULL,
+                  title_last_error_message = NULL,
+                  updated_at = @now
+                WHERE machine_id = @machineId
+                  AND harness = @harness
+                  AND session_id = @sessionId
+                  AND transport_name = @transportName
+                  AND transport_scope = @transportScope
+                  AND provisioning_status = 'ready'
+                  AND title_update_status <> 'updating'
+              `,
+              )
+              .run({ ...topic, ...input, desiredTopicName });
+          }
+          continue;
+        }
+        const stateChanged = topic.desiredTopicName !== desiredTopicName;
+        if (!stateChanged && topic.titleUpdateStatus !== "ready") {
+          continue;
+        }
+        const changes = this.database
+          .prepare(
+            `
+            UPDATE session_topics SET
+              desired_topic_name = @desiredTopicName,
+              title_update_status = 'pending',
+              title_attempt_count = 0,
+              title_next_attempt_at = @now,
+              title_lease_started_at = NULL,
+              title_last_error_code = NULL,
+              title_last_error_message = NULL,
+              updated_at = @now
+            WHERE machine_id = @machineId
+              AND harness = @harness
+              AND session_id = @sessionId
+              AND transport_name = @transportName
+              AND transport_scope = @transportScope
+              AND provisioning_status = 'ready'
+              AND topic_id = @topicId
+              AND title_update_status <> 'updating'
+          `,
+          )
+          .run({ ...topic, ...input, desiredTopicName }).changes;
+        scheduled += changes;
+      }
+      return scheduled;
+    })();
+  }
+
+  public claimNextSessionTopicTitleUpdate(input: {
+    transportName: string;
+    transportScope: string;
+    now: string;
+  }): ClaimedTopicTitleUpdate | undefined {
+    assertIsoCutoff(input.now, "topic title claim time");
+    return this.database.transaction(() => {
+      const candidate = this.database
+        .prepare(
+          `
+          SELECT
+            machine_id, harness, session_id, transport_name, transport_scope
+          FROM session_topics
+          WHERE provisioning_status = 'ready'
+            AND topic_id IS NOT NULL
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND title_update_status IN ('pending', 'retry')
+            AND title_next_attempt_at <= @now
+          ORDER BY title_next_attempt_at, updated_at, rowid
+          LIMIT 1
+        `,
+        )
+        .get(input) as
+        | {
+            machine_id: string;
+            harness: Harness;
+            session_id: string;
+            transport_name: string;
+            transport_scope: string;
+          }
+        | undefined;
+      if (candidate === undefined) {
+        return undefined;
+      }
+      const identity = {
+        machineId: candidate.machine_id,
+        harness: candidate.harness,
+        sessionId: candidate.session_id,
+        transportName: candidate.transport_name,
+        transportScope: candidate.transport_scope,
+      };
+      const changes = this.database
+        .prepare(
+          `
+          UPDATE session_topics SET
+            title_update_status = 'updating',
+            title_attempt_count = title_attempt_count + 1,
+            title_lease_started_at = @now,
+            title_last_error_code = NULL,
+            title_last_error_message = NULL,
+            updated_at = @now
+          WHERE machine_id = @machineId
+            AND harness = @harness
+            AND session_id = @sessionId
+            AND transport_name = @transportName
+            AND transport_scope = @transportScope
+            AND provisioning_status = 'ready'
+            AND topic_id IS NOT NULL
+            AND title_update_status IN ('pending', 'retry')
+            AND title_next_attempt_at <= @now
+        `,
+        )
+        .run({ ...identity, now: input.now }).changes;
+      if (changes !== 1) {
+        return undefined;
+      }
+      const row = this.getSessionTopicRow(identity);
+      if (row === undefined) {
+        throw new Error("claimed topic title update disappeared");
+      }
+      const topic = this.topicFromRow(row);
+      return {
+        topic,
+        attemptNumber: topic.titleAttemptCount,
+      };
+    })();
+  }
+
+  public markSessionTopicTitleUpdated(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+    transportName: string;
+    transportScope: string;
+    topicId: string;
+    desiredTopicName: string;
+    attemptNumber: number;
+    now: string;
+  }): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic title completion time");
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          display_topic_name = @desiredTopicName,
+          title_update_status = 'ready',
+          title_next_attempt_at = @now,
+          title_lease_started_at = NULL,
+          title_last_error_code = NULL,
+          title_last_error_message = NULL,
+          updated_at = @now
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND topic_id = @topicId
+          AND provisioning_status = 'ready'
+          AND title_update_status = 'updating'
+          AND title_attempt_count = @attemptNumber
+          AND desired_topic_name = @desiredTopicName
+      `,
+      )
+      .run(input).changes;
+    if (changes !== 1) {
+      throw new Error("cannot complete an unclaimed topic title update");
+    }
+    const row = this.getSessionTopicRow(input);
+    if (row === undefined) {
+      throw new Error("updated topic title disappeared");
+    }
+    return this.topicFromRow(row);
+  }
+
+  public markSessionTopicTitleFailed(
+    input: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+      transportName: string;
+      transportScope: string;
+      topicId: string;
+      desiredTopicName: string;
+      attemptNumber: number;
+      errorCode: string;
+      errorMessage: string;
+      retryable: boolean;
+      now: string;
+    },
+    policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  ): SessionTopicRecord {
+    assertIsoCutoff(input.now, "topic title failure time");
+    const exhausted = input.attemptNumber >= policy.maxAttempts;
+    const titleUpdateStatus: TopicTitleUpdateStatus =
+      input.retryable && !exhausted ? "retry" : "failed";
+    const titleNextAttemptAt = new Date(
+      Date.parse(input.now) + retryDelay(policy, input.attemptNumber),
+    ).toISOString();
+    const changes = this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          title_update_status = @titleUpdateStatus,
+          title_next_attempt_at = @titleNextAttemptAt,
+          title_lease_started_at = NULL,
+          title_last_error_code = @errorCode,
+          title_last_error_message = @errorMessage,
+          updated_at = @now
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+          AND transport_name = @transportName
+          AND transport_scope = @transportScope
+          AND topic_id = @topicId
+          AND provisioning_status = 'ready'
+          AND title_update_status = 'updating'
+          AND title_attempt_count = @attemptNumber
+          AND desired_topic_name = @desiredTopicName
+      `,
+      )
+      .run({
+        ...input,
+        titleUpdateStatus,
+        titleNextAttemptAt,
+        errorMessage: input.errorMessage.slice(0, 2_000),
+      }).changes;
+    if (changes !== 1) {
+      throw new Error("cannot fail an unclaimed topic title update");
+    }
+    const row = this.getSessionTopicRow(input);
+    if (row === undefined) {
+      throw new Error("failed topic title update disappeared");
+    }
+    return this.topicFromRow(row);
+  }
+
+  public recoverInterruptedTopicTitleUpdates(now: string, limit = 500): number {
+    assertIsoCutoff(now, "topic title recovery time");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 5_000) {
+      throw new Error("topic title recovery limit must be between 1 and 5000");
+    }
+    return this.database
+      .prepare(
+        `
+        UPDATE session_topics SET
+          title_update_status = 'retry',
+          title_next_attempt_at = ?,
+          title_lease_started_at = NULL,
+          title_last_error_code = 'topic-title-update-interrupted',
+          title_last_error_message = 'daemon stopped during topic title update',
+          updated_at = ?
+        WHERE rowid IN (
+          SELECT rowid
+          FROM session_topics
+          WHERE title_update_status = 'updating'
+          ORDER BY updated_at, rowid
+          LIMIT ?
+        )
+      `,
+      )
+      .run(now, now, limit).changes;
   }
 
   public allocateNativeHookSequence(
@@ -8302,6 +8759,45 @@ export class RelayStore {
       lastSeenAt: row.last_seen_at,
       lastSequence: row.last_sequence,
     }));
+  }
+
+  public getSession(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): SessionRecord | undefined {
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, bridge_session_id, harness, surface, harness_version,
+          session_id, project_json, state, last_event_type, last_seen_at,
+          last_sequence
+        FROM sessions
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
+      )
+      .get(input) as SessionRow | undefined;
+    if (row === undefined) {
+      return undefined;
+    }
+    return {
+      machineId: row.machine_id,
+      bridgeSessionId: row.bridge_session_id,
+      harness: row.harness,
+      surface: row.surface,
+      harnessVersion: row.harness_version,
+      sessionId: row.session_id,
+      project: ProjectRefSchema.parse(JSON.parse(row.project_json) as unknown),
+      state: row.state,
+      ...(row.last_event_type === null
+        ? {}
+        : { lastEventType: row.last_event_type }),
+      lastSeenAt: row.last_seen_at,
+      lastSequence: row.last_sequence,
+    };
   }
 
   public listSessionsByBridge(input: {

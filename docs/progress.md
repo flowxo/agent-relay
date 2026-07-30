@@ -2,6 +2,34 @@
 
 ## Proven
 
+- Telegram now projects the durable SQLite session lane as both a contextual
+  `/status` response and an emoji-prefixed private-topic title. In a known
+  coding topic, `/status` renders that exact session's state, project, branch,
+  harness/surface, short session ID, last event/age, and open-request count. In
+  New Chat or any non-session topic it renders a bounded, state-sorted table of
+  open sessions in the configured transport scope; ended sessions are omitted.
+  Status commands route before free-text correlation and therefore cannot
+  accidentally answer an agent request. Stable topic identity remains separate
+  from its display name in schema 8. Desired title changes use durable leases,
+  bounded retries, startup recovery, and missing-topic reconciliation before
+  calling the optional transport edit capability. Telegram uses Bot API 10.2
+  `editForumTopic` and explicit UTF-16 `MessageEntity` ranges, keeping arbitrary
+  model text literal while making headings, labels, state lines, event footers,
+  and the status table easier to scan. Notification content now comes first and
+  the event/harness/branch/session identity is a compact italic footer. The
+  command menu includes `/status`, `/purge`, and `/cleanup`. On 2026-07-29 the
+  complete `pnpm check` passed formatting, governance, public-doc, fixture,
+  secret, release-policy, lint, and type gates; 75 Vitest files/585 tests; both
+  pinned contract suites; all workspace builds; the 250,885-byte
+  packed/1,585,476-byte unpacked 11-file artifact; hosted package proof; and the
+  complete packed lifecycle. All three Chromium end-to-end scenarios passed, and
+  `pnpm audit --prod` found no known vulnerability. Credentialed startup then
+  verified private topics and the three-command menu and successfully renamed
+  four retained topics through the real Bot API; one already-deleted topic was
+  diagnosed and its stale mapping reset. That canary also exposed Telegram's
+  resulting `forum_topic_edited` service updates; the router now records those
+  as non-operator service events instead of misleading authorization warnings,
+  with a focused 20/20-test regression suite and clean transport typecheck.
 - Routine lifecycle delivery now keeps Telegram session history current without
   creating an attention ping. Provider-neutral delivery context classifies
   session starts, prompt submissions, structured background work, and session
@@ -1084,6 +1112,11 @@ also remain free of silent delivery, hook, or correlation failures.
   private-chat interaction on the tested account. Rate limiting, network
   retries, webhook intake, and shutdown remain proven through deterministic HTTP
   fixtures rather than induced failures against the live account.
+- Credentialed Telegram activation proves real topic-title edits and
+  command-menu registration. Exact `/status` delivery and the resulting
+  presentation remain deterministic store/router/HTTP-fixture proven until the
+  operator next invokes the command naturally; no synthetic operator update was
+  injected.
 - Telegram retains unconfirmed Bot API updates for no longer than 24 hours.
   Local request retention cannot recover an upstream update after that window.
 - Standard Bot API polling confirms ordinary private-chat updates by advancing
@@ -1147,6 +1180,14 @@ also remain free of silent delivery, hook, or correlation failures.
   and audit/privacy behavior before any remote response API is claimed.
 
 ## Next action
+
+Continue bounded direct-Telegram dogfood with the state-aware topic titles and
+invoke `/status` naturally in both a coding topic and New Chat. Verify that
+subsequent lifecycle events move titles between running, waiting, muted,
+crashed, stale, and ended without creating duplicate topics. Treat the first
+natural exact/global status responses as UX evidence, not as a release blocker;
+the command, persistence, formatting, failure diagnostics, retry behavior, and
+concurrent-session isolation are already deterministic-test proven.
 
 Treat custom receiver delivery as V1-ready and continue bounded dogfood without
 changing the live direct-Telegram selection. Keep FXO-1365 inbound responses in

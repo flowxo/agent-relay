@@ -23,6 +23,8 @@ where Agent Relay keeps its source of truth.
 ## What you get
 
 - One private Telegram topic for each agent session.
+- State at a glance in each topic title: 🟢 running, 🟡 waiting, 🔕 muted, 🔴
+  crashed, 🟠 possibly stalled, or ⚫ ended.
 - Clear alerts when an agent stops, asks a question, or has a proven crash.
 - Quiet lifecycle updates when a session starts or the operator sends more work,
   so an unattended topic does not look falsely paused.
@@ -214,8 +216,9 @@ rules, retries, privacy boundaries, and environment-based setup.
 ### Follow sessions in Telegram
 
 The first event from a session creates a topic named with the harness,
-repository, optional branch, and a short session suffix. Later events from the
-same session return to that topic, even after the daemon restarts.
+repository, optional branch, and a short session suffix. A leading emoji follows
+the current state without changing that stable identity. Later events from the
+same session return to the topic, even after the daemon restarts.
 
 Events that need attention—stops, questions, permission decisions, proven
 failures, and stale-process warnings—use ordinary Telegram notifications.
@@ -225,8 +228,10 @@ your phone.
 
 Stop cards show a compact excerpt: up to two lines from the start, an omission
 marker, and up to two lines from the end. The waiting state appears after that
-excerpt, where the agent actually stopped. Tap **Details** for the bounded
-long-form text.
+excerpt, where the agent actually stopped. The event kind and compact session
+identity sit in a quiet footer instead of taking over the top of every card.
+Headings and labels use Telegram formatting, while agent text remains literal
+and cannot inject markup. Tap **Details** for the bounded long-form text.
 
 Structured choices appear as buttons. For a free-text question, type in the
 session topic when it has one compatible open request. If several requests are
@@ -247,6 +252,14 @@ Useful session controls include:
 
 Ending a lane does not kill a process Agent Relay does not own, and it does not
 automatically delete the Telegram topic.
+
+### Check current status
+
+Send `/status` inside a coding-session topic to see its current SQLite-backed
+state, last event, last-seen age, and open-request count. Send it from
+Telegram's **New Chat** surface or any non-coding topic to get a compact
+monospace table of all open session topics. The command is installed in the
+bot's slash-command menu.
 
 ### Clean up old topics
 
