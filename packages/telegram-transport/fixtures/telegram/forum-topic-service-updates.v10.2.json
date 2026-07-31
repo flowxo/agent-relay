@@ -1,0 +1,48 @@
+{
+  "response": {
+    "ok": true,
+    "result": [
+      {
+        "update_id": 900001,
+        "message": {
+          "message_id": 77,
+          "message_thread_id": 77,
+          "from": {
+            "id": 8001,
+            "is_bot": true,
+            "first_name": "Relay Bot"
+          },
+          "chat": {
+            "id": 10001,
+            "type": "private"
+          },
+          "date": 1785376800,
+          "forum_topic_created": {
+            "name": "🟢 RUN · codex/cli · example · 12345678-a1b2c3",
+            "icon_color": 7322095
+          }
+        }
+      },
+      {
+        "update_id": 900002,
+        "message": {
+          "message_id": 78,
+          "message_thread_id": 77,
+          "from": {
+            "id": 8001,
+            "is_bot": true,
+            "first_name": "Relay Bot"
+          },
+          "chat": {
+            "id": 10001,
+            "type": "private"
+          },
+          "date": 1785376801,
+          "forum_topic_edited": {
+            "name": "🟡 WAIT · codex/cli · example · 12345678-a1b2c3"
+          }
+        }
+      }
+    ]
+  }
+}

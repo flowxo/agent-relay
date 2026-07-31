@@ -75,6 +75,8 @@ const chatSchema = z
   })
   .passthrough();
 
+const serviceMessageSchema = z.object({}).passthrough();
+
 const messageSchema = z
   .object({
     message_id: z.number().int(),
@@ -82,7 +84,12 @@ const messageSchema = z
     from: userSchema.optional(),
     chat: chatSchema,
     text: z.string().max(4_096).optional(),
-    forum_topic_edited: z.object({}).passthrough().optional(),
+    forum_topic_created: serviceMessageSchema.optional(),
+    forum_topic_edited: serviceMessageSchema.optional(),
+    forum_topic_closed: serviceMessageSchema.optional(),
+    forum_topic_reopened: serviceMessageSchema.optional(),
+    general_forum_topic_hidden: serviceMessageSchema.optional(),
+    general_forum_topic_unhidden: serviceMessageSchema.optional(),
     reply_to_message: z
       .object({
         message_id: z.number().int(),
@@ -231,6 +238,19 @@ function isTopicCleanupCommand(text: string): boolean {
 
 function isStatusCommand(text: string): boolean {
   return /^\/status(?:@[A-Za-z0-9_]+)?$/iu.test(text.trim());
+}
+
+function isForumTopicServiceMessage(
+  message: NonNullable<TelegramUpdate["message"]>,
+): boolean {
+  return (
+    message.forum_topic_created !== undefined ||
+    message.forum_topic_edited !== undefined ||
+    message.forum_topic_closed !== undefined ||
+    message.forum_topic_reopened !== undefined ||
+    message.general_forum_topic_hidden !== undefined ||
+    message.general_forum_topic_unhidden !== undefined
+  );
 }
 
 function isTopicPruneCommand(text: string): boolean {
@@ -2324,10 +2344,7 @@ export class TelegramReplyRouter {
       }
     } else if (update.message !== undefined) {
       const message = update.message;
-      if (
-        message.text === undefined &&
-        message.forum_topic_edited !== undefined
-      ) {
+      if (message.text === undefined && isForumTopicServiceMessage(message)) {
         route = { outcome: "ignored-service", updateId: update.update_id };
       } else if (!this.authorized(message.from?.id, message.chat.id)) {
         this.diagnoseTextCorrelation(

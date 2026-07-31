@@ -1005,23 +1005,44 @@ describe("Telegram reply correlation", () => {
     runtime.store.close();
   });
 
-  it("records topic-title service messages without calling them unauthorized", async () => {
+  it("records forum-topic service messages without calling them unauthorized", async () => {
     const runtime = await setup();
 
-    await expect(
-      runtime.router.handle({
-        update_id: 130,
-        message: {
-          message_id: 530,
-          from: { id: 9999 },
-          chat: { id: 9001 },
-          message_thread_id: 123,
-          forum_topic_edited: {
-            name: "🟡 WAIT · codex/cli · relay · abc123",
-          },
+    const serviceMessages = [
+      {
+        forum_topic_created: {
+          name: "🟢 RUN · codex/cli · relay · abc123",
+          icon_color: 7_322_095,
         },
-      }),
-    ).resolves.toEqual({ outcome: "ignored-service", updateId: 130 });
+      },
+      {
+        forum_topic_edited: {
+          name: "🟡 WAIT · codex/cli · relay · abc123",
+        },
+      },
+      { forum_topic_closed: {} },
+      { forum_topic_reopened: {} },
+      { general_forum_topic_hidden: {} },
+      { general_forum_topic_unhidden: {} },
+    ];
+
+    for (const [index, serviceMessage] of serviceMessages.entries()) {
+      await expect(
+        runtime.router.handle({
+          update_id: 130 + index,
+          message: {
+            message_id: 530 + index,
+            from: { id: 9999 },
+            chat: { id: 9001 },
+            message_thread_id: 123,
+            ...serviceMessage,
+          },
+        }),
+      ).resolves.toEqual({
+        outcome: "ignored-service",
+        updateId: 130 + index,
+      });
+    }
 
     runtime.store.close();
   });
