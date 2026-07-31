@@ -40,6 +40,17 @@
       ]
     },
     {
+      "file": "forum-topic-service-updates.v10.2.json",
+      "method": "getUpdates",
+      "evidence": "Sanitized from the forum_topic_created and forum_topic_edited service-update shapes observed during credentialed private-topic creation and title edits and checked against the Bot API 10.2 Message contract",
+      "sanitization": [
+        "update, chat, bot, message, and thread IDs replaced",
+        "repository and short session identity replaced",
+        "timestamps replaced",
+        "bot token excluded because it is carried only in the URL"
+      ]
+    },
+    {
       "file": "private-topic-prune-command.v10.2.json",
       "method": "getUpdates",
       "evidence": "Sanitized from the private-topic command shape accepted during the credentialed New Chat dogfood canary and checked against the Bot API 10.2 Message contract",

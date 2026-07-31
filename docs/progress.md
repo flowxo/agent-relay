@@ -17,19 +17,20 @@
   model text literal while making headings, labels, state lines, event footers,
   and the status table easier to scan. Notification content now comes first and
   the event/harness/branch/session identity is a compact italic footer. The
-  command menu includes `/status`, `/purge`, and `/cleanup`. On 2026-07-29 the
+  command menu includes `/status`, `/purge`, and `/cleanup`. On 2026-07-30 the
   complete `pnpm check` passed formatting, governance, public-doc, fixture,
   secret, release-policy, lint, and type gates; 75 Vitest files/585 tests; both
-  pinned contract suites; all workspace builds; the 250,885-byte
-  packed/1,585,476-byte unpacked 11-file artifact; hosted package proof; and the
+  pinned contract suites; all workspace builds; the 250,983-byte
+  packed/1,586,088-byte unpacked 11-file artifact; hosted package proof; and the
   complete packed lifecycle. All three Chromium end-to-end scenarios passed, and
   `pnpm audit --prod` found no known vulnerability. Credentialed startup then
   verified private topics and the three-command menu and successfully renamed
   four retained topics through the real Bot API; one already-deleted topic was
   diagnosed and its stale mapping reset. That canary also exposed Telegram's
-  resulting `forum_topic_edited` service updates; the router now records those
-  as non-operator service events instead of misleading authorization warnings,
-  with a focused 20/20-test regression suite and clean transport typecheck.
+  topic creation/edit service updates; the router now records the complete
+  six-event Bot API forum-topic service family as non-operator events instead of
+  misleading authorization warnings, with a focused 20/20-test regression suite
+  and clean transport typecheck.
 - Routine lifecycle delivery now keeps Telegram session history current without
   creating an attention ping. Provider-neutral delivery context classifies
   session starts, prompt submissions, structured background work, and session
