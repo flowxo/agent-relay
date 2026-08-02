@@ -516,7 +516,7 @@ describe("WhooshBang CLI lifecycle", () => {
         schema: "agent-relay-whooshbang-config.v1",
         status: "active",
         baseUrl: "https://whooshbang.mock.test/",
-        contractVersion: "1.0.0-rc.4",
+        contractVersion: "1.0.0-rc.5",
         environment: "test",
         projectId: "project_synthetic",
         machineClientId: "machine_client_retained_current",

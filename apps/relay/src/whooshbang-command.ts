@@ -404,6 +404,12 @@ function safeAuthorization(
         ? {}
         : { url: result.authorization.url }),
     },
+    ...(result.status === "binding_paused"
+      ? {
+          remedy:
+            "Resume this subscription in Telegram, then run whooshbang connect again.",
+        }
+      : {}),
     credentialStored: false,
   };
 }

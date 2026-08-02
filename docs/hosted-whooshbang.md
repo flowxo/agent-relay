@@ -52,14 +52,16 @@ Credential presence never selects a transport.
 There is no dual send or automatic failover.
 
 Switching retains SQLite and request state. The terminal-presentation worker is
-implemented, but the exact pinned RC.4 client does not expose a resolved-message
+implemented, but the exact pinned RC.5 client does not expose a resolved-message
 update endpoint. Agent Relay records that optional capability as unsupported
 instead of misusing message cancellation. C0-09 recorded `go` for the retired
 pre-rename `1.0.0-rc.1` candidate; that decision does not carry to WhooshBang's
-breaking `1.0.0-rc.4` cut. FXO-1373 rebuilt the repository-native consumer proof
-against the exact RC.4 artifacts. Continue using the executable mock—not a
-production account—as the integration source of truth until the WhooshBang owner
-supplies and authorizes an AR3 service environment.
+breaking rename cut. FXO-1373 rebuilt the repository-native consumer proof
+against the exact RC.4 artifacts, and FXO-1436 advanced it to RC.5. Continue
+using the executable mock—not a production account—as the integration source of
+truth. WhooshBang's deployed API does not yet implement the machine-client or
+machine-event routes this transport calls, so a real environment cannot serve it
+regardless of credentials.
 
 ## Mock-backed setup command
 
@@ -87,6 +89,12 @@ The command emits the bounded authorization URL as a diagnostic immediately and
 waits up to five minutes by default. Complete Telegram authorization at that
 URL. A pending, expired, cancelled, failed, or revoked link exits without
 creating or storing machine credential material and never reports `connected`.
+
+A subscriber can pause an already activated binding from Telegram. That is
+recoverable rather than broken, so connect reports `binding_paused` with a
+resume remedy, provisions no machine client or credential, and leaves nothing to
+revoke. Resume the subscription in Telegram, then rerun connect. A revoked
+binding stays a terminal setup failure.
 
 After activation, Agent Relay:
 
@@ -177,7 +185,7 @@ category into a bounded presenter. A retry always reuses
 `resolution_${sha256(hostedEventId)}`. It never sends a new message, re-runs the
 decision, or touches continuation authority.
 
-The executable RC.4 presenter returns `unsupported` without HTTP because the
+The executable RC.5 presenter returns `unsupported` without HTTP because the
 pinned client has no resolution-update method. The job becomes durably blocked
 with a safe capability code while polling and local authority continue. A future
 exact contract may implement the same interface; supported-fake tests already

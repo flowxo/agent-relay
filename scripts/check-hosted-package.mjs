@@ -966,7 +966,7 @@ if (process.platform !== "darwin") {
       "utf8",
     );
     assert(
-      cliSource.includes("1.0.0-rc.4") &&
+      cliSource.includes("1.0.0-rc.5") &&
         cliSource.includes("whooshbang connect") &&
         !cliSource.includes("@whooshbang/contract-mock"),
       "packed CLI omitted the hosted adapter or bundled the test-only mock",
@@ -1549,7 +1549,7 @@ if (process.platform !== "darwin") {
       notificationArtifacts.length === 3 &&
         notificationArtifacts.every(
           (artifact) =>
-            artifact.version === "1.0.0-rc.4" &&
+            artifact.version === "1.0.0-rc.5" &&
             /^[a-f0-9]{64}$/u.test(artifact.sha256) &&
             /^[a-f0-9]{40}$/u.test(artifact.source_commit),
         ),
@@ -1567,7 +1567,7 @@ if (process.platform !== "darwin") {
           sha256: packageSha256,
         },
         whooshbang: {
-          contractVersion: "1.0.0-rc.4",
+          contractVersion: "1.0.0-rc.5",
           contractLockSha256: lockSha256,
           exactArtifacts: notificationArtifacts.length,
           setup: "narrow-credential-proven",

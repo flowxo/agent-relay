@@ -18,9 +18,11 @@ import {
   createWhooshBangContractMock,
 } from "@whooshbang/contract-mock";
 import { WhooshBangClient } from "@whooshbang/sdk";
+import { validateSubscriptionLink } from "@whooshbang/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  connectWhooshBangMachine,
   WhooshBangContractTransport,
   validateHostedAnswer,
 } from "../src/index.js";
@@ -33,6 +35,7 @@ import type {
 import type {
   InteractionEvent,
   MachineEventPollResponse,
+  SubscriptionLink,
 } from "@whooshbang/contracts";
 import type {
   ContractMockCredential,
@@ -722,7 +725,7 @@ describe("C0 WhooshBang consumer contract", () => {
   it("runs the exact packed mock as a guarded separate process", async () => {
     const running = await startPackedMock();
     expect(running.cli).toContain(
-      "@whooshbang+contract-mock@file+vendor+whooshbang-rc4+whooshbang-contract-mock-1.0.0-rc.4.tgz",
+      "@whooshbang+contract-mock@file+vendor+whooshbang-rc5+whooshbang-contract-mock-1.0.0-rc.5.tgz",
     );
     const event = selectEvent("packed");
     const store = new RelayStore();
@@ -1007,5 +1010,51 @@ describe("C0 WhooshBang consumer contract", () => {
     telegramStore.close();
     terminalStore.close();
     hostedStore.close();
+  });
+
+  it("treats a subscriber-paused binding as recoverable, not as a broken one", async () => {
+    // RC.5 restored `paused` to BindingSummary, and N1-08 shipped the
+    // subscriber controls that produce it. The producer's own fixture is an
+    // activated link whose binding is paused, so this proves the exact bytes
+    // Agent Relay would receive rather than a hand-written approximation.
+    const require = createRequire(import.meta.url);
+    const pausedLink: unknown = require("@whooshbang/contracts/fixtures/core-v1/success/subscription-link-paused.json");
+    expect(validateSubscriptionLink(pausedLink)).toBe(true);
+    const link = pausedLink as SubscriptionLink;
+    expect(link.status).toBe("activated");
+    expect(link.binding?.status).toBe("paused");
+
+    const projectCredential = "synthetic-project-paused-token";
+    const requestedPaths: string[] = [];
+    const result = await connectWhooshBangMachine({
+      authorizationWaitMs: 0,
+      baseUrl: "https://whooshbang.mock.test",
+      createCredentialMaterial: () => {
+        throw new Error("A paused binding must not mint credential material.");
+      },
+      createIdempotencyKey: (operation) => `paused-${operation}-12345678`,
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requestedPaths.push(new URL(request.url).pathname);
+        return new Response(JSON.stringify(link), {
+          headers: { "content-type": "application/json" },
+          status: 201,
+        });
+      },
+      machineId: "machine_paused_fixture",
+      notifierId: link.notifier_id,
+      projectCredential,
+      subscriberId: link.subscriber_id,
+    });
+
+    expect(result).toMatchObject({
+      authorization: { status: "activated" },
+      status: "binding_paused",
+    });
+    // No machine client is provisioned, so nothing has to be revoked later.
+    expect(
+      requestedPaths.some((path) => path.startsWith("/v1/machine-clients")),
+    ).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(projectCredential);
   });
 });

@@ -121,7 +121,7 @@ function setupProblemCode(
     case "idempotency_conflict":
     case "idempotency_key_required":
       return "idempotency-conflict";
-    // Agent Relay never creates a WhooshBang project. The RC.4 code is mapped
+    // Agent Relay never creates a WhooshBang project. The RC.5 code is mapped
     // exhaustively so an unexpected response stays a safe terminal rejection.
     case "project_slug_conflict":
     case "request_invalid":
@@ -685,7 +685,8 @@ export type WhooshBangConnectResult =
   | {
       authorization: WhooshBangAuthorizationMetadata;
       contractVersion: typeof contractVersion;
-      status: "authorization_pending" | "authorization_incomplete";
+      status:
+        "authorization_pending" | "authorization_incomplete" | "binding_paused";
     }
   | {
       authorization: WhooshBangAuthorizationMetadata;
@@ -929,6 +930,15 @@ export async function connectWhooshBangMachine(
             ? "authorization_pending"
             : "authorization_incomplete",
       };
+    }
+
+    // A subscriber can pause their own Telegram binding, so an activated link
+    // is not proof of a deliverable one. Pausing is recoverable by the
+    // subscriber, so it is reported as its own outcome and no machine client is
+    // provisioned. Every other non-active binding status stays terminal in
+    // `assertBinding`.
+    if (link.binding?.status === "paused") {
+      return { authorization, contractVersion, status: "binding_paused" };
     }
 
     const machineClient = await administration.createMachineClient(

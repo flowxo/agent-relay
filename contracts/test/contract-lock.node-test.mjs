@@ -32,7 +32,7 @@ function artifactPin(overrides = {}) {
     source_commit: commit,
     sha256: digest,
     artifact_file:
-      "vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-draft.1.tgz",
+      "vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-draft.1.tgz",
     fixture_sets: [
       {
         id: "core-api-bodies",

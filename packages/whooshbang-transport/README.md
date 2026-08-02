@@ -31,13 +31,13 @@ has no filesystem, SQLite, Telegram, daemon, or shell-command authority.
 
 ## Pinned consumer artifacts
 
-Agent Relay consumes immutable tarballs from `vendor/whooshbang-rc4`:
+Agent Relay consumes immutable tarballs from `vendor/whooshbang-rc5`:
 
 | Package                     | Version      | SHA-256                                                            |
 | --------------------------- | ------------ | ------------------------------------------------------------------ |
-| `@whooshbang/contracts`     | `1.0.0-rc.4` | `eeee4c3b31bd3c976d26359e5fb48ce196e7b7dac788b5ee7bb1ccfb5de950ed` |
-| `@whooshbang/sdk`           | `1.0.0-rc.4` | `27080980b8f1766345c217ed63d17dbcc75b1b0ba6b774f59a26aa7b276c0054` |
-| `@whooshbang/contract-mock` | `1.0.0-rc.4` | `6163f68fa6bb7c2953428db8a9dfc36f87e2e24522d0610dbf7316e4f7bae454` |
+| `@whooshbang/contracts`     | `1.0.0-rc.5` | `442f4fcae4448bc9a1d8e6ea001a1117c76ebe1786f3765696e97bb9d1029028` |
+| `@whooshbang/sdk`           | `1.0.0-rc.5` | `b68e9b693575807f8dd998861c3202cd72668789c88ab9dabf1eb0dafae75d0a` |
+| `@whooshbang/contract-mock` | `1.0.0-rc.5` | `a7a6e87c64b6ded9f0fd048c1fd838b36dd45f4fe73a56193e6a24c247175ae5` |
 
 The C0-08 source of truth is
 [`contracts/contract-lock.json`](../../contracts/contract-lock.json). The
@@ -61,7 +61,7 @@ copied into Agent Relay.
 - Multi-select, ordered sets, and select requests wider than the pinned hosted
   capability fail before HTTP. Their negotiated local fallback is retained; they
   are never flattened.
-- `observeInteractionCapabilities` publishes the exact RC.4 boundary: confirm,
+- `observeInteractionCapabilities` publishes the exact RC.5 boundary: confirm,
   single-select, and free-text; one question; at most six options; no durable
   drafts, ordered/multi-select sets, or message updates.
 - Explicit availability failures retry only with the unchanged event ID.
@@ -108,7 +108,7 @@ is acknowledged. Retry uses `resolution_${sha256(hostedEventId)}` every time;
 update failure cannot call `resolveRequest`, create a message, or claim
 continuation.
 
-The exact pinned `@whooshbang/sdk@1.0.0-rc.4` client has no resolved-message
+The exact pinned `@whooshbang/sdk@1.0.0-rc.5` client has no resolved-message
 update method. `PinnedWhooshBangResolutionPresenter` therefore reports
 `unsupported`, and the daemon marks that job terminally with
 `whooshbang-resolution-update-unsupported`. Tests inject a supported fake

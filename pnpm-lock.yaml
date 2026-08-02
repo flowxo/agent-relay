@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  "@whooshbang/contracts@1.0.0-rc.4": file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
+  "@whooshbang/contracts@1.0.0-rc.5": file:vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz
   "@session/contracts@0.0.0": file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz
   "@session/protocol-runner@0.0.0": file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz
 
@@ -65,9 +65,6 @@ importers:
       "@agent-relay/notification-contracts":
         specifier: workspace:*
         version: link:../../packages/notification-contracts
-      "@agent-relay/whooshbang-transport":
-        specifier: workspace:*
-        version: link:../../packages/whooshbang-transport
       "@agent-relay/protocol":
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -80,13 +77,16 @@ importers:
       "@agent-relay/webhook-transport":
         specifier: workspace:*
         version: link:../../packages/webhook-transport
+      "@agent-relay/whooshbang-transport":
+        specifier: workspace:*
+        version: link:../../packages/whooshbang-transport
       zod:
         specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       "@whooshbang/contract-mock":
-        specifier: file:../../vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
-        version: file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
+        specifier: file:../../vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz
+        version: file:vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz
 
   packages/codex-app-server-driver:
     dependencies:
@@ -143,34 +143,6 @@ importers:
       "@types/node":
         specifier: 24.13.3
         version: 24.13.3
-
-  packages/whooshbang-transport:
-    dependencies:
-      "@agent-relay/notification-contracts":
-        specifier: workspace:*
-        version: link:../notification-contracts
-      "@agent-relay/protocol":
-        specifier: workspace:*
-        version: link:../protocol
-      "@whooshbang/contracts":
-        specifier: file:../../vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
-        version: file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
-      "@whooshbang/sdk":
-        specifier: file:../../vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz
-        version: file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz
-    devDependencies:
-      "@agent-relay/core":
-        specifier: workspace:*
-        version: link:../core
-      "@agent-relay/telegram-transport":
-        specifier: workspace:*
-        version: link:../telegram-transport
-      "@types/node":
-        specifier: 24.13.3
-        version: 24.13.3
-      "@whooshbang/contract-mock":
-        specifier: file:../../vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
-        version: file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz
 
   packages/protocol:
     dependencies:
@@ -234,6 +206,34 @@ importers:
       "@types/node":
         specifier: 24.13.3
         version: 24.13.3
+
+  packages/whooshbang-transport:
+    dependencies:
+      "@agent-relay/notification-contracts":
+        specifier: workspace:*
+        version: link:../notification-contracts
+      "@agent-relay/protocol":
+        specifier: workspace:*
+        version: link:../protocol
+      "@whooshbang/contracts":
+        specifier: file:../../vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz
+        version: file:vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz
+      "@whooshbang/sdk":
+        specifier: file:../../vendor/whooshbang-rc5/whooshbang-sdk-1.0.0-rc.5.tgz
+        version: file:vendor/whooshbang-rc5/whooshbang-sdk-1.0.0-rc.5.tgz
+    devDependencies:
+      "@agent-relay/core":
+        specifier: workspace:*
+        version: link:../core
+      "@agent-relay/telegram-transport":
+        specifier: workspace:*
+        version: link:../telegram-transport
+      "@types/node":
+        specifier: 24.13.3
+        version: 24.13.3
+      "@whooshbang/contract-mock":
+        specifier: file:../../vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz
+        version: file:vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz
 
 packages:
   "@esbuild/aix-ppc64@0.28.1":
@@ -992,32 +992,32 @@ packages:
         integrity: sha512-x6BDOd7dyo3PFLY3I9/HJ25X/6OurhGXk2/B9gOZNPF7XDVjeBK4k01lQE5uvDpbuheErh91qYuE1E2OEjK3Rw==,
       }
 
-  "@whooshbang/contract-mock@file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz":
+  "@whooshbang/contract-mock@file:vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz":
     resolution:
       {
-        integrity: sha512-oYtfjUsmbaiwtP6uMRe2Tek96PgJzbpKPEBT8goJFKo3OVNnNG1UNcJwUn/lIdkRJjPh86o9DPLaE+TSkp/QVg==,
-        tarball: file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz,
+        integrity: sha512-l2BDGE62Gd6NxZkmvhRIeinL9KAUloeyCJgX0wzWyncfMGEd4DGR7ESEmFxTelDAGj2VwpXywhNbg+ttO0L85g==,
+        tarball: file:vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz,
       }
-    version: 1.0.0-rc.4
+    version: 1.0.0-rc.5
     engines: { node: ">=22.13.0 <23" }
     hasBin: true
 
-  "@whooshbang/contracts@file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz":
+  "@whooshbang/contracts@file:vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz":
     resolution:
       {
-        integrity: sha512-UsVwLlapo0FItLjJJl1j7O+egG3DzIDoeEbGRed9ESjU0KB6T7XZlr0v+Tl1J1ZmPGGpfMNbQtYOGcEJW5/b1A==,
-        tarball: file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz,
+        integrity: sha512-Mf9jhLWDDWDFx9A0UhlepM36lY5eHWYuFOxGeo85OSWEF0KCk8NfqQ4KNF9Fph4sh9IBWCSD4EJ+2vMxiaGejw==,
+        tarball: file:vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz,
       }
-    version: 1.0.0-rc.4
+    version: 1.0.0-rc.5
     engines: { node: ">=22.13.0 <23" }
 
-  "@whooshbang/sdk@file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz":
+  "@whooshbang/sdk@file:vendor/whooshbang-rc5/whooshbang-sdk-1.0.0-rc.5.tgz":
     resolution:
       {
-        integrity: sha512-iHsSKHp1r819rSX71DVIJGomaS1+ciNSBkvI8Wbsy4DBzazowNT1gWPcJGULp4++oCNjWOB1Pq0RcF0eHgdXug==,
-        tarball: file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz,
+        integrity: sha512-BDY6Fegv1ZfMaulWUp9T57p4+9RKtpVvkbaOAHyGPlPzbcEYCK7HGGEVNJ6fDHSMeU2YFX2WPNosW2rtWQ26OA==,
+        tarball: file:vendor/whooshbang-rc5/whooshbang-sdk-1.0.0-rc.5.tgz,
       }
-    version: 1.0.0-rc.4
+    version: 1.0.0-rc.5
     engines: { node: ">=22.13.0 <23" }
 
   acorn-jsx@5.3.2:
@@ -2219,17 +2219,17 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
-  "@whooshbang/contract-mock@file:vendor/whooshbang-rc4/whooshbang-contract-mock-1.0.0-rc.4.tgz":
+  "@whooshbang/contract-mock@file:vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz":
     dependencies:
-      "@whooshbang/contracts": file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
+      "@whooshbang/contracts": file:vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz
       hono: 4.12.32
 
-  "@whooshbang/contracts@file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz":
+  "@whooshbang/contracts@file:vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz":
     {}
 
-  "@whooshbang/sdk@file:vendor/whooshbang-rc4/whooshbang-sdk-1.0.0-rc.4.tgz":
+  "@whooshbang/sdk@file:vendor/whooshbang-rc5/whooshbang-sdk-1.0.0-rc.5.tgz":
     dependencies:
-      "@whooshbang/contracts": file:vendor/whooshbang-rc4/whooshbang-contracts-1.0.0-rc.4.tgz
+      "@whooshbang/contracts": file:vendor/whooshbang-rc5/whooshbang-contracts-1.0.0-rc.5.tgz
 
   acorn-jsx@5.3.2(acorn@8.17.0):
     dependencies:
