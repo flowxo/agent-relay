@@ -1044,6 +1044,20 @@
   diagnostics, package, and SQLite values at schema version 7, while the
   provider-neutral notification seam kept its generic name. See
   [the FXO-1376 record](projects/notifications-transport-adapter/stories/fxo-1376-rename-hosted-transport-identifier.md).
+- FXO-1436 advanced the pin to WhooshBang's exact `1.0.0-rc.5` candidate from
+  `flowxo/whooshbang@d34e45a`, vendored under `vendor/whooshbang-rc5`. That
+  candidate restores the documented `paused` Telegram binding state, which
+  N1-08's subscriber pause/resume/unsubscribe controls can now produce, so
+  `whooshbang connect` reports a paused binding as its own recoverable
+  `binding_paused` outcome with a resume remedy and provisions no machine client
+  or credential. A revoked binding and every other non-active status stay
+  terminal. The consumer contract suite proves the new outcome against the
+  producer's own paused subscription-link fixture. The superseded rc.4 archives
+  are removed rather than kept beside the current pin; they stay reproducible
+  from `flowxo/whooshbang@c6f4eb3` and their digests remain recorded in the
+  FXO-1373 record. No schema version, configuration key, transport identifier,
+  or stored value moved, so no operator action is required. See
+  [the FXO-1436 record](projects/notifications-transport-adapter/stories/fxo-1436-repin-to-whooshbang-rc5.md).
 
 ## Phase 1 reproduction
 
@@ -1200,15 +1214,17 @@ event, verify that it provisions a fresh topic without changing its retained
 lane state; this is the only FXO-1357 behavior still waiting for a natural live
 observation. `/cleanup` remains available for explicitly ended sessions.
 
-Continue bounded local direct-Telegram dogfood while the WhooshBang owner
-prepares the approved hosted environment. The consumer now pins the exact
-WhooshBang `1.0.0-rc.4` candidate, so FXO-1156 (AR3.1) is unblocked on the
-artifact-identity prerequisite alone. Hosted AR3 evidence still begins only
-after that environment implements narrow machine bootstrap and durable poll/ack
-and authorizes the canary. It must still confirm production retention/privacy,
-subscriber activation and digest verification, live delivery/reply/recovery, and
-deliberate transport switching. npm scope/publication and the monitored public
-security-contact path remain owner-controlled promotion gates.
+Continue bounded local direct-Telegram dogfood. The consumer now pins the exact
+WhooshBang `1.0.0-rc.5` candidate, so every Agent Relay prerequisite for
+FXO-1156 (AR3.1) is met. What remains is producer capability, not authorization:
+WhooshBang's deployed API implements no machine-client or machine-event route,
+so the narrow machine bootstrap and durable poll/ack loop this transport calls
+do not exist yet. They are specified as N2-10 (FXO-1206) and N2-11 (FXO-1207),
+both Backlog. Hosted AR3 evidence begins only after those ship; it must still
+confirm production retention/privacy, subscriber activation and digest
+verification, live delivery/reply/recovery, and deliberate transport switching.
+npm scope/publication and the monitored public security-contact path remain
+owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

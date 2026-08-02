@@ -117,8 +117,8 @@ interactive card is sent.
 
 [FXO-1048](https://linear.app/flowxo/issue/FXO-1048) consumes the exact
 version-pinned `@whooshbang/contracts`, `@whooshbang/sdk`, and executable mock
-`1.0.0-rc.4` tarballs through the immutable consumer fixture under
-`vendor/whooshbang-rc4`. The focused gate revalidates their owner-produced
+`1.0.0-rc.5` tarballs through the immutable consumer fixture under
+`vendor/whooshbang-rc5`. The focused gate revalidates their owner-produced
 SHA-256 digests before running. Agent Relay does not copy that schema or
 generated type into its runtime contract, and CI has no sibling-checkout
 dependency.

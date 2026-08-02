@@ -80,6 +80,14 @@ breaking changes and required operator action.
   the contract lock, vendored artifacts, imports, contract discriminators,
   Problem Details namespace, and mock control header all moved to the WhooshBang
   identities. Hosted diagnostics now name WhooshBang.
+- The optional hosted transport now pins WhooshBang's exact `1.0.0-rc.5`
+  artifacts. That candidate restores the documented `paused` Telegram binding
+  state, which subscribers can now reach through WhooshBang's own pause, resume,
+  and unsubscribe controls. `whooshbang connect` therefore reports a paused
+  binding as its own recoverable `binding_paused` outcome, with a resume remedy
+  and no provisioned machine client or credential, instead of failing terminally
+  as though the binding could not be proven. A revoked binding, and any other
+  non-active status, stays terminal.
 - **Breaking (pre-alpha):** the hosted transport is now identified as
   `whooshbang` rather than `notifications` everywhere it is selected, stored, or
   diagnosed. `agent-relay whooshbang connect|status|disconnect` replaces

@@ -27,7 +27,7 @@ stable gate:
    mutable transitive dependencies, and package or fixture identity drift;
 6. rejects any retired `@flowxo/*` transitive package identity outright, because
    WhooshBang's pre-alpha hard cut publishes no compatibility alias;
-7. checks the `vendor/whooshbang-rc4` provenance manifest against the lock,
+7. checks the `vendor/whooshbang-rc5` provenance manifest against the lock,
    including the producer repository and full commit;
 8. installs the verified bytes in a fresh temporary pnpm project with lifecycle
    scripts disabled and imports all three packages;
@@ -91,9 +91,14 @@ Every update is an explicit reviewable change:
 2. Produce or obtain the replacement tarball from its exact source commit
    without running lifecycle scripts. Record its package version and SHA-256
    digest; unchanged artifacts retain their existing source commits and bytes.
-3. Replace only the corresponding files under `vendor/whooshbang-rc4`. Update
-   its provenance manifest and `contract-lock.json` with the exact commit,
-   versions, digests, paths, and fixture identities.
+3. Replace only the corresponding files under the vendor directory. The
+   directory is named for the pinned candidate, so a version change renames it
+   to `vendor/whooshbang-<candidate>` and the superseded directory is removed
+   rather than kept beside it; the retired candidate stays reproducible from its
+   recorded producer commit and its digests stay recorded in the story
+   specification that pinned it. Update the provenance manifest and
+   `contract-lock.json` with the exact commit, versions, digests, paths, and
+   fixture identities.
 4. Update the deliberately duplicated expected C0 inventory in
    `contracts/lib/whooshbang-preflight.mjs`. A canonical schema or
    compatibility-policy change also requires byte-for-byte portfolio

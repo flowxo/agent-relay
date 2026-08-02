@@ -35,15 +35,15 @@ export const CONTRACT_CHECK_RESULT_SCHEMA_SHA256 =
 export const WHOOSHBANG_OWNER = "whooshbang";
 export const WHOOSHBANG_SOURCE_REPOSITORY = "flowxo/whooshbang";
 export const WHOOSHBANG_BASE_SOURCE_COMMIT =
-  "c6f4eb3bee2391137c15364e7cb84e468728aab8";
+  "d34e45ab8262fd7afcc4fcb049018d38d8772bb4";
 export const WHOOSHBANG_MOCK_SOURCE_COMMIT =
-  "c6f4eb3bee2391137c15364e7cb84e468728aab8";
-export const WHOOSHBANG_VERSION = "1.0.0-rc.4";
+  "d34e45ab8262fd7afcc4fcb049018d38d8772bb4";
+export const WHOOSHBANG_VERSION = "1.0.0-rc.5";
 export const WHOOSHBANG_CONTRACTS_ARTIFACT = "@whooshbang/contracts";
 export const WHOOSHBANG_SDK_ARTIFACT = "@whooshbang/sdk";
 export const WHOOSHBANG_MOCK_ARTIFACT = "@whooshbang/contract-mock";
 export const WHOOSHBANG_ARTIFACT_SCOPE = "@whooshbang/";
-export const WHOOSHBANG_VENDOR_DIRECTORY = "vendor/whooshbang-rc4";
+export const WHOOSHBANG_VENDOR_DIRECTORY = "vendor/whooshbang-rc5";
 
 const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
 const MAX_UNCOMPRESSED_ARCHIVE_BYTES = 64 * 1024 * 1024;
@@ -55,9 +55,9 @@ const repositoryRoot = resolve(
 const EXPECTED_DEPENDENCIES = [
   {
     artifact: WHOOSHBANG_CONTRACTS_ARTIFACT,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contracts-1.0.0-rc.4.tgz`,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contracts-1.0.0-rc.5.tgz`,
     source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
-    sha256: "eeee4c3b31bd3c976d26359e5fb48ce196e7b7dac788b5ee7bb1ccfb5de950ed",
+    sha256: "442f4fcae4448bc9a1d8e6ea001a1117c76ebe1786f3765696e97bb9d1029028",
     fixture_sets: [
       "core-api-bodies",
       "core-semantic-scenarios",
@@ -74,16 +74,16 @@ const EXPECTED_DEPENDENCIES = [
   },
   {
     artifact: WHOOSHBANG_SDK_ARTIFACT,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-sdk-1.0.0-rc.4.tgz`,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-sdk-1.0.0-rc.5.tgz`,
     source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
-    sha256: "27080980b8f1766345c217ed63d17dbcc75b1b0ba6b774f59a26aa7b276c0054",
+    sha256: "b68e9b693575807f8dd998861c3202cd72668789c88ab9dabf1eb0dafae75d0a",
     fixture_sets: [],
   },
   {
     artifact: WHOOSHBANG_MOCK_ARTIFACT,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contract-mock-1.0.0-rc.4.tgz`,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contract-mock-1.0.0-rc.5.tgz`,
     source_commit: WHOOSHBANG_MOCK_SOURCE_COMMIT,
-    sha256: "6163f68fa6bb7c2953428db8a9dfc36f87e2e24522d0610dbf7316e4f7bae454",
+    sha256: "a7a6e87c64b6ded9f0fd048c1fd838b36dd45f4fe73a56193e6a24c247175ae5",
     fixture_sets: ["contract-mock-scenarios.v1"],
   },
 ];
@@ -552,7 +552,7 @@ async function assertVendorArtifactManifest(root, lock) {
     sha256: pin.sha256,
   }));
   if (
-    manifest.schema !== "agent-relay.whooshbang-rc4-artifacts.v1" ||
+    manifest.schema !== "agent-relay.whooshbang-rc5-artifacts.v1" ||
     manifest.contractVersion !== WHOOSHBANG_VERSION ||
     manifest.sourceRepository !== WHOOSHBANG_SOURCE_REPOSITORY ||
     manifest.sourceCommit !== WHOOSHBANG_BASE_SOURCE_COMMIT ||
