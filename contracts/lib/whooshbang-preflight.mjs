@@ -35,15 +35,24 @@ export const CONTRACT_CHECK_RESULT_SCHEMA_SHA256 =
 export const WHOOSHBANG_OWNER = "whooshbang";
 export const WHOOSHBANG_SOURCE_REPOSITORY = "flowxo/whooshbang";
 export const WHOOSHBANG_BASE_SOURCE_COMMIT =
-  "d34e45ab8262fd7afcc4fcb049018d38d8772bb4";
+  "08d4203fc2f52c4ab80fcfbc6416951351fba8ae";
 export const WHOOSHBANG_MOCK_SOURCE_COMMIT =
-  "d34e45ab8262fd7afcc4fcb049018d38d8772bb4";
-export const WHOOSHBANG_VERSION = "1.0.0-rc.5";
+  "08d4203fc2f52c4ab80fcfbc6416951351fba8ae";
+// The three artifacts no longer share one release candidate number, so each
+// carries its own exact version. The mock's scenario corpus is versioned
+// separately again: it is generated against a contract candidate and is not
+// re-stamped when a later additive candidate ships.
+export const WHOOSHBANG_CONTRACTS_VERSION = "1.0.0-rc.10";
+export const WHOOSHBANG_SDK_VERSION = "1.0.0-rc.11";
+export const WHOOSHBANG_MOCK_VERSION = "1.0.0-rc.13";
+export const WHOOSHBANG_MOCK_SCENARIO_CONTRACT_VERSION = "1.0.0-rc.9";
 export const WHOOSHBANG_CONTRACTS_ARTIFACT = "@whooshbang/contracts";
 export const WHOOSHBANG_SDK_ARTIFACT = "@whooshbang/sdk";
 export const WHOOSHBANG_MOCK_ARTIFACT = "@whooshbang/contract-mock";
 export const WHOOSHBANG_ARTIFACT_SCOPE = "@whooshbang/";
-export const WHOOSHBANG_VENDOR_DIRECTORY = "vendor/whooshbang-rc5";
+export const WHOOSHBANG_VENDOR_DIRECTORY = "vendor/whooshbang-rc10-rc11-rc13";
+export const WHOOSHBANG_VENDOR_MANIFEST_SCHEMA =
+  "agent-relay.whooshbang-artifacts.v2";
 
 const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
 const MAX_UNCOMPRESSED_ARCHIVE_BYTES = 64 * 1024 * 1024;
@@ -55,9 +64,11 @@ const repositoryRoot = resolve(
 const EXPECTED_DEPENDENCIES = [
   {
     artifact: WHOOSHBANG_CONTRACTS_ARTIFACT,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contracts-1.0.0-rc.5.tgz`,
+    version: WHOOSHBANG_CONTRACTS_VERSION,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contracts-1.0.0-rc.10.tgz`,
     source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
-    sha256: "442f4fcae4448bc9a1d8e6ea001a1117c76ebe1786f3765696e97bb9d1029028",
+    sha256: "2253e94e1d78092bb605b2c16c453a6526b173e6753f36f1446a1527b4bc98cb",
+    fixture_version: WHOOSHBANG_CONTRACTS_VERSION,
     fixture_sets: [
       "core-api-bodies",
       "core-semantic-scenarios",
@@ -74,16 +85,20 @@ const EXPECTED_DEPENDENCIES = [
   },
   {
     artifact: WHOOSHBANG_SDK_ARTIFACT,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-sdk-1.0.0-rc.5.tgz`,
+    version: WHOOSHBANG_SDK_VERSION,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-sdk-1.0.0-rc.11.tgz`,
     source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
-    sha256: "b68e9b693575807f8dd998861c3202cd72668789c88ab9dabf1eb0dafae75d0a",
+    sha256: "8230ef4918b7d555be3688396882dfd9d1ba6b1b7b96ea72dd20f30a7e2be7e4",
+    fixture_version: WHOOSHBANG_SDK_VERSION,
     fixture_sets: [],
   },
   {
     artifact: WHOOSHBANG_MOCK_ARTIFACT,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contract-mock-1.0.0-rc.5.tgz`,
+    version: WHOOSHBANG_MOCK_VERSION,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contract-mock-1.0.0-rc.13.tgz`,
     source_commit: WHOOSHBANG_MOCK_SOURCE_COMMIT,
-    sha256: "a7a6e87c64b6ded9f0fd048c1fd838b36dd45f4fe73a56193e6a24c247175ae5",
+    sha256: "56a612ea65c0b53c24677666ac3b7dc5f15af93f3092b4fa178e8dadd6b6ab56",
+    fixture_version: WHOOSHBANG_MOCK_SCENARIO_CONTRACT_VERSION,
     fixture_sets: ["contract-mock-scenarios.v1"],
   },
 ];
@@ -140,12 +155,12 @@ function assertWhooshBangTopology(lock) {
     const pin = lock.dependencies[index];
     const fixtureSets = expected.fixture_sets.map((id) => ({
       id,
-      version: WHOOSHBANG_VERSION,
+      version: expected.fixture_version,
     }));
     if (
       pin.owner !== WHOOSHBANG_OWNER ||
       pin.artifact !== expected.artifact ||
-      pin.version !== WHOOSHBANG_VERSION ||
+      pin.version !== expected.version ||
       pin.source_repository !== WHOOSHBANG_SOURCE_REPOSITORY ||
       pin.source_commit !== expected.source_commit ||
       pin.sha256 !== expected.sha256 ||
@@ -431,9 +446,12 @@ function assertMockFixtures(entries, pin) {
       version: manifest.contract_version,
     },
   ];
+  // The mock package version and its scenario corpus version are independent.
+  // The corpus records the contract candidate it was generated against, so it
+  // is pinned to its own expected value rather than to the package version.
   if (
     manifest.schema !== "contract-mock-scenarios.v1" ||
-    manifest.contract_version !== pin.version ||
+    manifest.contract_version !== WHOOSHBANG_MOCK_SCENARIO_CONTRACT_VERSION ||
     !sameJson(identity, pin.fixture_sets)
   ) {
     throw new Error("Mock artifact fixture identity does not match the lock.");
@@ -453,16 +471,27 @@ function assertMockFixtures(entries, pin) {
   }
 }
 
+// A published tarball's devDependencies never enter a consumer's installed
+// closure, so a WhooshBang-scoped one need not be in this lock; the mock
+// dev-depends on `@whooshbang/mcp`, which WhooshBang deliberately keeps out of
+// every consumer lock. Every other rule still applies to all four sections, and
+// `assertInstalledClosure` proves after installation that nothing outside the
+// locked set actually materialized.
+const INSTALLED_DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "optionalDependencies",
+  "peerDependencies",
+];
+const DECLARED_DEPENDENCY_SECTIONS = [
+  ...INSTALLED_DEPENDENCY_SECTIONS,
+  "devDependencies",
+];
+
 function assertDependencyPins(packageJson, lock) {
   const lockedVersions = new Map(
     lock.dependencies.map((pin) => [pin.artifact, pin.version]),
   );
-  for (const section of [
-    "dependencies",
-    "optionalDependencies",
-    "peerDependencies",
-    "devDependencies",
-  ]) {
+  for (const section of DECLARED_DEPENDENCY_SECTIONS) {
     const dependencies = packageJson[section] ?? {};
     if (
       dependencies === null ||
@@ -475,7 +504,10 @@ function assertDependencyPins(packageJson, lock) {
       if (typeof version !== "string" || !EXACT_SEMVER.test(version)) {
         throw new Error("Artifact contains a mutable transitive dependency.");
       }
-      if (name.startsWith(WHOOSHBANG_ARTIFACT_SCOPE)) {
+      if (
+        name.startsWith(WHOOSHBANG_ARTIFACT_SCOPE) &&
+        INSTALLED_DEPENDENCY_SECTIONS.includes(section)
+      ) {
         const lockedVersion = lockedVersions.get(name);
         if (lockedVersion === undefined || lockedVersion !== version) {
           throw new Error(
@@ -546,20 +578,42 @@ async function assertVendorArtifactManifest(root, lock) {
     ),
     "WhooshBang artifact manifest",
   );
+  // The set spans three release candidate numbers, so the manifest records the
+  // version and full producer commit per artifact instead of one set-wide pair.
   const expected = lock.dependencies.map((pin) => ({
     package: pin.artifact,
+    version: pin.version,
+    sourceCommit: pin.source_commit,
     file: basename(pin.artifact_file),
     sha256: pin.sha256,
   }));
   if (
-    manifest.schema !== "agent-relay.whooshbang-rc5-artifacts.v1" ||
-    manifest.contractVersion !== WHOOSHBANG_VERSION ||
+    manifest.schema !== WHOOSHBANG_VENDOR_MANIFEST_SCHEMA ||
     manifest.sourceRepository !== WHOOSHBANG_SOURCE_REPOSITORY ||
-    manifest.sourceCommit !== WHOOSHBANG_BASE_SOURCE_COMMIT ||
     !sameJson(manifest.artifacts, expected)
   ) {
     throw new Error(
       "WhooshBang vendor artifact manifest drifted from the contract lock.",
+    );
+  }
+}
+
+// Proves the installed WhooshBang closure is exactly the locked set, so an
+// unlocked WhooshBang-scoped devDependency declared by an artifact cannot reach
+// a consumer without failing this gate.
+async function assertInstalledClosure(directory, inspected) {
+  const scopeDirectory = resolve(
+    directory,
+    "node_modules",
+    WHOOSHBANG_ARTIFACT_SCOPE.replace(/\/$/u, ""),
+  );
+  const installed = (await readdir(scopeDirectory)).sort();
+  const locked = inspected
+    .map(({ pin }) => pin.artifact.slice(WHOOSHBANG_ARTIFACT_SCOPE.length))
+    .sort();
+  if (!sameJson(installed, locked)) {
+    throw new Error(
+      "Fresh install resolved a WhooshBang package outside the lock.",
     );
   }
 }
@@ -605,7 +659,7 @@ async function freshPnpmInstall(inspected) {
         '  - "."',
         "",
         "overrides:",
-        `  "${WHOOSHBANG_CONTRACTS_ARTIFACT}@${WHOOSHBANG_VERSION}": "file:artifacts/${basename(
+        `  "${WHOOSHBANG_CONTRACTS_ARTIFACT}@${contractsArtifact.pin.version}": "file:artifacts/${basename(
           contractsArtifact.pin.artifact_file,
         )}"`,
         "",
@@ -629,6 +683,7 @@ async function freshPnpmInstall(inspected) {
         stdio: "pipe",
       },
     );
+    await assertInstalledClosure(directory, inspected);
     for (const artifact of inspected) {
       const packageJson = parseJson(
         await readFile(
@@ -661,7 +716,9 @@ async function freshPnpmInstall(inspected) {
     if (
       error instanceof Error &&
       (error.message === "Fresh install package identity mismatch." ||
-        error.message === "Fresh install is missing the contracts artifact.")
+        error.message === "Fresh install is missing the contracts artifact." ||
+        error.message ===
+          "Fresh install resolved a WhooshBang package outside the lock.")
     ) {
       throw error;
     }
@@ -794,6 +851,7 @@ export function buildWhooshBangCheckResult({
       "no-install-lifecycle",
       "no-secret-like-paths",
       "fresh-pnpm-install-ignore-scripts",
+      "installed-closure-is-exactly-locked",
       "production-import-boundary",
       "whooshbang-consumer",
       "consumer-mapping-temporal-behavior",

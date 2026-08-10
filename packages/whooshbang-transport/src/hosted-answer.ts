@@ -78,7 +78,8 @@ export type HostedAnswerValidation =
   | {
       outcome: "terminal";
       acknowledgement: "processed";
-      reasonCode: "locally_cancelled" | "locally_expired";
+      reasonCode:
+        "locally_cancelled" | "locally_expired" | "answer_unavailable";
     }
   | {
       outcome: "quarantine";
@@ -102,6 +103,19 @@ export type HostedAnswerValidation =
         | "schema_integrity_failure"
         | "stream_identity_failure";
     };
+
+// WhooshBang closes a seven-day content window on a hosted answer while keeping
+// the event itself — id, cursor, message and interaction references, timestamps,
+// and type. The envelope's `response` is therefore not guaranteed to be present,
+// and this transport must not require it in order to acknowledge an event and
+// advance its committed cursor.
+type HostedInteractionResponse = InteractionEvent["response"];
+
+function hostedResponse(
+  event: InteractionEvent,
+): HostedInteractionResponse | undefined {
+  return event.response as HostedInteractionResponse | undefined;
+}
 
 function sameOptional(left: string | undefined, right: string | undefined) {
   return left === right;
@@ -195,19 +209,20 @@ function stableStructuredAnswer(
 
 function answerFor(
   event: InteractionEvent,
+  response: HostedInteractionResponse,
   local: LocalHostedRequest,
   expected: ExpectedHostedRequestIdentity,
 ): string | undefined {
   let answer: string | undefined;
-  if (event.response.type === "confirm") {
-    const option = local.options[event.response.value ? 0 : 1];
+  if (response.type === "confirm") {
+    const option = local.options[response.value ? 0 : 1];
     answer = option?.optionId;
-  } else if (event.response.type === "select") {
+  } else if (response.type === "select") {
     answer = local.options.find(
-      (option) => option.token === event.response.value,
+      (option) => option.token === response.value,
     )?.optionId;
   } else {
-    const normalized = event.response.value.trim();
+    const normalized = response.value.trim();
     answer =
       normalized.length > 0 && normalized.length <= 4_000
         ? normalized
@@ -328,6 +343,18 @@ export function validateHostedAnswer(input: {
       reasonCode: "local_request_failed",
     };
   }
+  // A content-stripped event is neither poison nor a late answer, so it is
+  // classified before the expiry window it would otherwise fall outside of.
+  // It is acknowledged as processed so the cursor advances, and the local
+  // request stays open for its negotiated local fallback.
+  const response = hostedResponse(input.event);
+  if (response === undefined) {
+    return {
+      outcome: "terminal",
+      acknowledgement: "processed",
+      reasonCode: "answer_unavailable",
+    };
+  }
   const occurredAt = Date.parse(input.event.occurred_at);
   const eventExpiresAt = Date.parse(input.event.expires_at);
   const expectedExpiresAt = Date.parse(input.expected.expiresAt);
@@ -355,21 +382,20 @@ export function validateHostedAnswer(input: {
       reasonCode: "answer_after_expiry",
     };
   }
-  if (input.event.response.type !== input.expected.interactionType) {
+  if (response.type !== input.expected.interactionType) {
     return {
       outcome: "quarantine",
       acknowledgement: "quarantined",
       reasonCode: "answer_kind_mismatch",
     };
   }
-  const answer = answerFor(input.event, local, input.expected);
+  const answer = answerFor(input.event, response, local, input.expected);
   if (answer === undefined) {
     return {
       outcome: "quarantine",
       acknowledgement: "quarantined",
       reasonCode:
-        input.event.response.type === "select" ||
-        input.event.response.type === "confirm"
+        response.type === "select" || response.type === "confirm"
           ? "invalid_option"
           : "invalid_answer",
     };

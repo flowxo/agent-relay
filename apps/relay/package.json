@@ -32,6 +32,6 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@whooshbang/contract-mock": "file:../../vendor/whooshbang-rc5/whooshbang-contract-mock-1.0.0-rc.5.tgz"
+    "@whooshbang/contract-mock": "file:../../vendor/whooshbang-rc10-rc11-rc13/whooshbang-contract-mock-1.0.0-rc.13.tgz"
   }
 }

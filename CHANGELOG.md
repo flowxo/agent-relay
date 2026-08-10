@@ -88,6 +88,18 @@ breaking changes and required operator action.
   and no provisioned machine client or credential, instead of failing terminally
   as though the binding could not be proven. A revoked binding, and any other
   non-active status, stays terminal.
+- The optional hosted transport now pins WhooshBang's exact
+  `@whooshbang/contracts@1.0.0-rc.10`, `@whooshbang/sdk@1.0.0-rc.11`, and
+  `@whooshbang/contract-mock@1.0.0-rc.13` artifacts, which no longer share one
+  release candidate number. Hosted delivery, interaction, quarantine,
+  acknowledgement, and cursor behavior are unchanged. A hosted message diagnosis
+  now asks for the current state explicitly rather than inheriting the
+  contract's new 30-second inspection wait, and a machine event whose answer
+  content window has closed is acknowledged and advanced past rather than
+  quarantined. **Required operator action:** the stored hosted connection
+  records the pinned contract version, so an existing connection written against
+  `1.0.0-rc.5` no longer loads and must be reconnected with
+  `agent-relay whooshbang connect`.
 - **Breaking (pre-alpha):** the hosted transport is now identified as
   `whooshbang` rather than `notifications` everywhere it is selected, stored, or
   diagnosed. `agent-relay whooshbang connect|status|disconnect` replaces

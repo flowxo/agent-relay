@@ -1058,6 +1058,27 @@
   FXO-1373 record. No schema version, configuration key, transport identifier,
   or stored value moved, so no operator action is required. See
   [the FXO-1436 record](projects/notifications-transport-adapter/stories/fxo-1436-repin-to-whooshbang-rc5.md).
+- FXO-1209 re-vendored the pin to WhooshBang's exact `contracts@1.0.0-rc.10`,
+  `sdk@1.0.0-rc.11`, and `contract-mock@1.0.0-rc.13` artifacts from
+  `flowxo/whooshbang@08d4203`, vendored under
+  `vendor/whooshbang-rc10-rc11-rc13`. The three artifacts no longer share a
+  release candidate number, so the expected inventory, the vendor provenance
+  manifest, and the fixture-set identities all became per artifact. The
+  re-vendor absorbed a new `ProblemCode` member, a bounded message-inspection
+  wait that now defaults to a 30-second long poll, the mock CLI's new
+  system-clock default, and a mock development dependency that WhooshBang
+  deliberately keeps outside every consumer lock; the last of these is now
+  proven by an installed-closure check rather than a static rule. It also made
+  `validateHostedAnswer` tolerant of a machine event whose answer content window
+  has closed, ahead of the queued N2-15/N2-16 bump. Three producer-side defects
+  were filed rather than worked around: FXO-1510, FXO-1511, and FXO-1512. The
+  superseded rc.5 archives are removed rather than kept beside the current pin;
+  they stay reproducible from `flowxo/whooshbang@d34e45a` and their digests
+  remain recorded in the FXO-1436 record. No schema version, configuration key,
+  transport identifier, or stored value moved, but the persisted connection
+  records the pinned contract version, so an existing hosted connection must be
+  reconnected. See
+  [the FXO-1209 record](projects/notifications-transport-adapter/stories/fxo-1209-revendor-whooshbang-rc10.md).
 
 ## Phase 1 reproduction
 
@@ -1215,7 +1236,8 @@ lane state; this is the only FXO-1357 behavior still waiting for a natural live
 observation. `/cleanup` remains available for explicitly ended sessions.
 
 Continue bounded local direct-Telegram dogfood. The consumer now pins the exact
-WhooshBang `1.0.0-rc.5` candidate, so every Agent Relay prerequisite for
+WhooshBang `contracts@1.0.0-rc.10`, `sdk@1.0.0-rc.11`, and
+`contract-mock@1.0.0-rc.13` candidates, so every Agent Relay prerequisite for
 FXO-1156 (AR3.1) is met. What remains is producer capability, not authorization:
 WhooshBang's deployed API implements no machine-client or machine-event route,
 so the narrow machine bootstrap and durable poll/ack loop this transport calls

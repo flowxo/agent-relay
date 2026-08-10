@@ -163,6 +163,8 @@ const SAFE_PROBLEM_MESSAGES = {
   authentication_required: "WhooshBang authentication is required.",
   cancellation_too_late: "The WhooshBang operation can no longer be canceled.",
   credential_invalid: "The WhooshBang credential is invalid or revoked.",
+  endpoint_rotation_conflict:
+    "WhooshBang rejected a conflicting customer endpoint rotation.",
   environment_mismatch:
     "The WhooshBang credential targets another environment.",
   idempotency_conflict:
