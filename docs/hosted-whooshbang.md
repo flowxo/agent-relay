@@ -11,17 +11,23 @@ credential.
 ## Current implementation state
 
 `packages/whooshbang-transport`,
-`agent-relay whooshbang connect|status|disconnect`, and `agent-relay transport`
-now implement the complete AR2.1–AR2.6 mock-backed setup, explicit selection,
-and durable interaction boundary against exact pinned WhooshBang C0 artifacts.
-They prove:
+`agent-relay whooshbang connect|status|disconnect`, `agent-relay transport`,
+`agent-relay whooshbang-canary`, and `agent-relay doctor --live` implement the
+packed hosted boundary against exact pinned WhooshBang artifacts. The hosted
+connect path uses one developer OAuth consent, public-client registration,
+authorization code with S256 PKCE, and the remote MCP
+`whooshbang_create_machine_client` tool. The older broad-project-credential path
+remains only as an explicit compatibility and administrative-revocation path.
+Together the OAuth path, the explicit legacy compatibility path, and the pinned
+consumer suite prove:
 
-- subscriber authorization without claiming success while it is pending;
+- legacy subscriber authorization without claiming success while it is pending;
 - local 32-byte secret and credential-ID generation;
 - digest-only machine-credential registration;
 - narrow-credential poll and synthetic-message smoke tests;
 - mode-`0600`, atomic, symlink-rejecting local storage;
-- reconnect/rotation, idempotent hosted revocation, and explicit local erasure;
+- legacy reconnect/rotation, idempotent hosted revocation, and explicit local
+  erasure;
 - HTTPS outside exact loopback mocks, no redirect following, and bounded bodies;
 - provider-neutral delivery mapping and stable idempotency;
 - bounded confirm/select/input interaction projection;
@@ -60,12 +66,11 @@ does not carry to WhooshBang's breaking rename cut. FXO-1373 rebuilt the
 repository-native consumer proof against the exact RC.4 artifacts, FXO-1436
 advanced it to RC.5, the FXO-1209 re-vendor advanced it to contracts rc.10 / SDK
 rc.11 / mock rc.13, and FXO-1531 advances it to `contracts@1.0.0-rc.12`,
-`sdk@1.0.0-rc.13`, and `contract-mock@1.0.0-rc.15`. Continue using the
-executable mock—not a production account—as the credential-free integration
-source of truth. Connecting an approved WhooshBang environment and collecting
-real-service evidence remains the separate AR3.1 operation.
+`sdk@1.0.0-rc.13`, and `contract-mock@1.0.0-rc.15`. The executable mock remains
+the deterministic credential-free regression source; an explicitly approved real
+environment supplies the deployed-boundary evidence.
 
-## Mock-backed setup command
+## OAuth/MCP hosted setup
 
 Build first:
 
@@ -74,39 +79,84 @@ pnpm build
 node apps/relay/dist/cli.js whooshbang --help
 ```
 
-The broad project credential is accepted only through environment injection,
-stdin, or an interactive hidden prompt. It is not accepted positionally,
-returned in output, or written to either local file. For a noninteractive
-secret-manager command:
+Keep the private project selector, subscriber, and notifier in the process
+environment. The command arguments and output then contain no provider or
+subscriber identity:
 
 ```sh
-credential_command | node apps/relay/dist/cli.js whooshbang connect \
-  --credential-stdin \
-  --base-url https://whooshbang.example.test \
-  --subscriber-id subscriber_configured_in_whooshbang \
-  --notifier-id default
+export AGENT_RELAY_WHOOSHBANG_BASE_URL=https://whooshbang.example.test
+export AGENT_RELAY_WHOOSHBANG_PROJECT_SELECTOR=private_project_selector
+export AGENT_RELAY_WHOOSHBANG_ENVIRONMENT=test
+export AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID=private_synthetic_subscriber
+export AGENT_RELAY_WHOOSHBANG_NOTIFIER_ID=private_notifier
+node apps/relay/dist/cli.js whooshbang connect
 ```
 
-The command emits the bounded authorization URL as a diagnostic immediately and
-waits up to five minutes by default. Complete Telegram authorization at that
-URL. A pending, expired, cancelled, failed, or revoked link exits without
-creating or storing machine credential material and never reports `connected`.
+Agent Relay starts an ephemeral `127.0.0.1` callback before registering the
+public OAuth client, opens the consent page without placing the URL, state, or
+PKCE verifier in process arguments, and requests exactly
+`projects:read machine-clients:write`. Sign in and approve once. The OAuth code,
+verifier, and access token stay in memory and are discarded when the command
+ends. Consent is the complete approval: there is no Telegram registration turn
+or second important-action confirmation.
 
-A subscriber can pause an already activated binding from Telegram. That is
-recoverable rather than broken, so connect reports `binding_paused` with a
-resume remedy, provisions no machine client or credential, and leaves nothing to
-revoke. Resume the subscription in Telegram, then rerun connect. A revoked
-binding stays a terminal setup failure.
+The environment name belongs to the selected WhooshBang deployment. For example,
+an approved staging deployment may use its internal `live` environment to reach
+that deployment's real provider binding; this does not select the production
+deployment. Use only the deployment/environment pair that was explicitly
+approved.
 
-After activation, Agent Relay:
+After approval, Agent Relay:
 
-1. binds one stable local machine ID to that subscriber/notifier;
-2. generates a 32-byte secret and credential ID locally;
-3. sends only the SHA-256 digest to WhooshBang;
-4. polls the authenticated machine stream and sends a fixed synthetic canary;
-5. verifies the returned project, environment, binding, subscriber, notifier,
-   machine, and exact four narrow scopes; and
-6. stores the new connection only after those checks pass.
+1. resolves the approved active project and environment through MCP;
+2. generates a 32-byte machine secret and credential ID locally;
+3. journals that material and its next local credential generation at mode
+   `0600` before the remote side effect so a crash or lost response replays the
+   same accepted create instead of orphaning a second identity;
+4. sends only the credential ID and SHA-256 digest to WhooshBang;
+5. validates project, environment, binding, subscriber, notifier, machine, and
+   the exact four narrow runtime scopes;
+6. proves an authenticated narrow poll; and
+7. atomically promotes the narrow bearer into the active mode-`0600` store and
+   removes the pending journal.
+
+Only one WhooshBang lifecycle operation—OAuth connect, legacy connect, or
+disconnect—may run in a state directory at a time. A retry after a crash or
+uncertain response must use the same OAuth target; legacy bootstrap remains
+blocked, and disconnect preserves the recovery journal until exact replay or
+verified cleanup is possible. When connection persistence completed before a
+crash but journal deletion did not, the next OAuth command verifies the active
+target, exact credential, and generation, removes the duplicate journal, and
+then reports the already-active connection without reopening consent or making a
+remote request. A different requested target still requires the retained
+connection to be revoked first. OAuth discovery, registration, token exchange,
+MCP calls, cleanup, and the post-answer diagnostic all have local deadlines.
+
+Setup itself sends no notification. Select WhooshBang, start the daemon, and run
+the one answerable hosted canary only when that traffic is explicitly approved:
+
+```sh
+node apps/relay/dist/cli.js transport select whooshbang
+node apps/relay/dist/cli.js daemon
+node apps/relay/dist/cli.js whooshbang-canary --wait-ms 120000
+node apps/relay/dist/cli.js doctor --live
+```
+
+The canary succeeds only when the reply arrives through WhooshBang, matches the
+fixed synthetic challenge, resolves exactly once locally, and the daemon proves
+a committed hosted cursor with zero unacknowledged events. Its output contains
+only hashed message/diagnostic references, safe timestamps, cursor reference,
+and capability state.
+
+## Explicit legacy mock and administration path
+
+Passing `--legacy-project-credential` (with hidden prompt or environment
+injection), or the explicit `--credential-stdin`, selects the older broad
+project-credential bootstrap. Merely having a stale broad credential in the
+environment never changes the default OAuth path. The legacy path exists for the
+exact contract mock, migration, and explicit machine-client revocation. The
+broad credential is never accepted positionally, returned in output, or written
+to disk.
 
 HTTP is allowed only for exact loopback mock origins such as
 `http://127.0.0.1:4319`. Every other origin requires HTTPS. Credential-bearing
@@ -120,10 +170,11 @@ Inspect safe local status:
 node apps/relay/dist/cli.js whooshbang status
 ```
 
-Status reports only the API origin, contract/environment, hashed machine and
-canary references, credential presence, state, and pending-revocation count. It
-does not print the credential or full machine, project, subscriber, notifier,
-binding, message, or diagnostic identifiers.
+Status reports only the API origin, contract/environment, a hashed machine
+reference, the hashed canary reference after that journey passes, credential
+presence, state, and pending-revocation count. It does not print the credential
+or full machine, project, subscriber, notifier, binding, message, or diagnostic
+identifiers.
 
 ## Select the transport
 
@@ -217,12 +268,32 @@ The local files are:
 
 - `~/.agent-relay/whooshbang.json`: private non-secret connection metadata;
 - `~/.agent-relay/whooshbang-credential.json`: only the current narrow bearer,
-  its credential ID, creation time, and safe rotation lineage.
+  its credential ID, creation time, and safe rotation lineage;
+- `~/.agent-relay/whooshbang-oauth-provisioning.json`: a temporary mode-`0600`
+  recovery journal containing the locally retained candidate bearer and exact
+  target/generation until connection promotion or verified cleanup completes.
 
-Both are regular mode-`0600` JSON files under a private directory. Writes use a
+All are regular mode-`0600` JSON files under a private directory. Writes use a
 same-directory temporary file, file sync, and atomic rename. Existing symlinks,
 non-regular files, exposed permissions, oversized JSON, malformed schemas, and
 credential/configuration mismatches fail closed.
+
+A journal without a committed connection may be the sole replay material for a
+remote create whose response was lost. Local disconnect therefore reports
+`oauth_recovery_pending` and preserves it; it never falls through to legacy
+provisioning. A journal proven to duplicate the committed connection generation
+is removed during restart reconciliation or disconnect.
+
+If a crash lands the new credential file before its configuration commit marker,
+restart accepts that credential-only state only when its ID, readable bearer,
+and generation exactly match the private OAuth journal. This also covers a
+generation-two candidate that replaced the credential file beside a fully
+revoked, no-pending generation-one configuration. The duplicate candidate file
+is removed under the configuration lock, the journal's recorded generation
+remains authoritative, and exact-target OAuth replay continues. Status and full
+local erase continue to report and preserve that recovery until it is replayed
+or cleanup is verified. Any nonmatching orphan or non-revoked prior
+configuration fails closed.
 
 `disconnect` is local by default and retains both files so a temporary provider
 outage or deliberate disablement is reversible:
@@ -243,13 +314,16 @@ both `--erase-credential --erase-configuration` to remove the complete hosted
 setup record. Configuration erasure is refused while a hosted credential may
 still be active unless `--revoke` is also supplied.
 
-Running `whooshbang connect` again generates and smoke-tests a replacement
-before switching local configuration. The former credential/client is revoked
-after the new connection commits. A failed old-client revocation remains as
-bounded `pendingRevocations` diagnosis and is retried on a later credentialed
-connect/disconnect; it is never silently discarded. Revoke the retained
-connection before changing the API origin, project, or environment so those
-pending records never lose their revocation authority.
+The default OAuth path refuses to replace a retained connection: explicitly
+revoke it before connecting again. In the legacy project-credential path,
+running `whooshbang connect --legacy-project-credential` generates and
+smoke-tests a replacement before switching local configuration. The former
+credential/client is revoked after the new connection commits. A failed
+old-client revocation remains as bounded `pendingRevocations` diagnosis and is
+retried on a later credentialed connect/disconnect; it is never silently
+discarded. Revoke the retained connection before changing the API origin,
+project, or environment so those pending records never lose their revocation
+authority.
 
 ## Data contract
 

@@ -12,6 +12,17 @@ installed public adapter from the packed release artifact.
 
 ## Machine bootstrap
 
+The public Agent Relay CLI uses WhooshBang's OAuth authorization-code flow with
+PKCE and the remote MCP `whooshbang_create_machine_client` tool. One developer
+consent grants only `projects:read machine-clients:write`; Agent Relay generates
+the readable machine bearer locally and sends only its credential ID and SHA-256
+digest. OAuth access material stays in process memory. The resulting narrow
+bearer is the only runtime secret written to the private mode-`0600` store.
+
+The older project-administration bootstrap below remains as a compatibility
+boundary for the exact executable contract mock and explicit revocation flows;
+it is not the recommended hosted connection path.
+
 `connectWhooshBangMachine` normalizes a safe HTTPS or exact-loopback base URL,
 creates and observes a single-use subscriber authorization link, verifies the
 activated binding, creates one destination-bound machine client, generates the
@@ -31,13 +42,13 @@ has no filesystem, SQLite, Telegram, daemon, or shell-command authority.
 
 ## Pinned consumer artifacts
 
-Agent Relay consumes immutable tarballs from `vendor/whooshbang-rc5`:
+Agent Relay consumes immutable tarballs from `vendor/whooshbang-rc12-rc13-rc15`:
 
-| Package                     | Version      | SHA-256                                                            |
-| --------------------------- | ------------ | ------------------------------------------------------------------ |
-| `@whooshbang/contracts`     | `1.0.0-rc.5` | `442f4fcae4448bc9a1d8e6ea001a1117c76ebe1786f3765696e97bb9d1029028` |
-| `@whooshbang/sdk`           | `1.0.0-rc.5` | `b68e9b693575807f8dd998861c3202cd72668789c88ab9dabf1eb0dafae75d0a` |
-| `@whooshbang/contract-mock` | `1.0.0-rc.5` | `a7a6e87c64b6ded9f0fd048c1fd838b36dd45f4fe73a56193e6a24c247175ae5` |
+| Package                     | Version       | SHA-256                                                            |
+| --------------------------- | ------------- | ------------------------------------------------------------------ |
+| `@whooshbang/contracts`     | `1.0.0-rc.12` | `4b428d1d9094ea78e136084d56831a4c8bdee97b1c40e569cde5787ea176c2dd` |
+| `@whooshbang/sdk`           | `1.0.0-rc.13` | `c3e67296c392f54b4d432d0bb57c70a6b8d031b1acdb17c44a2cb79626afefec` |
+| `@whooshbang/contract-mock` | `1.0.0-rc.15` | `27ce251f6dfc283bf4eecfcb782bd577eba9d13751de63d032bad7ab733918b7` |
 
 The C0-08 source of truth is
 [`contracts/contract-lock.json`](../../contracts/contract-lock.json). The
@@ -61,7 +72,7 @@ copied into Agent Relay.
 - Multi-select, ordered sets, and select requests wider than the pinned hosted
   capability fail before HTTP. Their negotiated local fallback is retained; they
   are never flattened.
-- `observeInteractionCapabilities` publishes the exact RC.5 boundary: confirm,
+- `observeInteractionCapabilities` publishes the exact pinned boundary: confirm,
   single-select, and free-text; one question; at most six options; no durable
   drafts, ordered/multi-select sets, or message updates.
 - Explicit availability failures retry only with the unchanged event ID.

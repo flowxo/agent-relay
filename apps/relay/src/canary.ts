@@ -27,7 +27,7 @@ export interface FakeCanaryOptions {
   pollIntervalMs?: number;
 }
 
-export interface TelegramCanaryClient {
+export interface InteractiveCanaryClient {
   ingest(event: AgentAttentionEventV1): Promise<IngestResult>;
   drain(limit?: number): Promise<DrainResult>;
   getRequest(correlationId: string): Promise<PendingRequestRecord | undefined>;
@@ -38,7 +38,7 @@ export interface TelegramCanaryClient {
   ): Promise<PendingRequestRecord | undefined>;
 }
 
-export type TelegramCanaryOutcome =
+export type InteractiveCanaryOutcome =
   | "answered"
   | "delivery-failed"
   | "request-missing"
@@ -48,19 +48,21 @@ export type TelegramCanaryOutcome =
   | "cancelled"
   | "failed";
 
-export interface TelegramCanaryResult {
+export interface InteractiveCanaryResult {
   eventId: string;
   correlationId: string;
-  outcome: TelegramCanaryOutcome;
+  outcome: InteractiveCanaryOutcome;
   ingest: IngestResult;
   drain: DrainResult;
   resolvedBy?: PendingRequestRecord["resolvedBy"];
 }
 
-export interface TelegramCanaryOptions {
-  client: TelegramCanaryClient;
+export interface InteractiveCanaryOptions {
+  client: InteractiveCanaryClient;
   machineId: string;
   projectPath: string;
+  expectedResolvedBy: "telegram" | "whooshbang";
+  transportLabel: "Telegram" | "WhooshBang";
   waitMs?: number;
   pollIntervalMs?: number;
   now?: () => Date;
@@ -68,6 +70,32 @@ export interface TelegramCanaryOptions {
 }
 
 export const TELEGRAM_CANARY_REPLY = "relay-canary-ok";
+export const WHOOSHBANG_CANARY_REPLY = TELEGRAM_CANARY_REPLY;
+
+export function isWhooshBangCanaryAcknowledged(
+  priorCursorRef: string | null,
+  polling:
+    | {
+        committedCursorRef: string | null;
+        unacknowledgedEventCount: number;
+      }
+    | undefined,
+): boolean {
+  return (
+    polling?.committedCursorRef !== null &&
+    polling?.committedCursorRef !== undefined &&
+    polling.committedCursorRef !== priorCursorRef &&
+    polling.unacknowledgedEventCount === 0
+  );
+}
+
+export type TelegramCanaryClient = InteractiveCanaryClient;
+export type TelegramCanaryOutcome = InteractiveCanaryOutcome;
+export type TelegramCanaryResult = InteractiveCanaryResult;
+export type TelegramCanaryOptions = Omit<
+  InteractiveCanaryOptions,
+  "expectedResolvedBy" | "transportLabel"
+>;
 
 export async function runFakeCanary(
   options: FakeCanaryOptions,
@@ -116,7 +144,7 @@ export async function runFakeCanary(
 }
 
 async function waitForDeliveryReceipt(
-  client: TelegramCanaryClient,
+  client: InteractiveCanaryClient,
   correlationId: string,
   timeoutMs: number,
   pollIntervalMs: number,
@@ -142,13 +170,13 @@ async function waitForDeliveryReceipt(
   return await client.getRequest(correlationId);
 }
 
-export async function runTelegramCanary(
-  options: TelegramCanaryOptions,
-): Promise<TelegramCanaryResult> {
+export async function runInteractiveCanary(
+  options: InteractiveCanaryOptions,
+): Promise<InteractiveCanaryResult> {
   const waitMs = options.waitMs ?? 2 * 60_000;
   const pollIntervalMs = options.pollIntervalMs ?? 500;
   if (!Number.isSafeInteger(waitMs) || waitMs < 1 || waitMs > 30 * 60_000) {
-    throw new Error("Telegram canary waitMs must be between 1 and 1800000");
+    throw new Error("Interactive canary waitMs must be between 1 and 1800000");
   }
   if (
     !Number.isSafeInteger(pollIntervalMs) ||
@@ -156,15 +184,15 @@ export async function runTelegramCanary(
     pollIntervalMs > 10_000
   ) {
     throw new Error(
-      "Telegram canary pollIntervalMs must be between 50 and 10000",
+      "Interactive canary pollIntervalMs must be between 50 and 10000",
     );
   }
 
   const now = (options.now ?? (() => new Date()))();
   const identity = (options.randomId ?? randomUUID)();
   const sequence = now.getTime();
-  const sessionId = `session_telegram_canary_${identity}`;
-  const correlationId = `correlation_telegram_canary_${identity}`;
+  const sessionId = `session_${options.expectedResolvedBy}_canary_${identity}`;
+  const correlationId = `correlation_${options.expectedResolvedBy}_canary_${identity}`;
   const eventId = makeStableEventId({
     machineId: options.machineId,
     harness: "codex",
@@ -173,19 +201,19 @@ export async function runTelegramCanary(
     sequence,
     sourceFingerprint: identity,
   });
-  const instruction = `Agent Relay Telegram round-trip canary: reply to this message with ${TELEGRAM_CANARY_REPLY}.`;
+  const instruction = `Agent Relay ${options.transportLabel} round-trip canary: reply to this message with ${TELEGRAM_CANARY_REPLY}.`;
   const event: AgentAttentionEventV1 = {
     schema: "agent-attention.v1",
     eventId,
     occurredAt: now.toISOString(),
     sequence,
     machineId: options.machineId,
-    bridgeSessionId: `bridge_telegram_canary_${identity}`,
+    bridgeSessionId: `bridge_${options.expectedResolvedBy}_canary_${identity}`,
     harness: "codex",
     surface: "cli",
     harnessVersion: "activation-canary",
     sessionId,
-    turnId: `turn_telegram_canary_${identity}`,
+    turnId: `turn_${options.expectedResolvedBy}_canary_${identity}`,
     project: makeProjectRef(options.projectPath),
     type: "input.required",
     summary: instruction,
@@ -249,10 +277,10 @@ export async function runTelegramCanary(
       drain,
     };
   }
-  const outcome: TelegramCanaryOutcome =
+  const outcome: InteractiveCanaryOutcome =
     request.state === "answered" &&
-    request.resolvedBy === "telegram" &&
-    request.answer?.trim() !== TELEGRAM_CANARY_REPLY
+    (request.resolvedBy !== options.expectedResolvedBy ||
+      request.answer?.trim() !== TELEGRAM_CANARY_REPLY)
       ? "unexpected-answer"
       : request.state === "open"
         ? "timeout"
@@ -267,4 +295,24 @@ export async function runTelegramCanary(
       ? {}
       : { resolvedBy: request.resolvedBy }),
   };
+}
+
+export async function runTelegramCanary(
+  options: TelegramCanaryOptions,
+): Promise<TelegramCanaryResult> {
+  return await runInteractiveCanary({
+    ...options,
+    expectedResolvedBy: "telegram",
+    transportLabel: "Telegram",
+  });
+}
+
+export async function runWhooshBangCanary(
+  options: TelegramCanaryOptions,
+): Promise<InteractiveCanaryResult> {
+  return await runInteractiveCanary({
+    ...options,
+    expectedResolvedBy: "whooshbang",
+    transportLabel: "WhooshBang",
+  });
 }

@@ -21,7 +21,7 @@ import { clearTimeout, setTimeout } from "node:timers";
 import { pathToFileURL, URL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
-const { fetch, Headers, Request } = globalThis;
+const { fetch, Headers, Request, URLSearchParams } = globalThis;
 const release = JSON.parse(
   await readFile(resolve(root, "packaging/release.json"), "utf8"),
 );
@@ -671,6 +671,555 @@ async function startAdaptiveWhooshBangMock(modules) {
   };
 }
 
+function sendJson(outgoing, value, status = 200, headers = {}) {
+  outgoing.statusCode = status;
+  outgoing.setHeader("content-type", "application/json");
+  outgoing.setHeader("cache-control", "no-store");
+  for (const [name, headerValue] of Object.entries(headers)) {
+    outgoing.setHeader(name, headerValue);
+  }
+  outgoing.end(JSON.stringify(value));
+}
+
+async function startPackedOAuthWhooshBangMock(modules) {
+  const oauthScopes = ["projects:read", "machine-clients:write"];
+  const machineScopes = [
+    "machine-messages:write",
+    "machine-messages:read",
+    "machine-events:read",
+    "machine-events:ack",
+  ];
+  const environmentId = "environment_packed_oauth_test";
+  const projectSlug = "packed-oauth-project";
+  const clientId = `oauth_client_${randomBytes(18).toString("base64url")}`;
+  const authorizationCode = `oauth_code_${randomBytes(24).toString("base64url")}`;
+  const accessToken = `oauth_access_${randomBytes(32).toString("base64url")}`;
+  const calls = {
+    authorize: 0,
+    create: 0,
+    discovery: 0,
+    initialize: 0,
+    list: 0,
+    poll: 0,
+    register: 0,
+    token: 0,
+  };
+  let authorizationUrl;
+  let baseUrl;
+  let challenge;
+  let narrowBearer;
+  let redirectUri;
+  let registration;
+  let state;
+  let verifier;
+  let serverFailure;
+
+  for (const value of [
+    environmentId,
+    projectSlug,
+    clientId,
+    authorizationCode,
+    accessToken,
+  ]) {
+    sensitiveValues.add(value);
+  }
+
+  const requireOAuthBearer = (incoming) => {
+    assert(
+      incoming.headers.authorization === `Bearer ${accessToken}`,
+      "packed OAuth MCP request did not use its transient access token",
+    );
+  };
+
+  const server = createServer((incoming, outgoing) => {
+    void (async () => {
+      try {
+        const body = await readIncomingBody(incoming);
+        const url = new URL(incoming.url ?? "/", baseUrl);
+        if (
+          incoming.method === "GET" &&
+          url.pathname === "/.well-known/oauth-authorization-server"
+        ) {
+          calls.discovery += 1;
+          sendJson(outgoing, {
+            authorization_endpoint: `${baseUrl}/oauth/authorize`,
+            code_challenge_methods_supported: ["S256"],
+            registration_endpoint: `${baseUrl}/oauth/register`,
+            token_endpoint: `${baseUrl}/oauth/token`,
+          });
+          return;
+        }
+        if (incoming.method === "POST" && url.pathname === "/oauth/register") {
+          calls.register += 1;
+          const request = parseJson(
+            body?.toString("utf8") ?? "",
+            "packed OAuth registration",
+          );
+          assertEqual(
+            Object.keys(request).sort(),
+            [
+              "client_name",
+              "grant_types",
+              "redirect_uris",
+              "response_types",
+              "token_endpoint_auth_method",
+            ],
+            "packed OAuth registration sent unexpected fields",
+          );
+          assertEqual(
+            {
+              client_name: request.client_name,
+              grant_types: request.grant_types,
+              response_types: request.response_types,
+              token_endpoint_auth_method: request.token_endpoint_auth_method,
+            },
+            {
+              client_name: "Agent Relay",
+              grant_types: ["authorization_code"],
+              response_types: ["code"],
+              token_endpoint_auth_method: "none",
+            },
+            "packed OAuth registration was not an exact public client",
+          );
+          assert(
+            Array.isArray(request.redirect_uris) &&
+              request.redirect_uris.length === 1,
+            "packed OAuth registration did not use one loopback callback",
+          );
+          const callback = new URL(request.redirect_uris[0]);
+          assert(
+            callback.protocol === "http:" &&
+              callback.hostname === "127.0.0.1" &&
+              callback.port.length > 0 &&
+              callback.pathname === "/oauth/callback" &&
+              callback.username === "" &&
+              callback.password === "" &&
+              callback.search === "" &&
+              callback.hash === "",
+            "packed OAuth registration callback was not an exact loopback URL",
+          );
+          redirectUri = callback.toString();
+          sensitiveValues.add(redirectUri);
+          sendJson(
+            outgoing,
+            { client_id: clientId, token_endpoint_auth_method: "none" },
+            201,
+          );
+          return;
+        }
+        if (incoming.method === "GET" && url.pathname === "/oauth/authorize") {
+          calls.authorize += 1;
+          assert(
+            redirectUri !== undefined,
+            "packed OAuth authorization raced DCR",
+          );
+          assertEqual(
+            [...url.searchParams.keys()].sort(),
+            [
+              "client_id",
+              "code_challenge",
+              "code_challenge_method",
+              "redirect_uri",
+              "response_type",
+              "scope",
+              "state",
+            ],
+            "packed OAuth authorization URL sent unexpected parameters",
+          );
+          assert(
+            url.searchParams.get("client_id") === clientId &&
+              url.searchParams.get("redirect_uri") === redirectUri &&
+              url.searchParams.get("response_type") === "code" &&
+              url.searchParams.get("scope") === oauthScopes.join(" ") &&
+              url.searchParams.get("code_challenge_method") === "S256",
+            "packed OAuth authorization URL was not exact",
+          );
+          state = url.searchParams.get("state") ?? undefined;
+          challenge = url.searchParams.get("code_challenge") ?? undefined;
+          assert(
+            state !== undefined &&
+              /^[A-Za-z0-9_-]{43}$/u.test(state) &&
+              challenge !== undefined &&
+              /^[A-Za-z0-9_-]{43}$/u.test(challenge) &&
+              !url.searchParams.has("code_verifier"),
+            "packed OAuth authorization did not use opaque state and S256",
+          );
+          authorizationUrl = url.toString();
+          for (const value of [state, challenge, authorizationUrl]) {
+            sensitiveValues.add(value);
+          }
+          const callback = new URL(redirectUri);
+          callback.searchParams.set("code", authorizationCode);
+          callback.searchParams.set("state", state);
+          outgoing.statusCode = 302;
+          outgoing.setHeader("cache-control", "no-store");
+          outgoing.setHeader("location", callback.toString());
+          outgoing.end();
+          return;
+        }
+        if (incoming.method === "POST" && url.pathname === "/oauth/token") {
+          calls.token += 1;
+          assert(redirectUri !== undefined && challenge !== undefined);
+          const parameters = new URLSearchParams(body?.toString("utf8"));
+          assertEqual(
+            [...parameters.keys()].sort(),
+            [
+              "client_id",
+              "code",
+              "code_verifier",
+              "grant_type",
+              "redirect_uri",
+            ],
+            "packed OAuth token exchange sent unexpected fields",
+          );
+          verifier = parameters.get("code_verifier") ?? undefined;
+          assert(
+            parameters.get("client_id") === clientId &&
+              parameters.get("code") === authorizationCode &&
+              parameters.get("grant_type") === "authorization_code" &&
+              parameters.get("redirect_uri") === redirectUri &&
+              verifier !== undefined &&
+              /^[A-Za-z0-9_-]{43}$/u.test(verifier) &&
+              createHash("sha256").update(verifier).digest("base64url") ===
+                challenge,
+            "packed OAuth token exchange did not prove PKCE",
+          );
+          sensitiveValues.add(verifier);
+          sendJson(outgoing, {
+            access_token: accessToken,
+            scope: oauthScopes.join(" "),
+            token_type: "Bearer",
+          });
+          return;
+        }
+        if (incoming.method === "POST" && url.pathname === "/mcp") {
+          requireOAuthBearer(incoming);
+          const message = parseJson(
+            body?.toString("utf8") ?? "",
+            "packed OAuth MCP request",
+          );
+          assert(
+            message.jsonrpc === "2.0",
+            "packed OAuth MCP version was invalid",
+          );
+          if (message.method === "initialize") {
+            calls.initialize += 1;
+            assertEqual(
+              message.params,
+              {
+                capabilities: {},
+                clientInfo: { name: "agent-relay", version: "0.1.0" },
+                protocolVersion: "2025-11-25",
+              },
+              "packed OAuth MCP initialize was not exact",
+            );
+            sendJson(outgoing, {
+              id: message.id,
+              jsonrpc: "2.0",
+              result: {
+                capabilities: { tools: {} },
+                protocolVersion: "2025-11-25",
+                serverInfo: { name: "whooshbang", version: "synthetic" },
+              },
+            });
+            return;
+          }
+          assert(
+            message.method === "tools/call",
+            "packed OAuth MCP used an unexpected method",
+          );
+          if (message.params?.name === "whooshbang_list_context") {
+            calls.list += 1;
+            assertEqual(
+              message.params.arguments,
+              {},
+              "packed OAuth context request was not the first bounded page",
+            );
+            sendJson(outgoing, {
+              id: message.id,
+              jsonrpc: "2.0",
+              result: {
+                structuredContent: {
+                  granted_scopes: oauthScopes,
+                  projects: [
+                    {
+                      environments: [
+                        {
+                          environment: "test",
+                          environment_id: environmentId,
+                          status: "active",
+                        },
+                      ],
+                      project_id: PROJECT_ID,
+                      slug: projectSlug,
+                      status: "active",
+                    },
+                  ],
+                },
+              },
+            });
+            return;
+          }
+          if (message.params?.name === "whooshbang_create_machine_client") {
+            calls.create += 1;
+            const argumentsValue = message.params.arguments;
+            assertEqual(
+              Object.keys(argumentsValue).sort(),
+              [
+                "credential_id",
+                "environment",
+                "machine_id",
+                "notifier_id",
+                "project_id",
+                "secret_sha256",
+                "subscriber_id",
+              ],
+              "packed OAuth machine bootstrap sent unexpected arguments",
+            );
+            assert(
+              argumentsValue.project_id === PROJECT_ID &&
+                argumentsValue.environment === "test" &&
+                argumentsValue.machine_id === MACHINE_ID &&
+                argumentsValue.notifier_id === NOTIFIER_ID &&
+                argumentsValue.subscriber_id === SUBSCRIBER_ID &&
+                /^mcred_[A-Za-z0-9_-]{21}[AQgw]$/u.test(
+                  argumentsValue.credential_id,
+                ) &&
+                /^sha256:[a-f0-9]{64}$/u.test(argumentsValue.secret_sha256),
+              "packed OAuth machine bootstrap was not digest-only and exact",
+            );
+            const serialized = JSON.stringify(argumentsValue);
+            assert(
+              !serialized.includes(accessToken) &&
+                !serialized.includes(authorizationCode) &&
+                !Object.keys(argumentsValue).some(
+                  (key) =>
+                    key !== "secret_sha256" &&
+                    /bearer|secret|token|authorization/iu.test(key),
+                ),
+              "packed OAuth machine bootstrap crossed a secret boundary",
+            );
+            registration = {
+              credentialId: argumentsValue.credential_id,
+              secretSha256: argumentsValue.secret_sha256,
+            };
+            sensitiveValues.add(registration.credentialId);
+            sensitiveValues.add(registration.secretSha256);
+            sendJson(outgoing, {
+              id: message.id,
+              jsonrpc: "2.0",
+              result: {
+                structuredContent: {
+                  binding_id: BINDING_ID,
+                  credential: {
+                    created_at: "2026-08-10T14:00:00.000Z",
+                    credential_id: registration.credentialId,
+                    registered_by: "machine",
+                    scope_summary: machineScopes,
+                    status: "active",
+                  },
+                  environment: "test",
+                  environment_id: environmentId,
+                  machine_client_id: MACHINE_CLIENT_ID,
+                  machine_id: MACHINE_ID,
+                  notifier_id: NOTIFIER_ID,
+                  project_id: PROJECT_ID,
+                  scope_summary: machineScopes,
+                  status: "active",
+                  subscriber_id: SUBSCRIBER_ID,
+                },
+              },
+            });
+            return;
+          }
+          throw new Error("packed OAuth MCP invoked an unexpected tool");
+        }
+        if (
+          incoming.method === "GET" &&
+          url.pathname === "/v1/machine-events"
+        ) {
+          calls.poll += 1;
+          assert(
+            registration !== undefined &&
+              url.searchParams.get("limit") === "1" &&
+              url.searchParams.get("wait") === "0",
+            "packed OAuth narrow poll was not bounded",
+          );
+          const authorization = incoming.headers.authorization ?? "";
+          const bearer = /^Bearer (.+)$/u.exec(authorization)?.[1];
+          assert(
+            bearer !== undefined && bearer !== accessToken,
+            "packed OAuth narrow poll reused administrative authority",
+          );
+          assert(
+            await modules.verifyMachineCredentialToken(bearer, registration),
+            "packed OAuth narrow poll did not use the generated machine bearer",
+          );
+          narrowBearer = bearer;
+          sensitiveValues.add(bearer);
+          sendJson(outgoing, {
+            committed_cursor: null,
+            events: [],
+            schema: "whooshbang.machine-events.v1",
+            server_time: "2026-08-10T14:00:01.000Z",
+          });
+          return;
+        }
+        sendJson(outgoing, { error: "not found" }, 404);
+      } catch (error) {
+        serverFailure = error;
+        if (!outgoing.destroyed) {
+          sendJson(outgoing, { error: "packed OAuth mock failed safely" }, 500);
+        }
+      }
+    })();
+  });
+  await new Promise((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolvePromise);
+  });
+  const address = server.address();
+  assert(
+    address !== null && typeof address !== "string",
+    "packed OAuth loopback mock did not bind",
+  );
+  baseUrl = `http://127.0.0.1:${String(address.port)}`;
+
+  return {
+    baseUrl,
+    close: async () =>
+      await new Promise((resolvePromise, reject) => {
+        server.close((error) => {
+          if (error === undefined) {
+            resolvePromise();
+          } else {
+            reject(error);
+          }
+        });
+        server.closeAllConnections();
+      }),
+    registration: () => registration,
+    narrowBearer: () => narrowBearer,
+    privateValues: () =>
+      [
+        clientId,
+        authorizationCode,
+        accessToken,
+        environmentId,
+        projectSlug,
+        authorizationUrl,
+        redirectUri,
+        state,
+        challenge,
+        verifier,
+        registration?.credentialId,
+        registration?.secretSha256,
+        narrowBearer,
+      ].filter((value) => value !== undefined),
+    assertHealthy() {
+      if (serverFailure !== undefined) {
+        throw new Error(
+          "packed OAuth loopback mock recorded an internal failure",
+          {
+            cause: serverFailure,
+          },
+        );
+      }
+      assertEqual(
+        calls,
+        {
+          authorize: 1,
+          create: 1,
+          discovery: 1,
+          initialize: 1,
+          list: 1,
+          poll: 1,
+          register: 1,
+          token: 1,
+        },
+        "packed default OAuth flow did not cross every boundary exactly once",
+      );
+      assert(
+        registration !== undefined &&
+          narrowBearer !== undefined &&
+          verifier !== undefined,
+        "packed default OAuth flow did not retain its narrow proof",
+      );
+    },
+  };
+}
+
+function packedOAuthBrowserPreloadSource() {
+  return `
+import { createRequire, syncBuiltinESMExports } from "node:module";
+const require = createRequire(import.meta.url);
+const childProcess = require("node:child_process");
+const originalSpawn = childProcess.spawn;
+const helper = process.env.AGENT_RELAY_PACKED_OAUTH_BROWSER_HELPER;
+if (helper === undefined || helper.length === 0) {
+  throw new Error("packed OAuth browser helper is unavailable");
+}
+childProcess.spawn = function (command, args, options) {
+  if (
+    command === "/usr/bin/osascript" &&
+    Array.isArray(args) &&
+    args.length === 1 &&
+    args[0] === "-"
+  ) {
+    return originalSpawn(process.execPath, [helper], options);
+  }
+  return originalSpawn(command, args, options);
+};
+syncBuiltinESMExports();
+`;
+}
+
+function packedOAuthBrowserHelperSource(expectedOrigin, markerPath) {
+  return `
+import { writeFile } from "node:fs/promises";
+let script = "";
+for await (const chunk of process.stdin) {
+  script += String(chunk);
+  if (script.length > 16_384) process.exit(1);
+}
+const line = script.endsWith("\\n") ? script.slice(0, -1) : script;
+const prefix = 'open location "';
+if (!line.startsWith(prefix) || !line.endsWith('"')) process.exit(1);
+const authorizationUrl = new URL(line.slice(prefix.length, -1));
+if (
+  authorizationUrl.origin !== ${JSON.stringify(expectedOrigin)} ||
+  authorizationUrl.pathname !== "/oauth/authorize" ||
+  authorizationUrl.username !== "" ||
+  authorizationUrl.password !== "" ||
+  authorizationUrl.hash !== ""
+) process.exit(1);
+const expectedCallback = new URL(authorizationUrl.searchParams.get("redirect_uri"));
+const authorization = await fetch(authorizationUrl, {
+  redirect: "manual",
+  signal: AbortSignal.timeout(10_000),
+});
+if (authorization.status !== 302) process.exit(1);
+const callback = new URL(authorization.headers.get("location"));
+if (
+  callback.origin !== expectedCallback.origin ||
+  callback.pathname !== expectedCallback.pathname ||
+  callback.protocol !== "http:" ||
+  callback.hostname !== "127.0.0.1" ||
+  callback.username !== "" ||
+  callback.password !== "" ||
+  callback.hash !== "" ||
+  callback.searchParams.get("state") !== authorizationUrl.searchParams.get("state") ||
+  callback.searchParams.get("code") === null
+) process.exit(1);
+const completed = await fetch(callback, {
+  redirect: "manual",
+  signal: AbortSignal.timeout(10_000),
+});
+if (completed.status !== 200) process.exit(1);
+await writeFile(${JSON.stringify(markerPath)}, "ok\\n", { mode: 0o600 });
+`;
+}
+
 function proofEvent(kind, index, privateValues) {
   const now = new Date();
   const suffix = `${kind}_${String(index).padStart(2, "0")}`;
@@ -909,7 +1458,9 @@ if (process.platform !== "darwin") {
   let recoveryDaemon;
   let fakeDaemon;
   let telegramDaemon;
+  let oauthMock;
   let whooshbangMock;
+  let oauthPrivateValues;
   const daemonOutputs = [];
   try {
     const tarball = resolve(temporaryRoot, "agent-relay.tgz");
@@ -988,6 +1539,188 @@ if (process.platform !== "darwin") {
 
     const modules = await loadWhooshBangEvidenceModules();
     sensitiveValues.add(modules.CONTRACT_MOCK_FIXTURE_CREDENTIALS.projectTest);
+
+    const oauthStateDirectory = resolve(
+      isolatedHome,
+      ".agent-relay-packed-oauth",
+    );
+    await mkdir(oauthStateDirectory, { recursive: true, mode: 0o700 });
+    await chmod(oauthStateDirectory, 0o700);
+    await writeFile(
+      resolve(oauthStateDirectory, "machine-id"),
+      `${MACHINE_ID}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+    await chmod(resolve(oauthStateDirectory, "machine-id"), 0o600);
+    oauthMock = await startPackedOAuthWhooshBangMock(modules);
+    const oauthBrowserMarker = resolve(
+      temporaryRoot,
+      "packed-oauth-browser-completed",
+    );
+    const oauthBrowserPreload = resolve(
+      temporaryRoot,
+      "packed-oauth-browser-preload.mjs",
+    );
+    const oauthBrowserHelper = resolve(
+      temporaryRoot,
+      "packed-oauth-browser-helper.mjs",
+    );
+    await writeFile(oauthBrowserPreload, packedOAuthBrowserPreloadSource(), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await writeFile(
+      oauthBrowserHelper,
+      packedOAuthBrowserHelperSource(oauthMock.baseUrl, oauthBrowserMarker),
+      { encoding: "utf8", mode: 0o600 },
+    );
+    const oauthEnvironment = safeRuntimeEnvironment({
+      home: isolatedHome,
+      prefix,
+      stateDirectory: oauthStateDirectory,
+      extra: {
+        AGENT_RELAY_PACKED_OAUTH_BROWSER_HELPER: oauthBrowserHelper,
+        AGENT_RELAY_WHOOSHBANG_BASE_URL: oauthMock.baseUrl,
+        AGENT_RELAY_WHOOSHBANG_ENVIRONMENT: "test",
+        AGENT_RELAY_WHOOSHBANG_NOTIFIER_ID: NOTIFIER_ID,
+        AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID: SUBSCRIBER_ID,
+        NODE_OPTIONS: `--import=${oauthBrowserPreload}`,
+      },
+    });
+    assert(
+      oauthEnvironment.AGENT_RELAY_WHOOSHBANG_PROJECT_CREDENTIAL ===
+        undefined &&
+        oauthEnvironment.AGENT_RELAY_WHOOSHBANG_PROJECT_SELECTOR === undefined,
+      "packed default OAuth proof inherited legacy authority or a private selector",
+    );
+    const oauthConnect = await run(binary, ["whooshbang", "connect"], {
+      env: oauthEnvironment,
+      temporaryRoot,
+      timeoutMs: 30_000,
+    });
+    const oauthConnected = parseJson(
+      oauthConnect.stdout,
+      "packed default OAuth connect",
+    );
+    assert(
+      oauthConnected.status === "connected" &&
+        oauthConnected.configured === true &&
+        oauthConnected.credentialPresent === true &&
+        oauthConnected.canary === "pending" &&
+        oauthConnected.canaryRef === null &&
+        oauthConnected.authorization === "oauth-authorization-code-s256" &&
+        oauthConnected.oauthScopeCount === 2 &&
+        oauthConnected.mcpProtocolVersion === "2025-11-25" &&
+        oauthConnected.projectResolvedBy === "only-active" &&
+        oauthConnected.machineScopeCount === 4,
+      "installed packed CLI default OAuth path did not complete safely",
+    );
+    oauthMock.assertHealthy();
+    assert(
+      await exists(oauthBrowserMarker),
+      "packed OAuth browser helper did not complete the loopback callback",
+    );
+    const oauthRegistration = oauthMock.registration();
+    const oauthNarrowBearer = oauthMock.narrowBearer();
+    assert(
+      oauthRegistration !== undefined && oauthNarrowBearer !== undefined,
+      "packed OAuth proof did not retain its generated narrow credential",
+    );
+    const oauthCredentialPath = resolve(
+      oauthStateDirectory,
+      "whooshbang-credential.json",
+    );
+    const oauthConfigurationPath = resolve(
+      oauthStateDirectory,
+      "whooshbang.json",
+    );
+    const [
+      oauthStateMetadata,
+      oauthMachineIdMetadata,
+      oauthCredentialMetadata,
+      oauthConfigurationMetadata,
+      oauthMarkerMetadata,
+    ] = await Promise.all([
+      stat(oauthStateDirectory),
+      stat(resolve(oauthStateDirectory, "machine-id")),
+      stat(oauthCredentialPath),
+      stat(oauthConfigurationPath),
+      stat(oauthBrowserMarker),
+    ]);
+    assert(
+      (oauthStateMetadata.mode & 0o777) === 0o700 &&
+        [
+          oauthMachineIdMetadata,
+          oauthCredentialMetadata,
+          oauthConfigurationMetadata,
+          oauthMarkerMetadata,
+        ].every((metadata) => (metadata.mode & 0o777) === 0o600),
+      "packed OAuth state was not retained with exact private modes",
+    );
+    const oauthCredentialFile = await readFile(oauthCredentialPath, "utf8");
+    const oauthConfigurationFile = await readFile(
+      oauthConfigurationPath,
+      "utf8",
+    );
+    oauthPrivateValues = oauthMock.privateValues();
+    const transientOAuthValues = oauthPrivateValues.filter(
+      (value) =>
+        value !== oauthNarrowBearer && value !== oauthRegistration.credentialId,
+    );
+    assert(
+      oauthCredentialFile.includes(oauthNarrowBearer) &&
+        !oauthCredentialFile.includes(oauthRegistration.secretSha256) &&
+        !oauthConfigurationFile.includes(oauthNarrowBearer) &&
+        !oauthConfigurationFile.includes(oauthRegistration.secretSha256) &&
+        !(await exists(
+          resolve(oauthStateDirectory, "whooshbang-oauth-provisioning.json"),
+        )),
+      "packed OAuth secret custody crossed its storage boundary",
+    );
+    assertAbsent(
+      `${oauthCredentialFile}\n${oauthConfigurationFile}`,
+      transientOAuthValues,
+      "packed OAuth retained state",
+    );
+    assertAbsent(
+      `${oauthConnect.stdout}\n${oauthConnect.stderr}`,
+      [
+        ...oauthPrivateValues,
+        SUBSCRIBER_ID,
+        MACHINE_ID,
+        MACHINE_CLIENT_ID,
+        BINDING_ID,
+        PROJECT_ID,
+        ACCOUNT_ID,
+      ],
+      "packed default OAuth connect output",
+    );
+    const oauthStatus = await run(binary, ["whooshbang", "status"], {
+      env: safeRuntimeEnvironment({
+        home: isolatedHome,
+        prefix,
+        stateDirectory: oauthStateDirectory,
+      }),
+      temporaryRoot,
+    });
+    const oauthStatusValue = parseJson(
+      oauthStatus.stdout,
+      "packed default OAuth status",
+    );
+    assert(
+      oauthStatusValue.configured === true &&
+        oauthStatusValue.credentialPresent === true &&
+        oauthStatusValue.canaryRef === null,
+      "packed default OAuth status did not report safe local readiness",
+    );
+    assertAbsent(
+      `${oauthStatus.stdout}\n${oauthStatus.stderr}`,
+      [...oauthPrivateValues, SUBSCRIBER_ID, MACHINE_ID, MACHINE_CLIENT_ID],
+      "packed default OAuth status output",
+    );
+    await oauthMock.close();
+    oauthMock = undefined;
+
     whooshbangMock = await startAdaptiveWhooshBangMock(modules);
     await writeFile(resolve(stateDirectory, "machine-id"), `${MACHINE_ID}\n`, {
       encoding: "utf8",
@@ -1458,8 +2191,17 @@ if (process.platform !== "darwin") {
     assert(
       directCanary.outcome === "answered" &&
         directCanary.resolvedBy === "telegram" &&
-        directCanary.drain?.delivered === 1,
-      "packed direct Telegram canary did not complete one round trip",
+        directCanary.drain?.retrying === 0 &&
+        directCanary.drain?.deadLettered === 0,
+      `packed direct Telegram canary did not complete one round trip: ${JSON.stringify(
+        {
+          outcome: directCanary.outcome,
+          resolvedBy: directCanary.resolvedBy,
+          delivered: directCanary.drain?.delivered,
+          retrying: directCanary.drain?.retrying,
+          deadLettered: directCanary.drain?.deadLettered,
+        },
+      )}`,
     );
     await telegramDaemon.stop();
     daemonOutputs.push(telegramDaemon.output());
@@ -1516,6 +2258,7 @@ if (process.platform !== "darwin") {
       TELEGRAM_TOKEN,
       TELEGRAM_CHAT_ID,
       TELEGRAM_OPERATOR_ID,
+      ...oauthPrivateValues,
       ...(rawCursor === undefined ? [] : [rawCursor]),
       ...hostedMessageIds,
       ...hostedEventIds,
@@ -1572,6 +2315,7 @@ if (process.platform !== "darwin") {
           contractVersion: "1.0.0-rc.12",
           contractLockSha256: lockSha256,
           exactArtifacts: notificationArtifacts.length,
+          oauthBootstrap: "packed-default-synthetic-passed",
           setup: "narrow-credential-proven",
           interactions: ["confirm", "select", "input"],
           crashBeforeAckReplay: "passed",
@@ -1596,6 +2340,7 @@ if (process.platform !== "darwin") {
         await daemon.exited.catch(() => undefined);
       }
     }
+    await oauthMock?.close().catch(() => undefined);
     await whooshbangMock?.close().catch(() => undefined);
     await rm(temporaryRoot, {
       recursive: true,

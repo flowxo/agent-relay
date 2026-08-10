@@ -21,11 +21,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   eraseWhooshBangConnection,
   markWhooshBangDisconnected,
+  recordWhooshBangCanary,
   whooshbangConnectionPaths,
   WhooshBangConnectionConfigurationSchema,
   WhooshBangMachineCredentialSchema,
   readWhooshBangConnection,
   safeWhooshBangConnectionSummary,
+  updateWhooshBangConfiguration,
   writeWhooshBangConnection,
 } from "./whooshbang-config.js";
 
@@ -270,9 +272,11 @@ describe("WhooshBang private configuration", () => {
 
     expect(summary).toEqual({
       apiOrigin: "https://whooshbang.example.test",
+      canaryEvidence: null,
       canaryRef: expect.stringMatching(/^[a-f0-9]{12}$/u),
       configured: true,
       contractVersion: "1.0.0-rc.12",
+      credentialGeneration: 1,
       credentialPresent: true,
       environment: "test",
       machineClientRef: expect.stringMatching(/^[a-f0-9]{12}$/u),
@@ -283,6 +287,130 @@ describe("WhooshBang private configuration", () => {
     expect(serialized).not.toContain(stored.configuration.subscriberId);
     expect(serialized).not.toContain(stored.configuration.notifierId);
     expect(serialized).not.toContain(material.bearerToken);
+  });
+
+  it("stores OAuth bootstrap state before a canary and records proof atomically", async () => {
+    const directory = await temporaryDirectory();
+    const paths = whooshbangConnectionPaths(directory);
+    const material = await createMachineCredentialMaterial();
+    const withoutCanary = WhooshBangConnectionConfigurationSchema.parse({
+      ...configuration(material),
+      canaryMessageId: undefined,
+      canaryDiagnosticId: undefined,
+    });
+
+    await writeWhooshBangConnection(paths, withoutCanary, credential(material));
+    const before = await readWhooshBangConnection(paths);
+    expect(before?.configuration.canaryMessageId).toBeUndefined();
+    expect(
+      before === undefined
+        ? undefined
+        : safeWhooshBangConnectionSummary(before),
+    ).toMatchObject({
+      canaryRef: null,
+    });
+
+    await recordWhooshBangCanary(paths, {
+      committedCursorRef: "cursor_0123456789ab",
+      completedAt: new Date("2026-08-10T18:20:02.000Z"),
+      connectedAt: withoutCanary.connectedAt,
+      credentialGeneration: 1,
+      credentialId: material.credentialId,
+      diagnosticId: "diagnostic_oauth_hosted_canary",
+      lastSuccessfulPollAt: "2026-08-10T18:20:01.000Z",
+      lastSuccessfulSendAt: "2026-08-10T18:20:00.000Z",
+      messageId: "message_oauth_hosted_canary",
+    });
+    const after = await readWhooshBangConnection(paths);
+    expect(after?.configuration).toMatchObject({
+      canaryMessageId: "message_oauth_hosted_canary",
+      canaryDiagnosticId: "diagnostic_oauth_hosted_canary",
+    });
+    expect(
+      after === undefined ? undefined : safeWhooshBangConnectionSummary(after),
+    ).toMatchObject({
+      canaryEvidence: {
+        committedCursorRef: "cursor_0123456789ab",
+        credentialGeneration: 1,
+      },
+      canaryRef: expect.stringMatching(/^[a-f0-9]{12}$/u),
+    });
+  });
+
+  it("cannot restore an active connection after a concurrent disconnect", async () => {
+    const directory = await temporaryDirectory();
+    const paths = whooshbangConnectionPaths(directory);
+    const material = await createMachineCredentialMaterial();
+    const active = configuration(material);
+    await writeWhooshBangConnection(paths, active, credential(material));
+    await markWhooshBangDisconnected(paths, {
+      at: new Date("2026-08-10T18:20:00.000Z"),
+      revoked: false,
+    });
+
+    await expect(
+      recordWhooshBangCanary(paths, {
+        committedCursorRef: "cursor_0123456789ab",
+        completedAt: new Date("2026-08-10T18:20:02.000Z"),
+        connectedAt: active.connectedAt,
+        credentialGeneration: 1,
+        credentialId: material.credentialId,
+        diagnosticId: "diagnostic_racing_canary",
+        lastSuccessfulPollAt: "2026-08-10T18:20:01.000Z",
+        lastSuccessfulSendAt: "2026-08-10T18:20:00.000Z",
+        messageId: "message_racing_canary",
+      }),
+    ).rejects.toThrow("changed before canary proof");
+    await expect(readWhooshBangConnection(paths)).resolves.toMatchObject({
+      configuration: { status: "disconnected" },
+    });
+  });
+
+  it("rejects a stale configuration generation after disconnect", async () => {
+    const directory = await temporaryDirectory();
+    const paths = whooshbangConnectionPaths(directory);
+    const material = await createMachineCredentialMaterial();
+    const active = configuration(material);
+    await writeWhooshBangConnection(paths, active, credential(material));
+    await markWhooshBangDisconnected(paths, {
+      at: new Date("2026-08-10T18:20:00.000Z"),
+      revoked: false,
+    });
+
+    await expect(
+      updateWhooshBangConfiguration(
+        paths,
+        WhooshBangConnectionConfigurationSchema.parse({
+          ...active,
+          pendingRevocations: [
+            {
+              credentialId: material.credentialId,
+              machineClientId: active.machineClientId,
+              recordedAt: "2026-08-10T18:20:01.000Z",
+            },
+          ],
+        }),
+        {
+          connectedAt: active.connectedAt,
+          credentialGeneration: 1,
+          credentialId: material.credentialId,
+          status: "active",
+        },
+      ),
+    ).rejects.toThrow("changed before its configuration update");
+    await expect(readWhooshBangConnection(paths)).resolves.toMatchObject({
+      configuration: { pendingRevocations: [], status: "disconnected" },
+    });
+  });
+
+  it("rejects partially recorded canary proof", async () => {
+    const material = await createMachineCredentialMaterial();
+    expect(() =>
+      WhooshBangConnectionConfigurationSchema.parse({
+        ...configuration(material),
+        canaryDiagnosticId: undefined,
+      }),
+    ).toThrow("must be recorded together");
   });
 
   it("erases only explicitly selected retained files", async () => {

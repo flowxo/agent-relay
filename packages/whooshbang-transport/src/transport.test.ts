@@ -360,6 +360,82 @@ describe("WhooshBang contract transport", () => {
     expect(mock.inspect().messages).toHaveLength(1);
   });
 
+  it("bounds hosted diagnosis after an answer without reflecting private identity", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason),
+            { once: true },
+          );
+        }),
+    );
+    const transport = transportFor(createWhooshBangContractMock(), fetchMock);
+    const failure = await transport
+      .diagnoseMessage("message_private_diagnostic", { timeoutMs: 10 })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).not.toContain(
+      "message_private_diagnostic",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects hosted diagnosis for any message identity other than the requested one", async () => {
+    const mock = createWhooshBangContractMock();
+    const mismatchedMessageId = "message_private_mismatched_identity";
+    const privateDiagnosticId = "diagnostic_private_mismatched_identity";
+    const fetchMock: typeof fetch = async (input, init) => {
+      const request = new Request(input, init);
+      const response = await fetchFor(mock)(request);
+      if (request.method !== "GET") {
+        return response;
+      }
+      const body = (await response.json()) as Record<string, unknown>;
+      const headers = new Headers(response.headers);
+      headers.delete("content-length");
+      return new Response(
+        JSON.stringify({
+          ...body,
+          diagnostic_id: privateDiagnosticId,
+          id: mismatchedMessageId,
+        }),
+        { headers, status: response.status },
+      );
+    };
+    const transport = transportFor(mock, fetchMock);
+    const message = delivery();
+    const receipt = await transport.deliver(message, {
+      idempotencyKey: message.eventId,
+    });
+
+    const failure = await transport
+      .diagnoseMessage(receipt.messageId)
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      code: "whooshbang-local-identity-mismatch",
+      disposition: "terminal",
+      retryable: false,
+    });
+    expect(failure).toMatchObject({
+      diagnosticId: undefined,
+      hostedMessageId: undefined,
+    });
+    const serialized = JSON.stringify(
+      failure,
+      Object.getOwnPropertyNames(failure as object),
+    );
+    expect(serialized).not.toContain(receipt.messageId);
+    expect(serialized).not.toContain(mismatchedMessageId);
+    expect(serialized).not.toContain(privateDiagnosticId);
+    expect(transport.getHostedDeliveryIdentity(message.eventId)).toMatchObject({
+      messageId: receipt.messageId,
+    });
+  });
+
   it("rejects any idempotency key other than the stable event ID before fetch", async () => {
     const mock = createWhooshBangContractMock();
     const fetchMock = vi.fn(fetchFor(mock));

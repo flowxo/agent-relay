@@ -366,9 +366,9 @@
   implementation projects. AR1 is Completed with FXO-1141 through FXO-1149 and
   all five milestones at 100%. AR2 is complete with FXO-1150 through FXO-1155
   green against the executable RC mock and packed artifact. C0-09 is Done with
-  decision `go`; AR3 now waits for the Notifications-owned real machine-client
-  environment and bounded-canary authorization. AR4 follows dogfood evidence.
-  Post-V1 hosted fleet explorations remain separate.
+  decision `go`; AR3 has started with the authorized FXO-1156 staging journey,
+  and FXO-1157 is the next hosted dogfood/reliability increment. AR4 follows
+  dogfood evidence. Post-V1 hosted fleet explorations remain separate.
 - C0-07 (FXO-1048), C0-08 (FXO-1049), and C0-09 (FXO-1050) are Done. Agent Relay
   pins and verifies the exact three Notifications `1.0.0-rc.1` artifacts, runs a
   scripts-disabled clean consumer install, and proves mapping, retry,
@@ -1092,6 +1092,23 @@
   in the FXO-1209 record. An existing hosted connection must be reconnected
   because its retained contract version is deliberately exact. See
   [the FXO-1531 record](projects/notifications-transport-adapter/stories/fxo-1531-revendor-whooshbang-rc12.md).
+- FXO-1156 proves the first AR3 hosted path from the exact packed
+  `@flowxo/agent-relay@0.1.0-alpha.1` candidate at consumer commit
+  `2c5c8f9eba2f9bc72cd72bfda6d18f5c2d2c1cce` and SHA-256
+  `16ef8518abda1d072a3feb077c3fba6c8f2c8dec806425cb8e49211781e58df5`. Browser
+  OAuth used authorization code plus S256 and exactly
+  `projects:read machine-clients:write`; MCP created the narrow identity from a
+  locally generated bearer while WhooshBang received only its credential ID and
+  SHA-256 digest. The readable bearer and all retained state/log files stayed
+  mode `0600`, and no OAuth journal remained. Against staging producer commit
+  `d6afb57687267874d6bea8a155b97affe833fa35`, one bounded send at
+  `2026-08-10T20:10:43.577Z` was answered and resolved through WhooshBang, then
+  polled and acknowledged by `2026-08-10T20:11:40.743Z`. The committed cursor
+  advanced with zero unacknowledged, retrying, or dead-letter items. Live doctor
+  passed the contract, binding, selection, canary, send, poll, acknowledgement,
+  and optional-presentation checks; the pinned contract honestly reports
+  resolution presentation as unsupported. The privacy scan retained no bearer,
+  private binding identity, message content, or full diagnostic identifier.
 
 ## Phase 1 reproduction
 
@@ -1254,12 +1271,13 @@ WhooshBang `contracts@1.0.0-rc.12`, `sdk@1.0.0-rc.13`, and
 `50de931fed8d819d1a70ec27201351b09f0ef251`. Its credential-free consumer proof
 covers the published answer-redaction boundary, acknowledged-event omission, and
 acknowledgement replay from current durable state. WhooshBang's N2-10 and N2-11
-machine routes are now shipped; the next hosted increment is the separately
-approved AR3.1 real-environment canary in FXO-1156. That work must still confirm
-production retention/privacy, subscriber activation and digest verification,
-live delivery/reply/recovery, and deliberate transport switching without putting
-credentials or private content in Git or Linear. npm scope/publication and the
-monitored public security-contact path remain owner-controlled promotion gates.
+machine routes are shipped, and FXO-1156 has now proven the authorized AR3.1
+staging OAuth/bootstrap/send/reply/acknowledgement boundary from the exact
+packed candidate without putting credentials or private content in Git or
+Linear. The next hosted increment is FXO-1157's first sustained
+dogfood/reliability evidence; revalidate it against current Linear state before
+starting it. npm scope/publication and the monitored public security-contact
+path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

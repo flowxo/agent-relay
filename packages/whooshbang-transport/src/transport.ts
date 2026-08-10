@@ -171,12 +171,27 @@ export class WhooshBangContractTransport
 
   public async diagnoseMessage(
     messageId: string,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {},
   ): Promise<HostedDeliveryDiagnostic> {
     try {
       // A diagnosis is a point-in-time read of the current hosted state. The
       // contract's bounded inspection wait defaults to a 30-second server-held
       // long poll when omitted, which this call must not inherit.
-      const hosted = await this.client.getMessage(messageId, { wait: 0 });
+      const hosted = await this.client.getMessage(messageId, {
+        wait: 0,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.timeoutMs === undefined
+          ? {}
+          : { timeoutMs: options.timeoutMs }),
+      });
+      if (hosted.id !== messageId) {
+        throw new WhooshBangDeliveryError(
+          "WhooshBang diagnosis did not match the requested message identity.",
+          "whooshbang-local-identity-mismatch",
+          false,
+          "terminal",
+        );
+      }
       if (hosted.state === "outcome_unknown") {
         throw new WhooshBangDeliveryError(
           "WhooshBang cannot prove the provider outcome; no new hosted send is permitted.",
