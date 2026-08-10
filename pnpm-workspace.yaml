@@ -10,6 +10,6 @@ allowBuilds:
   esbuild: true
 
 overrides:
-  "@whooshbang/contracts@1.0.0-rc.10": "file:vendor/whooshbang-rc10-rc11-rc13/whooshbang-contracts-1.0.0-rc.10.tgz"
+  "@whooshbang/contracts@1.0.0-rc.12": "file:vendor/whooshbang-rc12-rc13-rc15/whooshbang-contracts-1.0.0-rc.12.tgz"
   "@session/contracts@0.0.0": "file:vendor/runner-protocol-v1/session-contracts-0.0.0.tgz"
   "@session/protocol-runner@0.0.0": "file:vendor/runner-protocol-v1/session-protocol-runner-0.0.0.tgz"

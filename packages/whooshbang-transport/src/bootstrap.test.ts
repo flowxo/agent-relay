@@ -183,7 +183,7 @@ describe("WhooshBang machine bootstrap", () => {
     });
     expect(result.configuration).toMatchObject({
       baseUrl: "https://whooshbang.mock.test/",
-      contractVersion: "1.0.0-rc.10",
+      contractVersion: "1.0.0-rc.12",
       environment: "test",
       machineClientId,
       notifierId,
@@ -279,7 +279,7 @@ describe("WhooshBang machine bootstrap", () => {
         status: "pending",
         url: expect.stringMatching(/^https:\/\//u),
       },
-      contractVersion: "1.0.0-rc.10",
+      contractVersion: "1.0.0-rc.12",
       status: "authorization_pending",
     });
     expect(createCredential).not.toHaveBeenCalled();
@@ -486,6 +486,48 @@ describe("WhooshBang machine bootstrap", () => {
     });
     expect((failure as Error).message).not.toContain("broad-token-value");
     expect((failure as Error).message).not.toContain("/private/machine/path");
+  });
+
+  it("maps the additive replay-unavailable problem to a safe terminal setup error", async () => {
+    const fetchImplementation: WhooshBangFetch = async () =>
+      new Response(
+        JSON.stringify({
+          type: "https://whooshbang.flowxo.com/problems/replay_unavailable",
+          title: "Replay unavailable",
+          status: 409,
+          detail: "private event payload at /customer/events/secret",
+          code: "replay_unavailable",
+          diagnostic_id: "diagnostic_replay_12345678",
+          retryable: false,
+        }),
+        {
+          headers: { "content-type": "application/problem+json" },
+          status: 409,
+        },
+      );
+
+    const failure = await connectWhooshBangMachine({
+      baseUrl: "https://whooshbang.mock.test",
+      createIdempotencyKey: idempotencyKey,
+      fetch: fetchImplementation,
+      machineId,
+      notifierId,
+      projectCredential: projectToken,
+      subscriberId,
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(WhooshBangSetupError);
+    expect(failure).toMatchObject({
+      code: "whooshbang-request-invalid",
+      diagnosticId: "diagnostic_replay_12345678",
+      retryable: false,
+      status: 409,
+    });
+    expect((failure as Error).message).toBe(
+      "WhooshBang cannot replay the requested customer event.",
+    );
+    expect((failure as Error).message).not.toContain("private event payload");
+    expect((failure as Error).message).not.toContain("/customer/events/secret");
   });
 });
 

@@ -302,6 +302,11 @@ describe("Agent Relay contract evidence", () => {
     );
     assert.equal(new Set(result.checks).size, result.checks.length);
     assert.equal(result.checks.includes("cross-machine-answer-origin"), true);
+    assert.equal(result.checks.includes("acknowledged-event-omission"), true);
+    assert.equal(
+      result.checks.includes("acknowledgement-replay-existing"),
+      true,
+    );
 
     const invalidResults = [
       {

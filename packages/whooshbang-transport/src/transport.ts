@@ -157,8 +157,8 @@ export class WhooshBangContractTransport
       },
       status: "proven",
       evidence: "official-docs",
-      observedVersion: "@whooshbang/sdk@1.0.0-rc.11",
-      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.10",
+      observedVersion: "@whooshbang/sdk@1.0.0-rc.13",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.12",
       note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
     });
   }

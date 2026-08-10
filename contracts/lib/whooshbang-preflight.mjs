@@ -35,22 +35,22 @@ export const CONTRACT_CHECK_RESULT_SCHEMA_SHA256 =
 export const WHOOSHBANG_OWNER = "whooshbang";
 export const WHOOSHBANG_SOURCE_REPOSITORY = "flowxo/whooshbang";
 export const WHOOSHBANG_BASE_SOURCE_COMMIT =
-  "08d4203fc2f52c4ab80fcfbc6416951351fba8ae";
+  "50de931fed8d819d1a70ec27201351b09f0ef251";
 export const WHOOSHBANG_MOCK_SOURCE_COMMIT =
-  "08d4203fc2f52c4ab80fcfbc6416951351fba8ae";
+  "50de931fed8d819d1a70ec27201351b09f0ef251";
 // The three artifacts no longer share one release candidate number, so each
 // carries its own exact version. The mock's scenario corpus is versioned
 // separately again: it is generated against a contract candidate and is not
 // re-stamped when a later additive candidate ships.
-export const WHOOSHBANG_CONTRACTS_VERSION = "1.0.0-rc.10";
-export const WHOOSHBANG_SDK_VERSION = "1.0.0-rc.11";
-export const WHOOSHBANG_MOCK_VERSION = "1.0.0-rc.13";
-export const WHOOSHBANG_MOCK_SCENARIO_CONTRACT_VERSION = "1.0.0-rc.9";
+export const WHOOSHBANG_CONTRACTS_VERSION = "1.0.0-rc.12";
+export const WHOOSHBANG_SDK_VERSION = "1.0.0-rc.13";
+export const WHOOSHBANG_MOCK_VERSION = "1.0.0-rc.15";
+export const WHOOSHBANG_MOCK_SCENARIO_CONTRACT_VERSION = "1.0.0-rc.12";
 export const WHOOSHBANG_CONTRACTS_ARTIFACT = "@whooshbang/contracts";
 export const WHOOSHBANG_SDK_ARTIFACT = "@whooshbang/sdk";
 export const WHOOSHBANG_MOCK_ARTIFACT = "@whooshbang/contract-mock";
 export const WHOOSHBANG_ARTIFACT_SCOPE = "@whooshbang/";
-export const WHOOSHBANG_VENDOR_DIRECTORY = "vendor/whooshbang-rc10-rc11-rc13";
+export const WHOOSHBANG_VENDOR_DIRECTORY = "vendor/whooshbang-rc12-rc13-rc15";
 export const WHOOSHBANG_VENDOR_MANIFEST_SCHEMA =
   "agent-relay.whooshbang-artifacts.v2";
 
@@ -65,9 +65,9 @@ const EXPECTED_DEPENDENCIES = [
   {
     artifact: WHOOSHBANG_CONTRACTS_ARTIFACT,
     version: WHOOSHBANG_CONTRACTS_VERSION,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contracts-1.0.0-rc.10.tgz`,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contracts-1.0.0-rc.12.tgz`,
     source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
-    sha256: "2253e94e1d78092bb605b2c16c453a6526b173e6753f36f1446a1527b4bc98cb",
+    sha256: "4b428d1d9094ea78e136084d56831a4c8bdee97b1c40e569cde5787ea176c2dd",
     fixture_version: WHOOSHBANG_CONTRACTS_VERSION,
     fixture_sets: [
       "core-api-bodies",
@@ -86,18 +86,18 @@ const EXPECTED_DEPENDENCIES = [
   {
     artifact: WHOOSHBANG_SDK_ARTIFACT,
     version: WHOOSHBANG_SDK_VERSION,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-sdk-1.0.0-rc.11.tgz`,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-sdk-1.0.0-rc.13.tgz`,
     source_commit: WHOOSHBANG_BASE_SOURCE_COMMIT,
-    sha256: "8230ef4918b7d555be3688396882dfd9d1ba6b1b7b96ea72dd20f30a7e2be7e4",
+    sha256: "c3e67296c392f54b4d432d0bb57c70a6b8d031b1acdb17c44a2cb79626afefec",
     fixture_version: WHOOSHBANG_SDK_VERSION,
     fixture_sets: [],
   },
   {
     artifact: WHOOSHBANG_MOCK_ARTIFACT,
     version: WHOOSHBANG_MOCK_VERSION,
-    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contract-mock-1.0.0-rc.13.tgz`,
+    artifact_file: `${WHOOSHBANG_VENDOR_DIRECTORY}/whooshbang-contract-mock-1.0.0-rc.15.tgz`,
     source_commit: WHOOSHBANG_MOCK_SOURCE_COMMIT,
-    sha256: "56a612ea65c0b53c24677666ac3b7dc5f15af93f3092b4fa178e8dadd6b6ab56",
+    sha256: "27ce251f6dfc283bf4eecfcb782bd577eba9d13751de63d032bad7ab733918b7",
     fixture_version: WHOOSHBANG_MOCK_SCENARIO_CONTRACT_VERSION,
     fixture_sets: ["contract-mock-scenarios.v1"],
   },
@@ -854,6 +854,8 @@ export function buildWhooshBangCheckResult({
       "installed-closure-is-exactly-locked",
       "production-import-boundary",
       "whooshbang-consumer",
+      "acknowledged-event-omission",
+      "acknowledgement-replay-existing",
       "consumer-mapping-temporal-behavior",
       "cross-machine-answer-origin",
       "unknown-additive-tolerance",

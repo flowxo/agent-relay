@@ -109,12 +109,12 @@ export type HostedAnswerValidation =
 // and type. The envelope's `response` is therefore not guaranteed to be present,
 // and this transport must not require it in order to acknowledge an event and
 // advance its committed cursor.
-type HostedInteractionResponse = InteractionEvent["response"];
+type HostedInteractionResponse = NonNullable<InteractionEvent["response"]>;
 
 function hostedResponse(
   event: InteractionEvent,
 ): HostedInteractionResponse | undefined {
-  return event.response as HostedInteractionResponse | undefined;
+  return event.response;
 }
 
 function sameOptional(left: string | undefined, right: string | undefined) {

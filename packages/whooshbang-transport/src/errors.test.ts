@@ -82,6 +82,28 @@ describe("WhooshBang error classification", () => {
     });
   });
 
+  it("bounds the additive replay-unavailable problem without reflecting detail", () => {
+    const mapped = asWhooshBangDeliveryError(
+      new WhooshBangProblemError(problem("replay_unavailable", false, 409)),
+    );
+    expect(mapped).toMatchObject({
+      code: "whooshbang-replay-unavailable",
+      disposition: "terminal",
+      retryable: false,
+      status: 409,
+    });
+    expect(mapped.message).toBe(
+      "WhooshBang cannot replay the requested customer event.",
+    );
+    expect(mapped.message).not.toContain("secret_value");
+    expect(mapped.message).not.toContain("/private/path");
+    expect(whooshbangFailurePolicy(mapped)).toEqual({
+      category: "operator-action",
+      retrySameOperation: false,
+      permitNewIdentity: false,
+    });
+  });
+
   it("permits uncertain connection replay only through the same operation", () => {
     const mapped = asWhooshBangDeliveryError(
       new WhooshBangTransportError("createMessage", true),

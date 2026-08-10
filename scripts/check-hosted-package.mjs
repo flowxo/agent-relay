@@ -966,7 +966,7 @@ if (process.platform !== "darwin") {
       "utf8",
     );
     assert(
-      cliSource.includes("1.0.0-rc.10") &&
+      cliSource.includes("1.0.0-rc.12") &&
         cliSource.includes("whooshbang connect") &&
         !cliSource.includes("@whooshbang/contract-mock"),
       "packed CLI omitted the hosted adapter or bundled the test-only mock",
@@ -1538,20 +1538,20 @@ if (process.platform !== "darwin") {
       "package-manager removal left the packed executable",
     );
 
+    const exactWhooshBangVersions = new Map([
+      ["@whooshbang/contracts", "1.0.0-rc.12"],
+      ["@whooshbang/sdk", "1.0.0-rc.13"],
+      ["@whooshbang/contract-mock", "1.0.0-rc.15"],
+    ]);
     const notificationArtifacts = contractLock.dependencies.filter((artifact) =>
-      [
-        "@whooshbang/sdk",
-        "@whooshbang/contracts",
-        "@whooshbang/contract-mock",
-      ].includes(artifact.artifact),
+      exactWhooshBangVersions.has(artifact.artifact),
     );
     assert(
-      notificationArtifacts.length === 3 &&
+      notificationArtifacts.length === exactWhooshBangVersions.size &&
         notificationArtifacts.every(
           (artifact) =>
-            ["1.0.0-rc.10", "1.0.0-rc.11", "1.0.0-rc.13"].includes(
-              artifact.version,
-            ) &&
+            exactWhooshBangVersions.get(artifact.artifact) ===
+              artifact.version &&
             /^[a-f0-9]{64}$/u.test(artifact.sha256) &&
             /^[a-f0-9]{40}$/u.test(artifact.source_commit),
         ),
@@ -1569,7 +1569,7 @@ if (process.platform !== "darwin") {
           sha256: packageSha256,
         },
         whooshbang: {
-          contractVersion: "1.0.0-rc.10",
+          contractVersion: "1.0.0-rc.12",
           contractLockSha256: lockSha256,
           exactArtifacts: notificationArtifacts.length,
           setup: "narrow-credential-proven",

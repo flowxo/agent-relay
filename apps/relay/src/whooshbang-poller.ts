@@ -51,6 +51,7 @@ function safeRef(value: string): string {
 }
 
 function hostedEventPayloadHash(event: HostedInteractionEvent): string {
+  const response = event.response;
   return sha256(
     JSON.stringify([
       event.schema,
@@ -60,8 +61,9 @@ function hostedEventPayloadHash(event: HostedInteractionEvent): string {
       event.message_id,
       event.interaction_id,
       event.correlation_id ?? null,
-      event.response.type,
-      event.response.value,
+      event.answer_retained ?? response !== undefined,
+      response?.type ?? null,
+      response?.value ?? null,
       event.channel_context.binding_id,
       event.channel_context.channel,
       event.channel_context.conversation_kind,

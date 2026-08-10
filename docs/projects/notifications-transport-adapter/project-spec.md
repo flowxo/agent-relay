@@ -2,8 +2,8 @@
 
 - **Status:** Complete against the pinned executable mock and packed artifact;
   C0-09 approved the pre-rename `1.0.0-rc.1` inputs, FXO-1373 migrated the
-  consumer to WhooshBang, most recently re-vendored to `contracts@1.0.0-rc.10` /
-  `sdk@1.0.0-rc.11` / `contract-mock@1.0.0-rc.13`, and AR3 awaits an approved
+  consumer to WhooshBang, most recently re-vendored to `contracts@1.0.0-rc.12` /
+  `sdk@1.0.0-rc.13` / `contract-mock@1.0.0-rc.15`, and AR3 awaits an approved
   real service environment
 - **Product:** Agent Relay
 - **Initiative:**
@@ -13,7 +13,7 @@
 - **Linear project:**
   [AR2 — FlowXO Notifications Transport Adapter](https://linear.app/flowxo/project/ar2-flowxo-notifications-transport-adapter-89e35890c6d7)
 - **Owning repository:** `agent-relay`
-- **Last reviewed:** 2026-07-28
+- **Last reviewed:** 2026-08-10
 
 ## 1. Why this project exists
 
@@ -56,11 +56,13 @@ and packed mock-backed proofs against them;
 [FXO-1436](https://linear.app/flowxo/issue/FXO-1436) advanced that same proof to
 the exact `1.0.0-rc.5` candidate, and
 [FXO-1209](https://linear.app/flowxo/issue/FXO-1209) advanced it again to
-`contracts@1.0.0-rc.10`, `sdk@1.0.0-rc.11`, and `contract-mock@1.0.0-rc.13`. AR3
-owns real-service evidence and starts only once WhooshBang implements the narrow
-machine bootstrap and durable poll/ack stream this transport calls, which are
-specified as [N2-10](https://linear.app/flowxo/issue/FXO-1206) and
-[N2-11](https://linear.app/flowxo/issue/FXO-1207) and are not yet built.
+contracts rc.10 / SDK rc.11 / mock rc.13, and
+[FXO-1531](https://linear.app/flowxo/issue/FXO-1531) advances it to
+`contracts@1.0.0-rc.12`, `sdk@1.0.0-rc.13`, and `contract-mock@1.0.0-rc.15`.
+WhooshBang has since shipped the narrow machine bootstrap and durable poll/ack
+stream specified by [N2-10](https://linear.app/flowxo/issue/FXO-1206) and
+[N2-11](https://linear.app/flowxo/issue/FXO-1207). AR3 owns the separate
+approved environment, credential, canary, and sustained real-service evidence.
 
 ## 2. Outcome
 

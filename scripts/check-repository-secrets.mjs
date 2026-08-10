@@ -11,7 +11,7 @@ const root = resolve(import.meta.dirname, "..");
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const maximumTextBytes = 4 * 1024 * 1024;
 const approvedBinary =
-  /^(?:vendor\/whooshbang-rc10-rc11-rc13\/whooshbang-(?:contracts-1\.0\.0-rc\.10|sdk-1\.0\.0-rc\.11|contract-mock-1\.0\.0-rc\.13)\.tgz|vendor\/whooshbang-rc4\/whooshbang-(?:contracts|sdk|contract-mock)-1\.0\.0-rc\.4\.tgz|vendor\/notifications-c0\/[^/]+\.tgz|vendor\/runner-protocol-v1\/session-(?:contracts|protocol-runner)-0\.0\.0\.tgz)$/;
+  /^(?:vendor\/whooshbang-rc12-rc13-rc15\/whooshbang-(?:contracts-1\.0\.0-rc\.12|sdk-1\.0\.0-rc\.13|contract-mock-1\.0\.0-rc\.15)\.tgz|vendor\/whooshbang-rc4\/whooshbang-(?:contracts|sdk|contract-mock)-1\.0\.0-rc\.4\.tgz|vendor\/notifications-c0\/[^/]+\.tgz|vendor\/runner-protocol-v1\/session-(?:contracts|protocol-runner)-0\.0\.0\.tgz)$/;
 const approvedSyntheticUser = /^(?:operator|private|private-owner)$/;
 
 const secretPatterns = [

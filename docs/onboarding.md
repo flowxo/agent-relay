@@ -502,11 +502,11 @@ positional argument. Supply it only through the command's stdin, environment
 injection, or hidden prompt. The local setup files are retained by uninstall;
 use `whooshbang disconnect --revoke` before explicit credential/configuration
 erasure. Agent Relay now pins the exact WhooshBang
-`@whooshbang/contracts@1.0.0-rc.10`, `@whooshbang/sdk@1.0.0-rc.11`, and
-`@whooshbang/contract-mock@1.0.0-rc.13` candidates. Perform this setup only
-against the executable loopback mock. WhooshBang's deployed API does not yet
-implement the machine-client and machine-event routes this transport calls, so a
-real environment cannot complete the setup regardless of credentials.
+`@whooshbang/contracts@1.0.0-rc.12`, `@whooshbang/sdk@1.0.0-rc.13`, and
+`@whooshbang/contract-mock@1.0.0-rc.15` candidates. Use the executable loopback
+mock for this credential-free verification. Connecting an approved real
+WhooshBang environment is a separate AR3.1 operation with its own credentials,
+canary evidence, and owner authorization.
 
 ## 6. Prove the Telegram interaction loop
 
