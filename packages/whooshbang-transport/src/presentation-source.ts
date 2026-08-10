@@ -46,7 +46,7 @@ export function whooshbangResolutionOperationId(eventId: string): string {
 }
 
 /**
- * The exact pinned WhooshBang 1.0.0-rc.11 client has no resolved-message
+ * The exact pinned WhooshBang 1.0.0-rc.13 client has no resolved-message
  * update method. Keeping that absence behind the same bounded interface lets a
  * later exact contract add the capability without changing local authority.
  */

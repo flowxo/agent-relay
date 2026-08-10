@@ -115,7 +115,7 @@ function hostedEvent(
   store: RelayStore,
   local: AgentAttentionEventV1,
   suffix: string,
-  response: HostedInteractionEvent["response"],
+  response: NonNullable<HostedInteractionEvent["response"]>,
   cursorIndex: number,
 ): HostedInteractionEvent {
   const request = store.getPendingRequest(local.request!.correlationId)!;
@@ -317,6 +317,56 @@ describe("WhooshBangInteractionPoller", () => {
         resolutionSource: "whooshbang",
       },
     ]);
+    store.close();
+  });
+
+  it("acknowledges a content-redacted event without resolving or crashing", async () => {
+    const store = new RelayStore();
+    const local = localEvent("redacted", "confirm");
+    deliver(store, local, "redacted", "confirm");
+    const retained = hostedEvent(
+      store,
+      local,
+      "redacted",
+      { type: "confirm", value: true },
+      1,
+    );
+    const { response: _removed, ...eventIdentity } = retained;
+    const redacted: HostedInteractionEvent = {
+      ...eventIdentity,
+      answer_retained: false,
+    };
+    const controller = new AbortController();
+    const source = new OrderedSource([redacted], () => controller.abort());
+
+    await new WhooshBangInteractionPoller({
+      store,
+      source,
+      streamKey,
+      machineId,
+      bindingId,
+      waitSeconds: 0,
+      retryBaseMs: 1,
+      retryMaxMs: 2,
+    }).run(controller.signal);
+
+    expect(source.acknowledgements).toEqual([
+      expect.objectContaining({
+        cursor: redacted.cursor,
+        disposition: "processed",
+        eventId: redacted.id,
+      }),
+    ]);
+    expect(source.acknowledgements[0]).not.toHaveProperty("reasonCode");
+    expect(store.getPendingRequest(local.request!.correlationId)).toMatchObject(
+      {
+        state: "open",
+      },
+    );
+    expect(store.hostedPollStatus(streamKey)).toMatchObject({
+      committedCursor: redacted.cursor,
+      unacknowledgedEventCount: 0,
+    });
     store.close();
   });
 

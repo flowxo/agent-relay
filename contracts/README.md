@@ -28,14 +28,15 @@ stable gate:
    mutable transitive dependencies, and package or fixture identity drift;
 6. rejects any retired `@flowxo/*` transitive package identity outright, because
    WhooshBang's pre-alpha hard cut publishes no compatibility alias;
-7. checks the `vendor/whooshbang-rc10-rc11-rc13` provenance manifest against the
+7. checks the `vendor/whooshbang-rc12-rc13-rc15` provenance manifest against the
    lock, including the producer repository and per-artifact full commit;
 8. installs the verified bytes in a fresh temporary pnpm project with lifecycle
    scripts disabled, proves the installed WhooshBang closure is exactly the
    locked set, and imports all three packages;
 9. enforces the production transport import boundary;
 10. runs the lock, supply-chain, additive-compatibility, mapping, SQLite replay,
-    acknowledgement, quarantine, and direct-Telegram parity tests; and
+    content-redaction, acknowledged-event omission, current-state
+    acknowledgement replay, quarantine, and direct-Telegram parity tests; and
 11. writes deterministic aggregate evidence to `.contract-results/c0-08.json`.
 
 The result directory is generated and ignored. The result identifies the exact

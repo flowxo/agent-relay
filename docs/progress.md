@@ -1079,6 +1079,19 @@
   records the pinned contract version, so an existing hosted connection must be
   reconnected. See
   [the FXO-1209 record](projects/notifications-transport-adapter/stories/fxo-1209-revendor-whooshbang-rc10.md).
+- FXO-1531 advanced that consumer boundary to WhooshBang's exact
+  `contracts@1.0.0-rc.12`, `sdk@1.0.0-rc.13`, and `contract-mock@1.0.0-rc.15`
+  artifacts from `flowxo/whooshbang@50de931fed8d819d1a70ec27201351b09f0ef251`.
+  The exact consumer suite now accepts the published content-redaction shape
+  without an unsafe cast, omits an already-acknowledged event across an earlier
+  cursor gap, and proves that acknowledgement replay reports `existing` from
+  current durable state. The new closed `replay_unavailable` problem code is
+  mapped exhaustively to bounded operator text, while local first-writer
+  authority and contiguous cursor behavior remain unchanged. The superseded
+  artifacts remain reproducible from the producer and consumer commits recorded
+  in the FXO-1209 record. An existing hosted connection must be reconnected
+  because its retained contract version is deliberately exact. See
+  [the FXO-1531 record](projects/notifications-transport-adapter/stories/fxo-1531-revendor-whooshbang-rc12.md).
 
 ## Phase 1 reproduction
 
@@ -1236,17 +1249,17 @@ lane state; this is the only FXO-1357 behavior still waiting for a natural live
 observation. `/cleanup` remains available for explicitly ended sessions.
 
 Continue bounded local direct-Telegram dogfood. The consumer now pins the exact
-WhooshBang `contracts@1.0.0-rc.10`, `sdk@1.0.0-rc.11`, and
-`contract-mock@1.0.0-rc.13` candidates, so every Agent Relay prerequisite for
-FXO-1156 (AR3.1) is met. What remains is producer capability, not authorization:
-WhooshBang's deployed API implements no machine-client or machine-event route,
-so the narrow machine bootstrap and durable poll/ack loop this transport calls
-do not exist yet. They are specified as N2-10 (FXO-1206) and N2-11 (FXO-1207),
-both Backlog. Hosted AR3 evidence begins only after those ship; it must still
-confirm production retention/privacy, subscriber activation and digest
-verification, live delivery/reply/recovery, and deliberate transport switching.
-npm scope/publication and the monitored public security-contact path remain
-owner-controlled promotion gates.
+WhooshBang `contracts@1.0.0-rc.12`, `sdk@1.0.0-rc.13`, and
+`contract-mock@1.0.0-rc.15` candidates from producer commit
+`50de931fed8d819d1a70ec27201351b09f0ef251`. Its credential-free consumer proof
+covers the published answer-redaction boundary, acknowledged-event omission, and
+acknowledgement replay from current durable state. WhooshBang's N2-10 and N2-11
+machine routes are now shipped; the next hosted increment is the separately
+approved AR3.1 real-environment canary in FXO-1156. That work must still confirm
+production retention/privacy, subscriber activation and digest verification,
+live delivery/reply/recovery, and deliberate transport switching without putting
+credentials or private content in Git or Linear. npm scope/publication and the
+monitored public security-contact path remain owner-controlled promotion gates.
 
 The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
 explorations remain post-V1 backlog. They require separate product demand,

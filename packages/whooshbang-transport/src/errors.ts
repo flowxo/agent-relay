@@ -91,6 +91,7 @@ const OPERATOR_ACTION_FAILURE_CODES = new Set([
   "whooshbang-cancellation-too-late",
   "whooshbang-provider-outcome-unknown",
   "whooshbang-provider-terminal",
+  "whooshbang-replay-unavailable",
   "whooshbang-resource-not-found",
   "whooshbang-resource-expired",
   "whooshbang-resolution-update-unsupported",
@@ -113,7 +114,7 @@ export function whooshbangFailurePolicy(
   if (
     SECURITY_FAILURE_CODES.has(error.code) ||
     error.status === 403 ||
-    error.status === 409 ||
+    (error.status === 409 && !OPERATOR_ACTION_FAILURE_CODES.has(error.code)) ||
     (error.status !== undefined && error.status >= 300 && error.status < 400)
   ) {
     return {
@@ -176,6 +177,7 @@ const SAFE_PROBLEM_MESSAGES = {
   provider_retryable: "WhooshBang reported a retryable provider failure.",
   provider_terminal: "WhooshBang reported a terminal provider rejection.",
   rate_limited: "WhooshBang rate limited the request.",
+  replay_unavailable: "WhooshBang cannot replay the requested customer event.",
   request_invalid: "WhooshBang rejected the request contract.",
   resource_expired: "The WhooshBang resource has expired.",
   resource_not_found: "The WhooshBang resource was not found.",

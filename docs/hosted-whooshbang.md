@@ -52,18 +52,18 @@ Credential presence never selects a transport.
 There is no dual send or automatic failover.
 
 Switching retains SQLite and request state. The terminal-presentation worker is
-implemented, but the exact pinned `@whooshbang/sdk@1.0.0-rc.11` client does not
+implemented, but the exact pinned `@whooshbang/sdk@1.0.0-rc.13` client does not
 expose a resolved-message update endpoint. Agent Relay records that optional
 capability as unsupported instead of misusing message cancellation. C0-09
 recorded `go` for the retired pre-rename `1.0.0-rc.1` candidate; that decision
 does not carry to WhooshBang's breaking rename cut. FXO-1373 rebuilt the
 repository-native consumer proof against the exact RC.4 artifacts, FXO-1436
-advanced it to RC.5, and the FXO-1209 re-vendor advanced it to
-`contracts@1.0.0-rc.10`, `sdk@1.0.0-rc.11`, and `contract-mock@1.0.0-rc.13`.
-Continue using the executable mock—not a production account—as the integration
-source of truth. WhooshBang's deployed API does not yet implement the
-machine-client or machine-event routes this transport calls, so a real
-environment cannot serve it regardless of credentials.
+advanced it to RC.5, the FXO-1209 re-vendor advanced it to contracts rc.10 / SDK
+rc.11 / mock rc.13, and FXO-1531 advances it to `contracts@1.0.0-rc.12`,
+`sdk@1.0.0-rc.13`, and `contract-mock@1.0.0-rc.15`. Continue using the
+executable mock—not a production account—as the credential-free integration
+source of truth. Connecting an approved WhooshBang environment and collecting
+real-service evidence remains the separate AR3.1 operation.
 
 ## Mock-backed setup command
 
@@ -293,11 +293,14 @@ from durable state.
 
 A provider acknowledgement happens after the local result commits. A crash
 before acknowledgement can repeat the hosted answer, but the reopened SQLite
-state proves it is a duplicate and the resume command remains single-owner.
-Local duplicate/expired/cancelled reason codes remain in SQLite. The pinned
-machine contract accepts `reason_code` only with a `quarantined`
-acknowledgement, so a normal `processed` acknowledgement deliberately omits
-those local-only reasons.
+state proves it is a duplicate and the resume command remains single-owner. The
+exact consumer suite also proves that an event acknowledged beyond a cursor gap
+is omitted from subsequent polls, and that replaying its acknowledgement reports
+`existing` with the current committed cursor rather than returning the stale
+body from the first acknowledgement. Local duplicate/expired/cancelled reason
+codes remain in SQLite. The pinned machine contract accepts `reason_code` only
+with a `quarantined` acknowledgement, so a normal `processed` acknowledgement
+deliberately omits those local-only reasons.
 
 ## Transport parity
 

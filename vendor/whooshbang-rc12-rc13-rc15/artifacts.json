@@ -1,0 +1,27 @@
+{
+  "schema": "agent-relay.whooshbang-artifacts.v2",
+  "sourceRepository": "flowxo/whooshbang",
+  "artifacts": [
+    {
+      "package": "@whooshbang/contracts",
+      "version": "1.0.0-rc.12",
+      "sourceCommit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "file": "whooshbang-contracts-1.0.0-rc.12.tgz",
+      "sha256": "4b428d1d9094ea78e136084d56831a4c8bdee97b1c40e569cde5787ea176c2dd"
+    },
+    {
+      "package": "@whooshbang/sdk",
+      "version": "1.0.0-rc.13",
+      "sourceCommit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "file": "whooshbang-sdk-1.0.0-rc.13.tgz",
+      "sha256": "c3e67296c392f54b4d432d0bb57c70a6b8d031b1acdb17c44a2cb79626afefec"
+    },
+    {
+      "package": "@whooshbang/contract-mock",
+      "version": "1.0.0-rc.15",
+      "sourceCommit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "file": "whooshbang-contract-mock-1.0.0-rc.15.tgz",
+      "sha256": "27ce251f6dfc283bf4eecfcb782bd577eba9d13751de63d032bad7ab733918b7"
+    }
+  ]
+}

@@ -64,6 +64,13 @@ breaking changes and required operator action.
 
 ### Changed
 
+- The optional hosted transport now pins WhooshBang's exact contracts rc.12 /
+  SDK rc.13 / mock rc.15 artifacts from producer
+  `50de931fed8d819d1a70ec27201351b09f0ef251`. Its consumer proof now uses the
+  published content-redaction shape, omits already-acknowledged events across a
+  cursor gap, and reports acknowledgement replay from current durable state.
+  **Required operator action:** reconnect an existing hosted connection because
+  its retained contract version is deliberately exact.
 - Telegram cards now put summary content first and event/session metadata in a
   final footer. Trusted headings, state, and labels use explicit Bot API
   entities without parsing Markdown or HTML from agent text.

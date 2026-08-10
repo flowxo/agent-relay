@@ -100,6 +100,7 @@ const SAFE_PROBLEM_MESSAGES = {
   provider_retryable: "WhooshBang reported a temporary setup canary failure.",
   provider_terminal: "WhooshBang rejected the setup canary.",
   rate_limited: "WhooshBang rate limited setup.",
+  replay_unavailable: "WhooshBang cannot replay the requested customer event.",
   request_invalid: "WhooshBang rejected the setup request contract.",
   resource_expired: "The WhooshBang setup resource has expired.",
   resource_not_found: "The WhooshBang setup resource was not found.",
@@ -129,6 +130,7 @@ function setupProblemCode(
     // a safe terminal rejection rather than an unhandled one.
     case "endpoint_rotation_conflict":
     case "project_slug_conflict":
+    case "replay_unavailable":
     case "request_invalid":
       return "request-invalid";
     case "subscriber_unbound":

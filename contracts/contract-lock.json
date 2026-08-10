@@ -7,80 +7,80 @@
     {
       "owner": "whooshbang",
       "artifact": "@whooshbang/contracts",
-      "version": "1.0.0-rc.10",
+      "version": "1.0.0-rc.12",
       "source_repository": "flowxo/whooshbang",
-      "source_commit": "08d4203fc2f52c4ab80fcfbc6416951351fba8ae",
-      "sha256": "2253e94e1d78092bb605b2c16c453a6526b173e6753f36f1446a1527b4bc98cb",
-      "artifact_file": "vendor/whooshbang-rc10-rc11-rc13/whooshbang-contracts-1.0.0-rc.10.tgz",
+      "source_commit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "sha256": "4b428d1d9094ea78e136084d56831a4c8bdee97b1c40e569cde5787ea176c2dd",
+      "artifact_file": "vendor/whooshbang-rc12-rc13-rc15/whooshbang-contracts-1.0.0-rc.12.tgz",
       "fixture_sets": [
         {
           "id": "core-api-bodies",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "core-semantic-scenarios",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "interaction-message-api-bodies",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "interaction-contract-bodies",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "machine-api-bodies",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "provider-capability-bodies",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "interaction-machine-semantic-scenarios",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "customer-event-bodies",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "webhook-signing-vectors",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "webhook-delivery-cases",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         },
         {
           "id": "core-fixture-index",
-          "version": "1.0.0-rc.10"
+          "version": "1.0.0-rc.12"
         }
       ]
     },
     {
       "owner": "whooshbang",
       "artifact": "@whooshbang/sdk",
-      "version": "1.0.0-rc.11",
+      "version": "1.0.0-rc.13",
       "source_repository": "flowxo/whooshbang",
-      "source_commit": "08d4203fc2f52c4ab80fcfbc6416951351fba8ae",
-      "sha256": "8230ef4918b7d555be3688396882dfd9d1ba6b1b7b96ea72dd20f30a7e2be7e4",
-      "artifact_file": "vendor/whooshbang-rc10-rc11-rc13/whooshbang-sdk-1.0.0-rc.11.tgz",
+      "source_commit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "sha256": "c3e67296c392f54b4d432d0bb57c70a6b8d031b1acdb17c44a2cb79626afefec",
+      "artifact_file": "vendor/whooshbang-rc12-rc13-rc15/whooshbang-sdk-1.0.0-rc.13.tgz",
       "fixture_sets": []
     },
     {
       "owner": "whooshbang",
       "artifact": "@whooshbang/contract-mock",
-      "version": "1.0.0-rc.13",
+      "version": "1.0.0-rc.15",
       "source_repository": "flowxo/whooshbang",
-      "source_commit": "08d4203fc2f52c4ab80fcfbc6416951351fba8ae",
-      "sha256": "56a612ea65c0b53c24677666ac3b7dc5f15af93f3092b4fa178e8dadd6b6ab56",
-      "artifact_file": "vendor/whooshbang-rc10-rc11-rc13/whooshbang-contract-mock-1.0.0-rc.13.tgz",
+      "source_commit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "sha256": "27ce251f6dfc283bf4eecfcb782bd577eba9d13751de63d032bad7ab733918b7",
+      "artifact_file": "vendor/whooshbang-rc12-rc13-rc15/whooshbang-contract-mock-1.0.0-rc.15.tgz",
       "fixture_sets": [
         {
           "id": "contract-mock-scenarios.v1",
-          "version": "1.0.0-rc.9"
+          "version": "1.0.0-rc.12"
         }
       ]
     }

@@ -79,11 +79,12 @@ identity was later retired by WhooshBang's pre-alpha hard cut, so
 [FXO-1373](https://linear.app/flowxo/issue/FXO-1373) migrated the consumer to
 the exact `@whooshbang/*` `1.0.0-rc.4` candidate and
 [FXO-1436](https://linear.app/flowxo/issue/FXO-1436) advanced it to the exact
-`1.0.0-rc.5` candidate, and the FXO-1209 re-vendor advanced it to
-`contracts@1.0.0-rc.10`, `sdk@1.0.0-rc.11`, and `contract-mock@1.0.0-rc.13`,
-which Agent Relay now consumes. Neither that approval, the migration, nor
-mainline integration constitutes a public Agent Relay release or authorizes a
-real WhooshBang service environment.
+`1.0.0-rc.5` candidate, the FXO-1209 re-vendor advanced it to contracts rc.10 /
+SDK rc.11 / mock rc.13, and FXO-1531 advances it to `contracts@1.0.0-rc.12`,
+`sdk@1.0.0-rc.13`, and `contract-mock@1.0.0-rc.15`, which Agent Relay now
+consumes. Neither that approval, the migrations, nor mainline integration
+constitutes a public Agent Relay release or authorizes a real WhooshBang service
+environment.
 
 ## 4. Target users
 
@@ -344,7 +345,7 @@ Relay-owned Linear project for the same seam.
 The canonical cross-product specification lives in the neutral portfolio
 repository at
 `flowxo-portfolio/docs/projects/shared-contracts-and-autonomous-delivery-conventions/project-spec.md`.
-Agent Relay's exact `1.0.0-rc.10`/`rc.11`/`rc.13` consumer and compatibility
+Agent Relay's exact `1.0.0-rc.12`/`rc.13`/`rc.15` consumer and compatibility
 gates are green. The separately controlled public package and
 service-environment decisions remain outside C0.
 

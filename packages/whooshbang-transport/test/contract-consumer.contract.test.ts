@@ -265,14 +265,6 @@ async function deliverAndSubmit(input: {
   return expected;
 }
 
-// `response` is required in the pinned contract and becomes optional when the
-// answer-content window closes, so this reads it without asserting presence.
-function hostedResponseOf(
-  event: InteractionEvent,
-): InteractionEvent["response"] | undefined {
-  return event.response as InteractionEvent["response"] | undefined;
-}
-
 function requireInteractionEvent(batch: MachineEventPollResponse) {
   const hostedEvent = batch.events[0];
   if (hostedEvent === undefined) {
@@ -752,6 +744,82 @@ describe("C0 WhooshBang consumer contract", () => {
     store.close();
   });
 
+  it("omits an out-of-order acknowledged event and replays its current acknowledgement", async () => {
+    const mock = createWhooshBangContractMock({
+      scenario: "machine-cursor-contiguous",
+    });
+    const client = machineClient(
+      "https://whooshbang.mock.test",
+      fetchFor(mock),
+    );
+    const initial = await client.pollMachineEvents({ wait: 0 });
+    const [first, second] = initial.events;
+    if (first === undefined || second === undefined) {
+      throw new Error("Expected two deterministic machine events.");
+    }
+    const secondAcknowledgement = {
+      cursor: second.cursor,
+      disposition: "processed" as const,
+      reason_code: null,
+    };
+    const secondIdempotencyKey = "consumer-ack-second-out-of-order-001";
+
+    await expect(
+      client.acknowledgeMachineEvent(second.id, secondAcknowledgement, {
+        idempotencyKey: secondIdempotencyKey,
+      }),
+    ).resolves.toMatchObject({
+      acknowledgement_status: "recorded",
+      advanced: false,
+      committed_cursor: null,
+    });
+
+    const gapPoll = await client.pollMachineEvents({ wait: 0 });
+    expect(gapPoll.committed_cursor).toBeNull();
+    expect(gapPoll.events.map(({ id }) => id)).toEqual([first.id]);
+
+    await expect(
+      client.acknowledgeMachineEvent(
+        first.id,
+        {
+          cursor: first.cursor,
+          disposition: "processed",
+          reason_code: null,
+        },
+        { idempotencyKey: "consumer-ack-first-closes-gap-001" },
+      ),
+    ).resolves.toMatchObject({
+      acknowledgement_status: "recorded",
+      advanced: true,
+      committed_cursor: second.cursor,
+    });
+
+    await expect(
+      client.acknowledgeMachineEvent(second.id, secondAcknowledgement, {
+        idempotencyKey: secondIdempotencyKey,
+      }),
+    ).resolves.toMatchObject({
+      acknowledgement_status: "existing",
+      advanced: false,
+      committed_cursor: second.cursor,
+    });
+    await expect(
+      client.acknowledgeMachineEvent(second.id, secondAcknowledgement, {
+        idempotencyKey: "consumer-ack-second-fresh-replay-001",
+      }),
+    ).resolves.toMatchObject({
+      acknowledgement_status: "existing",
+      advanced: false,
+      committed_cursor: second.cursor,
+    });
+    await expect(
+      client.pollMachineEvents({ after: second.cursor, wait: 0 }),
+    ).resolves.toMatchObject({
+      committed_cursor: second.cursor,
+      events: [],
+    });
+  });
+
   it("runs the exact packed mock as a guarded separate process", async () => {
     const running = await startPackedMock();
     expect(running.cli).toContain(packedMockStoreDirectory());
@@ -824,9 +892,6 @@ describe("C0 WhooshBang consumer contract", () => {
     const event = selectEvent("stripped");
     store.ingestEvent(event);
     const local = store.getPendingRequest(event.request!.correlationId)!;
-    const beta = local.options.find(
-      (option) => option.optionId === "option_beta_12345678",
-    )!;
     const answered: InteractionEvent = {
       schema: "whooshbang.interaction-event.v1",
       id: "event_stripped_answer_12345678",
@@ -835,7 +900,7 @@ describe("C0 WhooshBang consumer contract", () => {
       message_id: "message_stripped_12345678",
       interaction_id: "interaction_stripped_12345678",
       correlation_id: local.correlationId,
-      response: { type: "select", value: beta.token },
+      answer_retained: false,
       channel_context: {
         binding_id: "binding_synthetic_relay",
         channel: "telegram",
@@ -854,20 +919,11 @@ describe("C0 WhooshBang consumer contract", () => {
     const polled = await client.pollMachineEvents({ wait: 0 });
     const hostedEvent = requireInteractionEvent(polled);
     expect(hostedEvent.id).toBe(answered.id);
-
-    // WhooshBang closes a seven-day content window on the answer while keeping
-    // the event, its cursor, and its references. The pinned contract still
-    // requires `response`, and the SDK validates every poll response against
-    // it, so the envelope cannot arrive stripped until that contract ships.
-    // Everything else here is the real mock over the real SDK: only the one
-    // field this transport must stop requiring is removed, at the boundary
-    // between what the stream delivered and what the transport classifies.
-    const { response: _pruned, ...contentWindowClosed } = hostedEvent;
-    const strippedEvent = contentWindowClosed as unknown as InteractionEvent;
-    expect(hostedResponseOf(strippedEvent)).toBeUndefined();
+    expect(hostedEvent).toMatchObject({ answer_retained: false });
+    expect(hostedEvent.response).toBeUndefined();
 
     const validation = validateHostedAnswer({
-      event: strippedEvent,
+      event: hostedEvent,
       localRequest: local,
       expected: {
         correlationId: local.correlationId,

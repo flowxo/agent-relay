@@ -19,13 +19,13 @@
   "dependencies": {
     "@agent-relay/notification-contracts": "workspace:*",
     "@agent-relay/protocol": "workspace:*",
-    "@whooshbang/contracts": "file:../../vendor/whooshbang-rc10-rc11-rc13/whooshbang-contracts-1.0.0-rc.10.tgz",
-    "@whooshbang/sdk": "file:../../vendor/whooshbang-rc10-rc11-rc13/whooshbang-sdk-1.0.0-rc.11.tgz"
+    "@whooshbang/contracts": "file:../../vendor/whooshbang-rc12-rc13-rc15/whooshbang-contracts-1.0.0-rc.12.tgz",
+    "@whooshbang/sdk": "file:../../vendor/whooshbang-rc12-rc13-rc15/whooshbang-sdk-1.0.0-rc.13.tgz"
   },
   "devDependencies": {
     "@agent-relay/core": "workspace:*",
     "@agent-relay/telegram-transport": "workspace:*",
     "@types/node": "24.13.3",
-    "@whooshbang/contract-mock": "file:../../vendor/whooshbang-rc10-rc11-rc13/whooshbang-contract-mock-1.0.0-rc.13.tgz"
+    "@whooshbang/contract-mock": "file:../../vendor/whooshbang-rc12-rc13-rc15/whooshbang-contract-mock-1.0.0-rc.15.tgz"
   }
 }

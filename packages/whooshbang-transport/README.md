@@ -98,7 +98,10 @@ repeats the event; recovery drains that acknowledgement before a new poll, and
 the already materialized resume command cannot be claimed twice. Local
 duplicate/terminal reason codes remain durable, but `processed` acknowledgements
 omit them because the pinned contract permits `reason_code` only for
-`quarantined`.
+`quarantined`. The consumer proof also acknowledges the second of two events
+before the first, proves the acknowledged event disappears from the next poll,
+then closes the cursor gap and proves acknowledgement replay reports `existing`
+with the current committed cursor.
 
 ## Resolution presentation
 
@@ -108,7 +111,7 @@ is acknowledged. Retry uses `resolution_${sha256(hostedEventId)}` every time;
 update failure cannot call `resolveRequest`, create a message, or claim
 continuation.
 
-The exact pinned `@whooshbang/sdk@1.0.0-rc.5` client has no resolved-message
+The exact pinned `@whooshbang/sdk@1.0.0-rc.13` client has no resolved-message
 update method. `PinnedWhooshBangResolutionPresenter` therefore reports
 `unsupported`, and the daemon marks that job terminally with
 `whooshbang-resolution-update-unsupported`. Tests inject a supported fake
@@ -124,9 +127,10 @@ pnpm package:hosted:check
 ```
 
 The previous `pnpm whooshbang:contract:check` spelling remains an alias. The
-first command proves the immutable consumer contract in isolation. The second
-installs the product tarball into a clean home, exercises setup, selection,
-confirm/select/input, crash-before-ack replay, explicit disconnect/erasure,
-retained SQLite authority, direct-Telegram parity, owned uninstall, and
-private-data exclusion. The contract mock remains verifier-only and is not
-bundled into the product.
+first command proves the immutable consumer contract in isolation, including
+content-redacted events, acknowledged-event omission, and current-state
+acknowledgement replay. The second installs the product tarball into a clean
+home, exercises setup, selection, confirm/select/input, crash-before-ack replay,
+explicit disconnect/erasure, retained SQLite authority, direct-Telegram parity,
+owned uninstall, and private-data exclusion. The contract mock remains
+verifier-only and is not bundled into the product.
