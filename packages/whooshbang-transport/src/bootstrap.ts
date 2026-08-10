@@ -88,6 +88,8 @@ const SAFE_PROBLEM_MESSAGES = {
     "The WhooshBang setup resource can no longer be cancelled.",
   credential_invalid:
     "The WhooshBang project bootstrap credential is invalid or revoked.",
+  endpoint_rotation_conflict:
+    "WhooshBang rejected a conflicting customer endpoint rotation.",
   environment_mismatch:
     "The WhooshBang project credential targets another environment.",
   idempotency_conflict: "WhooshBang rejected a conflicting setup operation.",
@@ -121,8 +123,11 @@ function setupProblemCode(
     case "idempotency_conflict":
     case "idempotency_key_required":
       return "idempotency-conflict";
-    // Agent Relay never creates a WhooshBang project. The RC.5 code is mapped
-    // exhaustively so an unexpected response stays a safe terminal rejection.
+    // Agent Relay never creates a WhooshBang project and never owns a customer
+    // endpoint, so neither conflict is reachable from a setup call it makes.
+    // Every pinned code is mapped exhaustively so an unexpected response stays
+    // a safe terminal rejection rather than an unhandled one.
+    case "endpoint_rotation_conflict":
     case "project_slug_conflict":
     case "request_invalid":
       return "request-invalid";

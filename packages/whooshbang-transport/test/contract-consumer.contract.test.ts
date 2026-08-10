@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -265,12 +265,35 @@ async function deliverAndSubmit(input: {
   return expected;
 }
 
+// `response` is required in the pinned contract and becomes optional when the
+// answer-content window closes, so this reads it without asserting presence.
+function hostedResponseOf(
+  event: InteractionEvent,
+): InteractionEvent["response"] | undefined {
+  return event.response as InteractionEvent["response"] | undefined;
+}
+
 function requireInteractionEvent(batch: MachineEventPollResponse) {
   const hostedEvent = batch.events[0];
   if (hostedEvent === undefined) {
     throw new Error("Expected one hosted interaction event.");
   }
   return hostedEvent;
+}
+
+// The vendored tarball this package pins, expressed as pnpm names it in the
+// virtual store. Derived from the pin so the assertion below stays exact
+// against the locked artifact instead of a hand-copied release candidate.
+function packedMockStoreDirectory(): string {
+  const manifest = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8"),
+  ) as { devDependencies: Record<string, string> };
+  const specifier = manifest.devDependencies["@whooshbang/contract-mock"];
+  if (specifier === undefined || !specifier.startsWith("file:../../vendor/")) {
+    throw new Error("The contract mock is not pinned to a vendored tarball.");
+  }
+  const vendorPath = specifier.slice("file:../../".length);
+  return `@whooshbang+contract-mock@file+${vendorPath.replaceAll("/", "+")}`;
 }
 
 async function startPackedMock() {
@@ -290,6 +313,11 @@ async function startPackedMock() {
       "interaction-select",
       "--control-token",
       controlToken,
+      // The packed mock defaults its loopback CLI to the system clock, which
+      // would expire this suite's frozen fixture timestamps. The frozen clock
+      // keeps the packed process deterministic like the in-process factory.
+      "--clock",
+      "fixed",
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -306,11 +334,13 @@ async function startPackedMock() {
     host: string;
     port: number;
     control_enabled: boolean;
+    clock: string;
   };
   if (
     started.event !== "contract_mock_started" ||
     !started.control_enabled ||
-    started.host !== "127.0.0.1"
+    started.host !== "127.0.0.1" ||
+    started.clock !== "fixed"
   ) {
     child.kill("SIGTERM");
     throw new Error("Packed mock did not start in guarded loopback mode.");
@@ -724,9 +754,7 @@ describe("C0 WhooshBang consumer contract", () => {
 
   it("runs the exact packed mock as a guarded separate process", async () => {
     const running = await startPackedMock();
-    expect(running.cli).toContain(
-      "@whooshbang+contract-mock@file+vendor+whooshbang-rc5+whooshbang-contract-mock-1.0.0-rc.5.tgz",
-    );
+    expect(running.cli).toContain(packedMockStoreDirectory());
     const event = selectEvent("packed");
     const store = new RelayStore();
     try {
@@ -787,6 +815,107 @@ describe("C0 WhooshBang consumer contract", () => {
       await running.close();
     }
   }, 15_000);
+
+  it("polls, acknowledges, and advances past an event whose answer content is gone", async () => {
+    const mock = createWhooshBangContractMock({ scenario: "nominal" });
+    const mockFetch = fetchFor(mock);
+    const client = machineClient("https://whooshbang.mock.test", mockFetch);
+    const store = new RelayStore();
+    const event = selectEvent("stripped");
+    store.ingestEvent(event);
+    const local = store.getPendingRequest(event.request!.correlationId)!;
+    const beta = local.options.find(
+      (option) => option.optionId === "option_beta_12345678",
+    )!;
+    const answered: InteractionEvent = {
+      schema: "whooshbang.interaction-event.v1",
+      id: "event_stripped_answer_12345678",
+      cursor: "mcur_stripped_answer_12345678",
+      type: "interaction.received",
+      message_id: "message_stripped_12345678",
+      interaction_id: "interaction_stripped_12345678",
+      correlation_id: local.correlationId,
+      response: { type: "select", value: beta.token },
+      channel_context: {
+        binding_id: "binding_synthetic_relay",
+        channel: "telegram",
+        conversation_kind: "private_chat",
+      },
+      occurred_at: answeredAt,
+      expires_at: expiresAt,
+    };
+    mock.control.enqueueMachineEvent({
+      event: answered,
+      machineClientId: "machine_client_synthetic_001",
+      quarantinable: false,
+      signatureValid: true,
+      streamIdentityValid: true,
+    });
+    const polled = await client.pollMachineEvents({ wait: 0 });
+    const hostedEvent = requireInteractionEvent(polled);
+    expect(hostedEvent.id).toBe(answered.id);
+
+    // WhooshBang closes a seven-day content window on the answer while keeping
+    // the event, its cursor, and its references. The pinned contract still
+    // requires `response`, and the SDK validates every poll response against
+    // it, so the envelope cannot arrive stripped until that contract ships.
+    // Everything else here is the real mock over the real SDK: only the one
+    // field this transport must stop requiring is removed, at the boundary
+    // between what the stream delivered and what the transport classifies.
+    const { response: _pruned, ...contentWindowClosed } = hostedEvent;
+    const strippedEvent = contentWindowClosed as unknown as InteractionEvent;
+    expect(hostedResponseOf(strippedEvent)).toBeUndefined();
+
+    const validation = validateHostedAnswer({
+      event: strippedEvent,
+      localRequest: local,
+      expected: {
+        correlationId: local.correlationId,
+        eventId: local.eventId,
+        hostedMessageId: answered.message_id,
+        hostedInteractionId: answered.interaction_id,
+        machineId: local.machineId,
+        harness: local.harness,
+        sessionId: local.sessionId,
+        ...(local.turnId === undefined ? {} : { turnId: local.turnId }),
+        interactionType: "select",
+        expiresAt: local.expiresAt,
+      },
+      stream: streamProof(),
+    });
+    expect(validation).toEqual({
+      outcome: "terminal",
+      acknowledgement: "processed",
+      reasonCode: "answer_unavailable",
+    });
+    // The local request keeps its negotiated local fallback rather than being
+    // resolved from an answer that no longer exists.
+    expect(store.getPendingRequest(local.correlationId)?.state).toBe("open");
+
+    await expect(
+      client.acknowledgeMachineEvent(
+        hostedEvent.id,
+        {
+          cursor: hostedEvent.cursor,
+          disposition: "processed",
+          reason_code: null,
+        },
+        { idempotencyKey: `ack_${hostedEvent.id}` },
+      ),
+    ).resolves.toMatchObject({
+      advanced: true,
+      committed_cursor: hostedEvent.cursor,
+    });
+    const after = await client.pollMachineEvents({
+      after: hostedEvent.cursor,
+      wait: 0,
+    });
+    expect(after).toMatchObject({
+      committed_cursor: hostedEvent.cursor,
+      events: [],
+    });
+    store.close();
+  });
 
   it("records a safe durable quarantine before acknowledging poison data", async () => {
     const mock = createWhooshBangContractMock({

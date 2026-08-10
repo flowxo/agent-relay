@@ -60,7 +60,7 @@ async function configureWhooshBang(stateDirectory: string) {
       schema: "agent-relay-whooshbang-config.v1",
       status: "active",
       baseUrl: "https://whooshbang.example.test/",
-      contractVersion: "1.0.0-rc.5",
+      contractVersion: "1.0.0-rc.10",
       environment: "test",
       projectId: "project_private_full_identity",
       machineClientId: "machine_client_private_full_identity",

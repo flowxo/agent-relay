@@ -139,11 +139,12 @@ The command emits one safe JSON proof containing the package version and tarball
 SHA-256, the immutable contract-lock SHA-256, interaction/replay results,
 direct-Telegram result, retention/uninstall result, and privacy-scan result. The
 tarball digest describes that invocation's exact source state and therefore
-changes when packed documentation or code changes. The contract lock pins three
-`1.0.0-rc.5` artifacts by package version, archive SHA-256, and source commit;
-mutable branches, copied contract types, and sibling checkouts are rejected by
-the existing contract and package gates. Unsupported operating systems report a
-runtime skip, while content and exact-contract gates remain mandatory.
+changes when packed documentation or code changes. The contract lock pins the
+three WhooshBang artifacts by package version, archive SHA-256, and source
+commit, each at its own exact version; mutable branches, copied contract types,
+and sibling checkouts are rejected by the existing contract and package gates.
+Unsupported operating systems report a runtime skip, while content and
+exact-contract gates remain mandatory.
 
 The lifecycle check derives a sanitized `0.1.0-alpha.0` prior-package fixture
 from the exact current artifact, installs it with scripts disabled, records a

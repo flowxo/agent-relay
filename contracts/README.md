@@ -2,7 +2,8 @@
 
 `contract-lock.json` is Agent Relay's exact consumer lock for cross-repository
 public contracts. It pins only the three WhooshBang artifacts consumed by the C0
-transport boundary. Agent Relay owns no C0 artifact.
+transport boundary, each at its own exact version; they no longer share one
+release candidate number. Agent Relay owns no C0 artifact.
 
 The lock records the producer repository and full commit, exact SemVer, artifact
 SHA-256, repository-relative tarball, and exact fixture-set identities. The
@@ -27,10 +28,11 @@ stable gate:
    mutable transitive dependencies, and package or fixture identity drift;
 6. rejects any retired `@flowxo/*` transitive package identity outright, because
    WhooshBang's pre-alpha hard cut publishes no compatibility alias;
-7. checks the `vendor/whooshbang-rc5` provenance manifest against the lock,
-   including the producer repository and full commit;
+7. checks the `vendor/whooshbang-rc10-rc11-rc13` provenance manifest against the
+   lock, including the producer repository and per-artifact full commit;
 8. installs the verified bytes in a fresh temporary pnpm project with lifecycle
-   scripts disabled and imports all three packages;
+   scripts disabled, proves the installed WhooshBang closure is exactly the
+   locked set, and imports all three packages;
 9. enforces the production transport import boundary;
 10. runs the lock, supply-chain, additive-compatibility, mapping, SQLite replay,
     acknowledgement, quarantine, and direct-Telegram parity tests; and
@@ -92,10 +94,11 @@ Every update is an explicit reviewable change:
    without running lifecycle scripts. Record its package version and SHA-256
    digest; unchanged artifacts retain their existing source commits and bytes.
 3. Replace only the corresponding files under the vendor directory. The
-   directory is named for the pinned candidate, so a version change renames it
-   to `vendor/whooshbang-<candidate>` and the superseded directory is removed
-   rather than kept beside it; the retired candidate stays reproducible from its
-   recorded producer commit and its digests stay recorded in the story
+   directory is named for the pinned candidate set, so a version change renames
+   it to `vendor/whooshbang-<candidates>` — naming every candidate when the
+   three artifacts no longer share one number — and the superseded directory is
+   removed rather than kept beside it; the retired candidate stays reproducible
+   from its recorded producer commit and its digests stay recorded in the story
    specification that pinned it. Update the provenance manifest and
    `contract-lock.json` with the exact commit, versions, digests, paths, and
    fixture identities.

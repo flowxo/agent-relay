@@ -383,4 +383,44 @@ describe("hosted answer validation", () => {
       ).toEqual({ outcome, acknowledgement, reasonCode });
     },
   );
+
+  // WhooshBang closes a seven-day content window on the answer while keeping
+  // the event, its cursor, and its references. The event is neither poison nor
+  // a late answer, so it must acknowledge as processed and advance the cursor
+  // instead of quarantining, and it must not resolve the local request.
+  it("acknowledges an event whose answer content is gone without resolving it", () => {
+    const { response: _pruned, ...contentWindowClosed } = event;
+    expect(
+      validateHostedAnswer({
+        event: contentWindowClosed as unknown as typeof event,
+        localRequest: local,
+        expected,
+        stream,
+      }),
+    ).toEqual({
+      outcome: "terminal",
+      acknowledgement: "processed",
+      reasonCode: "answer_unavailable",
+    });
+    expect(local.state).toBe("open");
+  });
+
+  it("keeps every identity check ahead of a missing answer", () => {
+    const { response: _pruned, ...contentWindowClosed } = event;
+    expect(
+      validateHostedAnswer({
+        event: {
+          ...contentWindowClosed,
+          correlation_id: "request_other_12345678",
+        } as unknown as typeof event,
+        localRequest: local,
+        expected,
+        stream,
+      }),
+    ).toEqual({
+      outcome: "stop",
+      acknowledgement: "none",
+      reasonCode: "correlation_mismatch",
+    });
+  });
 });

@@ -477,7 +477,7 @@ synthetic canary, rotate, revoke, erase, and deliver normal attention events
 when `whooshbang` is selected. Selected hosted mode also long-polls
 confirm/select/input answers, commits them to the exact local request before
 provider acknowledgement, and recovers cursor/acknowledgement work after
-restart. Terminal presentation is a separate durable worker; the pinned RC.5
+restart. Terminal presentation is a separate durable worker; the pinned SDK
 contract reports that optional capability as unsupported because it has no
 resolution-update endpoint. Safe status still exposes its queue/block counts and
 failure category. Local disconnect or revocation stops new hosted calls, retains
@@ -501,11 +501,12 @@ Do not place a broad WhooshBang project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment
 injection, or hidden prompt. The local setup files are retained by uninstall;
 use `whooshbang disconnect --revoke` before explicit credential/configuration
-erasure. Agent Relay now pins the exact WhooshBang `1.0.0-rc.5` candidate.
-Perform this setup only against the executable loopback mock. WhooshBang's
-deployed API does not yet implement the machine-client and machine-event routes
-this transport calls, so a real environment cannot complete the setup regardless
-of credentials.
+erasure. Agent Relay now pins the exact WhooshBang
+`@whooshbang/contracts@1.0.0-rc.10`, `@whooshbang/sdk@1.0.0-rc.11`, and
+`@whooshbang/contract-mock@1.0.0-rc.13` candidates. Perform this setup only
+against the executable loopback mock. WhooshBang's deployed API does not yet
+implement the machine-client and machine-event routes this transport calls, so a
+real environment cannot complete the setup regardless of credentials.
 
 ## 6. Prove the Telegram interaction loop
 

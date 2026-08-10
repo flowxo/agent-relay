@@ -2,8 +2,9 @@
 
 - **Status:** Complete against the pinned executable mock and packed artifact;
   C0-09 approved the pre-rename `1.0.0-rc.1` inputs, FXO-1373 migrated the
-  consumer to WhooshBang `1.0.0-rc.5`, and AR3 awaits an approved real service
-  environment
+  consumer to WhooshBang, most recently re-vendored to `contracts@1.0.0-rc.10` /
+  `sdk@1.0.0-rc.11` / `contract-mock@1.0.0-rc.13`, and AR3 awaits an approved
+  real service environment
 - **Product:** Agent Relay
 - **Initiative:**
   [Agent Relay — Open Source V1](https://linear.app/flowxo/initiative/agent-relay-open-source-v1-664f633c9408)
@@ -53,10 +54,12 @@ retired that producer and artifact identity with no compatibility alias, so
 `@whooshbang/*` `1.0.0-rc.4` artifacts and reproduced this project's consumer
 and packed mock-backed proofs against them;
 [FXO-1436](https://linear.app/flowxo/issue/FXO-1436) advanced that same proof to
-the exact `1.0.0-rc.5` candidate. AR3 owns real-service evidence and starts only
-once WhooshBang implements the narrow machine bootstrap and durable poll/ack
-stream this transport calls, which are specified as
-[N2-10](https://linear.app/flowxo/issue/FXO-1206) and
+the exact `1.0.0-rc.5` candidate, and
+[FXO-1209](https://linear.app/flowxo/issue/FXO-1209) advanced it again to
+`contracts@1.0.0-rc.10`, `sdk@1.0.0-rc.11`, and `contract-mock@1.0.0-rc.13`. AR3
+owns real-service evidence and starts only once WhooshBang implements the narrow
+machine bootstrap and durable poll/ack stream this transport calls, which are
+specified as [N2-10](https://linear.app/flowxo/issue/FXO-1206) and
 [N2-11](https://linear.app/flowxo/issue/FXO-1207) and are not yet built.
 
 ## 2. Outcome

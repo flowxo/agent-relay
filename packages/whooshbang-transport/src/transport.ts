@@ -157,8 +157,8 @@ export class WhooshBangContractTransport
       },
       status: "proven",
       evidence: "official-docs",
-      observedVersion: "@whooshbang/sdk@1.0.0-rc.5",
-      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.5",
+      observedVersion: "@whooshbang/sdk@1.0.0-rc.11",
+      fixture: "interaction-machine-semantic-scenarios@1.0.0-rc.10",
       note: "The pinned hosted contract proves confirm, single-select, and input. It does not expose durable drafts, ordered or multi-select sets, or resolved-message updates.",
     });
   }
@@ -173,7 +173,10 @@ export class WhooshBangContractTransport
     messageId: string,
   ): Promise<HostedDeliveryDiagnostic> {
     try {
-      const hosted = await this.client.getMessage(messageId);
+      // A diagnosis is a point-in-time read of the current hosted state. The
+      // contract's bounded inspection wait defaults to a 30-second server-held
+      // long poll when omitted, which this call must not inherit.
+      const hosted = await this.client.getMessage(messageId, { wait: 0 });
       if (hosted.state === "outcome_unknown") {
         throw new WhooshBangDeliveryError(
           "WhooshBang cannot prove the provider outcome; no new hosted send is permitted.",
