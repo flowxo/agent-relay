@@ -85,6 +85,24 @@ export interface DoctorOptions {
   runtimeEntryPath?: string;
   runtimeNodePath?: string;
   transportReadiness?: TransportReadinessReport;
+  liveWhooshBang?: {
+    readonly selectedTransport?: string;
+    readonly runtime?: {
+      readonly circuit: { readonly blocked: boolean };
+      readonly delivery: {
+        readonly lastSuccessfulSendAt: string | null;
+      };
+      readonly polling: {
+        readonly committedCursorRef: string | null;
+        readonly lastSuccessfulPollAt: string | null;
+        readonly state: "active" | "error" | "not-started";
+        readonly unacknowledgedEventCount: number;
+      };
+      readonly presentation: {
+        readonly capability: "not-selected" | "supported" | "unsupported";
+      };
+    };
+  };
   runnerBridge?: {
     readonly configured: boolean;
     readonly enabled: boolean;
@@ -286,6 +304,99 @@ export async function runDoctor(
         }),
       });
     }
+  }
+  if (options.liveWhooshBang !== undefined) {
+    const selected = options.liveWhooshBang.selectedTransport === "whooshbang";
+    const runtime = options.liveWhooshBang.runtime;
+    checks.push({
+      name: "whooshbang-live-selection",
+      ok: selected,
+      level: selected ? "pass" : "fail",
+      detail: selected
+        ? "the running daemon selected WhooshBang"
+        : "the running daemon did not select WhooshBang",
+    });
+
+    const readiness = options.transportReadiness?.transports.whooshbang;
+    const evidence = readiness?.canaryEvidence;
+    const canaryRecorded =
+      readiness?.canaryRef !== undefined &&
+      evidence !== undefined &&
+      readiness.credentialGeneration === evidence.credentialGeneration;
+    checks.push({
+      name: "whooshbang-hosted-canary",
+      ok: canaryRecorded,
+      level: canaryRecorded ? "pass" : "fail",
+      detail: canaryRecorded
+        ? JSON.stringify({
+            completedAt: evidence?.completedAt,
+            credentialGeneration: evidence?.credentialGeneration,
+          })
+        : "no canary correlated to the current hosted credential is recorded",
+    });
+
+    const deliveryReady =
+      canaryRecorded &&
+      evidence !== undefined &&
+      runtime !== undefined &&
+      !runtime.circuit.blocked &&
+      runtime.delivery.lastSuccessfulSendAt !== null &&
+      Date.parse(runtime.delivery.lastSuccessfulSendAt) >=
+        Date.parse(evidence.lastSuccessfulSendAt);
+    checks.push({
+      name: "whooshbang-live-send",
+      ok: deliveryReady,
+      level: deliveryReady ? "pass" : "fail",
+      detail: JSON.stringify({
+        circuitBlocked: runtime?.circuit.blocked ?? null,
+        lastSuccessfulSendAt: runtime?.delivery.lastSuccessfulSendAt ?? null,
+      }),
+    });
+
+    const pollingReady =
+      canaryRecorded &&
+      evidence !== undefined &&
+      runtime?.polling.state === "active" &&
+      runtime.polling.lastSuccessfulPollAt !== null &&
+      Date.parse(runtime.polling.lastSuccessfulPollAt) >=
+        Date.parse(evidence.lastSuccessfulPollAt);
+    checks.push({
+      name: "whooshbang-live-poll",
+      ok: pollingReady,
+      level: pollingReady ? "pass" : "fail",
+      detail: JSON.stringify({
+        lastSuccessfulPollAt: runtime?.polling.lastSuccessfulPollAt ?? null,
+        state: runtime?.polling.state ?? "unavailable",
+      }),
+    });
+
+    const ackReady =
+      canaryRecorded &&
+      runtime?.polling.committedCursorRef !== null &&
+      runtime?.polling.committedCursorRef !== undefined &&
+      runtime.polling.unacknowledgedEventCount === 0;
+    checks.push({
+      name: "whooshbang-live-ack",
+      ok: ackReady,
+      level: ackReady ? "pass" : "fail",
+      detail: JSON.stringify({
+        committedCursorRef: runtime?.polling.committedCursorRef ?? null,
+        unacknowledgedEventCount:
+          runtime?.polling.unacknowledgedEventCount ?? null,
+      }),
+    });
+
+    const presentationReady =
+      runtime !== undefined &&
+      runtime.presentation.capability !== "not-selected";
+    checks.push({
+      name: "whooshbang-resolution-presentation",
+      ok: presentationReady,
+      level: presentationReady ? "pass" : "fail",
+      detail: JSON.stringify({
+        capability: runtime?.presentation.capability ?? "unavailable",
+      }),
+    });
   }
   let store: RelayStore | undefined;
   try {

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
+import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
 
 import {
   asWhooshBangSetupError,
   connectWhooshBangMachine,
+  createMachineCredentialMaterial,
   disconnectWhooshBangMachine,
   normalizeWhooshBangBaseUrl,
   WhooshBangAdministrationClient,
@@ -12,15 +14,20 @@ import {
 } from "@agent-relay/whooshbang-transport";
 
 import { loadOrCreateMachineId } from "./machine-id.js";
+import { authorizeWhooshBangMachine } from "./whooshbang-oauth.js";
 import {
   eraseWhooshBangConnection,
+  eraseWhooshBangOAuthProvisioningJournal,
   markWhooshBangDisconnected,
+  readWhooshBangOAuthProvisioningJournal,
+  reconcileWhooshBangOAuthCredentialOnly,
   whooshbangConnectionPaths,
   WhooshBangConnectionConfigurationSchema,
   WhooshBangMachineCredentialSchema,
   readWhooshBangConnection,
   safeWhooshBangConnectionSummary,
   updateWhooshBangConfiguration,
+  writeWhooshBangOAuthProvisioningJournal,
   writeWhooshBangConnection,
 } from "./whooshbang-config.js";
 
@@ -33,8 +40,10 @@ import type {
 import type {
   WhooshBangConnectionConfiguration,
   WhooshBangMachineCredential,
+  WhooshBangOAuthProvisioningJournal,
   StoredWhooshBangConnection,
 } from "./whooshbang-config.js";
+import type { WhooshBangOAuthMachineResult } from "./whooshbang-oauth.js";
 
 export const WHOOSHBANG_COMMAND_USAGE = `Agent Relay WhooshBang
 
@@ -45,10 +54,14 @@ Usage:
 
 Connect options:
   --base-url <https-url>       WhooshBang API base URL (or explicit loopback)
+  --project-selector <id>      Optional project ID/slug; omit for sole active
+  --environment <test|live>    Project environment (default: test)
   --subscriber-id <id>         Opaque subscriber configured in WhooshBang
   --notifier-id <id>           Opaque notifier (default: default)
   --display-name <name>        Optional bounded local machine label
-  --wait-seconds <seconds>     Wait for Telegram authorization (default: 300)
+  --wait-seconds <seconds>     Wait for browser authorization (default: 300)
+  --oauth                      Require the default OAuth/MCP bootstrap
+  --legacy-project-credential  Use the compatibility administration path
   --poll-interval-ms <ms>      Authorization polling interval (default: 1000)
   --credential-stdin           Read the project bootstrap credential from stdin
 
@@ -60,11 +73,14 @@ Disconnect options:
 
 Environment injection:
   AGENT_RELAY_WHOOSHBANG_BASE_URL
+  AGENT_RELAY_WHOOSHBANG_PROJECT_SELECTOR
+  AGENT_RELAY_WHOOSHBANG_ENVIRONMENT
   AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID
   AGENT_RELAY_WHOOSHBANG_NOTIFIER_ID
   AGENT_RELAY_WHOOSHBANG_PROJECT_CREDENTIAL
 
-The broad project credential is never accepted positionally or written to disk.
+OAuth/MCP is the default and retains no OAuth token. The broad project
+credential is never accepted positionally or written to disk.
 `;
 
 interface ParsedOptions {
@@ -81,6 +97,7 @@ interface SecretInput {
 
 export interface WhooshBangCommandRuntime {
   args: string[];
+  authorizeMachine?: typeof authorizeWhooshBangMachine;
   createCredentialMaterial?: () => Promise<MachineCredentialMaterial>;
   createIdempotencyKey?: (operation: string) => string;
   environment?: Readonly<Record<string, string | undefined>>;
@@ -91,6 +108,47 @@ export interface WhooshBangCommandRuntime {
   stateDirectory: string;
   stdinIsTTY?: boolean;
   writeDiagnostic?: (diagnostic: unknown) => void;
+}
+
+function newOAuthConnection(
+  result: WhooshBangOAuthMachineResult,
+  previous: StoredWhooshBangConnection | undefined,
+  credentialGeneration: number,
+): {
+  configuration: WhooshBangConnectionConfiguration;
+  credential: WhooshBangMachineCredential;
+} {
+  const previousCredentialId = previous?.configuration.currentCredentialId;
+  return {
+    configuration: WhooshBangConnectionConfigurationSchema.parse({
+      schema: "agent-relay-whooshbang-config.v1",
+      status: "active",
+      baseUrl: result.configuration.baseUrl,
+      contractVersion: result.configuration.contractVersion,
+      environment: result.configuration.environment,
+      projectId: result.configuration.projectId,
+      machineClientId: result.configuration.machineClientId,
+      subscriberId: result.configuration.subscriberId,
+      notifierId: result.configuration.notifierId,
+      bindingId: result.configuration.bindingId,
+      currentCredentialId: result.credential.credentialId,
+      scopeSummary: [...result.configuration.scopeSummary],
+      connectedAt: result.configuration.connectedAt,
+      pendingRevocations: [],
+    }),
+    credential: WhooshBangMachineCredentialSchema.parse({
+      schema: "agent-relay-whooshbang-credential.v1",
+      credentialId: result.credential.credentialId,
+      bearerToken: result.credential.bearerToken,
+      createdAt: result.credential.createdAt,
+      rotation: {
+        generation: credentialGeneration,
+        ...(previousCredentialId === undefined
+          ? {}
+          : { replacesCredentialId: previousCredentialId }),
+      },
+    }),
+  };
 }
 
 function optionValue(parsed: ParsedOptions, name: string): string | undefined {
@@ -217,6 +275,95 @@ function environmentValue(
 ): string | undefined {
   const value = environment[name];
   return value === undefined || value.length === 0 ? undefined : value;
+}
+
+function isErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
+}
+
+function processIsRunning(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid < 1) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return isErrorCode(error, "EPERM");
+  }
+}
+
+async function withWhooshBangLifecycleLock<T>(
+  stateDirectory: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+  const lockPath = `${stateDirectory}/whooshbang-lifecycle.lock`;
+  let handle;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      handle = await open(lockPath, "wx", 0o600);
+      await handle.writeFile(
+        `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`,
+        "utf8",
+      );
+      await handle.sync();
+      break;
+    } catch (error) {
+      if (!isErrorCode(error, "EEXIST")) {
+        await handle?.close().catch(() => undefined);
+        throw error;
+      }
+      let stale: boolean;
+      try {
+        const value = JSON.parse(await readFile(lockPath, "utf8")) as unknown;
+        const pid =
+          typeof value === "object" &&
+          value !== null &&
+          "pid" in value &&
+          typeof value.pid === "number"
+            ? value.pid
+            : undefined;
+        stale = pid !== undefined && !processIsRunning(pid);
+      } catch {
+        const metadata = await stat(lockPath).catch(() => undefined);
+        stale =
+          metadata !== undefined && Date.now() - metadata.mtimeMs > 30_000;
+      }
+      if (!stale || attempt === 1) {
+        throw new Error(
+          "A WhooshBang lifecycle operation is already in progress",
+          {
+            cause: error,
+          },
+        );
+      }
+      await unlink(lockPath).catch((unlinkError: unknown) => {
+        if (!isErrorCode(unlinkError, "ENOENT")) {
+          throw unlinkError;
+        }
+      });
+    }
+  }
+  if (handle === undefined) {
+    throw new Error("Could not acquire the WhooshBang lifecycle lock");
+  }
+
+  try {
+    return await action();
+  } finally {
+    await handle.close().catch(() => undefined);
+    await unlink(lockPath).catch((error: unknown) => {
+      if (!isErrorCode(error, "ENOENT")) {
+        throw error;
+      }
+    });
+  }
 }
 
 function projectCredentialInput(
@@ -421,6 +568,58 @@ function hostedStateMayRemain(connection: StoredWhooshBangConnection): boolean {
   );
 }
 
+function connectionMatchesJournal(
+  connection: StoredWhooshBangConnection | undefined,
+  journal: WhooshBangOAuthProvisioningJournal,
+): boolean {
+  return (
+    connection !== undefined &&
+    connection.credential !== undefined &&
+    connection.configuration.baseUrl === journal.target.baseUrl &&
+    connection.configuration.environment === journal.target.environment &&
+    connection.configuration.projectId === journal.target.projectId &&
+    connection.configuration.notifierId === journal.target.notifierId &&
+    connection.configuration.subscriberId === journal.target.subscriberId &&
+    connection.configuration.currentCredentialId ===
+      journal.material.credentialId &&
+    connection.credential.credentialId === journal.material.credentialId &&
+    connection.credential.bearerToken === journal.material.bearerToken &&
+    connection.credential.rotation.generation === journal.credentialGeneration
+  );
+}
+
+function requestedTargetMatchesJournal(
+  journal: WhooshBangOAuthProvisioningJournal,
+  target: {
+    baseUrl: string;
+    displayName?: string;
+    environment: "test" | "live";
+    machineId: string;
+    notifierId: string;
+    projectSelector?: string;
+    subscriberId: string;
+  },
+): boolean {
+  return (
+    journal.target.baseUrl === target.baseUrl &&
+    journal.target.environment === target.environment &&
+    journal.target.machineId === target.machineId &&
+    journal.target.notifierId === target.notifierId &&
+    journal.target.subscriberId === target.subscriberId &&
+    journal.target.projectSelector === target.projectSelector &&
+    journal.target.displayName === target.displayName
+  );
+}
+
+function configurationExpectation(connection: StoredWhooshBangConnection) {
+  return {
+    connectedAt: connection.configuration.connectedAt,
+    credentialGeneration: connection.credential?.rotation.generation ?? null,
+    credentialId: connection.configuration.currentCredentialId,
+    status: connection.configuration.status,
+  } as const;
+}
+
 async function cleanupConnectedMachine(
   result: Extract<WhooshBangConnectResult, { status: "connected" }>,
   input: {
@@ -449,7 +648,7 @@ async function cleanupConnectedMachine(
   }
 }
 
-async function connectCommand(
+async function legacyConnectCommand(
   parsed: ParsedOptions,
   runtime: WhooshBangCommandRuntime,
   environment: Readonly<Record<string, string | undefined>>,
@@ -479,10 +678,17 @@ async function connectCommand(
     { minimum: 10, maximum: 30_000 },
     "WhooshBang authorization polling interval",
   );
+  const paths = whooshbangConnectionPaths(runtime.stateDirectory);
+  if ((await readWhooshBangOAuthProvisioningJournal(paths)) !== undefined) {
+    throw new WhooshBangSetupError(
+      "Complete the pending WhooshBang OAuth recovery before legacy bootstrap.",
+      "whooshbang-setup-invalid",
+      false,
+    );
+  }
   const projectCredential = await resolveWhooshBangProjectCredential(
     projectCredentialInput(parsed, runtime, environment),
   );
-  const paths = whooshbangConnectionPaths(runtime.stateDirectory);
   const previous = await readWhooshBangConnection(paths);
   let normalizedBaseUrl: string;
   try {
@@ -593,7 +799,11 @@ async function connectCommand(
       ...stored.configuration,
       pendingRevocations: retired.remaining,
     });
-    await updateWhooshBangConfiguration(paths, configuration);
+    await updateWhooshBangConfiguration(
+      paths,
+      configuration,
+      configurationExpectation(stored),
+    );
     stored = {
       configuration,
       ...(stored.credential === undefined
@@ -619,15 +829,248 @@ async function connectCommand(
   };
 }
 
+async function oauthConnectCommandLocked(
+  parsed: ParsedOptions,
+  runtime: WhooshBangCommandRuntime,
+  environment: Readonly<Record<string, string | undefined>>,
+): Promise<unknown> {
+  const baseUrl =
+    optionValue(parsed, "--base-url") ??
+    environmentValue(environment, "AGENT_RELAY_WHOOSHBANG_BASE_URL");
+  const subscriberId =
+    optionValue(parsed, "--subscriber-id") ??
+    environmentValue(environment, "AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID");
+  if (baseUrl === undefined || subscriberId === undefined) {
+    throw new Error("WhooshBang connect requires a base URL and subscriber ID");
+  }
+  const environmentName =
+    optionValue(parsed, "--environment") ??
+    environmentValue(environment, "AGENT_RELAY_WHOOSHBANG_ENVIRONMENT") ??
+    "test";
+  if (environmentName !== "test" && environmentName !== "live") {
+    throw new Error("WhooshBang environment must be test or live");
+  }
+  const notifierId =
+    optionValue(parsed, "--notifier-id") ??
+    environmentValue(environment, "AGENT_RELAY_WHOOSHBANG_NOTIFIER_ID") ??
+    "default";
+  const projectSelector =
+    optionValue(parsed, "--project-selector") ??
+    environmentValue(environment, "AGENT_RELAY_WHOOSHBANG_PROJECT_SELECTOR");
+  const displayName = optionValue(parsed, "--display-name");
+  const waitSeconds = boundedInteger(
+    optionValue(parsed, "--wait-seconds"),
+    300,
+    { minimum: 1, maximum: 600 },
+    "WhooshBang browser authorization wait",
+  );
+  if (optionValue(parsed, "--poll-interval-ms") !== undefined) {
+    throw new Error(
+      "--poll-interval-ms is available only with --legacy-project-credential",
+    );
+  }
+
+  const paths = whooshbangConnectionPaths(runtime.stateDirectory);
+  await reconcileWhooshBangOAuthCredentialOnly(paths);
+  const previous = await readWhooshBangConnection(paths);
+  let journal = await readWhooshBangOAuthProvisioningJournal(paths);
+  let normalizedBaseUrl: string;
+  try {
+    normalizedBaseUrl = normalizeWhooshBangBaseUrl(baseUrl).toString();
+  } catch (error) {
+    throw asWhooshBangSetupError(error);
+  }
+  const machineId = await loadOrCreateMachineId(
+    `${runtime.stateDirectory}/machine-id`,
+  );
+  const target = {
+    baseUrl: normalizedBaseUrl,
+    environment: environmentName,
+    machineId,
+    notifierId,
+    subscriberId,
+    ...(projectSelector === undefined ? {} : { projectSelector }),
+    ...(displayName === undefined ? {} : { displayName }),
+  } as const;
+  if (journal !== undefined && connectionMatchesJournal(previous, journal)) {
+    const alreadyConnected =
+      previous?.configuration.status === "active" &&
+      requestedTargetMatchesJournal(journal, target);
+    await eraseWhooshBangOAuthProvisioningJournal(paths);
+    journal = undefined;
+    if (alreadyConnected) {
+      return {
+        ...safeWhooshBangConnectionSummary(previous),
+        status: "already_connected",
+        authorization: "oauth-authorization-code-s256",
+        canary:
+          previous.configuration.canaryEvidence === undefined
+            ? "pending"
+            : "accepted",
+      };
+    }
+  }
+  if (previous !== undefined && hostedStateMayRemain(previous)) {
+    throw new WhooshBangSetupError(
+      "Revoke the retained WhooshBang connection before OAuth bootstrap.",
+      "whooshbang-setup-invalid",
+      false,
+    );
+  }
+  const credentialGeneration =
+    journal?.credentialGeneration ??
+    (previous?.credential?.rotation.generation ?? 0) + 1;
+  let journalCreatedThisAttempt = false;
+  if (
+    journal !== undefined &&
+    (journal.target.baseUrl !== target.baseUrl ||
+      journal.target.environment !== target.environment ||
+      journal.target.machineId !== target.machineId ||
+      journal.target.notifierId !== target.notifierId ||
+      journal.target.subscriberId !== target.subscriberId ||
+      journal.target.projectSelector !== target.projectSelector ||
+      journal.target.displayName !== target.displayName)
+  ) {
+    throw new WhooshBangSetupError(
+      "Retry the pending WhooshBang OAuth connection with the same target before changing it.",
+      "whooshbang-setup-invalid",
+      false,
+    );
+  }
+  const journaledCredentialMaterial = async (resolved: {
+    environmentId: string;
+    projectId: string;
+  }): Promise<MachineCredentialMaterial> => {
+    if (journal !== undefined) {
+      if (
+        journal.target.projectId !== resolved.projectId ||
+        journal.target.environmentId !== resolved.environmentId
+      ) {
+        throw new WhooshBangSetupError(
+          "The pending WhooshBang OAuth connection no longer resolves to the same project environment.",
+          "whooshbang-setup-invalid",
+          false,
+        );
+      }
+      return journal.material;
+    }
+    const material = await (
+      runtime.createCredentialMaterial ?? createMachineCredentialMaterial
+    )();
+    journal = await writeWhooshBangOAuthProvisioningJournal(paths, {
+      schema: "agent-relay-whooshbang-oauth-provisioning.v1",
+      recordedAt: (runtime.now?.() ?? new Date()).toISOString(),
+      credentialGeneration,
+      target: { ...target, ...resolved },
+      material,
+    });
+    journalCreatedThisAttempt = true;
+    return journal.material;
+  };
+  const authorize = runtime.authorizeMachine ?? authorizeWhooshBangMachine;
+  let result: WhooshBangOAuthMachineResult;
+  try {
+    result = await authorize({
+      ...target,
+      callbackTimeoutMs: waitSeconds * 1_000,
+      createCredentialMaterial: journaledCredentialMaterial,
+      ...(runtime.fetch === undefined ? {} : { fetch: runtime.fetch }),
+      ...(runtime.now === undefined ? {} : { now: runtime.now }),
+    });
+  } catch (error) {
+    const code =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : undefined;
+    const provisioningCleanupCompleted =
+      (code === "whooshbang-machine-registration-failed" ||
+        code === "whooshbang-machine-verification-failed") &&
+      "cleanupIncomplete" in (error as object) &&
+      (error as { cleanupIncomplete?: unknown }).cleanupIncomplete === false;
+    if (
+      journal !== undefined &&
+      (journalCreatedThisAttempt || provisioningCleanupCompleted) &&
+      !(
+        typeof error === "object" &&
+        error !== null &&
+        "cleanupIncomplete" in error &&
+        error.cleanupIncomplete === true
+      )
+    ) {
+      await eraseWhooshBangOAuthProvisioningJournal(paths);
+      journal = undefined;
+    }
+    throw error;
+  }
+
+  let stored: StoredWhooshBangConnection;
+  try {
+    const next = newOAuthConnection(result, previous, credentialGeneration);
+    stored = await writeWhooshBangConnection(
+      paths,
+      next.configuration,
+      next.credential,
+    );
+  } catch {
+    const cleanupComplete = await result.cleanupProvisioned();
+    if (cleanupComplete) {
+      await eraseWhooshBangOAuthProvisioningJournal(paths);
+      journal = undefined;
+    }
+    throw new WhooshBangSetupError(
+      cleanupComplete
+        ? "WhooshBang connected but private storage failed; remote setup was revoked."
+        : "WhooshBang connected but private storage and remote cleanup failed.",
+      "whooshbang-setup-failed",
+      false,
+      { cleanupIncomplete: !cleanupComplete },
+    );
+  }
+
+  await eraseWhooshBangOAuthProvisioningJournal(paths);
+  journal = undefined;
+
+  return {
+    ...safeWhooshBangConnectionSummary(stored),
+    status: "connected",
+    authorization: result.proof.authorization,
+    oauthScopeCount: result.proof.grantedScopes.length,
+    mcpProtocolVersion: result.proof.mcpProtocolVersion,
+    projectResolvedBy: result.proof.projectResolvedBy,
+    machineScopeCount: result.proof.machineScopeCount,
+    canary: "pending",
+  };
+}
+
 async function statusCommand(
   runtime: WhooshBangCommandRuntime,
 ): Promise<unknown> {
-  const connection = await readWhooshBangConnection(
-    whooshbangConnectionPaths(runtime.stateDirectory),
-  );
+  const paths = whooshbangConnectionPaths(runtime.stateDirectory);
+  await reconcileWhooshBangOAuthCredentialOnly(paths);
+  const connection = await readWhooshBangConnection(paths);
+  let pendingOAuth = await readWhooshBangOAuthProvisioningJournal(paths);
+  if (
+    pendingOAuth !== undefined &&
+    connectionMatchesJournal(connection, pendingOAuth)
+  ) {
+    await eraseWhooshBangOAuthProvisioningJournal(paths);
+    pendingOAuth = undefined;
+  }
   return connection === undefined
-    ? { configured: false, status: "not_configured" }
-    : safeWhooshBangConnectionSummary(connection);
+    ? {
+        configured: false,
+        status:
+          pendingOAuth === undefined
+            ? "not_configured"
+            : "oauth_recovery_pending",
+      }
+    : {
+        ...safeWhooshBangConnectionSummary(connection),
+        ...(pendingOAuth === undefined ? {} : { oauthRecoveryPending: true }),
+      };
 }
 
 async function disconnectCommand(
@@ -636,9 +1079,17 @@ async function disconnectCommand(
   environment: Readonly<Record<string, string | undefined>>,
 ): Promise<unknown> {
   const paths = whooshbangConnectionPaths(runtime.stateDirectory);
+  await reconcileWhooshBangOAuthCredentialOnly(paths);
   const current = await readWhooshBangConnection(paths);
+  let pendingOAuth = await readWhooshBangOAuthProvisioningJournal(paths);
   if (current === undefined) {
-    return { configured: false, status: "not_configured" };
+    return {
+      configured: false,
+      status:
+        pendingOAuth === undefined
+          ? "not_configured"
+          : "oauth_recovery_pending",
+    };
   }
   const revoke = parsed.booleans.has("--revoke");
   const eraseCredential = parsed.booleans.has("--erase-credential");
@@ -684,6 +1135,7 @@ async function disconnectCommand(
           ...current.configuration,
           pendingRevocations: [],
         }),
+        configurationExpectation(current),
       );
     }
     await disconnectWhooshBangMachine({
@@ -703,6 +1155,13 @@ async function disconnectCommand(
     remoteRevocationProven = true;
   }
 
+  if (
+    pendingOAuth !== undefined &&
+    connectionMatchesJournal(current, pendingOAuth)
+  ) {
+    await eraseWhooshBangOAuthProvisioningJournal(paths);
+    pendingOAuth = undefined;
+  }
   const disconnected = await markWhooshBangDisconnected(paths, {
     at: runtime.now?.() ?? new Date(),
     eraseCredential,
@@ -718,13 +1177,15 @@ async function disconnectCommand(
       configured: false,
       localConfigurationErased: true,
       localCredentialErased: true,
+      ...(pendingOAuth === undefined ? {} : { oauthRecoveryPending: true }),
       remoteRevocationProven,
-      status: remoteRevocationProven ? "revoked" : "disconnected",
+      status: disconnected.configuration.status,
     };
   }
   return {
     ...safeWhooshBangConnectionSummary(disconnected),
     localCredentialErased: eraseCredential,
+    ...(pendingOAuth === undefined ? {} : { oauthRecoveryPending: true }),
     remoteRevocationProven,
   };
 }
@@ -747,15 +1208,31 @@ export async function runWhooshBangCommand(
       args,
       [
         "--base-url",
+        "--project-selector",
+        "--environment",
         "--subscriber-id",
         "--notifier-id",
         "--display-name",
         "--wait-seconds",
         "--poll-interval-ms",
       ],
-      ["--credential-stdin"],
+      ["--credential-stdin", "--legacy-project-credential", "--oauth"],
     );
-    return await connectCommand(parsed, runtime, environment);
+    const legacy =
+      parsed.booleans.has("--credential-stdin") ||
+      parsed.booleans.has("--legacy-project-credential");
+    if (legacy && parsed.booleans.has("--oauth")) {
+      throw new Error(
+        "--oauth cannot be combined with project-credential bootstrap",
+      );
+    }
+    return await withWhooshBangLifecycleLock(
+      runtime.stateDirectory,
+      async () =>
+        legacy
+          ? await legacyConnectCommand(parsed, runtime, environment)
+          : await oauthConnectCommandLocked(parsed, runtime, environment),
+    );
   }
   if (subcommand === "status") {
     parseOptions(args, [], []);
@@ -772,7 +1249,10 @@ export async function runWhooshBangCommand(
         "--credential-stdin",
       ],
     );
-    return await disconnectCommand(parsed, runtime, environment);
+    return await withWhooshBangLifecycleLock(
+      runtime.stateDirectory,
+      async () => await disconnectCommand(parsed, runtime, environment),
+    );
   }
   throw new Error("Unknown WhooshBang subcommand");
 }

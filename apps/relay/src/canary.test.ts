@@ -11,7 +11,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayClient } from "./client.js";
 import { startDaemon } from "./daemon.js";
 import type { TelegramCanaryClient } from "./canary.js";
-import { runFakeCanary, runTelegramCanary } from "./canary.js";
+import {
+  isWhooshBangCanaryAcknowledged,
+  runFakeCanary,
+  runTelegramCanary,
+  runWhooshBangCanary,
+} from "./canary.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -27,7 +32,7 @@ function client(
   request:
     | {
         state: "open" | "answered" | "expired" | "cancelled" | "failed";
-        resolvedBy?: "terminal" | "telegram";
+        resolvedBy?: "terminal" | "telegram" | "whooshbang";
         answer?: string;
       }
     | undefined,
@@ -346,4 +351,70 @@ describe("Telegram activation canary", () => {
     });
     await daemon.close();
   }, 25_000);
+});
+
+describe("WhooshBang activation canary", () => {
+  it("requires this canary to advance the cursor before accepting acknowledgement", () => {
+    expect(
+      isWhooshBangCanaryAcknowledged("cursor_prior", {
+        committedCursorRef: "cursor_prior",
+        unacknowledgedEventCount: 0,
+      }),
+    ).toBe(false);
+    expect(
+      isWhooshBangCanaryAcknowledged("cursor_prior", {
+        committedCursorRef: "cursor_next",
+        unacknowledgedEventCount: 1,
+      }),
+    ).toBe(false);
+    expect(
+      isWhooshBangCanaryAcknowledged("cursor_prior", {
+        committedCursorRef: "cursor_next",
+        unacknowledgedEventCount: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it("requires the answer to arrive through the hosted resolution path", async () => {
+    const fake = client({
+      state: "answered",
+      resolvedBy: "whooshbang",
+      answer: "relay-canary-ok",
+    });
+
+    const result = await runWhooshBangCanary({
+      client: fake,
+      machineId: "machine_whooshbang_canary_12345678",
+      projectPath: "/workspace/example",
+      waitMs: 1_000,
+      pollIntervalMs: 50,
+      now: () => new Date("2026-07-24T12:00:00.000Z"),
+      randomId: () => "12345678-1234-1234-1234-123456789012",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "answered",
+      resolvedBy: "whooshbang",
+    });
+    expect(vi.mocked(fake.ingest).mock.calls[0]?.[0]).toMatchObject({
+      request: { question: expect.stringContaining("WhooshBang") },
+    });
+    expect(JSON.stringify(result)).not.toContain("relay-canary-ok");
+  });
+
+  it("fails closed when another resolver supplies the answer", async () => {
+    const result = await runWhooshBangCanary({
+      client: client({
+        state: "answered",
+        resolvedBy: "telegram",
+        answer: "relay-canary-ok",
+      }),
+      machineId: "machine_whooshbang_canary_12345678",
+      projectPath: "/workspace/example",
+      waitMs: 1_000,
+      pollIntervalMs: 50,
+    });
+
+    expect(result.outcome).toBe("unexpected-answer");
+  });
 });

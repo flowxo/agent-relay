@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -18,9 +18,15 @@ import {
   makeProjectRef,
   makeStableEventId,
 } from "@agent-relay/protocol";
+import { WhooshBangContractTransport } from "@agent-relay/whooshbang-transport";
 
 import { RelayClient } from "./client.js";
-import { runFakeCanary, runTelegramCanary } from "./canary.js";
+import {
+  isWhooshBangCanaryAcknowledged,
+  runFakeCanary,
+  runTelegramCanary,
+  runWhooshBangCanary,
+} from "./canary.js";
 import { resolveHookHarnessVersion, resolveWebEnabled } from "./cli-options.js";
 import { startDaemon } from "./daemon.js";
 import { observeHarnessVersions, runDoctor } from "./doctor.js";
@@ -33,6 +39,7 @@ import {
   runWhooshBangCommand,
 } from "./whooshbang-command.js";
 import {
+  recordWhooshBangCanary,
   whooshbangConnectionPaths,
   readWhooshBangConnection,
 } from "./whooshbang-config.js";
@@ -76,10 +83,11 @@ Commands:
   maintain           Apply retention policy
   install            Install or reconcile user-level harness hooks
   uninstall          Remove only Agent Relay-owned hooks and launcher
-  doctor             Diagnose the local installation and compatibility
+  doctor             Diagnose local installation; --live checks the daemon
   capabilities       Print the generated harness capability registry
   canary             Prove the local fake-transport delivery loop
   telegram-canary    Prove a configured direct-Telegram reply loop
+  whooshbang-canary  Prove one hosted WhooshBang send/answer/ack loop
   webhook-canary     Prove a configured outbound webhook delivery
   webhook            Configure or inspect the outbound webhook
   whooshbang      Connect, inspect, or disconnect hosted WhooshBang
@@ -120,6 +128,10 @@ async function readStdin(limit = 256 * 1024): Promise<string> {
 
 function output(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function safeReference(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
 function numericFlag(args: string[], name: string, fallback: number): number {
@@ -616,6 +628,17 @@ async function main(): Promise<void> {
     const runnerBridgeConfiguration = await readRunnerBridgeConfiguration(
       runnerBridgePaths(stateDir).configuration,
     );
+    const liveDaemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+    const liveRequested = args.includes("--live");
+    const liveStatus = liveRequested
+      ? await new RelayClient({
+          baseUrl:
+            environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
+          ...(liveDaemonToken === undefined ? {} : { token: liveDaemonToken }),
+        })
+          .status()
+          .catch(() => null)
+      : undefined;
     const report = await runDoctor({
       databasePath: flag(args, "--db") ?? ":memory:",
       rootDir: resolve(flag(args, "--root") ?? homedir()),
@@ -623,6 +646,18 @@ async function main(): Promise<void> {
       runtimeEntryPath: installEntryPath(args),
       runtimeNodePath: process.execPath,
       transportReadiness,
+      ...(!liveRequested
+        ? {}
+        : {
+            liveWhooshBang: {
+              ...(liveStatus?.selectedTransport === undefined
+                ? {}
+                : { selectedTransport: liveStatus.selectedTransport }),
+              ...(liveStatus?.transportRuntime === undefined
+                ? {}
+                : { runtime: liveStatus.transportRuntime.whooshbang }),
+            },
+          }),
       runnerBridge: {
         configured: runnerBridgeConfiguration !== undefined,
         enabled: runnerBridgeConfiguration?.enabled ?? false,
@@ -866,6 +901,111 @@ async function main(): Promise<void> {
     output(result);
     process.exitCode =
       result.outcome === "answered" && result.resolvedBy === "telegram" ? 0 : 1;
+    return;
+  }
+  if (command === "whooshbang-canary") {
+    const daemonStatus = await client.status();
+    if (daemonStatus.selectedTransport !== "whooshbang") {
+      throw new Error(
+        "whooshbang-canary requires a daemon using the WhooshBang transport",
+      );
+    }
+    const paths = whooshbangConnectionPaths(stateDir);
+    const connection = await readWhooshBangConnection(paths);
+    if (
+      connection?.configuration.status !== "active" ||
+      connection.credential === undefined
+    ) {
+      throw new Error("whooshbang-canary requires an active narrow connection");
+    }
+    await mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const machineId =
+      environment("AGENT_RELAY_MACHINE_ID") ??
+      (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+    const result = await runWhooshBangCanary({
+      client,
+      machineId,
+      projectPath: process.cwd(),
+      waitMs: integerFlag(args, "--wait-ms", 2 * 60_000),
+      pollIntervalMs: integerFlag(args, "--poll-interval-ms", 500),
+    });
+    if (result.outcome !== "answered" || result.resolvedBy !== "whooshbang") {
+      output({
+        outcome: result.outcome,
+        resolvedBy: result.resolvedBy ?? null,
+      });
+      process.exitCode = 1;
+      return;
+    }
+    const request = await client.getRequest(result.correlationId);
+    if (request?.transportMessageId === undefined) {
+      throw new Error("WhooshBang canary delivery receipt is missing");
+    }
+    const transport = new WhooshBangContractTransport({
+      baseUrl: connection.configuration.baseUrl,
+      credential: connection.credential.bearerToken,
+      machineClientId: connection.configuration.machineClientId,
+      subscriberId: connection.configuration.subscriberId,
+      notifierId: connection.configuration.notifierId,
+    });
+    const diagnostic = await transport.diagnoseMessage(
+      request.transportMessageId,
+      { timeoutMs: 10_000 },
+    );
+
+    const statusDeadline = Date.now() + 10_000;
+    const priorCursorRef =
+      daemonStatus.transportRuntime?.whooshbang.polling.committedCursorRef ??
+      null;
+    let completedStatus = await client.status();
+    while (
+      Date.now() < statusDeadline &&
+      !isWhooshBangCanaryAcknowledged(
+        priorCursorRef,
+        completedStatus.transportRuntime?.whooshbang.polling,
+      )
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      completedStatus = await client.status();
+    }
+    const runtime = completedStatus.transportRuntime?.whooshbang;
+    const acknowledged = isWhooshBangCanaryAcknowledged(
+      priorCursorRef,
+      runtime?.polling,
+    );
+    if (
+      !acknowledged ||
+      runtime === undefined ||
+      runtime.delivery.lastSuccessfulSendAt === null ||
+      runtime.polling.lastSuccessfulPollAt === null ||
+      runtime.polling.committedCursorRef === null
+    ) {
+      throw new Error("WhooshBang canary was answered but not acknowledged");
+    }
+
+    await recordWhooshBangCanary(paths, {
+      committedCursorRef: runtime.polling.committedCursorRef,
+      completedAt: new Date(),
+      connectedAt: connection.configuration.connectedAt,
+      credentialGeneration: connection.credential.rotation.generation,
+      credentialId: connection.credential.credentialId,
+      diagnosticId: diagnostic.diagnosticId,
+      lastSuccessfulPollAt: runtime.polling.lastSuccessfulPollAt,
+      lastSuccessfulSendAt: runtime.delivery.lastSuccessfulSendAt,
+      messageId: diagnostic.messageId,
+    });
+    output({
+      outcome: "answered",
+      resolvedBy: "whooshbang",
+      messageRef: safeReference(diagnostic.messageId),
+      diagnosticRef: safeReference(diagnostic.diagnosticId),
+      providerState: diagnostic.state,
+      lastSuccessfulSendAt: runtime.delivery.lastSuccessfulSendAt,
+      lastSuccessfulPollAt: runtime.polling.lastSuccessfulPollAt,
+      committedCursorRef: runtime.polling.committedCursorRef,
+      unacknowledgedEventCount: runtime.polling.unacknowledgedEventCount,
+      presentationCapability: runtime.presentation.capability,
+    });
     return;
   }
 

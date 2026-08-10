@@ -38,6 +38,10 @@ breaking changes and required operator action.
   bootstrap, explicit transport selection, durable confirm/select/input polling,
   crash-safe acknowledgement replay, safe diagnosis, explicit revocation, and
   retained local authority.
+- Browser-based WhooshBang OAuth/MCP onboarding that creates and retains only a
+  narrow machine bearer, durably replays uncertain bootstrap attempts, and adds
+  one bounded hosted send/reply/ack canary plus live doctor evidence without
+  exposing provider or subscriber identifiers.
 - A common fake/direct-Telegram/WhooshBang behavior matrix covering delivery
   identity, retries, answers, expiry, races, restart, and single-owner resume.
 - A clean-home packed hosted proof covering setup, interaction, crash-before-ack

@@ -309,4 +309,211 @@ describe("doctor version and installation checks", () => {
       ]),
     );
   });
+
+  it("proves the running hosted send, poll, acknowledgement, and presentation capability", async () => {
+    const readiness = {
+      schema: "agent-relay-transport-readiness.v1",
+      selectedTransport: "whooshbang",
+      selection: {
+        configured: true,
+        selected: "whooshbang",
+        source: "durable",
+      },
+      transports: {
+        fake: { ready: true },
+        whooshbang: {
+          binding: "verified-at-connect",
+          canaryEvidence: {
+            committedCursorRef: "cursor_0123456789ab",
+            completedAt: "2026-08-10T18:20:02.000Z",
+            connectedAt: "2026-08-10T18:00:00.000Z",
+            credentialGeneration: 1,
+            lastSuccessfulPollAt: "2026-08-10T18:20:01.000Z",
+            lastSuccessfulSendAt: "2026-08-10T18:20:00.000Z",
+          },
+          canaryRef: "canary_safe12",
+          configured: true,
+          connectionStatus: "active",
+          credentialGeneration: 1,
+          credentialPermissions: "pinned-machine-scopes",
+          credentialPresent: true,
+          issueCodes: [],
+          pendingRevocations: 0,
+          ready: true,
+          resolutionPresentation: "unsupported-in-pinned-contract",
+        },
+        telegram: {
+          configured: "none",
+          deliveryReady: false,
+          issueCodes: [],
+          replyReady: false,
+          ready: false,
+          updateMode: "poll",
+          webhookReady: true,
+        },
+        webhook: {
+          configured: false,
+          issueCodes: ["webhook-not-configured"],
+          ready: false,
+          secretPresent: false,
+          source: "none",
+        },
+      },
+    } satisfies TransportReadinessReport;
+    const report = await runDoctor({
+      executables: await verifiedHarnessExecutables(),
+      transportReadiness: readiness,
+      liveWhooshBang: {
+        selectedTransport: "whooshbang",
+        runtime: {
+          circuit: { blocked: false },
+          delivery: {
+            lastSuccessfulSendAt: "2026-08-10T18:20:00.000Z",
+          },
+          polling: {
+            committedCursorRef: "cursor_0123456789ab",
+            lastSuccessfulPollAt: "2026-08-10T18:20:01.000Z",
+            state: "active",
+            unacknowledgedEventCount: 0,
+          },
+          presentation: { capability: "unsupported" },
+        },
+      },
+    });
+
+    expect(report.healthy).toBe(true);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "whooshbang-live-selection",
+          level: "pass",
+        }),
+        expect.objectContaining({
+          name: "whooshbang-hosted-canary",
+          level: "pass",
+        }),
+        expect.objectContaining({
+          name: "whooshbang-live-send",
+          level: "pass",
+        }),
+        expect.objectContaining({
+          name: "whooshbang-live-poll",
+          level: "pass",
+        }),
+        expect.objectContaining({ name: "whooshbang-live-ack", level: "pass" }),
+        expect.objectContaining({
+          name: "whooshbang-resolution-presentation",
+          level: "pass",
+          detail: expect.stringContaining("unsupported"),
+        }),
+      ]),
+    );
+  });
+
+  it("fails live hosted diagnosis before delivery and acknowledgement are proven", async () => {
+    const report = await runDoctor({
+      executables: await verifiedHarnessExecutables(),
+      liveWhooshBang: {
+        selectedTransport: "telegram",
+        runtime: {
+          circuit: { blocked: true },
+          delivery: { lastSuccessfulSendAt: null },
+          polling: {
+            committedCursorRef: null,
+            lastSuccessfulPollAt: null,
+            state: "not-started",
+            unacknowledgedEventCount: 1,
+          },
+          presentation: { capability: "not-selected" },
+        },
+      },
+    });
+
+    expect(report.healthy).toBe(false);
+    expect(
+      report.checks.filter((check) => check.name.startsWith("whooshbang-live")),
+    ).toEqual(
+      expect.arrayContaining([expect.objectContaining({ level: "fail" })]),
+    );
+  });
+
+  it("rejects canary evidence from an older credential generation", async () => {
+    const readiness = {
+      schema: "agent-relay-transport-readiness.v1",
+      selectedTransport: "whooshbang",
+      selection: {
+        configured: true,
+        selected: "whooshbang",
+        source: "durable",
+      },
+      transports: {
+        fake: { ready: true },
+        whooshbang: {
+          binding: "verified-at-connect",
+          canaryEvidence: {
+            committedCursorRef: "cursor_0123456789ab",
+            completedAt: "2026-08-10T18:20:02.000Z",
+            connectedAt: "2026-08-10T18:00:00.000Z",
+            credentialGeneration: 1,
+            lastSuccessfulPollAt: "2026-08-10T18:20:01.000Z",
+            lastSuccessfulSendAt: "2026-08-10T18:20:00.000Z",
+          },
+          canaryRef: "canary_safe12",
+          configured: true,
+          connectionStatus: "active",
+          credentialGeneration: 2,
+          credentialPermissions: "pinned-machine-scopes",
+          credentialPresent: true,
+          issueCodes: [],
+          pendingRevocations: 0,
+          ready: true,
+          resolutionPresentation: "unsupported-in-pinned-contract",
+        },
+        telegram: {
+          configured: "none",
+          deliveryReady: false,
+          issueCodes: [],
+          replyReady: false,
+          ready: false,
+          updateMode: "poll",
+          webhookReady: true,
+        },
+        webhook: {
+          configured: false,
+          issueCodes: ["webhook-not-configured"],
+          ready: false,
+          secretPresent: false,
+          source: "none",
+        },
+      },
+    } satisfies TransportReadinessReport;
+    const report = await runDoctor({
+      executables: await verifiedHarnessExecutables(),
+      transportReadiness: readiness,
+      liveWhooshBang: {
+        selectedTransport: "whooshbang",
+        runtime: {
+          circuit: { blocked: false },
+          delivery: {
+            lastSuccessfulSendAt: "2026-08-10T18:21:00.000Z",
+          },
+          polling: {
+            committedCursorRef: "cursor_ffffffffffff",
+            lastSuccessfulPollAt: "2026-08-10T18:21:01.000Z",
+            state: "active",
+            unacknowledgedEventCount: 0,
+          },
+          presentation: { capability: "unsupported" },
+        },
+      },
+    });
+
+    expect(report.healthy).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({
+        name: "whooshbang-hosted-canary",
+        level: "fail",
+      }),
+    );
+  });
 });

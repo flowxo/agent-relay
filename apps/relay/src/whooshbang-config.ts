@@ -41,6 +41,18 @@ const credentialIdentifier = z
   .string()
   .regex(/^mcred_[A-Za-z0-9_-]{21}[AQgw]$/u);
 
+const WhooshBangCanaryEvidenceSchema = z
+  .object({
+    committedCursorRef: z.string().regex(/^cursor_[a-f0-9]{12}$/u),
+    completedAt: z.iso.datetime({ offset: true }),
+    connectedAt: z.iso.datetime({ offset: true }),
+    credentialGeneration: z.number().int().positive(),
+    credentialId: credentialIdentifier,
+    lastSuccessfulPollAt: z.iso.datetime({ offset: true }),
+    lastSuccessfulSendAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
 const PendingRevocationSchema = z
   .object({
     machineClientId: opaqueIdentifier,
@@ -79,8 +91,9 @@ export const WhooshBangConnectionConfigurationSchema = z
     ]),
     connectedAt: z.iso.datetime({ offset: true }),
     disconnectedAt: z.iso.datetime({ offset: true }).optional(),
-    canaryMessageId: opaqueIdentifier,
-    canaryDiagnosticId: opaqueIdentifier,
+    canaryMessageId: opaqueIdentifier.optional(),
+    canaryDiagnosticId: opaqueIdentifier.optional(),
+    canaryEvidence: WhooshBangCanaryEvidenceSchema.optional(),
     pendingRevocations: z.array(PendingRevocationSchema).max(20).default([]),
   })
   .strict()
@@ -97,6 +110,29 @@ export const WhooshBangConnectionConfigurationSchema = z
         code: "custom",
         message: "inactive WhooshBang configuration requires a timestamp",
         path: ["disconnectedAt"],
+      });
+    }
+    if (
+      (value.canaryMessageId === undefined) !==
+      (value.canaryDiagnosticId === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "WhooshBang canary message and diagnostic IDs must be recorded together",
+        path: ["canaryMessageId"],
+      });
+    }
+    if (
+      value.canaryEvidence !== undefined &&
+      (value.canaryMessageId === undefined ||
+        value.canaryEvidence.credentialId !== value.currentCredentialId ||
+        value.canaryEvidence.connectedAt !== value.connectedAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "WhooshBang canary evidence must match the active connection",
+        path: ["canaryEvidence"],
       });
     }
   });
@@ -134,9 +170,74 @@ export type WhooshBangMachineCredential = z.infer<
   typeof WhooshBangMachineCredentialSchema
 >;
 
+export const WhooshBangOAuthProvisioningJournalSchema = z
+  .object({
+    schema: z.literal("agent-relay-whooshbang-oauth-provisioning.v1"),
+    recordedAt: z.iso.datetime({ offset: true }),
+    credentialGeneration: z.number().int().positive(),
+    target: z
+      .object({
+        baseUrl: z
+          .string()
+          .max(2_048)
+          .refine((value) => {
+            try {
+              return normalizeWhooshBangBaseUrl(value).toString() === value;
+            } catch {
+              return false;
+            }
+          }, "must be a canonical safe WhooshBang base URL"),
+        displayName: z.string().min(1).max(120).optional(),
+        environment: z.enum(["test", "live"]),
+        environmentId: opaqueIdentifier,
+        machineId: opaqueIdentifier,
+        notifierId: opaqueIdentifier,
+        projectId: opaqueIdentifier,
+        projectSelector: opaqueIdentifier.optional(),
+        subscriberId: opaqueIdentifier,
+      })
+      .strict(),
+    material: z
+      .object({
+        bearerToken: z.string().max(256).refine(isWhooshBangMachineCredential),
+        credentialId: credentialIdentifier,
+        registration: z
+          .object({
+            credential_id: credentialIdentifier,
+            secret_sha256: z.custom<`sha256:${string}`>(
+              (value) =>
+                typeof value === "string" &&
+                /^sha256:[a-f0-9]{64}$/u.test(value),
+              "must be a SHA-256 machine secret digest",
+            ),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.material.credentialId !==
+        value.material.registration.credential_id ||
+      value.material.bearerToken.split(".")[1] !== value.material.credentialId
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "OAuth provisioning credential material must agree",
+        path: ["material"],
+      });
+    }
+  });
+
+export type WhooshBangOAuthProvisioningJournal = z.infer<
+  typeof WhooshBangOAuthProvisioningJournalSchema
+>;
+
 export interface WhooshBangConnectionPaths {
   configurationPath: string;
   credentialPath: string;
+  oauthProvisioningPath: string;
 }
 
 export interface StoredWhooshBangConnection {
@@ -144,11 +245,27 @@ export interface StoredWhooshBangConnection {
   credential?: WhooshBangMachineCredential;
 }
 
+export interface WhooshBangConfigurationExpectation {
+  connectedAt: string;
+  credentialGeneration: number | null;
+  credentialId: string;
+  status: "active" | "disconnected" | "revoked";
+}
+
 export interface SafeWhooshBangConnectionSummary {
   apiOrigin: string;
-  canaryRef: string;
+  canaryEvidence: {
+    committedCursorRef: string;
+    completedAt: string;
+    connectedAt: string;
+    credentialGeneration: number;
+    lastSuccessfulPollAt: string;
+    lastSuccessfulSendAt: string;
+  } | null;
+  canaryRef: string | null;
   configured: true;
   contractVersion: typeof WHOOSHBANG_CONTRACT_VERSION;
+  credentialGeneration: number | null;
   credentialPresent: boolean;
   environment: "test" | "live";
   machineClientRef: string;
@@ -258,6 +375,70 @@ async function atomicWritePrivate(path: string, value: unknown): Promise<void> {
   await inspectPrivateFile(path, "WhooshBang private configuration");
 }
 
+async function withConfigurationMutationLock<T>(
+  paths: WhooshBangConnectionPaths,
+  action: () => Promise<T>,
+): Promise<T> {
+  const lockPath = `${paths.configurationPath}.lock`;
+  await ensurePrivateDirectory(dirname(lockPath));
+  const deadline = Date.now() + 5_000;
+  let handle;
+  for (;;) {
+    try {
+      handle = await open(lockPath, "wx", 0o600);
+      break;
+    } catch (error) {
+      if (!isErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+      try {
+        const metadata = await lstat(lockPath);
+        if (Date.now() - metadata.mtimeMs > 30_000) {
+          await unlink(lockPath);
+          continue;
+        }
+      } catch (lockError) {
+        if (!isErrorCode(lockError, "ENOENT")) {
+          throw lockError;
+        }
+      }
+      if (Date.now() >= deadline) {
+        throw new Error("WhooshBang configuration is being changed elsewhere", {
+          cause: error,
+        });
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  const release = async (): Promise<void> => {
+    await handle?.close();
+    try {
+      await unlink(lockPath);
+    } catch (error) {
+      if (!isErrorCode(error, "ENOENT")) {
+        throw error;
+      }
+    }
+  };
+  try {
+    const result = await action();
+    await release();
+    return result;
+  } catch (actionError) {
+    try {
+      await release();
+    } catch (releaseError) {
+      throw new AggregateError(
+        [actionError, releaseError],
+        "WhooshBang configuration mutation and lock cleanup both failed",
+        { cause: releaseError },
+      );
+    }
+    throw actionError;
+  }
+}
+
 async function unlinkPrivate(path: string, label: string): Promise<boolean> {
   const metadata = await inspectPrivateFile(path, label);
   if (metadata === undefined) {
@@ -273,7 +454,88 @@ export function whooshbangConnectionPaths(
   return {
     configurationPath: join(stateDirectory, "whooshbang.json"),
     credentialPath: join(stateDirectory, "whooshbang-credential.json"),
+    oauthProvisioningPath: join(
+      stateDirectory,
+      "whooshbang-oauth-provisioning.json",
+    ),
   };
+}
+
+export async function readWhooshBangOAuthProvisioningJournal(
+  paths: WhooshBangConnectionPaths,
+): Promise<WhooshBangOAuthProvisioningJournal | undefined> {
+  const value = await readPrivateJson(
+    paths.oauthProvisioningPath,
+    "WhooshBang OAuth provisioning journal",
+  );
+  return value === undefined
+    ? undefined
+    : WhooshBangOAuthProvisioningJournalSchema.parse(value);
+}
+
+export async function writeWhooshBangOAuthProvisioningJournal(
+  paths: WhooshBangConnectionPaths,
+  input: WhooshBangOAuthProvisioningJournal,
+): Promise<WhooshBangOAuthProvisioningJournal> {
+  const journal = WhooshBangOAuthProvisioningJournalSchema.parse(input);
+  await atomicWritePrivate(paths.oauthProvisioningPath, journal);
+  return journal;
+}
+
+export async function eraseWhooshBangOAuthProvisioningJournal(
+  paths: WhooshBangConnectionPaths,
+): Promise<boolean> {
+  return await unlinkPrivate(
+    paths.oauthProvisioningPath,
+    "WhooshBang OAuth provisioning journal",
+  );
+}
+
+export async function reconcileWhooshBangOAuthCredentialOnly(
+  paths: WhooshBangConnectionPaths,
+): Promise<boolean> {
+  return await withConfigurationMutationLock(paths, async () => {
+    const configurationValue = await readPrivateJson(
+      paths.configurationPath,
+      "WhooshBang configuration",
+    );
+    const credentialValue = await readPrivateJson(
+      paths.credentialPath,
+      "WhooshBang credential",
+    );
+    const journalValue = await readPrivateJson(
+      paths.oauthProvisioningPath,
+      "WhooshBang OAuth provisioning journal",
+    );
+    if (credentialValue === undefined || journalValue === undefined) {
+      return false;
+    }
+    const credential = WhooshBangMachineCredentialSchema.parse(credentialValue);
+    const journal =
+      WhooshBangOAuthProvisioningJournalSchema.parse(journalValue);
+    if (
+      credential.credentialId !== journal.material.credentialId ||
+      credential.bearerToken !== journal.material.bearerToken ||
+      credential.rotation.generation !== journal.credentialGeneration
+    ) {
+      throw new Error(
+        "WhooshBang credential-only state does not match its OAuth recovery journal",
+      );
+    }
+    if (configurationValue !== undefined) {
+      const configuration =
+        WhooshBangConnectionConfigurationSchema.parse(configurationValue);
+      if (
+        configuration.status !== "revoked" ||
+        configuration.pendingRevocations.length !== 0 ||
+        configuration.currentCredentialId === credential.credentialId
+      ) {
+        return false;
+      }
+    }
+    await unlinkPrivate(paths.credentialPath, "WhooshBang credential");
+    return true;
+  });
 }
 
 export async function readWhooshBangConnection(
@@ -337,66 +599,131 @@ export async function writeWhooshBangConnection(
     );
   }
 
-  await inspectPrivateFile(paths.configurationPath, "WhooshBang configuration");
-  const previousCredentialValue = await readPrivateJson(
-    paths.credentialPath,
-    "WhooshBang credential",
-  );
-  const previousCredential =
-    previousCredentialValue === undefined
-      ? undefined
-      : WhooshBangMachineCredentialSchema.parse(previousCredentialValue);
+  return await withConfigurationMutationLock(paths, async () => {
+    await inspectPrivateFile(
+      paths.configurationPath,
+      "WhooshBang configuration",
+    );
+    const previousCredentialValue = await readPrivateJson(
+      paths.credentialPath,
+      "WhooshBang credential",
+    );
+    const previousCredential =
+      previousCredentialValue === undefined
+        ? undefined
+        : WhooshBangMachineCredentialSchema.parse(previousCredentialValue);
 
-  // The credential lands first and the non-secret configuration is the final
-  // commit marker. Readers never accept an active configuration without the
-  // matching private credential.
-  let credentialCommitted = false;
-  try {
-    await atomicWritePrivate(paths.credentialPath, credential);
-    credentialCommitted = true;
-    await atomicWritePrivate(paths.configurationPath, configuration);
-  } catch (error) {
-    if (!credentialCommitted) {
+    // The credential lands first and the non-secret configuration is the final
+    // commit marker. Readers never accept an active configuration without the
+    // matching private credential.
+    let credentialCommitted = false;
+    try {
+      await atomicWritePrivate(paths.credentialPath, credential);
+      credentialCommitted = true;
+      await atomicWritePrivate(paths.configurationPath, configuration);
+    } catch (error) {
+      if (!credentialCommitted) {
+        throw error;
+      }
+      try {
+        if (previousCredential === undefined) {
+          await unlinkPrivate(paths.credentialPath, "WhooshBang credential");
+        } else {
+          await atomicWritePrivate(paths.credentialPath, previousCredential);
+        }
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "WhooshBang connection write and credential rollback both failed",
+          { cause: rollbackError },
+        );
+      }
       throw error;
     }
-    try {
-      if (previousCredential === undefined) {
-        await unlinkPrivate(paths.credentialPath, "WhooshBang credential");
-      } else {
-        await atomicWritePrivate(paths.credentialPath, previousCredential);
-      }
-    } catch (rollbackError) {
-      throw new AggregateError(
-        [error, rollbackError],
-        "WhooshBang connection write and credential rollback both failed",
-        { cause: rollbackError },
-      );
-    }
-    throw error;
-  }
-  return { configuration, credential };
+    return { configuration, credential };
+  });
 }
 
 export async function updateWhooshBangConfiguration(
   paths: WhooshBangConnectionPaths,
   configurationInput: WhooshBangConnectionConfiguration,
+  expected: WhooshBangConfigurationExpectation,
 ): Promise<WhooshBangConnectionConfiguration> {
   const configuration =
     WhooshBangConnectionConfigurationSchema.parse(configurationInput);
-  const current = await readWhooshBangConnection(paths);
-  if (current === undefined) {
-    throw new Error("WhooshBang is not configured");
-  }
-  if (
-    current.credential !== undefined &&
-    current.credential.credentialId !== configuration.currentCredentialId
-  ) {
-    throw new Error(
-      "Updated WhooshBang configuration does not match the stored credential",
-    );
-  }
-  await atomicWritePrivate(paths.configurationPath, configuration);
-  return configuration;
+  return await withConfigurationMutationLock(paths, async () => {
+    const current = await readWhooshBangConnection(paths);
+    if (current === undefined) {
+      throw new Error("WhooshBang is not configured");
+    }
+    if (
+      current.configuration.connectedAt !== expected.connectedAt ||
+      current.configuration.currentCredentialId !== expected.credentialId ||
+      current.configuration.status !== expected.status ||
+      (current.credential?.rotation.generation ?? null) !==
+        expected.credentialGeneration
+    ) {
+      throw new Error(
+        "The WhooshBang connection changed before its configuration update",
+      );
+    }
+    if (
+      current.credential !== undefined &&
+      current.credential.credentialId !== configuration.currentCredentialId
+    ) {
+      throw new Error(
+        "Updated WhooshBang configuration does not match the stored credential",
+      );
+    }
+    await atomicWritePrivate(paths.configurationPath, configuration);
+    return configuration;
+  });
+}
+
+export async function recordWhooshBangCanary(
+  paths: WhooshBangConnectionPaths,
+  input: {
+    committedCursorRef: string;
+    completedAt: Date;
+    connectedAt: string;
+    credentialGeneration: number;
+    credentialId: string;
+    diagnosticId: string;
+    lastSuccessfulPollAt: string;
+    lastSuccessfulSendAt: string;
+    messageId: string;
+  },
+): Promise<WhooshBangConnectionConfiguration> {
+  return await withConfigurationMutationLock(paths, async () => {
+    const current = await readWhooshBangConnection(paths);
+    if (
+      current === undefined ||
+      current.configuration.status !== "active" ||
+      current.configuration.connectedAt !== input.connectedAt ||
+      current.configuration.currentCredentialId !== input.credentialId ||
+      current.credential?.rotation.generation !== input.credentialGeneration
+    ) {
+      throw new Error(
+        "The WhooshBang connection changed before canary proof was recorded",
+      );
+    }
+    const configuration = WhooshBangConnectionConfigurationSchema.parse({
+      ...current.configuration,
+      canaryMessageId: input.messageId,
+      canaryDiagnosticId: input.diagnosticId,
+      canaryEvidence: {
+        committedCursorRef: input.committedCursorRef,
+        completedAt: input.completedAt.toISOString(),
+        connectedAt: input.connectedAt,
+        credentialGeneration: input.credentialGeneration,
+        credentialId: input.credentialId,
+        lastSuccessfulPollAt: input.lastSuccessfulPollAt,
+        lastSuccessfulSendAt: input.lastSuccessfulSendAt,
+      },
+    });
+    await atomicWritePrivate(paths.configurationPath, configuration);
+    return configuration;
+  });
 }
 
 export async function markWhooshBangDisconnected(
@@ -407,48 +734,52 @@ export async function markWhooshBangDisconnected(
     eraseCredential?: boolean;
   },
 ): Promise<StoredWhooshBangConnection> {
-  const current = await readWhooshBangConnection(paths);
-  if (current === undefined) {
-    throw new Error("WhooshBang is not configured");
-  }
-  const configuration = WhooshBangConnectionConfigurationSchema.parse({
-    ...current.configuration,
-    status: input.revoked ? "revoked" : "disconnected",
-    disconnectedAt: input.at.toISOString(),
+  return await withConfigurationMutationLock(paths, async () => {
+    const current = await readWhooshBangConnection(paths);
+    if (current === undefined) {
+      throw new Error("WhooshBang is not configured");
+    }
+    const configuration = WhooshBangConnectionConfigurationSchema.parse({
+      ...current.configuration,
+      status: input.revoked ? "revoked" : "disconnected",
+      disconnectedAt: input.at.toISOString(),
+    });
+    await atomicWritePrivate(paths.configurationPath, configuration);
+    if (input.eraseCredential === true) {
+      await unlinkPrivate(paths.credentialPath, "WhooshBang credential");
+      return { configuration };
+    }
+    return {
+      configuration,
+      ...(current.credential === undefined
+        ? {}
+        : { credential: current.credential }),
+    };
   });
-  await atomicWritePrivate(paths.configurationPath, configuration);
-  if (input.eraseCredential === true) {
-    await unlinkPrivate(paths.credentialPath, "WhooshBang credential");
-    return { configuration };
-  }
-  return {
-    configuration,
-    ...(current.credential === undefined
-      ? {}
-      : { credential: current.credential }),
-  };
 }
 
 export async function eraseWhooshBangConnection(
   paths: WhooshBangConnectionPaths,
   input: { configuration: boolean; credential: boolean },
 ): Promise<{ configurationErased: boolean; credentialErased: boolean }> {
-  if (input.credential) {
-    await inspectPrivateFile(paths.credentialPath, "WhooshBang credential");
-  }
-  if (input.configuration) {
-    await inspectPrivateFile(
-      paths.configurationPath,
-      "WhooshBang configuration",
-    );
-  }
-  const credentialErased = input.credential
-    ? await unlinkPrivate(paths.credentialPath, "WhooshBang credential")
-    : false;
-  const configurationErased = input.configuration
-    ? await unlinkPrivate(paths.configurationPath, "WhooshBang configuration")
-    : false;
-  return { configurationErased, credentialErased };
+  return await withConfigurationMutationLock(paths, async () => {
+    if (input.credential) {
+      await inspectPrivateFile(paths.credentialPath, "WhooshBang credential");
+    }
+    if (input.configuration) {
+      await inspectPrivateFile(
+        paths.configurationPath,
+        "WhooshBang configuration",
+      );
+    }
+    const credentialErased = input.credential
+      ? await unlinkPrivate(paths.credentialPath, "WhooshBang credential")
+      : false;
+    const configurationErased = input.configuration
+      ? await unlinkPrivate(paths.configurationPath, "WhooshBang configuration")
+      : false;
+    return { configurationErased, credentialErased };
+  });
 }
 
 function safeReference(value: string): string {
@@ -460,9 +791,28 @@ export function safeWhooshBangConnectionSummary(
 ): SafeWhooshBangConnectionSummary {
   return {
     apiOrigin: new URL(connection.configuration.baseUrl).origin,
-    canaryRef: safeReference(connection.configuration.canaryMessageId),
+    canaryEvidence:
+      connection.configuration.canaryEvidence === undefined
+        ? null
+        : {
+            committedCursorRef:
+              connection.configuration.canaryEvidence.committedCursorRef,
+            completedAt: connection.configuration.canaryEvidence.completedAt,
+            connectedAt: connection.configuration.canaryEvidence.connectedAt,
+            credentialGeneration:
+              connection.configuration.canaryEvidence.credentialGeneration,
+            lastSuccessfulPollAt:
+              connection.configuration.canaryEvidence.lastSuccessfulPollAt,
+            lastSuccessfulSendAt:
+              connection.configuration.canaryEvidence.lastSuccessfulSendAt,
+          },
+    canaryRef:
+      connection.configuration.canaryMessageId === undefined
+        ? null
+        : safeReference(connection.configuration.canaryMessageId),
     configured: true,
     contractVersion: connection.configuration.contractVersion,
+    credentialGeneration: connection.credential?.rotation.generation ?? null,
     credentialPresent: connection.credential !== undefined,
     environment: connection.configuration.environment,
     machineClientRef: safeReference(connection.configuration.machineClientId),

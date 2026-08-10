@@ -62,11 +62,20 @@ export interface TelegramReadiness {
 export interface WhooshBangReadiness {
   apiOrigin?: string;
   binding: "verified-at-connect" | "inactive" | "unavailable";
+  canaryEvidence?: {
+    committedCursorRef: string;
+    completedAt: string;
+    connectedAt: string;
+    credentialGeneration: number;
+    lastSuccessfulPollAt: string;
+    lastSuccessfulSendAt: string;
+  };
   canaryRef?: string;
   configured: boolean;
   credentialPermissions: "pinned-machine-scopes" | "inactive" | "unavailable";
   connectionStatus?: "active" | "disconnected" | "revoked" | "invalid";
   contractVersion?: string;
+  credentialGeneration?: number;
   credentialPresent: boolean;
   environment?: "test" | "live";
   issueCodes: string[];
@@ -256,11 +265,17 @@ async function whooshbangReadiness(
     return {
       apiOrigin: safe.apiOrigin,
       binding: ready ? "verified-at-connect" : "inactive",
-      canaryRef: safe.canaryRef,
+      ...(safe.canaryEvidence === null
+        ? {}
+        : { canaryEvidence: safe.canaryEvidence }),
+      ...(safe.canaryRef === null ? {} : { canaryRef: safe.canaryRef }),
       configured: true,
       credentialPermissions: ready ? "pinned-machine-scopes" : "inactive",
       connectionStatus: connection.configuration.status,
       contractVersion: safe.contractVersion,
+      ...(safe.credentialGeneration === null
+        ? {}
+        : { credentialGeneration: safe.credentialGeneration }),
       credentialPresent: safe.credentialPresent,
       environment: safe.environment,
       issueCodes: [
