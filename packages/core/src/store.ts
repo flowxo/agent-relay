@@ -53,7 +53,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 8;
+export const RELAY_STORE_SCHEMA_VERSION = 9;
 
 // Schema 7 renamed the hosted transport identity from `notifications` to
 // `whooshbang`. These columns retain that value, so an existing database is
@@ -392,6 +392,10 @@ export type SessionTopicClaimResult =
 
 export interface StoreStatus {
   events: Record<DeliveryStatus, number>;
+  eventActivity: {
+    inserted: number;
+    deleted: number;
+  };
   sessions: Record<SessionRecord["state"], number>;
   topics: Record<TopicProvisioningStatus, number>;
   topicCleanups: Record<TopicCleanupOperationState, number>;
@@ -1480,6 +1484,32 @@ export class RelayStore {
 
       CREATE INDEX IF NOT EXISTS events_due_idx
         ON events(status, next_attempt_at, created_at);
+
+      CREATE TABLE IF NOT EXISTS event_activity_counters (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        inserted_count INTEGER NOT NULL CHECK (inserted_count >= 0),
+        deleted_count INTEGER NOT NULL CHECK (deleted_count >= 0)
+      );
+
+      INSERT OR IGNORE INTO event_activity_counters (
+        singleton, inserted_count, deleted_count
+      ) SELECT 1, COUNT(*), 0 FROM events;
+
+      CREATE TRIGGER IF NOT EXISTS event_activity_insert
+      AFTER INSERT ON events
+      BEGIN
+        UPDATE event_activity_counters
+        SET inserted_count = inserted_count + 1
+        WHERE singleton = 1;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS event_activity_delete
+      AFTER DELETE ON events
+      BEGIN
+        UPDATE event_activity_counters
+        SET deleted_count = deleted_count + 1
+        WHERE singleton = 1;
+      END;
 
       CREATE TABLE IF NOT EXISTS card_actions (
         action_token TEXT PRIMARY KEY,
@@ -9788,6 +9818,15 @@ export class RelayStore {
       `,
       )
       .all() as CountRow[];
+    const eventActivity = this.database
+      .prepare(
+        `
+        SELECT inserted_count, deleted_count
+        FROM event_activity_counters
+        WHERE singleton = 1
+      `,
+      )
+      .get() as { inserted_count: number; deleted_count: number };
     const events: StoreStatus["events"] = {
       queued: 0,
       retry: 0,
@@ -9865,6 +9904,10 @@ export class RelayStore {
     }
     return {
       events,
+      eventActivity: {
+        inserted: eventActivity.inserted_count,
+        deleted: eventActivity.deleted_count,
+      },
       sessions,
       topics,
       topicCleanups,

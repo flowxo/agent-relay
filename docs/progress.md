@@ -1109,6 +1109,15 @@
   and optional-presentation checks; the pinned contract honestly reports
   resolution presentation as unsupported. The privacy scan retained no bearer,
   private binding identity, message content, or full diagnostic identifier.
+- FXO-1159 closes the remaining direct-canary operating-boundary gap without
+  another live message. Telegram and WhooshBang canaries now keep their local
+  client wait independent from the durable request TTL and reject a TTL that
+  cannot outlive that wait. An answered canary is accepted only when bounded
+  aggregate status snapshots prove exactly one new delivered event with no
+  pending-delivery change; ambient lifecycle traffic returns the stable safe
+  `canary-attribution-conflict` code. The public runbooks require the primary
+  operator and every helper to use a normal terminal or an exact hook-denied
+  agent boundary for any precise live-card ceiling.
 
 ## Phase 1 reproduction
 

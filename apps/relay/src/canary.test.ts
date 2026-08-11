@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FakeNotificationTransport } from "@agent-relay/core";
+import { FakeNotificationTransport, RelayStore } from "@agent-relay/core";
 import { makeProjectRef } from "@agent-relay/protocol";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +40,20 @@ function client(
     | undefined,
   delivered = 1,
 ): TelegramCanaryClient {
+  const aggregateStatus = (deliveredEvents: number) => ({
+    events: {
+      queued: 0,
+      retry: 0,
+      delivering: 0,
+      delivered: deliveredEvents,
+      dead_letter: 0,
+    },
+    eventActivity: {
+      inserted: deliveredEvents,
+      deleted: 0,
+    },
+    pendingDeliveryCount: 0,
+  });
   const record =
     request === undefined
       ? undefined
@@ -76,6 +90,10 @@ function client(
     waitForAnswer: vi.fn(async (correlationId) =>
       record === undefined ? undefined : { ...record, correlationId },
     ),
+    status: vi
+      .fn()
+      .mockResolvedValueOnce(aggregateStatus(10))
+      .mockResolvedValue(aggregateStatus(11)),
   };
 }
 
@@ -466,6 +484,14 @@ describe("Telegram activation canary", () => {
     expect(result).toMatchObject({
       outcome: "answered",
       resolvedBy: "telegram",
+      attribution: {
+        outcome: "exclusive",
+        eventDelta: 1,
+        insertedDelta: 1,
+        deletedDelta: 0,
+        deliveredDelta: 1,
+        pendingDeliveryDelta: 0,
+      },
       drain: { delivered: 1 },
     });
     const event = vi.mocked(fake.ingest).mock.calls[0]?.[0];
@@ -477,6 +503,113 @@ describe("Telegram activation canary", () => {
       },
     });
     expect(JSON.stringify(result)).not.toContain("relay-canary-ok");
+  });
+
+  it("keeps the client wait separate from the durable request TTL", async () => {
+    const fake = client({
+      state: "answered",
+      resolvedBy: "telegram",
+      answer: "relay-canary-ok",
+    });
+
+    await runTelegramCanary({
+      client: fake,
+      machineId: "machine_telegram_canary_12345678",
+      projectPath: "/workspace/example",
+      waitMs: 180_000,
+      requestTtlMs: 10 * 60_000,
+      pollIntervalMs: 50,
+      now: () => new Date("2026-07-24T12:00:00.000Z"),
+      randomId: () => "12345678-1234-1234-1234-123456789012",
+    });
+
+    expect(vi.mocked(fake.ingest).mock.calls[0]?.[0]).toMatchObject({
+      request: { expiresAt: "2026-07-24T12:10:00.000Z" },
+    });
+  });
+
+  it("fails closed when the durable request TTL cannot outlive the client wait", async () => {
+    await expect(
+      runTelegramCanary({
+        client: client({ state: "open" }),
+        machineId: "machine_telegram_canary_12345678",
+        projectPath: "/workspace/example",
+        waitMs: 180_000,
+        requestTtlMs: 239_999,
+        pollIntervalMs: 50,
+      }),
+    ).rejects.toMatchObject({ code: "canary-request-ttl-too-short" });
+  });
+
+  it("rejects unbounded durable request TTL values with a stable code", async () => {
+    for (const requestTtlMs of [0, 60 * 60_000 + 1]) {
+      await expect(
+        runTelegramCanary({
+          client: client({ state: "open" }),
+          machineId: "machine_telegram_canary_12345678",
+          projectPath: "/workspace/example",
+          waitMs: 1_000,
+          requestTtlMs,
+          pollIntervalMs: 50,
+        }),
+      ).rejects.toMatchObject({ code: "canary-request-ttl-invalid" });
+    }
+  });
+
+  it("rejects ambient event delivery instead of declaring a one-card proof", async () => {
+    const fake = client({
+      state: "answered",
+      resolvedBy: "telegram",
+      answer: "relay-canary-ok",
+    });
+    vi.mocked(fake.status)
+      .mockReset()
+      .mockResolvedValueOnce({
+        events: {
+          queued: 0,
+          retry: 0,
+          delivering: 0,
+          delivered: 10,
+          dead_letter: 0,
+        },
+        eventActivity: { inserted: 10, deleted: 0 },
+        pendingDeliveryCount: 0,
+      })
+      .mockResolvedValueOnce({
+        events: {
+          queued: 0,
+          retry: 0,
+          delivering: 0,
+          delivered: 12,
+          dead_letter: 0,
+        },
+        eventActivity: { inserted: 12, deleted: 0 },
+        pendingDeliveryCount: 0,
+      });
+
+    const result = await runTelegramCanary({
+      client: fake,
+      machineId: "machine_telegram_canary_12345678",
+      projectPath: "/workspace/example",
+      waitMs: 1_000,
+      pollIntervalMs: 50,
+    });
+
+    expect(result).toMatchObject({
+      outcome: "attribution-conflict",
+      diagnosticCode: "canary-attribution-conflict",
+      resolvedBy: "telegram",
+      attribution: {
+        outcome: "conflict",
+        eventDelta: 2,
+        insertedDelta: 2,
+        deletedDelta: 0,
+        deliveredDelta: 2,
+        pendingDeliveryDelta: 0,
+      },
+    });
+    expect(result).not.toHaveProperty("answer");
+    expect(result).not.toHaveProperty("question");
   });
 
   it("activates a Telegram canary through the atomic daemon endpoint", async () => {
@@ -533,6 +666,119 @@ describe("Telegram activation canary", () => {
     expect(fake.ingest).not.toHaveBeenCalled();
     expect(fake.drain).not.toHaveBeenCalled();
   });
+
+  it("rejects a masked ambient delivery when retention keeps row deltas at one", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "agent-relay-canary-retention-"),
+    );
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "relay.sqlite");
+    const seedStore = new RelayStore(databasePath);
+    const oldEvent: AgentAttentionEventV1 = {
+      ...fakeCanaryEvent(),
+      eventId: "evt_retention_mask_old_12345678",
+      occurredAt: "2020-01-01T00:00:00.000Z",
+      machineId: "machine_retention_mask_old_12345678",
+      bridgeSessionId: "bridge_retention_mask_old_12345678",
+      sessionId: "session_retention_mask_old_12345678",
+    };
+    seedStore.ingestEvent(oldEvent);
+    expect(seedStore.claimDueEvents("2020-01-01T00:00:01.000Z")).toHaveLength(
+      1,
+    );
+    seedStore.markDelivered(
+      oldEvent.eventId,
+      1,
+      "fake-telegram",
+      "old-message-1",
+      "2020-01-01T00:00:02.000Z",
+    );
+    expect(seedStore.status().events.delivered).toBe(1);
+    seedStore.close();
+
+    const daemon = await startDaemon({
+      databasePath,
+      port: 0,
+      telegramOperatorUserId: 7001,
+      telegramReplyChatId: 9001,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+      retention: { deliveredDays: 3_650 },
+    });
+    const address = daemon.server.address() as AddressInfo;
+    const relayClient = new RelayClient({
+      baseUrl: `http://127.0.0.1:${String(address.port)}`,
+      timeoutMs: 10_000,
+    });
+    const transport = daemon.service.transport as FakeNotificationTransport;
+
+    const running = runTelegramCanary({
+      client: {
+        ingest: async (event) => await relayClient.ingest(event),
+        drain: async (limit) => await relayClient.drain(limit),
+        status: async () => await relayClient.status(),
+        getRequest: async (correlationId) =>
+          await relayClient.getRequest(correlationId),
+        waitForAnswer: async (correlationId, timeoutMs, pollIntervalMs) =>
+          await relayClient.waitForAnswer(
+            correlationId,
+            timeoutMs,
+            pollIntervalMs,
+          ),
+      },
+      machineId: "machine_telegram_canary_12345678",
+      projectPath: "/workspace/example",
+      waitMs: 10_000,
+      pollIntervalMs: 50,
+      randomId: () => "12345678-1234-1234-1234-123456789012",
+    });
+    await vi.waitFor(() => expect(transport.deliveries).toHaveLength(1), {
+      timeout: 15_000,
+    });
+
+    const ambientEvent: AgentAttentionEventV1 = {
+      ...fakeCanaryEvent(),
+      eventId: "evt_retention_mask_ambient_12345678",
+      occurredAt: new Date().toISOString(),
+      machineId: "machine_retention_mask_ambient_12345678",
+      bridgeSessionId: "bridge_retention_mask_ambient_12345678",
+      sessionId: "session_retention_mask_ambient_12345678",
+    };
+    await relayClient.ingest(ambientEvent);
+    await relayClient.drain();
+    await relayClient.maintainRetention({ deliveredDays: 30 });
+    const netStatus = await relayClient.status();
+    expect(netStatus.events.delivered).toBe(2);
+    expect(transport.deliveries).toHaveLength(2);
+
+    await relayClient.handleTelegramUpdate({
+      update_id: 911,
+      message: {
+        message_id: 810,
+        message_thread_id: Number(transport.deliveries[0]?.context.topicId),
+        from: { id: 7001 },
+        chat: { id: 9001 },
+        text: "relay-canary-ok",
+        reply_to_message: {
+          message_id: Number(transport.deliveries[0]?.receipt.messageId),
+        },
+      },
+    });
+
+    await expect(running).resolves.toMatchObject({
+      outcome: "attribution-conflict",
+      diagnosticCode: "canary-attribution-conflict",
+      attribution: {
+        outcome: "conflict",
+        eventDelta: 1,
+        insertedDelta: 2,
+        deletedDelta: 1,
+        deliveredDelta: 1,
+        pendingDeliveryDelta: 0,
+      },
+    });
+    await daemon.close();
+  }, 25_000);
 
   it("fails before waiting when Telegram delivery is queued for retry", async () => {
     const fake = client({ state: "open" }, 0);
@@ -602,6 +848,69 @@ describe("Telegram activation canary", () => {
     expect(result).not.toHaveProperty("question");
   });
 
+  it("keeps the durable request answerable after the client window closes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-canary-late-"));
+    temporaryDirectories.push(directory);
+    const daemon = await startDaemon({
+      databasePath: join(directory, "relay.sqlite"),
+      port: 0,
+      telegramOperatorUserId: 7001,
+      telegramReplyChatId: 9001,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    const address = daemon.server.address() as AddressInfo;
+    const relayClient = new RelayClient({
+      baseUrl: `http://127.0.0.1:${String(address.port)}`,
+      timeoutMs: 10_000,
+    });
+    const transport = daemon.service.transport as FakeNotificationTransport;
+    const result = await runTelegramCanary({
+      client: {
+        ingest: async (event) => await relayClient.ingest(event),
+        drain: async (limit) => await relayClient.drain(limit),
+        status: async () => await relayClient.status(),
+        getRequest: async (correlationId) =>
+          await relayClient.getRequest(correlationId),
+        waitForAnswer: async (correlationId, timeoutMs, pollIntervalMs) =>
+          await relayClient.waitForAnswer(
+            correlationId,
+            timeoutMs,
+            pollIntervalMs,
+          ),
+      },
+      machineId: "machine_telegram_canary_12345678",
+      projectPath: "/workspace/example",
+      waitMs: 100,
+      requestTtlMs: 5 * 60_000,
+      pollIntervalMs: 50,
+      randomId: () => "12345678-1234-1234-1234-123456789012",
+    });
+
+    expect(result.outcome).toBe("timeout");
+    expect(transport.deliveries).toHaveLength(1);
+    await relayClient.handleTelegramUpdate({
+      update_id: 910,
+      message: {
+        message_id: 809,
+        message_thread_id: Number(transport.deliveries[0]?.context.topicId),
+        from: { id: 7001 },
+        chat: { id: 9001 },
+        text: "relay-canary-ok",
+        reply_to_message: {
+          message_id: Number(transport.deliveries[0]?.receipt.messageId),
+        },
+      },
+    });
+    await expect(
+      relayClient.getRequest(result.correlationId),
+    ).resolves.toMatchObject({
+      state: "answered",
+      resolvedBy: "telegram",
+    });
+    await daemon.close();
+  });
+
   it("fails closed when the Telegram answer does not match the challenge", async () => {
     const fake = client({
       state: "answered",
@@ -643,6 +952,7 @@ describe("Telegram activation canary", () => {
       client: {
         ingest: async (event) => await relayClient.ingest(event),
         drain: async (limit) => await relayClient.drain(limit),
+        status: async () => await relayClient.status(),
         getRequest: async (correlationId) =>
           await relayClient.getRequest(correlationId),
         waitForAnswer: async (correlationId, timeoutMs, pollIntervalMs) =>
@@ -679,6 +989,7 @@ describe("Telegram activation canary", () => {
     await expect(running).resolves.toMatchObject({
       outcome: "answered",
       resolvedBy: "telegram",
+      attribution: { outcome: "exclusive" },
     });
     await daemon.close();
   }, 25_000);
@@ -726,6 +1037,14 @@ describe("WhooshBang activation canary", () => {
     expect(result).toMatchObject({
       outcome: "answered",
       resolvedBy: "whooshbang",
+      attribution: {
+        outcome: "exclusive",
+        eventDelta: 1,
+        insertedDelta: 1,
+        deletedDelta: 0,
+        deliveredDelta: 1,
+        pendingDeliveryDelta: 0,
+      },
     });
     expect(vi.mocked(fake.ingest).mock.calls[0]?.[0]).toMatchObject({
       request: { question: expect.stringContaining("WhooshBang") },

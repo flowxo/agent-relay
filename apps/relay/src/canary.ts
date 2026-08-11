@@ -43,10 +43,14 @@ export interface InteractiveCanaryClient {
     timeoutMs: number,
     pollIntervalMs?: number,
   ): Promise<PendingRequestRecord | undefined>;
+  status(): Promise<
+    Pick<RelayDaemonStatus, "events" | "eventActivity" | "pendingDeliveryCount">
+  >;
 }
 
 export type InteractiveCanaryOutcome =
   | "answered"
+  | "attribution-conflict"
   | "delivery-failed"
   | "request-missing"
   | "unexpected-answer"
@@ -62,6 +66,15 @@ export interface InteractiveCanaryResult {
   ingest: IngestResult;
   drain: DrainResult;
   resolvedBy?: PendingRequestRecord["resolvedBy"];
+  diagnosticCode?: "canary-attribution-conflict";
+  attribution?: {
+    outcome: "exclusive" | "conflict";
+    eventDelta: number;
+    insertedDelta: number;
+    deletedDelta: number;
+    deliveredDelta: number;
+    pendingDeliveryDelta: number;
+  };
 }
 
 export interface InteractiveCanaryOptions {
@@ -71,6 +84,7 @@ export interface InteractiveCanaryOptions {
   expectedResolvedBy: "telegram" | "whooshbang";
   transportLabel: "Telegram" | "WhooshBang";
   waitMs?: number;
+  requestTtlMs?: number;
   pollIntervalMs?: number;
   now?: () => Date;
   randomId?: () => string;
@@ -78,6 +92,50 @@ export interface InteractiveCanaryOptions {
 
 export const TELEGRAM_CANARY_REPLY = "relay-canary-ok";
 export const WHOOSHBANG_CANARY_REPLY = TELEGRAM_CANARY_REPLY;
+export const INTERACTIVE_CANARY_DEFAULT_WAIT_MS = 2 * 60_000;
+export const INTERACTIVE_CANARY_DEFAULT_REQUEST_TTL_MS = 5 * 60_000;
+export const INTERACTIVE_CANARY_MIN_TTL_MARGIN_MS = 60_000;
+
+type CanaryAggregateStatus = Pick<
+  RelayDaemonStatus,
+  "events" | "eventActivity" | "pendingDeliveryCount"
+>;
+
+function canaryAttribution(
+  before: CanaryAggregateStatus,
+  after: CanaryAggregateStatus,
+): NonNullable<InteractiveCanaryResult["attribution"]> {
+  const eventDelta =
+    Object.values(after.events).reduce((sum, count) => sum + count, 0) -
+    Object.values(before.events).reduce((sum, count) => sum + count, 0);
+  const deliveredDelta = after.events.delivered - before.events.delivered;
+  const insertedDelta =
+    after.eventActivity.inserted - before.eventActivity.inserted;
+  const deletedDelta =
+    after.eventActivity.deleted - before.eventActivity.deleted;
+  const pendingDeliveryDelta =
+    after.pendingDeliveryCount - before.pendingDeliveryCount;
+  const otherDeliveryStatesUnchanged = (
+    ["queued", "retry", "delivering", "dead_letter"] as const
+  ).every((state) => after.events[state] === before.events[state]);
+  const outcome =
+    eventDelta === 1 &&
+    insertedDelta === 1 &&
+    deletedDelta === 0 &&
+    deliveredDelta === 1 &&
+    pendingDeliveryDelta === 0 &&
+    otherDeliveryStatesUnchanged
+      ? "exclusive"
+      : "conflict";
+  return {
+    outcome,
+    eventDelta,
+    insertedDelta,
+    deletedDelta,
+    deliveredDelta,
+    pendingDeliveryDelta,
+  };
+}
 
 export interface TelegramCanaryDaemonStatus {
   selectedTransport?: RelayDaemonStatus["selectedTransport"];
@@ -259,7 +317,9 @@ async function waitForDeliveryReceipt(
 export async function runInteractiveCanary(
   options: InteractiveCanaryOptions,
 ): Promise<InteractiveCanaryResult> {
-  const waitMs = options.waitMs ?? 2 * 60_000;
+  const waitMs = options.waitMs ?? INTERACTIVE_CANARY_DEFAULT_WAIT_MS;
+  const requestTtlMs =
+    options.requestTtlMs ?? INTERACTIVE_CANARY_DEFAULT_REQUEST_TTL_MS;
   const pollIntervalMs = options.pollIntervalMs ?? 500;
   if (!Number.isSafeInteger(waitMs) || waitMs < 1 || waitMs > 30 * 60_000) {
     throw new Error("Interactive canary waitMs must be between 1 and 1800000");
@@ -273,7 +333,28 @@ export async function runInteractiveCanary(
       "Interactive canary pollIntervalMs must be between 50 and 10000",
     );
   }
+  if (
+    !Number.isSafeInteger(requestTtlMs) ||
+    requestTtlMs < 1 ||
+    requestTtlMs > 60 * 60_000
+  ) {
+    throw Object.assign(
+      new Error(
+        "Interactive canary requestTtlMs must be between 1 and 3600000",
+      ),
+      { code: "canary-request-ttl-invalid" },
+    );
+  }
+  if (requestTtlMs < waitMs + INTERACTIVE_CANARY_MIN_TTL_MARGIN_MS) {
+    throw Object.assign(
+      new Error(
+        "Interactive canary requestTtlMs must outlive waitMs by at least 60000",
+      ),
+      { code: "canary-request-ttl-too-short" },
+    );
+  }
 
+  const initialStatus = await options.client.status();
   const now = (options.now ?? (() => new Date()))();
   const identity = (options.randomId ?? randomUUID)();
   const sequence = now.getTime();
@@ -307,9 +388,7 @@ export async function runInteractiveCanary(
       correlationId,
       kind: "input",
       question: instruction,
-      expiresAt: new Date(
-        now.getTime() + Math.max(waitMs + 60_000, 5 * 60_000),
-      ).toISOString(),
+      expiresAt: new Date(now.getTime() + requestTtlMs).toISOString(),
     },
     capabilities: {
       inlineContinue: true,
@@ -370,7 +449,7 @@ export async function runInteractiveCanary(
       drain,
     };
   }
-  const outcome: InteractiveCanaryOutcome =
+  let outcome: InteractiveCanaryOutcome =
     request.state === "answered" &&
     (request.resolvedBy !== options.expectedResolvedBy ||
       request.answer?.trim() !== TELEGRAM_CANARY_REPLY)
@@ -378,12 +457,23 @@ export async function runInteractiveCanary(
       : request.state === "open"
         ? "timeout"
         : request.state;
+  const attribution =
+    outcome === "answered"
+      ? canaryAttribution(initialStatus, await options.client.status())
+      : undefined;
+  if (attribution?.outcome === "conflict") {
+    outcome = "attribution-conflict";
+  }
   return {
     eventId,
     correlationId,
     outcome,
     ingest,
     drain,
+    ...(attribution === undefined ? {} : { attribution }),
+    ...(attribution?.outcome === "conflict"
+      ? { diagnosticCode: "canary-attribution-conflict" as const }
+      : {}),
     ...(request.resolvedBy === undefined
       ? {}
       : { resolvedBy: request.resolvedBy }),

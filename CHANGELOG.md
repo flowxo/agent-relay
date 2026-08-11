@@ -68,6 +68,10 @@ breaking changes and required operator action.
 
 ### Changed
 
+- Interactive Telegram and WhooshBang canaries now expose separate bounded
+  client-wait and durable-request-TTL controls. Exit-zero acceptance also
+  requires aggregate pre/post status to prove exactly one new delivered event;
+  ambient hook traffic fails closed with `canary-attribution-conflict`.
 - The optional hosted transport now pins WhooshBang's exact contracts rc.12 /
   SDK rc.13 / mock rc.15 artifacts from producer
   `50de931fed8d819d1a70ec27201351b09f0ef251`. Its consumer proof now uses the

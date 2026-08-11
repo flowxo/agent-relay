@@ -348,6 +348,63 @@ describe("SQLite schema compatibility", () => {
     upgraded.close();
   });
 
+  it("migrates version-eight event activity without losing the retained baseline", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+
+    const prior = new Database(databasePath);
+    prior.exec(`
+      DROP TRIGGER event_activity_insert;
+      DROP TRIGGER event_activity_delete;
+      DROP TABLE event_activity_counters;
+
+      INSERT INTO sessions (
+        machine_id, harness, session_id, bridge_session_id, surface,
+        harness_version, project_json, capabilities_json, state,
+        last_seen_at, last_sequence, updated_at
+      ) VALUES (
+        'machine_schema_activity_12345678', 'codex',
+        'session_schema_activity_12345678',
+        'bridge_schema_activity_12345678', 'cli', 'test',
+        '{"displayName":"example","cwdHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+        '{}', 'waiting', '2026-07-29T12:00:00.000Z', 1,
+        '2026-07-29T12:00:00.000Z'
+      );
+
+      INSERT INTO events (
+        event_id, machine_id, harness, session_id, type, payload_json,
+        status, next_attempt_at, created_at
+      ) VALUES (
+        'event_schema_activity_12345678',
+        'machine_schema_activity_12345678', 'codex',
+        'session_schema_activity_12345678', 'turn.stopped', '{}',
+        'delivered', '2026-07-29T12:00:00.000Z',
+        '2026-07-29T12:00:00.000Z'
+      );
+    `);
+    prior.pragma("user_version = 8");
+    prior.close();
+
+    const upgradedStore = new RelayStore(databasePath);
+    expect(upgradedStore.status().eventActivity).toEqual({
+      inserted: 1,
+      deleted: 0,
+    });
+    upgradedStore.close();
+
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare(
+          "SELECT inserted_count, deleted_count FROM event_activity_counters",
+        )
+        .get(),
+    ).toEqual({ inserted_count: 1, deleted_count: 0 });
+    upgraded.close();
+  });
+
   it("refuses to open a newer schema and leaves it untouched", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");

@@ -107,11 +107,24 @@ retry loop.
 In another terminal with the same environment:
 
 ```sh
-~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
+~/.agent-relay/bin/agent-relay telegram-canary \
+  --wait-ms 120000 \
+  --request-ttl-ms 300000
 ```
 
 Use `telegram-canary --help` or `telegram-canary -h` for inert usage output;
 neither form checks the daemon, creates an event, or contacts Telegram.
+
+`--wait-ms` is the local client window; `--request-ttl-ms` is the independent
+durable answer lifetime and must be at least one minute greater. A late answer
+can remain valid after the client reports timeout, but the timed-out invocation
+is not a successful canary. Size the client window for the interaction method;
+use a larger explicit bounded wait for browser-assisted handling.
+
+A live proof with a precise card ceiling must run from a normal terminal or an
+exact hook-denied agent boundary. This includes the primary operating session,
+not only delegated helpers: ordinary Codex, Claude, or Cursor Relay hooks can
+create ambient lifecycle cards and invalidate the proof.
 
 The canary waits up to 35 seconds for a starting poll, then checks the daemon's
 safe intake status before creating its request. It fails with
@@ -127,7 +140,13 @@ relay-canary-ok
 
 Success requires topic creation/reuse, delivery, authorized operator/chat/topic
 routing, exact request correlation, durable first-writer-wins resolution, and
-`resolvedBy: telegram`. Command output omits the private question and answer.
+`resolvedBy: telegram`. The CLI also snapshots aggregate daemon status before
+and after the run. It succeeds only when exactly one new delivered event is
+attributable to the canary with no pending-delivery change. Ambient activity
+returns `outcome: attribution-conflict` and diagnostic code
+`canary-attribution-conflict`; stop and isolate the unexpected event source
+before any separately authorized rerun. Command output omits the private
+question and answer.
 
 ## Session topics and cards
 

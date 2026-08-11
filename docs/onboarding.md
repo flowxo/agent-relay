@@ -535,13 +535,35 @@ set -a
 . ./.env.activation
 set +a
 
-~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
+~/.agent-relay/bin/agent-relay telegram-canary \
+  --wait-ms 120000 \
+  --request-ttl-ms 300000
 ```
 
 `telegram-canary --help` and `telegram-canary -h` are inert. They print CLI
 usage without checking the daemon, creating a Relay event, or contacting
 Telegram. The same guarantee applies to the fake, WhooshBang, and webhook canary
 help paths.
+
+The client wait and durable request TTL are separate controls. The TTL must
+outlive the wait by at least one minute, and a client timeout does not expire or
+cancel the durable request. If the reply arrives after the client exits, Relay
+can still accept it through first-writer-wins authority, but that run is not an
+exit-zero canary. Choose the wait for the actual operator workflow. For example,
+a browser-assisted reply should use a wider bounded window:
+
+```sh
+~/.agent-relay/bin/agent-relay telegram-canary \
+  --wait-ms 300000 \
+  --request-ttl-ms 600000
+```
+
+For an observation plan with a precise live-card ceiling, operate the canary
+from a normal terminal or an agent process with exact OS-enforced denial of all
+ordinary user-level Relay hook files. Apply that boundary to the primary
+operating session and every delegated session. Do not co-load the candidate
+project hook with the developer's ordinary hook or use a hooked agent session
+for browser-assisted handling.
 
 Open the fresh canary session topic and send exactly:
 
@@ -557,7 +579,16 @@ Success requires:
 - direct topic-text correlation to exactly one eligible request;
 - exact challenge validation;
 - durable first-writer-wins resolution; and
-- a terminal result showing `resolvedBy: telegram`.
+- a terminal result showing `resolvedBy: telegram`; and
+- `attribution.outcome: exclusive`, with exactly one new event, one delivered
+  event, and no pending-delivery change across the automatic pre/post status
+  snapshots.
+
+`outcome: attribution-conflict` with diagnostic code
+`canary-attribution-conflict` means ambient or otherwise unattributable event
+activity overlapped the canary. Stop the proof, preserve the local evidence,
+remove the unexpected hook or traffic source, and do not count or rerun the live
+window without the authorization required by its observation plan.
 
 Telegram's Reply action remains available when a topic contains multiple
 eligible text requests. The replied-to card must belong to the same persisted
