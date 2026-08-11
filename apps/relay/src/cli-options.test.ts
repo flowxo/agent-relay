@@ -1,10 +1,37 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isInertCanaryHelpRequest,
   resolveHookHarnessVersion,
   resolveSupervisorExecutable,
   resolveWebEnabled,
 } from "./cli-options.js";
+
+describe("canary help isolation", () => {
+  it("recognizes both inert help flags for every canary command", () => {
+    for (const command of [
+      "canary",
+      "telegram-canary",
+      "whooshbang-canary",
+      "webhook-canary",
+    ]) {
+      expect(isInertCanaryHelpRequest(command, ["--help"])).toBe(true);
+      expect(isInertCanaryHelpRequest(command, ["-h"])).toBe(true);
+      expect(
+        isInertCanaryHelpRequest(command, ["--wait-ms", "100", "--help"]),
+      ).toBe(true);
+    }
+  });
+
+  it("does not intercept execution or unrelated commands", () => {
+    expect(isInertCanaryHelpRequest("telegram-canary", [])).toBe(false);
+    expect(
+      isInertCanaryHelpRequest("telegram-canary", ["--wait-ms", "100"]),
+    ).toBe(false);
+    expect(isInertCanaryHelpRequest("status", ["--help"])).toBe(false);
+    expect(isInertCanaryHelpRequest(undefined, ["--help"])).toBe(false);
+  });
+});
 
 describe("hook harness version resolution", () => {
   it("prefers the live supervisor version over install-time hook metadata", () => {

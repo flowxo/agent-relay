@@ -110,6 +110,9 @@ In another terminal with the same environment:
 ~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
 ```
 
+Use `telegram-canary --help` or `telegram-canary -h` for inert usage output;
+neither form checks the daemon, creates an event, or contacts Telegram.
+
 The canary waits up to 35 seconds for a starting poll, then checks the daemon's
 safe intake status before creating its request. It fails with
 `telegram-intake-not-ready` and sends no card while polling is stopped, blocked,
