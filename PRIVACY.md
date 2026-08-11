@@ -15,26 +15,37 @@ The default state directory is `~/.agent-relay`; set `AGENT_RELAY_STATE_DIR` to
 use another exact path. Depending on the commands and features used, Agent Relay
 stores:
 
-- `relay.sqlite`, including normalized events, delivery state, request state,
-  bounded agent summaries or excerpts, operator answers, session metadata,
-  diagnostics, resume claims, transport message/topic identifiers,
-  topic-cleanup/prune modes, inactivity cutoffs, bounded candidate metadata,
-  decisions, attempt state, native-hook ordering allocations, and two monotonic
-  event insertion/deletion counters;
-- `fallback-spool.ndjson`, containing bounded normalized hook records that could
-  not reach the daemon yet;
+- `relay.sqlite` and its SQLite WAL/SHM sidecars, including normalized events,
+  delivery state, request state, bounded agent summaries or excerpts, operator
+  answers, session metadata, diagnostics, resume claims, transport message/topic
+  identifiers, topic-cleanup/prune modes, inactivity cutoffs, bounded candidate
+  metadata, decisions, attempt state, native-hook ordering allocations, and two
+  monotonic event insertion/deletion counters;
+- `fallback-spool.ndjson` and its segment, pending, and processing siblings,
+  containing bounded normalized hook records that could not reach the daemon yet
+  or are being recovered;
 - `relay.ndjson` and rotated siblings, containing structured redacted
   diagnostics;
 - `web-credential.json`, containing independent local bearer and CSRF secrets
   when the local web companion is enabled;
+- `transport.json`, containing the explicitly selected transport and update
+  timestamp, but no transport credential;
 - optional `webhook.json`, containing the explicitly configured outbound URL,
   shared HMAC secret, timeout, and configuration timestamp;
+- optional `whooshbang.json`, containing the hosted API origin, subscriber and
+  optional notifier routing, machine-client reference, contract version, and
+  connection metadata;
+- optional `whooshbang-credential.json`, containing the narrow machine bearer
+  created for the current hosted connection;
+- temporary `whooshbang-oauth-provisioning.json`, the crash-recovery journal for
+  an OAuth/MCP provisioning attempt; it can contain a candidate narrow bearer
+  until reconciliation commits or erases it;
 - `install.json` and `bin/agent-relay`, which record and launch the owned
   user-level installation; and
-- optional experimental `runner-bridge.json` and `runner-bridge.sqlite`, which
-  retain bridge selection, runner authority, private product/native mappings,
-  queued protocol frames, cursors, sanitized effect outcomes, normalized
-  approval action digests, and adoption state; and
+- optional experimental `runner-bridge.json`, `runner-bridge.sqlite`, and its
+  SQLite WAL/SHM sidecars, which retain bridge selection, runner authority,
+  private product/native mappings, queued protocol frames, cursors, sanitized
+  effect outcomes, normalized approval action digests, and adoption state; and
 - the stable random local machine identifier used to separate sessions.
 
 Agent Relay does not intentionally store a harness's raw hook payload or full
@@ -78,6 +89,16 @@ Agent Relay state directory.
 
 ## Data sent to notification transports
 
+Exactly one transport is selected; credentials never select one. The default is
+the fake transport, which is local-only and makes no network request.
+
+| Transport        | Default outbound fields                                                                                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fake             | No network fields; the bounded delivery stays in process.                                                                                                                   |
+| Direct Telegram  | Bot API routing, bounded title/text card, event/session presentation, supported interaction labels and opaque action tokens, and delivery mode.                             |
+| Outbound webhook | Strict schema, stable delivery/idempotency ID, delivery mode, bounded message, sanitized source projection, optional local-web handoff, timestamp, and HMAC signature.      |
+| WhooshBang       | Subscriber, optional notifier, bounded rendered title and text, opaque event correlation, a supported prompt/labels/opaque options with expiry, and request authentication. |
+
 The fake transport is entirely local. Direct Telegram sends the configured bot a
 bounded rendered attention card. Depending on the event, that card can include:
 
@@ -94,10 +115,15 @@ unconfirmed Bot API updates for no longer than 24 hours, and messages remain in
 Telegram until removed there.
 
 The optional WhooshBang adapter is replaceable and is not required for local or
-direct-Telegram operation. When configured, it receives the bounded transport
-contract described above, not a full repository or transcript. Provider-specific
-credentials, endpoints, retention, and account terms must be documented before
-that adapter is promoted for production use.
+direct-Telegram operation. When explicitly selected, it sends the configured
+subscriber, optional notifier, bounded rendered title and text, opaque event
+correlation ID, and, when supported, one prompt with choice labels and opaque
+option values plus its expiry. It does not send a full repository, raw hook,
+transcript, local path, command, environment, credential, or resume authority.
+The narrow machine bearer and credential ID authenticate WhooshBang provider
+requests; they are not message-payload fields. WhooshBang receives its own
+request/network metadata and controls provider-side retention under the account
+terms accepted by the operator.
 
 The optional outbound webhook sends a strict `agent-relay-webhook.v1` JSON
 envelope to the operator-configured endpoint. It contains the same bounded
@@ -119,10 +145,24 @@ a supported security boundary.
 ## Credentials
 
 Telegram tokens, chat IDs, operator IDs, webhook secrets, daemon tokens, and
-future provider credentials are configuration, not source data. Keep them in a
-secret manager or a mode-`0600`, gitignored local environment file. Agent Relay
-reads these values from the environment and excludes token-, secret-,
-credential-, and authorization-shaped fields from structured logs.
+WhooshBang credentials are configuration, not source data. Direct Telegram and
+daemon values can be supplied by environment injection. The webhook configure
+command accepts its secret from stdin or a private file and stores it in the
+private configuration file; environment injection is process-only and does not
+write `webhook.json`. WhooshBang OAuth/MCP onboarding is the default hosted
+path: it creates and retains only a narrow machine bearer in
+`whooshbang-credential.json`; its crash-recovery journal is erased after safe
+reconciliation. The legacy project bootstrap credential is accepted only from
+stdin, environment injection, or a hidden prompt and is not retained.
+
+Keep source credentials in a secret manager or mode-`0600`, gitignored local
+file. Agent Relay excludes token-, secret-, credential-, and
+authorization-shaped fields from structured logs. `whooshbang disconnect`
+removes local connection use;
+`--revoke --erase-credential --erase-configuration` with newly supplied project
+authority revokes the narrow provider credential and erases its local
+credential, configuration, and reconciled journal. Provider messages or account
+records must be erased through the provider separately.
 
 Redaction is defense in depth, not permission to publish logs or databases.
 Never attach `.env` files, SQLite files, raw logs, transcripts, or config

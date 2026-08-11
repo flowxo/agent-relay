@@ -16,6 +16,11 @@ import { basename, delimiter, dirname, resolve } from "node:path";
 import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
 
+import {
+  currentReleaseRuntime,
+  isSupportedReleaseRuntime,
+} from "./lib/release-policy.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const release = JSON.parse(
   await readFile(resolve(root, "packaging/release.json"), "utf8"),
@@ -247,9 +252,9 @@ function ownerMarkerCount(value) {
   return JSON.stringify(value).split("AGENT_RELAY_HOOK_OWNER").length - 1;
 }
 
-if (process.platform !== "darwin") {
+if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
   process.stdout.write(
-    `Packed lifecycle skipped on unsupported ${process.platform}/${process.arch}; package content checks remain mandatory.\n`,
+    `Packed lifecycle skipped outside the frozen ${process.platform}/${process.arch} Node.js ${process.versions.node} boundary; package content checks remain mandatory.\n`,
   );
 } else {
   const temporaryRoot = await mkdtemp(

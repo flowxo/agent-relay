@@ -5,11 +5,11 @@ or commercial support commitment yet.
 
 ## Supported surface
 
-The current release-candidate validation target is macOS on Apple silicon with
-Node.js 22. Linux CI and other Node.js versions provide development evidence,
-not an end-user runtime support claim. Windows, Linux runtime operation, Intel
-macOS, native application packaging, and automatic background-service
-installation are not currently supported claims.
+The V1 support range is macOS on Apple silicon with Node.js 22 or newer; native
+release-exit validation uses exact Node.js 22.23.1. Linux CI provides
+development evidence, not an end-user runtime support claim. Windows, Linux
+runtime operation, Intel macOS, native application packaging, and automatic
+background-service installation are not currently supported claims.
 
 Harness support is exact and evidence-based. The generated
 [capability matrix](docs/capability-matrix.md) is authoritative for enabled
@@ -18,6 +18,9 @@ powers the summary below, `agent-relay capabilities`, and `doctor`. Version
 drift is `compatible-unverified` and a warning, not a compatibility claim; a
 version recorded as incompatible is a failure. Cursor permission automation
 remains disabled and false at runtime pending a current sanitized live fixture.
+Doctor warns for a missing unused harness, fails when no supported harness is
+available, and fails when installed hook version stamps no longer match the
+currently observed executables.
 
 ### Generated harness support
 
@@ -32,13 +35,25 @@ remains disabled and false at runtime pending a current sanitized live fixture.
 | Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.                                     |
 | Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                    |
 
+Supported runtime: macOS on Apple silicon with native arm64 Node or x64 Node
+through Rosetta, Node.js 22 or newer; release-exit evidence uses native Node.js
+22.23.1. Not claimed: Windows, Linux end-user runtime, Intel macOS, Cursor IDE
+late resume, native-hook crash proof, Cursor permission automation.
 <!-- END GENERATED HARNESS SUPPORT -->
 
 Direct Telegram, the signed outbound webhook, and the fake transport are
 available without a hosted Flow XO account. The local web companion is optional
 and loopback-only. WhooshBang is an optional replaceable transport and is not
 required for local operation. The outbound webhook has no inbound response API
-in V1.
+in V1. Exactly one transport is selected; there is no automatic dual-send or
+failover and no hosted dashboard or team-policy surface.
+
+Accepted Low residual: automation cannot prove that the invoking shell or GUI
+session launched with every ambient hook disabled. Exact hook-denied isolation
+and aggregate attribution mitigate it, and contaminated observation windows fail
+closed. Telegram delivery is at least once across its documented acknowledgement
+ambiguity window. Cursor IDE late resume is unsupported, and native hooks cannot
+prove process crashes without supervised ownership.
 
 ## Before opening an issue
 

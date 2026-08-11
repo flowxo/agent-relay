@@ -413,6 +413,29 @@ export const VERIFIED_CLI_HARNESS_EVIDENCE = Object.fromEntries(
     .map((entry) => [entry.harness, entry]),
 ) as Readonly<Record<Harness, HarnessCompatibilityRecord>>;
 
+export interface RuntimeSupportObservation {
+  readonly platform: string;
+  readonly architecture: string;
+  readonly nodeVersion: string;
+  readonly appleSiliconHardware?: boolean;
+}
+
+export function isSupportedRuntimeObservation(
+  observation: RuntimeSupportObservation,
+): boolean {
+  const expected = HARNESS_COMPATIBILITY.runtimeTarget;
+  const nodeVersion = /^(\d+)(?:\.|$)/.exec(observation.nodeVersion);
+  const nodeMajor = nodeVersion === null ? Number.NaN : Number(nodeVersion[1]);
+  return (
+    observation.platform === expected.platform &&
+    (observation.architecture === expected.architecture ||
+      (observation.architecture === "x64" &&
+        observation.appleSiliconHardware === true)) &&
+    Number.isInteger(nodeMajor) &&
+    nodeMajor >= expected.minimumNodeMajor
+  );
+}
+
 export function classifyObservedHarnessVersion(
   evidence: Pick<
     HarnessCompatibilityRecord,
@@ -566,6 +589,9 @@ export function renderSupportSummaryBlock(): string {
   return [
     "<!-- BEGIN GENERATED HARNESS SUPPORT -->",
     ...table(headers, rows),
+    "",
+    `Supported runtime: ${HARNESS_COMPATIBILITY.runtimeTarget.operatingSystem} on Apple silicon with native arm64 Node or x64 Node through Rosetta, Node.js ${String(HARNESS_COMPATIBILITY.runtimeTarget.minimumNodeMajor)} or newer; release-exit evidence uses native Node.js 22.23.1.`,
+    `Not claimed: ${HARNESS_COMPATIBILITY.unsupportedRuntimeClaims.join(", ")}.`,
     "<!-- END GENERATED HARNESS SUPPORT -->",
   ].join("\n");
 }

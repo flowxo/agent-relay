@@ -198,6 +198,30 @@ function packageRepository(repository) {
   return "NOASSERTION";
 }
 
+function bundledComponentId(component) {
+  return `SPDXRef-Bundled-${sha("sha256", `${component.name}@${component.version}`).slice(0, 20)}`;
+}
+
+async function sourceInputRecords(root, rootPackage) {
+  const paths = [
+    "pnpm-lock.yaml",
+    "packaging/release.json",
+    "packaging/package-files.json",
+    "packaging/actions-lock.json",
+    "contracts/contract-lock.json",
+    "packaging/v1-release-boundary.json",
+  ];
+  return {
+    packageManager: rootPackage.packageManager,
+    files: await Promise.all(
+      paths.map(async (path) => ({
+        path,
+        sha256: await fileSha("sha256", resolve(root, path)),
+      })),
+    ),
+  };
+}
+
 export async function runtimeDependencyGraph(root, release) {
   const packages = new Map();
   const edges = new Set();
@@ -322,6 +346,26 @@ export async function createSpdxDocument({
       },
     ],
   }));
+  const bundledPackages = release.bundledComponents.map((component) => ({
+    name: component.name,
+    SPDXID: bundledComponentId(component),
+    versionInfo: component.version,
+    downloadLocation: `${component.sourceRepository}/tree/${component.sourceCommit}`,
+    filesAnalyzed: false,
+    checksums: [
+      { algorithm: "SHA256", checksumValue: component.artifactSha256 },
+    ],
+    licenseConcluded: "NOASSERTION",
+    licenseDeclared: component.licenseDeclared,
+    copyrightText: "NOASSERTION",
+    externalRefs: [
+      {
+        referenceCategory: "PACKAGE-MANAGER",
+        referenceType: "purl",
+        referenceLocator: packagePurl(component.name, component.version),
+      },
+    ],
+  }));
 
   return {
     spdxVersion: "SPDX-2.3",
@@ -362,6 +406,7 @@ export async function createSpdxDocument({
         ],
       },
       ...dependencyPackages,
+      ...bundledPackages,
     ],
     files: fileRecords,
     relationships: [
@@ -384,6 +429,11 @@ export async function createSpdxDocument({
         spdxElementId: edge.from,
         relationshipType: "DEPENDS_ON",
         relatedSpdxElement: edge.to,
+      })),
+      ...release.bundledComponents.map((component) => ({
+        spdxElementId: mainPackageId,
+        relationshipType: "CONTAINS",
+        relatedSpdxElement: bundledComponentId(component),
       })),
     ],
   };
@@ -482,6 +532,7 @@ export async function buildReleaseBundle({
         private: stagedPackageIsPrivate(release),
         distTag: release.distTag,
       },
+      sourceInputs: await sourceInputRecords(root, rootPackage),
       artifact: {
         file: names.tarball,
         bytes: tarballMetadata.size,
@@ -552,6 +603,7 @@ function parseChecksums(source) {
 }
 
 export async function verifyReleaseBundle({
+  root,
   release,
   rootPackage,
   directory,
@@ -580,6 +632,15 @@ export async function verifyReleaseBundle({
   );
   assert(manifest.tag === release.gitTag, "release manifest tag differs");
   assert(
+    manifest.sourceRepository === "https://github.com/flowxo/agent-relay",
+    "release manifest source repository differs",
+  );
+  assert(
+    typeof manifest.createdAt === "string" &&
+      !Number.isNaN(Date.parse(manifest.createdAt)),
+    "release manifest creation time differs",
+  );
+  assert(
     manifest.package?.name === release.name &&
       manifest.package?.version === release.version,
     "release manifest package identity differs",
@@ -588,6 +649,27 @@ export async function verifyReleaseBundle({
     manifest.package?.private === stagedPackageIsPrivate(release),
     "release manifest publication state differs",
   );
+  assert(
+    manifest.package?.distTag === release.distTag,
+    "release manifest dist-tag differs",
+  );
+  assert(
+    manifest.provenance ===
+      "GitHub Actions attaches signed build and SBOM attestations to the tarball when repository support is available.",
+    "release manifest provenance statement differs",
+  );
+  assert(
+    typeof manifest.sourceInputs?.packageManager === "string" &&
+      Array.isArray(manifest.sourceInputs?.files),
+    "release manifest source inputs are missing",
+  );
+  if (root !== undefined) {
+    assert(
+      JSON.stringify(manifest.sourceInputs) ===
+        JSON.stringify(await sourceInputRecords(root, rootPackage)),
+      "release manifest source inputs differ",
+    );
+  }
   assert(
     /^[a-f0-9]{40}$/.test(manifest.commit),
     "release manifest commit is not full",
@@ -676,6 +758,80 @@ export async function verifyReleaseBundle({
       `SBOM is missing runtime dependency ${name}@${version}`,
     );
   }
+  for (const component of release.bundledComponents) {
+    const record = sbom.packages?.find(
+      (entry) => entry.SPDXID === bundledComponentId(component),
+    );
+    assert(
+      record?.name === component.name &&
+        record?.versionInfo === component.version &&
+        record?.licenseDeclared === component.licenseDeclared &&
+        record?.downloadLocation ===
+          `${component.sourceRepository}/tree/${component.sourceCommit}` &&
+        record?.checksums?.some(
+          (checksum) =>
+            checksum.algorithm === "SHA256" &&
+            checksum.checksumValue === component.artifactSha256,
+        ),
+      `SBOM bundled component differs for ${component.name}`,
+    );
+    assert(
+      sbom.relationships?.some(
+        (relationship) =>
+          relationship.spdxElementId === mainPackageId &&
+          relationship.relationshipType === "CONTAINS" &&
+          relationship.relatedSpdxElement === bundledComponentId(component),
+      ),
+      `SBOM bundled relationship is missing for ${component.name}`,
+    );
+  }
+  if (root !== undefined) {
+    const runtime = await runtimeDependencyGraph(root, release);
+    const expectedPackageIds = new Set([
+      mainPackageId,
+      ...runtime.packages.map((entry) => entry.id),
+      ...release.bundledComponents.map(bundledComponentId),
+    ]);
+    assert(
+      sbom.packages.length === expectedPackageIds.size &&
+        sbom.packages.every((entry) => expectedPackageIds.has(entry.SPDXID)),
+      "SBOM package inventory differs from the exact runtime and bundled closure",
+    );
+    for (const dependency of runtime.packages) {
+      const record = sbom.packages.find(
+        (entry) => entry.SPDXID === dependency.id,
+      );
+      assert(
+        record?.name === dependency.name &&
+          record?.versionInfo === dependency.version &&
+          record?.licenseDeclared === dependency.license &&
+          record?.downloadLocation === dependency.repository,
+        `SBOM runtime dependency differs for ${dependency.name}`,
+      );
+    }
+    for (const id of runtime.directIds) {
+      assert(
+        sbom.relationships?.some(
+          (relationship) =>
+            relationship.spdxElementId === mainPackageId &&
+            relationship.relationshipType === "DEPENDS_ON" &&
+            relationship.relatedSpdxElement === id,
+        ),
+        `SBOM direct runtime relationship is missing for ${id}`,
+      );
+    }
+    for (const edge of runtime.edges) {
+      assert(
+        sbom.relationships?.some(
+          (relationship) =>
+            relationship.spdxElementId === edge.from &&
+            relationship.relationshipType === "DEPENDS_ON" &&
+            relationship.relatedSpdxElement === edge.to,
+        ),
+        `SBOM transitive runtime relationship is missing for ${edge.from}`,
+      );
+    }
+  }
   assert(
     manifest.sbom?.file === names.sbom &&
       manifest.sbom?.sha256 === (await fileSha("sha256", sbomPath)) &&
@@ -738,6 +894,14 @@ export async function verifyReleaseBundle({
             checksum.checksumValue === expected,
         ),
         `SBOM checksum differs for ${file}`,
+      );
+      assert(
+        record.checksums?.some(
+          (checksum) =>
+            checksum.algorithm === "SHA1" &&
+            checksum.checksumValue === expectedSha1,
+        ),
+        `SBOM SHA-1 checksum differs for ${file}`,
       );
       assert(
         sbom.relationships?.some(

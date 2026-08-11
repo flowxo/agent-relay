@@ -377,13 +377,13 @@ compatibility, and release documentation.
 - **Priority:** High
 - **Linear:**
   [AR2 — FlowXO Notifications Transport Adapter](https://linear.app/flowxo/project/ar2-flowxo-notifications-transport-adapter-89e35890c6d7)
-- **Status:** Completed against the executable mock and packed artifact
+- **Status:** Completed
 
 Implement against Shared Contracts mocks, preserve direct Telegram, and cover
 delivery/interaction behavior with the common contract suite. The C0 outbound
-mapping and executable consumer proof are already complete; production dogfood
-waits for an approved WhooshBang environment and production implementation of
-the narrow machine bootstrap and durable poll/ack stream.
+mapping and executable consumer proof are complete. The narrow machine
+bootstrap, durable poll/ack stream, and hosted selection boundary subsequently
+passed AR3's bounded dogfood and reliability exit.
 
 ### AR3 — Hosted Dogfood and Reliability Hardening
 
@@ -391,19 +391,19 @@ the narrow machine bootstrap and durable poll/ack stream.
 - **Priority:** High
 - **Linear:**
   [AR3 — Agent Relay Hosted Dogfood and Reliability Hardening](https://linear.app/flowxo/project/ar3-agent-relay-hosted-dogfood-and-reliability-hardening-96621124993f)
-- **Status:** Planned; AR1, AR2, and C0-09 are complete, but no approved real
-  WhooshBang machine-stream environment exists yet
+- **Status:** Completed; exit approved as `go with named residuals`
 
-Route real FlowXO engineering sessions through WhooshBang, collect evidence, and
-fix reliability or diagnostic gaps in either product.
+Bounded Flow XO engineering sessions were routed through WhooshBang, with
+reliability, privacy, attribution, and diagnostic evidence approved before AR4.
 
 ### AR4 — Public Open Source V1 Release
 
 - **Wave:** `wave:4-external-beta`
-- **Priority:** High after dogfood
+- **Priority:** High
 - **Linear:**
   [AR4 — Agent Relay Public Open Source V1 Release](https://linear.app/flowxo/project/ar4-agent-relay-public-open-source-v1-release-7ff2a45ac039)
-- **Status:** Planned; follows AR3 evidence
+- **Status:** In progress; AR3 evidence is approved and FXO-1161 freezes the V1
+  support, privacy, compatibility, and limitations boundary
 
 Publish the supported release, onboarding material, demonstration, and its
 reproducible contribution to the separate reference-stack case study.

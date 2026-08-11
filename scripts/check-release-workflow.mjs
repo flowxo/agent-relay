@@ -42,6 +42,20 @@ for (const dependency of runtimeGraph.packages) {
     `THIRD_PARTY_NOTICES.md is missing ${dependency.name}@${dependency.version}`,
   );
 }
+for (const component of release.bundledComponents) {
+  requireText(
+    thirdPartyNotices,
+    new RegExp(
+      `\\| \\\`${component.name.replaceAll("/", "\\/")}\\\`\\s*\\|\\s*${component.version.replaceAll(".", "\\.")}\\s*\\|`,
+    ),
+    `THIRD_PARTY_NOTICES.md is missing bundled ${component.name}@${component.version}`,
+  );
+}
+requireText(
+  thirdPartyNotices,
+  /NOASSERTION[\s\S]*owner-approved[\s\S]*before public/i,
+  "bundled component licensing must remain an explicit publication gate",
+);
 
 if (
   actionLock.schema !== "agent-relay-actions-lock.v1" ||
@@ -208,5 +222,5 @@ for (const pattern of [
 }
 
 process.stdout.write(
-  `Release workflow boundary verified (${String(usedActions.size)} immutable actions, ${String(runtimeGraph.packages.length)} runtime SBOM packages, publication blocked, OIDC/attestation gates present).\n`,
+  `Release workflow boundary verified (${String(usedActions.size)} immutable actions, ${String(runtimeGraph.packages.length)} runtime dependency packages, ${String(release.bundledComponents.length)} bundled components, publication blocked, OIDC/attestation gates present).\n`,
 );

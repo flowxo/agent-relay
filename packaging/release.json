@@ -12,6 +12,30 @@
     "better-sqlite3": "13.0.1",
     "zod": "4.4.3"
   },
+  "bundledComponents": [
+    {
+      "name": "@whooshbang/contracts",
+      "version": "1.0.0-rc.12",
+      "sourceRepository": "https://github.com/flowxo/whooshbang",
+      "sourceCommit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "artifactSha256": "4b428d1d9094ea78e136084d56831a4c8bdee97b1c40e569cde5787ea176c2dd",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "@whooshbang/sdk",
+      "version": "1.0.0-rc.13",
+      "sourceRepository": "https://github.com/flowxo/whooshbang",
+      "sourceCommit": "50de931fed8d819d1a70ec27201351b09f0ef251",
+      "artifactSha256": "c3e67296c392f54b4d432d0bb57c70a6b8d031b1acdb17c44a2cb79626afefec",
+      "licenseDeclared": "NOASSERTION"
+    }
+  ],
+  "bundledComponentLicenseReview": {
+    "status": "required-before-publication",
+    "ownerApproved": false,
+    "noticeApproved": false,
+    "decisionReference": null
+  },
   "publication": {
     "approved": false,
     "registryAction": "blocked",

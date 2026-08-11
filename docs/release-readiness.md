@@ -5,9 +5,10 @@ Agent Relay. It answers what runs, what leaves the machine, what installation
 changes, how to diagnose the result, and how to remove it before asking anyone
 to trust or publish the prerelease.
 
-The current target is macOS on Apple silicon with native arm64 Node.js 22.23.1.
-Intel macOS, Windows, Linux end-user operation, and stable publication remain
-unclaimed.
+The supported V1 runtime is macOS on Apple silicon with Node.js 22 or newer; the
+native arm64 release-exit target is exactly Node.js 22.23.1. Intel macOS,
+Windows, Linux end-user operation, and stable publication remain unclaimed. The
+complete frozen boundary is in [the V1 release record](v1-release-boundary.md).
 
 ## What runs locally
 
@@ -18,9 +19,10 @@ companion binds to loopback and requires its generated credential. Harness
 continuation remains a local child-process action.
 
 The fake transport exercises ingestion, SQLite, delivery, and diagnosis without
-a Telegram or hosted account. Direct Telegram and future WhooshBang support are
-explicit transports behind the same local interface; credential presence does
-not silently select one.
+a remote account. Direct Telegram, outbound webhook, and WhooshBang are explicit
+selectable transports behind the same local interface. Credential presence does
+not silently select one, and the daemon never dual-sends or fails over to a
+different transport automatically.
 
 There is no default telemetry, Cloudflare runtime, hosted database, remote
 execution authority, or server-side transcript store.
@@ -33,9 +35,13 @@ Telegram routing metadata described in [the Telegram guide](telegram.md). It
 does not send raw hook payloads, full transcripts, environment variables,
 credentials, local database contents, or source files.
 
-The local web companion does not leave loopback. A future explicitly selected
-WhooshBang transport may send its documented bounded contract fields, but it is
-not selected by the V1 daemon.
+The local web companion does not leave loopback. An explicitly selected
+WhooshBang transport sends the configured subscriber, optional notifier, bounded
+rendered title and text, opaque event correlation, and a supported interaction
+with its expiry. An explicitly selected webhook sends the strict signed envelope
+documented in [the webhook guide](outbound-webhooks.md). Neither transport
+receives raw hooks, full transcripts, credentials, source files, or local
+database contents.
 
 Package installation contacts the configured npm registry for the two exact
 direct runtime dependencies and their frozen transitive closure. The release
@@ -60,6 +66,8 @@ and those backups are data, not package-manager files.
 The package itself can live in any retained local prefix. The launcher records
 the exact package entry and Node executable, so moving or removing that prefix
 without running Agent Relay's uninstall first makes doctor report a mismatch.
+The current SQLite schema is `9`; migrations are forward-only and a newer schema
+fails closed as an unsafe downgrade.
 
 ## Verify the exact candidate
 
@@ -110,23 +118,27 @@ This local proof can validate checksums and native execution, but it cannot
 create signed GitHub provenance. The separate tagged workflow must succeed
 before a release claims GitHub build/SBOM attestations.
 
-## Recorded local evidence
+## Recorded release evidence
 
-The matrix completed on 2026-07-26 on macOS 26.5.2 with the official Node.js
-22.23.1 `darwin/arm64` runtime and its bundled npm 10.9.8. The exact private
-alpha artifact contained 11 files; its SPDX record contained the application
-plus three runtime packages.
+The native lifecycle matrix completed on macOS with official Node.js 22.23.1
+`darwin/arm64`. AR3 subsequently approved hosted dogfood and reliability exit
+evidence as `go with named residuals`; required repository checks and browser
+E2E passed on PR #40 reviewed head and its merge commit. No Critical or High
+Agent Relay boundary finding remains open.
 
 Doctor observed exact verified Codex `0.145.0` and Cursor `2026.07.23-e383d2b`
 records. Installed Claude Code `2.1.220` correctly remained
 `compatible-unverified` against the last live-proven `2.1.219` record rather
 than silently widening support.
 
-The clean-home install, native SQLite load/query, unchanged reinstall, healthy
-doctor, one delivered fake event with zero retries/dead letters, owned
-uninstall, retained SQLite, package removal, zero remaining owned hooks, and
-mode-`0600` path-free evidence record all passed. Publication and signed
-provenance were not attempted.
+The exact retained live-reviewed `@flowxo/agent-relay@0.1.0-alpha.1` tarball has
+SHA-256 `654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198`. It
+came from PR #39 and does **not** contain PR #40. PR #40 source separately
+passed credential-free packed proof with ephemeral package SHA-256
+`8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543`; that package
+was neither retained nor live-tested. See the
+[V1 release record](v1-release-boundary.md) for exact heads and merges.
+Publication, tagging, and signed release provenance were not attempted.
 
 ## How to diagnose
 
@@ -139,12 +151,14 @@ agent-relay doctor
 agent-relay status
 ```
 
-`doctor` checks SQLite, all three harness observations, safe evidence IDs, the
-capability registry, install manifest, exact launcher, runtime entry and Node
-target, and owned hook counts. An exact recorded harness version is `verified`;
-newer or different available versions are `compatible-unverified` warnings
-unless explicitly known incompatible. Missing or known-incompatible harnesses
-fail.
+`doctor` checks the V1 operating-system, architecture, and Node boundary;
+SQLite; all three harness observations; safe evidence IDs; the capability
+registry; installed hook version stamps; install manifest; exact launcher;
+runtime entry and Node target; and owned hook counts. An exact recorded harness
+version is `verified`; newer or different available versions are
+`compatible-unverified` warnings unless explicitly known incompatible. A missing
+unused harness warns, no usable harness fails, and a known-incompatible
+installed harness fails.
 
 Use diagnostic IDs and the redacted capability/doctor records when asking for
 support. Do not attach the SQLite database, relay logs, hook configuration,
@@ -185,15 +199,19 @@ An evaluator should be able to answer these without reading source:
 The walkthrough is incomplete if any answer depends on a private credential,
 unrecorded maintainer memory, a repository path, or a hosted Flow XO account.
 
-## AR2 handoff
+## Frozen limitations and publication boundary
 
-AR2 adds the optional WhooshBang adapter through the existing
-`NotificationTransport` boundary. It does not need a new event protocol, answer
-authority, continuation mechanism, SQLite authority model, installer, or package
-topology. The pinned C0 transport contract and executable mock already pass
-independently in this repository; AR2 still owns production-shaped selection,
-narrow credentials, polling, diagnosis, and packing its adapter into a later
-candidate.
+Cursor IDE late resume is unsupported, Cursor permission automation remains
+disabled, and native hooks cannot prove a process crash. Telegram delivery is at
+least once across its acknowledgement ambiguity window. There is no automatic
+dual-send, hosted dashboard, or team-policy surface.
 
-The current artifact proves the safe local baseline and does not claim that the
-AR2 adapter is already a selectable production transport.
+Accepted Low residual: automation cannot prove that the invoking shell or GUI
+session launched with every ambient hook disabled. Exact hook-denied isolation
+and aggregate attribution mitigate this limitation, and contaminated windows
+fail closed. No live-card authorization carries forward.
+
+The intended `v0.1.0-alpha.1` tag has not been created. This evaluation does not
+publish, tag, promote, contact live providers, or authorize any of those
+actions. The bundled WhooshBang contracts and SDK also require an owner-approved
+distributable license and notice decision before public publication.

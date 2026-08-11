@@ -153,11 +153,12 @@ For a new source commit or local packed candidate:
 An upgrade preserves local state, credentials, logs, fallback records, config
 backups, and unrelated hooks. The install reconciliation is idempotent.
 
-SQLite migrations are forward-only. Schema version `1` upgrades the unversioned
-alpha fixture without losing its answered request; schema version `5` adds
-durable per-session native-hook sequence counters and retry allocations. Stop
-the daemon and supervised processes before crossing a schema boundary, and keep
-a private database backup. Native hooks and the daemon intentionally share the
+SQLite migrations are forward-only. The current schema is version `9`. Earlier
+migrations include the unversioned alpha fixture, version `5` native-hook
+sequence counters, version `7` WhooshBang naming, version `8` durable
+topic-title state, and version `9` content-free lifetime counters. Stop the
+daemon and supervised processes before crossing a schema boundary, and keep a
+private database backup. Native hooks and the daemon intentionally share the
 same `relay.sqlite` so allocation commits are ordered across processes. If a
 database advertises a newer schema than the running package supports, Agent
 Relay refuses to open it and doctor reports `refusing unsafe downgrade`; use the

@@ -186,6 +186,26 @@ function deliveryModeForEvent(event: AgentAttentionEventV1): DeliveryMode {
   }
 }
 
+export function transportDeliveryContext(
+  event: AgentAttentionEventV1,
+): DeliveryContext {
+  const metadata = sessionTopicMetadata(event);
+  return {
+    idempotencyKey: event.eventId,
+    deliveryMode: deliveryModeForEvent(event),
+    source: {
+      occurredAt: event.occurredAt,
+      eventType: event.type,
+      harness: event.harness,
+      surface: event.surface,
+      repository: metadata.repository,
+      ...(metadata.branch === undefined ? {} : { branch: metadata.branch }),
+      sessionKey: sessionPublicKey(event),
+      shortSessionId: metadata.shortSessionId,
+    },
+  };
+}
+
 function safeLogRef(value: string): string {
   return sha256(value).slice(0, 12);
 }
@@ -1560,20 +1580,8 @@ export class RelayService {
     event: AgentAttentionEventV1,
     pending?: PendingRequestRecord,
   ): Promise<DeliveryContext> {
-    const metadata = sessionTopicMetadata(event);
     const context: DeliveryContext = {
-      idempotencyKey: event.eventId,
-      deliveryMode: deliveryModeForEvent(event),
-      source: {
-        occurredAt: event.occurredAt,
-        eventType: event.type,
-        harness: event.harness,
-        surface: event.surface,
-        repository: metadata.repository,
-        ...(metadata.branch === undefined ? {} : { branch: metadata.branch }),
-        sessionKey: sessionPublicKey(event),
-        shortSessionId: metadata.shortSessionId,
-      },
+      ...transportDeliveryContext(event),
       ...(pending === undefined ||
       this.interactionHandoff?.baseUrl === undefined
         ? {}

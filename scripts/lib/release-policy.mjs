@@ -1,7 +1,19 @@
+import { spawnSync } from "node:child_process";
+import process from "node:process";
+
 const prereleasePattern =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)$/;
 const exactVersionPattern =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+const approvedBundledLicenses = new Set([
+  "0BSD",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+]);
 
 function assert(condition, message) {
   if (!condition) {
@@ -27,6 +39,38 @@ function versionAtLeast(actual, minimum) {
     }
   }
   return true;
+}
+
+export function isSupportedReleaseRuntime(
+  release,
+  { platform, architecture, nodeVersion, appleSiliconHardware },
+) {
+  const minimumNode = /^>=(\d+)$/.exec(release.node)?.[1];
+  const observedNode = /^(\d+)(?:\.|$)/.exec(nodeVersion)?.[1];
+  return (
+    release.os.includes(platform) &&
+    release.cpu.includes(architecture) &&
+    (architecture !== "x64" || appleSiliconHardware === true) &&
+    minimumNode !== undefined &&
+    observedNode !== undefined &&
+    Number(observedNode) >= Number(minimumNode)
+  );
+}
+
+export function currentReleaseRuntime() {
+  const appleSiliconHardware =
+    process.platform === "darwin" &&
+    (process.arch === "arm64" ||
+      spawnSync("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], {
+        encoding: "utf8",
+        shell: false,
+      }).stdout.trim() === "1");
+  return {
+    platform: process.platform,
+    architecture: process.arch,
+    nodeVersion: process.versions.node,
+    appleSiliconHardware,
+  };
 }
 
 export function assertExactVersion(version, label) {
@@ -86,9 +130,8 @@ export function assertReleaseConfiguration(release, rootPackage) {
   );
   assert(
     Array.isArray(release.cpu) &&
-      release.cpu.length > 0 &&
-      release.cpu.every((value) => typeof value === "string"),
-    "release CPU list is missing",
+      JSON.stringify(release.cpu) === JSON.stringify(["arm64", "x64"]),
+    "V1 release CPU list must retain native arm64 and Rosetta x64 Node",
   );
   assert(
     typeof release.node === "string" && /^>=\d+$/.test(release.node),
@@ -102,6 +145,57 @@ export function assertReleaseConfiguration(release, rootPackage) {
   );
   for (const [name, version] of Object.entries(release.dependencies)) {
     assertExactVersion(version, `${name} runtime dependency`);
+  }
+  assert(
+    Array.isArray(release.bundledComponents) &&
+      release.bundledComponents.length === 2,
+    "release must inventory both bundled WhooshBang runtime components",
+  );
+  for (const component of release.bundledComponents) {
+    assert(
+      typeof component.name === "string" &&
+        component.name.startsWith("@whooshbang/"),
+      "bundled component name differs",
+    );
+    assertExactVersion(
+      component.version,
+      `${component.name} bundled component`,
+    );
+    assert(
+      component.sourceRepository === "https://github.com/flowxo/whooshbang" &&
+        /^[a-f0-9]{40}$/.test(component.sourceCommit) &&
+        /^[a-f0-9]{64}$/.test(component.artifactSha256),
+      `${component.name} bundled provenance is incomplete`,
+    );
+    assert(
+      typeof component.licenseDeclared === "string",
+      `${component.name} bundled license state is missing`,
+    );
+  }
+  const licenseReview = release.bundledComponentLicenseReview;
+  assert(
+    licenseReview?.status === "required-before-publication" ||
+      licenseReview?.status === "owner-approved",
+    "bundled WhooshBang license review state is invalid",
+  );
+  if (licenseReview.status === "required-before-publication") {
+    assert(
+      licenseReview.ownerApproved === false &&
+        licenseReview.noticeApproved === false &&
+        licenseReview.decisionReference === null,
+      "unresolved bundled license review must not imply owner or notice approval",
+    );
+  } else {
+    assert(
+      licenseReview.ownerApproved === true &&
+        licenseReview.noticeApproved === true &&
+        typeof licenseReview.decisionReference === "string" &&
+        /^https:\/\//.test(licenseReview.decisionReference) &&
+        release.bundledComponents.every((component) =>
+          approvedBundledLicenses.has(component.licenseDeclared),
+        ),
+      "approved bundled license review requires owner evidence, notices, and allowed SPDX identifiers",
+    );
   }
 
   const publication = release.publication;
@@ -118,6 +212,10 @@ export function assertReleaseConfiguration(release, rootPackage) {
     "registry action must be blocked, publish, or stage",
   );
   if (publication.approved) {
+    assert(
+      licenseReview.status === "owner-approved",
+      "publication cannot be approved while the bundled component license review is unresolved",
+    );
     assert(
       publication.registryAction === "publish" ||
         publication.registryAction === "stage",
@@ -159,6 +257,10 @@ export function assertPublishContext(release, context) {
   assert(
     release.publication.registryAction !== "blocked",
     "registry action remains blocked",
+  );
+  assert(
+    release.bundledComponentLicenseReview.status === "owner-approved",
+    "bundled component license review is unresolved",
   );
   assert(
     context.githubActions === "true",

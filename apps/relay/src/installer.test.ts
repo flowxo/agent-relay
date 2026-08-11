@@ -365,4 +365,25 @@ describe("agent relay harness installer", () => {
       }),
     );
   });
+
+  it("diagnoses an owned hook command that differs from its manifest", async () => {
+    const runtime = await setup("agent-relay-install-hook-mismatch-");
+    await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+    });
+    const codex = await readFile(runtime.paths.configs.codex, "utf8");
+    await writeFile(
+      runtime.paths.configs.codex,
+      codex.replaceAll("codex-cli 0.145.0", "codex-cli 0.144.0"),
+      { encoding: "utf8", mode: 0o600 },
+    );
+
+    const report = await inspectAgentRelayInstallation(runtime.rootDir);
+    expect(report.healthy).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({ name: "codex-hooks", level: "fail" }),
+    );
+  });
 });

@@ -20,6 +20,7 @@ const focusedDocuments = [
   "docs/extending-harnesses.md",
   "docs/hosted-whooshbang.md",
   "docs/runner-bridge.md",
+  "docs/v1-release-boundary.md",
 ];
 
 const checkedDocuments = [
@@ -30,6 +31,10 @@ const checkedDocuments = [
   "PRIVACY.md",
   "SECURITY.md",
   "SUPPORT.md",
+  "packaging/README.md",
+  "CHANGELOG.md",
+  "THIRD_PARTY_NOTICES.md",
+  "docs/product/open-source-v1-charter.md",
 ];
 
 async function text(path) {
@@ -217,7 +222,9 @@ for (const pattern of [
   /Node\.js 22\.23\.1/,
   /native arm64/,
   /globally linked workspace package/i,
-  /AR2/,
+  /PR #40/,
+  /does \*\*not\*\* contain PR #40/,
+  /SQLite schema (?:is |version )`?9`?/,
   /does not publish/i,
 ]) {
   requireText(

@@ -13,6 +13,7 @@ import {
 import {
   assertPublishContext,
   assertReleaseConfiguration,
+  isSupportedReleaseRuntime,
   stagedPackageIsPrivate,
 } from "../lib/release-policy.mjs";
 
@@ -33,6 +34,30 @@ function configuration() {
       "better-sqlite3": "13.0.1",
       zod: "4.4.3",
     },
+    bundledComponents: [
+      {
+        name: "@whooshbang/contracts",
+        version: "1.0.0-rc.12",
+        sourceRepository: "https://github.com/flowxo/whooshbang",
+        sourceCommit: "a".repeat(40),
+        artifactSha256: "b".repeat(64),
+        licenseDeclared: "NOASSERTION",
+      },
+      {
+        name: "@whooshbang/sdk",
+        version: "1.0.0-rc.13",
+        sourceRepository: "https://github.com/flowxo/whooshbang",
+        sourceCommit: "a".repeat(40),
+        artifactSha256: "c".repeat(64),
+        licenseDeclared: "NOASSERTION",
+      },
+    ],
+    bundledComponentLicenseReview: {
+      status: "required-before-publication",
+      ownerApproved: false,
+      noticeApproved: false,
+      decisionReference: null,
+    },
     publication: {
       approved: false,
       registryAction: "blocked",
@@ -49,6 +74,18 @@ function rootPackage() {
     name: "@flowxo/agent-relay",
     version: "0.1.0-alpha.1",
     private: true,
+  };
+}
+
+function approveBundledLicense(release) {
+  for (const component of release.bundledComponents) {
+    component.licenseDeclared = "MIT";
+  }
+  release.bundledComponentLicenseReview = {
+    status: "owner-approved",
+    ownerApproved: true,
+    noticeApproved: true,
+    decisionReference: "https://linear.app/example/decision/synthetic",
   };
 }
 
@@ -108,12 +145,68 @@ test("keeps registry mutation blocked until a reviewed approval change", () => {
   );
 });
 
+test("freezes OS, Apple-silicon architecture, and Node support together", () => {
+  const release = configuration();
+  assert.equal(
+    isSupportedReleaseRuntime(release, {
+      platform: "darwin",
+      architecture: "arm64",
+      nodeVersion: "22.23.1",
+      appleSiliconHardware: true,
+    }),
+    true,
+  );
+  assert.equal(
+    isSupportedReleaseRuntime(release, {
+      platform: "darwin",
+      architecture: "x64",
+      nodeVersion: "22.23.1",
+      appleSiliconHardware: true,
+    }),
+    true,
+  );
+  for (const observation of [
+    {
+      platform: "darwin",
+      architecture: "x64",
+      nodeVersion: "22.23.1",
+      appleSiliconHardware: false,
+    },
+    {
+      platform: "darwin",
+      architecture: "arm64",
+      nodeVersion: "21.9.0",
+      appleSiliconHardware: true,
+    },
+    {
+      platform: "linux",
+      architecture: "arm64",
+      nodeVersion: "22.23.1",
+      appleSiliconHardware: true,
+    },
+  ]) {
+    assert.equal(isSupportedReleaseRuntime(release, observation), false);
+  }
+});
+
 test("accepts only the exact public OIDC publish context", () => {
   const release = configuration();
   release.publication.approved = true;
   release.publication.registryAction = "publish";
+  assert.throws(
+    () => assertPublishContext(release, publishContext()),
+    /bundled component license review is unresolved/,
+  );
+  approveBundledLicense(release);
   assert.equal(assertPublishContext(release, publishContext()), "publish");
   assert.equal(stagedPackageIsPrivate(release), false);
+
+  const invalidLicense = JSON.parse(JSON.stringify(release));
+  invalidLicense.bundledComponents[0].licenseDeclared = "not an SPDX license";
+  assert.throws(
+    () => assertReleaseConfiguration(invalidLicense, rootPackage()),
+    /allowed SPDX identifiers/,
+  );
 
   for (const [field, value] of [
     ["eventName", "push"],
@@ -143,6 +236,7 @@ test("enforces current npm minimums for publish and staged publishing", () => {
   const release = configuration();
   release.publication.approved = true;
   release.publication.registryAction = "publish";
+  approveBundledLicense(release);
   assert.throws(
     () =>
       assertPublishContext(release, publishContext({ npmVersion: "11.5.0" })),

@@ -20,6 +20,11 @@ import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
 import { pathToFileURL, URL } from "node:url";
 
+import {
+  currentReleaseRuntime,
+  isSupportedReleaseRuntime,
+} from "./lib/release-policy.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const { fetch, Headers, Request, URLSearchParams } = globalThis;
 const release = JSON.parse(
@@ -1472,9 +1477,9 @@ await run(
   { timeoutMs: 30_000 },
 );
 
-if (process.platform !== "darwin") {
+if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
   process.stdout.write(
-    `Packed hosted runtime proof skipped on unsupported ${process.platform}/${process.arch}; exact WhooshBang artifact preflight passed and package:check remains mandatory.\n`,
+    `Packed hosted runtime proof skipped outside the frozen ${process.platform}/${process.arch} Node.js ${process.versions.node} boundary; exact WhooshBang artifact preflight passed and package:check remains mandatory.\n`,
   );
   process.exitCode = 0;
 } else {

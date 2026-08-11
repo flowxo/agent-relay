@@ -10,10 +10,18 @@ library API.
 > XO npm scope, public repository, protected environment, trusted publisher, and
 > first prerelease still require explicit approval.
 
+The intended `v0.1.0-alpha.1` tag has not been created. Tagging and publication
+are separate owner-authorized actions. Public distribution is also blocked until
+the bundled WhooshBang contracts and SDK receive an owner-approved distributable
+license and notice decision.
+
 ## Supported target
 
 - macOS on Apple silicon
 - Node.js 22 or newer
+
+Native release-exit evidence uses exact Node.js 22.23.1. Windows, Linux, and
+Intel macOS end-user runtimes are not claimed.
 
 Start with the credential-free local proof:
 
@@ -58,6 +66,17 @@ authority. To fall back during a provider incident, explicitly select `fake` or
 `telegram`; Agent Relay will not send an event to a second provider
 automatically.
 
+## Known limitations
+
+Cursor IDE late resume is unsupported, Cursor permission automation is disabled,
+and native hooks cannot prove process crashes without supervised ownership.
+Telegram delivery is at least once across its documented acknowledgement
+ambiguity window. Open Source V1 has no hosted dashboard or team-policy surface.
+
+Accepted Low residual: automation cannot prove that the invoking shell or GUI
+session launched with every ambient hook disabled. Exact hook-denied isolation
+and aggregate attribution mitigate it; contaminated windows fail closed.
+
 For a custom receiver, configure the shared secret through stdin, select the
 webhook, restart, and run its canary:
 
@@ -77,10 +96,11 @@ signature. It does not get a remote-control API. See the repository's outbound
 webhook guide for verification, acknowledgement, retry, and privacy details.
 
 Direct Telegram remains independent of the hosted service. It uses the
-operator's own bot and the setup documented in the repository. Hosted WhooshBang
-setup accepts the broad project bootstrap credential only from stdin,
-environment injection, or a hidden prompt. It generates and retains a narrow
-machine credential in a separate private mode-`0600` file:
+operator's own bot and the setup documented in the repository. Browser OAuth/MCP
+is the default WhooshBang onboarding path and retains only the resulting narrow
+machine bearer in a separate private mode-`0600` file. Legacy operator
+automation may instead supply the broad project bootstrap credential only from
+stdin, environment injection, or a hidden prompt:
 
 ```sh
 credential_command | agent-relay whooshbang connect \
@@ -118,9 +138,13 @@ credential_command | agent-relay whooshbang disconnect \
 This operation and package uninstall retain SQLite state. After an interrupted
 daemon, restart with the same selected transport to recover durable delivery,
 poll, and acknowledgement work. After a disconnect or rotation, reconnect and
-restart explicitly. Production hosted use remains gated on the WhooshBang C0
-release decision and a later real-service dogfood phase; the current release
-proof uses the exact pinned executable mock.
+restart explicitly. The exact mock-based packed proof remains credential-free.
+AR3 separately approved bounded hosted dogfood and reliability exit as
+`go with named residuals`. The retained live-reviewed alpha.1 tarball came from
+PR #39 and does not contain PR #40; PR #40 source passed a separate ephemeral
+packed proof that was not retained or live-tested. The repository's V1 release
+record freezes the exact commits and SHA-256 values. No live authorization
+carries forward.
 
 Before changing user-level harness configuration, inspect the exact plan:
 

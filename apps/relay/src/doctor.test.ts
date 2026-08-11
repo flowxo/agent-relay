@@ -1,8 +1,13 @@
-import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+
+import {
+  isSupportedRuntimeObservation,
+  type RuntimeSupportObservation,
+} from "@agent-relay/harnesses";
 
 import {
   harnessObservationLevel,
@@ -82,14 +87,164 @@ describe("doctor version and installation checks", () => {
     const report = await runDoctor({
       executables: { codex, claude, cursor: missingCursor },
     });
-    expect(report.healthy).toBe(false);
+    expect(report.healthy).toBe(true);
     expect(report.checks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "codex", level: "pass" }),
         expect.objectContaining({ name: "claude", level: "warn" }),
-        expect.objectContaining({ name: "cursor", level: "fail" }),
+        expect.objectContaining({ name: "cursor", level: "warn" }),
+        expect.objectContaining({
+          name: "harness-availability",
+          level: "pass",
+        }),
       ]),
     );
+  });
+
+  it("fails when no supported harness executable is available", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-doctor-"));
+    const report = await runDoctor({
+      executables: {
+        codex: join(directory, "missing-codex"),
+        claude: join(directory, "missing-claude"),
+        cursor: join(directory, "missing-cursor"),
+      },
+    });
+
+    expect(report.healthy).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({ name: "harness-availability", level: "fail" }),
+    );
+  });
+
+  it("does not count a successful empty version probe as a harness", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-doctor-"));
+    const blank = await executable(directory, "blank", "");
+    const observations = observeHarnessVersions({
+      codex: blank,
+      claude: blank,
+      cursor: blank,
+    });
+
+    expect(observations.every((observation) => !observation.available)).toBe(
+      true,
+    );
+    const report = await runDoctor({
+      executables: { codex: blank, claude: blank, cursor: blank },
+    });
+    expect(report.healthy).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({ name: "harness-availability", level: "fail" }),
+    );
+  });
+
+  it("does not count arbitrary successful output as a harness version", async () => {
+    const report = await runDoctor({
+      executables: {
+        codex: "/bin/echo",
+        claude: "/bin/echo",
+        cursor: "/bin/echo",
+      },
+    });
+
+    expect(report.healthy).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({ name: "harness-availability", level: "fail" }),
+    );
+  });
+
+  it("checks the frozen operating-system, architecture, and Node boundary", async () => {
+    const executables = await verifiedHarnessExecutables();
+    const supported = await runDoctor({
+      executables,
+      runtime: {
+        platform: "darwin",
+        architecture: "arm64",
+        nodeVersion: "22.23.1",
+      },
+    });
+    const unsupported = await runDoctor({
+      executables,
+      runtime: {
+        platform: "darwin",
+        architecture: "x64",
+        nodeVersion: "22.23.1",
+      },
+    });
+    const rosetta = await runDoctor({
+      executables,
+      runtime: {
+        platform: "darwin",
+        architecture: "x64",
+        nodeVersion: "22.23.1",
+        appleSiliconHardware: true,
+      },
+    });
+
+    expect(supported.checks).toContainEqual(
+      expect.objectContaining({ name: "runtime-target", level: "pass" }),
+    );
+    expect(unsupported.healthy).toBe(false);
+    expect(unsupported.checks).toContainEqual(
+      expect.objectContaining({ name: "runtime-target", level: "fail" }),
+    );
+    expect(rosetta.checks).toContainEqual(
+      expect.objectContaining({ name: "runtime-target", level: "pass" }),
+    );
+  });
+
+  it("keeps doctor runtime support equivalent to package proof policy", async () => {
+    const policyModulePath = "../../../scripts/lib/release-policy.mjs";
+    const { isSupportedReleaseRuntime } = (await import(policyModulePath)) as {
+      isSupportedReleaseRuntime: (
+        release: Record<string, unknown>,
+        observation: RuntimeSupportObservation,
+      ) => boolean;
+    };
+    const release = JSON.parse(
+      await readFile(
+        new URL("../../../packaging/release.json", import.meta.url),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    const observations: RuntimeSupportObservation[] = [
+      {
+        platform: "darwin",
+        architecture: "arm64",
+        nodeVersion: "22.23.1",
+        appleSiliconHardware: true,
+      },
+      {
+        platform: "darwin",
+        architecture: "x64",
+        nodeVersion: "22.23.1",
+        appleSiliconHardware: true,
+      },
+      {
+        platform: "darwin",
+        architecture: "x64",
+        nodeVersion: "22.23.1",
+        appleSiliconHardware: false,
+      },
+      {
+        platform: "darwin",
+        architecture: "arm64",
+        nodeVersion: "21.9.0",
+        appleSiliconHardware: true,
+      },
+      {
+        platform: "linux",
+        architecture: "arm64",
+        nodeVersion: "22.23.1",
+        appleSiliconHardware: true,
+      },
+    ];
+
+    for (const observation of observations) {
+      expect(isSupportedRuntimeObservation(observation)).toBe(
+        isSupportedReleaseRuntime(release, observation),
+      );
+    }
   });
 
   it("fails a version recorded as contract-incompatible", () => {
@@ -132,6 +287,41 @@ describe("doctor version and installation checks", () => {
     });
     expect(report.healthy).toBe(true);
     expect(report.checks.every((check) => check.level === "pass")).toBe(true);
+  });
+
+  it("fails when installed hook version stamps differ from current binaries", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "agent-relay-doctor-"));
+    const entryPath = join(rootDir, "entry.js");
+    await writeFile(entryPath, "process.exitCode = 0;\n", "utf8");
+    const codex = await executable(rootDir, "codex", "codex-cli 0.146.0");
+    const claude = await executable(
+      rootDir,
+      "claude",
+      TESTED_HARNESS_VERSIONS.claude,
+    );
+    const cursor = await executable(
+      rootDir,
+      "cursor",
+      TESTED_HARNESS_VERSIONS.cursor,
+    );
+    await installAgentRelay({
+      rootDir,
+      entryPath,
+      harnessVersions: TESTED_HARNESS_VERSIONS,
+    });
+
+    const report = await runDoctor({
+      rootDir,
+      executables: { codex, claude, cursor },
+    });
+
+    expect(report.healthy).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({
+        name: "codex-installed-version",
+        level: "fail",
+      }),
+    );
   });
 
   it("turns an unreadable installation shape into a failed diagnostic", async () => {

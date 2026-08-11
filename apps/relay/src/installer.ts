@@ -123,6 +123,7 @@ export interface InstallationExpectation {
   packageVersion?: string;
   runtimeEntryPath?: string;
   runtimeNodePath?: string;
+  harnessVersions?: Partial<HarnessVersionMap>;
 }
 
 interface FileSnapshot {
@@ -866,33 +867,35 @@ export async function uninstallAgentRelay(options: {
   };
 }
 
-function countOwnedNested(
+function ownedCommandsNested(
   config: MutableJsonObject,
   eventName: string,
-): number {
+): string[] {
   const hooks = config["hooks"];
   if (!isObject(hooks) || !Array.isArray(hooks[eventName])) {
-    return 0;
+    return [];
   }
-  return hooks[eventName].reduce<number>((count, group) => {
+  return hooks[eventName].flatMap<string>((group) => {
     if (!isObject(group) || !Array.isArray(group["hooks"])) {
-      return count;
+      return [];
     }
-    return (
-      count + group["hooks"].filter((handler) => isOwnedHandler(handler)).length
+    return group["hooks"].flatMap((handler) =>
+      isOwnedHandler(handler) ? [handler["command"] as string] : [],
     );
-  }, 0);
+  });
 }
 
-function countOwnedCursor(
+function ownedCommandsCursor(
   config: MutableJsonObject,
   eventName: string,
-): number {
+): string[] {
   const hooks = config["hooks"];
   if (!isObject(hooks) || !Array.isArray(hooks[eventName])) {
-    return 0;
+    return [];
   }
-  return hooks[eventName].filter((handler) => isOwnedHandler(handler)).length;
+  return hooks[eventName].flatMap((handler) =>
+    isOwnedHandler(handler) ? [handler["command"] as string] : [],
+  );
 }
 
 export async function inspectAgentRelayInstallation(
@@ -1001,6 +1004,24 @@ export async function inspectAgentRelayInstallation(
           : "install manifest Node executable differs from the running CLI; rerun agent-relay install",
       });
     }
+    if (expectation.harnessVersions !== undefined) {
+      for (const harness of ["codex", "claude", "cursor"] as const) {
+        const expectedVersion = expectation.harnessVersions[harness];
+        if (expectedVersion === undefined) {
+          continue;
+        }
+        const versionMatches =
+          manifest.harnessVersions[harness] === expectedVersion;
+        checks.push({
+          name: `${harness}-installed-version`,
+          ok: versionMatches,
+          level: versionMatches ? "pass" : "fail",
+          detail: versionMatches
+            ? `${harness} hook stamp matches the currently observed executable`
+            : `${harness} hook stamp differs from the currently observed executable; rerun agent-relay install`,
+        });
+      }
+    }
   }
 
   for (const harness of ["codex", "claude", "cursor"] as const) {
@@ -1016,20 +1037,42 @@ export async function inspectAgentRelayInstallation(
     }
     try {
       const config = parseConfig(paths.configs[harness], file);
+      const expectedCommand =
+        manifest === undefined
+          ? undefined
+          : hookCommand(
+              paths,
+              harness,
+              manifest.harnessVersions[harness],
+              manifest.cursorSurface,
+            );
       const eventCounts = TARGET_EVENTS[harness].map((eventName) => ({
         eventName,
-        count:
+        commands:
           harness === "cursor"
-            ? countOwnedCursor(config, eventName)
-            : countOwnedNested(config, eventName),
+            ? ownedCommandsCursor(config, eventName)
+            : ownedCommandsNested(config, eventName),
       }));
-      const ok = eventCounts.every((event) => event.count === 1);
+      const ok = eventCounts.every(
+        (event) =>
+          event.commands.length === 1 &&
+          (expectedCommand === undefined ||
+            event.commands[0] === expectedCommand),
+      );
       checks.push({
         name: `${harness}-hooks`,
         ok,
         level: ok ? "pass" : "fail",
         detail: eventCounts
-          .map((event) => `${event.eventName}=${event.count}`)
+          .map(
+            (event) =>
+              `${event.eventName}=${event.commands.length}${
+                expectedCommand !== undefined &&
+                event.commands[0] !== expectedCommand
+                  ? " (command differs from manifest)"
+                  : ""
+              }`,
+          )
           .join(", "),
       });
     } catch (error) {
