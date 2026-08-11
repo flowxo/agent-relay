@@ -538,6 +538,11 @@ set +a
 ~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
 ```
 
+`telegram-canary --help` and `telegram-canary -h` are inert. They print CLI
+usage without checking the daemon, creating a Relay event, or contacting
+Telegram. The same guarantee applies to the fake, WhooshBang, and webhook canary
+help paths.
+
 Open the fresh canary session topic and send exactly:
 
 ```text

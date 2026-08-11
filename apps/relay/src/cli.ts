@@ -29,6 +29,7 @@ import {
   runWhooshBangCanary,
 } from "./canary.js";
 import {
+  isInertCanaryHelpRequest,
   resolveHookHarnessVersion,
   resolveSupervisorExecutable,
   resolveWebEnabled,
@@ -99,9 +100,9 @@ Commands:
   runner-bridge      Inspect or select the experimental runner bridge
   transport          Select a notification transport
 
-Run "agent-relay <command> --help" only where the command documents flags in
-the public guides. Agent Relay currently supports macOS on Apple silicon with
-Node.js 22 or newer.
+Canary command --help and -h requests are inert: they print this usage without
+checking a daemon, creating an event, or contacting a provider. Agent Relay
+currently supports macOS on Apple silicon with Node.js 22 or newer.
 `;
 
 function environment(name: string): string | undefined {
@@ -216,6 +217,10 @@ async function main(): Promise<void> {
   }
   if (command === "--version" || command === "-V") {
     process.stdout.write(`${AGENT_RELAY_VERSION}\n`);
+    return;
+  }
+  if (isInertCanaryHelpRequest(command, args)) {
+    process.stdout.write(USAGE);
     return;
   }
   if (command === "daemon" || command === "web-demo") {

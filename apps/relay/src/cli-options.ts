@@ -9,6 +9,24 @@ export function resolveHookHarnessVersion(options: {
   return preferred ?? "unknown";
 }
 
+const canaryCommands = new Set([
+  "canary",
+  "telegram-canary",
+  "whooshbang-canary",
+  "webhook-canary",
+]);
+
+export function isInertCanaryHelpRequest(
+  command: string | undefined,
+  args: string[],
+): boolean {
+  return (
+    command !== undefined &&
+    canaryCommands.has(command) &&
+    args.some((argument) => argument === "--help" || argument === "-h")
+  );
+}
+
 export function resolveWebEnabled(options: {
   environmentValue: string | undefined;
   disabledByFlag: boolean;
