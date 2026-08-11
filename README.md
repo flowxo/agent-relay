@@ -20,6 +20,11 @@ where Agent Relay keeps its source of truth.
 > yet. Install it from source. The currently tested setup is macOS on Apple
 > silicon with Node.js 22 or newer and pnpm 11.
 
+The [frozen V1 release boundary](docs/v1-release-boundary.md) records exact
+package/source provenance, lockfile, support, transport/privacy fields, and
+known limitations. The intended tag has not been created, and this repository
+does not authorize publication or live-provider work.
+
 ## What you get
 
 - One private Telegram topic for each agent session.
@@ -38,6 +43,10 @@ where Agent Relay keeps its source of truth.
   process exits or late CLI resume.
 - Replaceable notification transports. Direct Telegram works without a hosted
   Agent Relay account, and a signed outbound webhook can feed your own tools.
+
+Exactly one transport is selected; fake is the local-only default and there is
+no automatic dual-send or failover. Open Source V1 has no hosted dashboard or
+team-policy surface.
 
 ## Get started
 
@@ -315,10 +324,10 @@ supervisor:
 
 ```sh
 ~/.agent-relay/bin/agent-relay run codex \
-  --harness-version 0.145.0 -- exec "work on the task"
+  --harness-version "$(codex --version)" -- exec "work on the task"
 
 ~/.agent-relay/bin/agent-relay run claude \
-  --harness-version 2.1.219 -- --print "work on the task"
+  --harness-version "$(claude --version)" -- --print "work on the task"
 
 CURSOR_AGENT_EXACT="/absolute/path/to/approved/cursor-agent"
 ~/.agent-relay/bin/agent-relay run cursor \
@@ -408,6 +417,10 @@ machine.
 | Cursor CLI        | `2026.07.23-e383d2b`    | `verified`              | Interactive Stop and trusted late resume are live-proven; --print did not emit initial Stop.                                     |
 | Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                    |
 
+Supported runtime: macOS on Apple silicon with native arm64 Node or x64 Node
+through Rosetta, Node.js 22 or newer; release-exit evidence uses native Node.js
+22.23.1. Not claimed: Windows, Linux end-user runtime, Intel macOS, Cursor IDE
+late resume, native-hook crash proof, Cursor permission automation.
 <!-- END GENERATED HARNESS SUPPORT -->
 
 The current runtime validation target is macOS on Apple silicon with Node.js 22.
@@ -466,6 +479,7 @@ for the part you are changing:
 - [Package contents and artifact boundary](docs/packaging.md)
 - [Prerelease builds and publication](docs/releasing.md)
 - [Release-readiness evidence](docs/release-readiness.md)
+- [Frozen V1 support, privacy, and provenance boundary](docs/v1-release-boundary.md)
 - [Safe fixtures and evidence](docs/fixtures.md)
 - [Hosted WhooshBang boundary](docs/hosted-whooshbang.md)
 - [Experimental runner bridge](docs/runner-bridge.md)

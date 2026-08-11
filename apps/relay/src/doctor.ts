@@ -4,6 +4,7 @@ import {
   classifyObservedHarnessVersion,
   HARNESS_CAPABILITIES,
   HARNESS_COMPATIBILITY,
+  isSupportedRuntimeObservation,
   VERIFIED_CLI_HARNESS_EVIDENCE,
 } from "@agent-relay/harnesses";
 import type { CompatibilityClassification } from "@agent-relay/harnesses";
@@ -18,6 +19,17 @@ import { inspectAgentRelayInstallation } from "./installer.js";
 import type { InstallationCheck } from "./installer.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
 import type { TransportReadinessReport } from "./transport-config.js";
+
+export function observeAppleSiliconHardware(): boolean {
+  return (
+    process.platform === "darwin" &&
+    (process.arch === "arm64" ||
+      spawnSync("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], {
+        encoding: "utf8",
+        shell: false,
+      }).stdout.trim() === "1")
+  );
+}
 
 function requiredEvidenceValue(
   value: string | undefined,
@@ -85,6 +97,12 @@ export interface DoctorOptions {
   runtimeEntryPath?: string;
   runtimeNodePath?: string;
   transportReadiness?: TransportReadinessReport;
+  runtime?: {
+    readonly platform: string;
+    readonly architecture: string;
+    readonly nodeVersion: string;
+    readonly appleSiliconHardware?: boolean;
+  };
   liveWhooshBang?: {
     readonly selectedTransport?: string;
     readonly runtime?: {
@@ -151,7 +169,27 @@ export function observeHarnessVersions(
       };
     }
     const output = result.stdout.trim() || result.stderr.trim();
-    const version = output.split("\n")[0] ?? "";
+    const version = output.split("\n")[0]?.trim() ?? "";
+    const recognizable =
+      harness === "codex"
+        ? /^codex(?:-cli)?\s+v?\d+\.\d+\.\d+/i.test(version)
+        : harness === "claude"
+          ? /^v?\d+\.\d+\.\d+.*\bClaude Code\b/i.test(version)
+          : /^(?:cursor(?:-agent)?\s+)?(?:v?\d+\.\d+\.\d+|\d{4}\.\d{2}\.\d{2}-[A-Za-z0-9._-]+)$/i.test(
+              version,
+            );
+    if (!recognizable) {
+      return {
+        harness,
+        executable,
+        available: false,
+        verifiedVersion,
+        classification: "unsupported",
+        evidenceId: evidence.evidence.id,
+        drifted: false,
+        detail: "version probe returned no recognizable harness version",
+      };
+    }
     const classification = classifyObservedHarnessVersion(evidence, version);
     const drifted = classification !== "verified";
     return {
@@ -176,8 +214,10 @@ export function observeHarnessVersions(
 export function harnessObservationLevel(
   observation: Pick<HarnessVersionObservation, "available" | "classification">,
 ): DoctorCheck["level"] {
+  if (!observation.available) {
+    return "warn";
+  }
   if (
-    !observation.available ||
     observation.classification === "unsupported" ||
     observation.classification === "disabled"
   ) {
@@ -199,6 +239,18 @@ export async function runDoctor(
   options: DoctorOptions = {},
 ): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
+  if (options.runtime !== undefined) {
+    const expected = HARNESS_COMPATIBILITY.runtimeTarget;
+    const runtimeMatches = isSupportedRuntimeObservation(options.runtime);
+    checks.push({
+      name: "runtime-target",
+      ok: runtimeMatches,
+      level: runtimeMatches ? "pass" : "fail",
+      detail: runtimeMatches
+        ? `${expected.operatingSystem} on Apple silicon (${options.runtime.architecture} Node), Node.js ${options.runtime.nodeVersion} is within the supported V1 runtime boundary`
+        : `observed ${options.runtime.platform}/${options.runtime.architecture} with Node.js ${options.runtime.nodeVersion}; supported V1 runtime is Apple-silicon ${expected.platform} with native ${expected.architecture} or x64 Node through Rosetta and Node.js ${String(expected.minimumNodeMajor)} or newer`,
+    });
+  }
   if (options.runnerBridge !== undefined) {
     const runnerBridge = options.runnerBridge;
     const ready = !runnerBridge.enabled || runnerBridge.adapterAvailable;
@@ -425,7 +477,8 @@ export async function runDoctor(
     store?.close();
   }
 
-  for (const observation of observeHarnessVersions(options.executables)) {
+  const harnessObservations = observeHarnessVersions(options.executables);
+  for (const observation of harnessObservations) {
     const level = harnessObservationLevel(observation);
     checks.push({
       name: observation.harness,
@@ -440,6 +493,21 @@ export async function runDoctor(
       evidenceId: observation.evidenceId,
     });
   }
+  const availableHarnesses = harnessObservations.filter(
+    (observation) =>
+      observation.available &&
+      observation.classification !== "unsupported" &&
+      observation.classification !== "disabled",
+  );
+  checks.push({
+    name: "harness-availability",
+    ok: availableHarnesses.length > 0,
+    level: availableHarnesses.length > 0 ? "pass" : "fail",
+    detail:
+      availableHarnesses.length > 0
+        ? `${availableHarnesses.map((observation) => observation.harness).join(", ")} available within the compatibility boundary`
+        : "no supported harness executable is available; install at least one supported harness",
+  });
   checks.push({
     name: "capability-matrix",
     ok: new Set(HARNESS_CAPABILITIES.map((entry) => entry.harness)).size === 3,
@@ -459,6 +527,17 @@ export async function runDoctor(
           ...(options.runtimeNodePath === undefined
             ? {}
             : { runtimeNodePath: options.runtimeNodePath }),
+          harnessVersions: Object.fromEntries(
+            harnessObservations
+              .filter(
+                (
+                  observation,
+                ): observation is HarnessVersionObservation & {
+                  version: string;
+                } => observation.version !== undefined,
+              )
+              .map((observation) => [observation.harness, observation.version]),
+          ),
         },
       );
       checks.push(...installation.checks.map(installationDoctorCheck));

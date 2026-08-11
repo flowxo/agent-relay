@@ -7,7 +7,10 @@ GitHub environment, a public-repository check, and npm OIDC.
 
 The current `packaging/release.json` has `publication.approved: false` and
 `registryAction: blocked`. The staged package therefore remains private and
-`scripts/publish-release.mjs` refuses to contact the registry.
+`scripts/publish-release.mjs` refuses to contact the registry. The intended tag
+is recorded but has not been created. The frozen
+[V1 release boundary](v1-release-boundary.md) is a documentation/control record,
+not tag authorization.
 
 ## Release inputs
 
@@ -58,9 +61,11 @@ The builder rebuilds and packs twice with the commit timestamp as
 ```
 
 The SPDX 2.3 SBOM binds to the tarball SHA-256, inventories every packed file
-with SHA-1 and SHA-256, and includes the frozen runtime dependency closure. The
-release manifest records the exact commit, commit time, tag, package identity,
-artifact and SBOM digests/sizes, and two-build match.
+with SHA-1 and SHA-256, includes the exact runtime dependency closure, and
+records the bundled WhooshBang contracts/SDK components and their source archive
+checksums. The release manifest records the exact commit, commit time, intended
+tag, package identity, package manager, source-input paths/digests, artifact and
+SBOM digests/sizes, and two-build match.
 
 `SHA256SUMS` and the manifest are integrity metadata, not signed provenance.
 Signed provenance comes from the GitHub attestation job described below.
@@ -122,7 +127,9 @@ an asset from a laptop. Attach the four workflow artifacts and record:
 - links to the workflow run and build/SBOM provenance;
 - supported OS/runtime and exact harness evidence;
 - known limitations, especially native-hook crash proof, Cursor IDE resume,
-  Cursor permission automation, and unverified runtime targets;
+  Cursor permission automation, Telegram's at-least-once ambiguity, no automatic
+  dual-send, no hosted dashboard/team policy, the accepted ambient
+  hook-isolation residual, and unverified runtime targets;
 - required upgrade or migration actions;
 - the supported install, doctor, canary, upgrade, uninstall, and erasure paths;
   and
@@ -140,17 +147,20 @@ GitHub's short-lived OIDC identity only inside the registry job.
 
 Before changing `publication.approved` to `true`, the owner must:
 
-1. confirm control of the `@flowxo` npm scope and the exact
+1. approve distributable license and notice metadata for the bundled
+   `@whooshbang/contracts` and `@whooshbang/sdk` components; `NOASSERTION` is
+   not a publication grant;
+2. confirm control of the `@flowxo` npm scope and the exact
    `@flowxo/agent-relay` name;
-2. make the source repository public so npm provenance is supported;
-3. protect the `npm-prerelease` GitHub environment with a required reviewer and
+3. make the source repository public so npm provenance is supported;
+4. protect the `npm-prerelease` GitHub environment with a required reviewer and
    prevent self-review when the plan supports it;
-4. configure the npm trusted publisher for organization `flowxo`, repository
+5. configure the npm trusted publisher for organization `flowxo`, repository
    `agent-relay`, workflow filename `prerelease.yml`, and environment
    `npm-prerelease`;
-5. enable two-factor authentication and disallow traditional publish tokens;
-6. protect release tags; and
-7. approve a dedicated code change setting the registry action.
+6. enable two-factor authentication and disallow traditional publish tokens;
+7. protect release tags; and
+8. approve a dedicated code change setting the registry action.
 
 An npm package must already exist before `npm stage publish` can be used. The
 first approved prerelease therefore requires a separately reviewed direct

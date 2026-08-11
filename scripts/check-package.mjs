@@ -16,6 +16,8 @@ import { clearTimeout, setTimeout } from "node:timers";
 
 import {
   assertReleaseConfiguration,
+  currentReleaseRuntime,
+  isSupportedReleaseRuntime,
   stagedPackageIsPrivate,
 } from "./lib/release-policy.mjs";
 
@@ -304,9 +306,9 @@ try {
     }
   }
 
-  if (process.platform !== "darwin") {
+  if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     process.stdout.write(
-      `Package content verified (${String(archivedFiles.length)} files, ${String(tarballSize)} packed bytes, ${String(unpackedSize)} unpacked bytes). Isolated runtime skipped on unsupported ${process.platform}/${process.arch}.\n`,
+      `Package content verified (${String(archivedFiles.length)} files, ${String(tarballSize)} packed bytes, ${String(unpackedSize)} unpacked bytes). Isolated runtime skipped outside the frozen ${process.platform}/${process.arch} Node.js ${process.versions.node} boundary.\n`,
     );
     process.exitCode = 0;
   } else {

@@ -66,10 +66,11 @@ The compressed tarball budget is 2,000,000 bytes and the unpacked budget is
 while still rejecting accidental tests, source trees, caches, or workspace
 packages. Any new runtime asset requires an explicit snapshot change.
 
-The staged manifest restricts installation to macOS. It accepts arm64 Node and
-x64 Node because an Apple-silicon Mac may run the x64 Node executable through
-Rosetta. That metadata does not create an Intel Mac support claim; physical
-Apple-silicon hardware remains the tested boundary.
+The staged manifest restricts installation to macOS on Apple silicon. It accepts
+native arm64 Node and x64 Node through Rosetta; this does not create an Intel
+Mac support claim. Windows, Linux, and Intel macOS are not V1 end-user support
+claims. Node.js 22 or newer is the metadata range; native arm64 release-exit
+validation uses exact Node.js 22.23.1.
 
 ## Source-map policy
 
@@ -154,16 +155,17 @@ before reconciliation, then proves:
 
 - install dry runs do not mutate configuration;
 - an install followed by a repeat install is idempotent;
-- SQLite migrates an unversioned, schema-`1`, or schema-`2` prior store to
-  schema `3`;
-- a schema newer than `3` is refused without modification;
+- SQLite migrates the retained prior fixture from schema `5` to the current
+  schema `9`, preserving answers and durable delivery state;
+- a schema newer than `9` (the lifecycle proof uses `10`) is refused without
+  modification;
 - the answer, web credential, diagnostic log, explicit retained files, and
   installer backups survive;
 - unrelated Codex, Claude, and Cursor configuration survives;
 - uninstall removes only the owned launcher, manifest, and hook entries; and
 - package-manager removal happens last and leaves no owned hook.
 
-To retain a tarball for manual review:
+To create a disposable tarball for manual review:
 
 ```sh
 pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.1.tgz
@@ -171,7 +173,11 @@ tar -tzf .artifacts/agent-relay-0.1.0-alpha.1.tgz
 ```
 
 `.artifacts/` is generated and gitignored. Never put credentials, activation
-files, databases, logs, or private transcripts into the staging directory.
+files, databases, logs, or private transcripts into the staging directory. Do
+not reuse this filename as retained evidence: move reviewed evidence into a
+private content-addressed location keyed by its SHA-256 before packing another
+same-version candidate. The [V1 release record](v1-release-boundary.md) keeps
+the PR #39 retained package distinct from the PR #40 source proof.
 
 For the clean-commit, two-build release bundle with SHA-256 checksums, SPDX 2.3
 SBOM, signed GitHub attestation boundary, OIDC gates, and rollback procedure,

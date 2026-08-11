@@ -141,8 +141,39 @@ breaking changes and required operator action.
   advertised by a protocol flag while the installer intentionally omits them.
 - Delivery-success diagnostics now hash local event and provider receipt
   identities instead of logging either raw value.
+- SQLite schema `8` adds durable topic-title reconciliation state and schema `9`
+  adds content-free lifetime insertion/deletion counters used by fail-closed
+  canary attribution. Migration is automatic and forward-only. **Rollback
+  warning:** an older binary refuses a database written at a newer schema; use
+  the newer package or restore a reviewed private backup rather than editing
+  `user_version`.
 - The release candidate version advances to `0.1.0-alpha.1`; it remains private
   and unpublished.
+
+### Known limitations
+
+- V1 supports macOS on Apple silicon with Node.js 22 or newer; native release
+  evidence uses exact Node.js 22.23.1. Windows, Linux, and Intel macOS end-user
+  runtimes are not claimed.
+- Cursor IDE late resume is unsupported. Cursor permission automation remains
+  disabled.
+- Native hooks cannot prove process crashes; crash evidence requires Agent Relay
+  to own the supervised child.
+- Telegram delivery is at least once across the documented acknowledgement
+  ambiguity window, so a crash can produce a duplicate provider message.
+- Exactly one transport is selected. There is no automatic dual-send or
+  transport failover.
+- Open Source V1 has no hosted dashboard or team-policy surface.
+- Accepted Low residual: automation cannot prove that the invoking shell or GUI
+  session launched with every ambient hook disabled. Exact hook-denied isolation
+  and aggregate attribution mitigate it; contaminated windows fail closed.
+- The retained live-reviewed alpha.1 tarball came from PR #39 and does not
+  contain PR #40. PR #40 passed separate credential-free packed proof from an
+  ephemeral tarball that was neither retained nor live-tested.
+- The intended `v0.1.0-alpha.1` tag has not been created. Tagging, publication,
+  and live-provider operations require separate owner authorization. Public
+  distribution is additionally blocked until the bundled WhooshBang contracts
+  and SDK receive an owner-approved distributable license and notice decision.
 
 ## 0.1.0-alpha.0 — 2026-07-26 (local candidate only)
 

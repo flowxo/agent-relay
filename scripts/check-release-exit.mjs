@@ -385,6 +385,7 @@ await assertCleanGit(root);
 const git = await readGitBuildInfo(root);
 const releaseDirectory = resolve(root, ".artifacts/release");
 const bundle = await verifyReleaseBundle({
+  root,
   release,
   rootPackage,
   directory: releaseDirectory,

@@ -401,10 +401,11 @@ resolved-presentation capability as unsupported.
 
 ## Deployment boundary
 
-A future hosted adapter may call a Cloudflare-hosted WhooshBang service. That
-does not move Agent Relay protocol, SQLite, hooks, installer, daemon, or
-supervisor into Cloudflare. Direct Telegram and fake/local operation remain
-independent transport choices.
+The explicitly selected hosted adapter calls the configured WhooshBang service.
+That does not move Agent Relay protocol, SQLite, hooks, installer, daemon, or
+supervisor into Cloudflare. Direct Telegram, outbound webhook, and fake/local
+operation remain independent transport choices. Exactly one transport is
+selected; there is no dual send or automatic failover.
 
 ## Packed artifact proof
 
@@ -438,16 +439,17 @@ transcript text, machine paths, and executable values do not appear in the
 packed CLI or captured diagnostics. Unsupported operating systems explicitly
 skip only the native installed-runtime portion.
 
-This is the AR2 release handoff, not production-service dogfood. AR3 still owns:
-
-- provider retention/privacy-term confirmation for the production service;
-- real hosted subscriber authorization and digest verification;
-- live service delivery, polling, reply, disconnect, and recovery evidence; and
-- operational acceptance of deliberate switching.
+AR3 completed hosted dogfood and reliability exit with
+`go with named residuals`. The retained live-reviewed package came from PR #39
+and does not contain PR #40. PR #40 source separately passed credential-free
+packed proof; its ephemeral package was neither retained nor live-tested. The
+exact heads, merges, and SHA-256 values are frozen in the
+[V1 release record](v1-release-boundary.md). No live authorization carries
+forward, and this evidence does not authorize another provider observation.
 
 No hosted service may silently become required for installation, doctor, local
 canary, or uninstall.
 
 See the [transport contributor guide](extending-transports.md), the pinned
 [consumer package README](../packages/whooshbang-transport/README.md), and the
-[AR2 specification](projects/notifications-transport-adapter/project-spec.md).
+[adapter specification](projects/notifications-transport-adapter/project-spec.md).

@@ -1,0 +1,250 @@
+{
+  "schema": "agent-relay-v1-release-boundary.v1",
+  "package": {
+    "name": "@flowxo/agent-relay",
+    "version": "0.1.0-alpha.1",
+    "intendedTag": "v0.1.0-alpha.1",
+    "tagStatus": "not-created-owner-authorization-required",
+    "publicationApproved": false
+  },
+  "sourceCandidateEnteringFreeze": {
+    "pullRequest": 40,
+    "reviewedHead": "9a5e6a68609e3764ba5198c350528254bd37da62",
+    "mergeCommit": "eb5ae1316949f5053c6ae64fdf6d624243e2b2ee"
+  },
+  "sourceInputs": {
+    "packageManager": "pnpm@11.17.0",
+    "lockfile": {
+      "path": "pnpm-lock.yaml",
+      "sha256": "46b51f60a932e73533b43c7d605c350b36f01dcdd4e196ef61f14309bf2c6b38"
+    }
+  },
+  "runtime": {
+    "operatingSystem": "macOS",
+    "platform": "darwin",
+    "hardware": "Apple silicon",
+    "nodeArchitectures": ["arm64", "x64 through Rosetta"],
+    "nodeRange": ">=22",
+    "nativeReleaseExitNode": "22.23.1",
+    "unsupportedEndUserClaims": ["Windows", "Linux", "Intel macOS"]
+  },
+  "installerAndState": {
+    "installManifestSchema": "agent-relay-install.v1",
+    "installManifestVersion": "1",
+    "sqliteSchemaVersion": 9,
+    "migrations": "forward-only",
+    "newerSchemaBehavior": "refuse-unsafe-downgrade"
+  },
+  "harnesses": [
+    {
+      "harness": "codex",
+      "surface": "cli",
+      "classification": "verified",
+      "verifiedVersion": "codex-cli 0.145.0"
+    },
+    {
+      "harness": "codex",
+      "surface": "app-server",
+      "classification": "verified",
+      "verifiedVersion": "codex-cli 0.145.0",
+      "defaultEnabled": false
+    },
+    {
+      "harness": "claude",
+      "surface": "cli",
+      "classification": "verified",
+      "verifiedVersion": "2.1.219 (Claude Code)"
+    },
+    {
+      "harness": "claude",
+      "surface": "sdk",
+      "classification": "compatible-unverified",
+      "verifiedVersion": null,
+      "installedV1Path": false
+    },
+    {
+      "harness": "cursor",
+      "surface": "cli",
+      "classification": "verified",
+      "verifiedVersion": "2026.07.23-e383d2b"
+    },
+    {
+      "harness": "cursor",
+      "surface": "ide",
+      "classification": "compatible-unverified",
+      "verifiedVersion": null,
+      "lateResume": "unsupported",
+      "permissionAutomation": "disabled"
+    }
+  ],
+  "transports": {
+    "default": "fake",
+    "selection": "exactly-one",
+    "automaticDualSend": false,
+    "automaticFailover": false,
+    "available": ["fake", "telegram", "webhook", "whooshbang"],
+    "capabilities": {
+      "fake": {
+        "network": "none",
+        "deliveryModes": ["notify", "silent"],
+        "interactions": [
+          "confirm",
+          "select",
+          "input",
+          "multi-select",
+          "question-set"
+        ],
+        "messageUpdates": true
+      },
+      "telegram": {
+        "deliveryModes": ["notify", "silent"],
+        "interactions": [
+          "confirm",
+          "select",
+          "input",
+          "multi-select",
+          "question-set"
+        ],
+        "messageUpdates": true,
+        "deliverySemantics": "at-least-once"
+      },
+      "webhook": {
+        "deliveryModes": ["notify", "silent"],
+        "direction": "outbound-only",
+        "inboundResponseApi": false
+      },
+      "whooshbang": {
+        "deliveryModes": ["notify", "silent"],
+        "interactions": ["confirm", "select", "input"],
+        "messageUpdates": false,
+        "durableDrafts": false,
+        "multiSelect": false,
+        "orderedQuestionSets": false
+      }
+    }
+  },
+  "privacy": {
+    "telemetry": "none",
+    "localStatePaths": [
+      "relay.sqlite",
+      "relay.sqlite-wal",
+      "relay.sqlite-shm",
+      "fallback-spool.ndjson",
+      "fallback-spool.ndjson.segment-*",
+      "fallback-spool.ndjson.pending-*",
+      "fallback-spool.ndjson.processing-*",
+      "relay.ndjson",
+      "relay.ndjson.*",
+      "web-credential.json",
+      "transport.json",
+      "webhook.json",
+      "whooshbang.json",
+      "whooshbang-credential.json",
+      "whooshbang-oauth-provisioning.json",
+      "install.json",
+      "bin/agent-relay",
+      "runner-bridge.json",
+      "runner-bridge.sqlite",
+      "runner-bridge.sqlite-wal",
+      "runner-bridge.sqlite-shm",
+      "machine-id"
+    ],
+    "outboundFields": {
+      "fake": [],
+      "telegram": [
+        "bot-api-routing",
+        "bounded-title-text",
+        "event-session-presentation",
+        "interaction-labels",
+        "opaque-action-tokens",
+        "delivery-mode"
+      ],
+      "webhook": [
+        "delivery-id",
+        "delivery-mode",
+        "bounded-message",
+        "sanitized-source",
+        "optional-local-web-handoff",
+        "timestamp",
+        "hmac-signature"
+      ],
+      "whooshbang": [
+        "subscriber",
+        "optional-notifier",
+        "bounded-title-text",
+        "opaque-event-correlation",
+        "supported-prompt-labels-opaque-options",
+        "expiry",
+        "request-authentication"
+      ]
+    },
+    "credentialHandling": {
+      "telegram": "bot-token-authenticates-telegram-requests; environment-injected",
+      "webhook": "stdin-file-configuration-persists-private-file; environment-injection-is-process-only",
+      "whooshbang": "narrow-machine-bearer-and-credential-id-authenticate-provider-requests; bearer-is-not-a-message-payload-field; retained-private-file; provisioning-journal-erased-after-reconciliation"
+    },
+    "localRetentionDays": {
+      "delivered": 30,
+      "requests": 30,
+      "telegramUpdates": 30,
+      "deadLetters": 90,
+      "diagnostics": 90,
+      "sessions": 90
+    },
+    "erasure": {
+      "local": "erase the exact state directory after uninstall or use bounded disconnect erasure",
+      "provider": "provider messages and account records require separate provider-side erasure"
+    }
+  },
+  "whooshbangArtifacts": [
+    {
+      "name": "@whooshbang/contracts",
+      "version": "1.0.0-rc.12",
+      "sha256": "4b428d1d9094ea78e136084d56831a4c8bdee97b1c40e569cde5787ea176c2dd"
+    },
+    {
+      "name": "@whooshbang/sdk",
+      "version": "1.0.0-rc.13",
+      "sha256": "c3e67296c392f54b4d432d0bb57c70a6b8d031b1acdb17c44a2cb79626afefec"
+    },
+    {
+      "name": "@whooshbang/contract-mock",
+      "version": "1.0.0-rc.15",
+      "sha256": "27ce251f6dfc283bf4eecfcb782bd577eba9d13751de63d032bad7ab733918b7",
+      "runtimeBundled": false
+    }
+  ],
+  "evidenceArtifacts": {
+    "retainedLiveReviewed": {
+      "package": "@flowxo/agent-relay@0.1.0-alpha.1",
+      "sha256": "654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198",
+      "pullRequest": 39,
+      "reviewedHead": "4ba4b1fbd832c34f465cd40f199e5c1dac7ed890",
+      "mergeCommit": "85d2d0a1f8649bf4359031227d1b9b844208cc15",
+      "containsPullRequest40": false,
+      "liveTested": true,
+      "retained": true
+    },
+    "pullRequest40CredentialFreePackedProof": {
+      "sha256": "8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543",
+      "containsPullRequest40": true,
+      "liveTested": false,
+      "retained": false
+    }
+  },
+  "knownLimitations": [
+    "Cursor IDE late resume is unsupported.",
+    "Cursor permission automation is disabled.",
+    "Native hooks cannot prove process crashes; supervised ownership is required.",
+    "Telegram delivery is at least once across the documented acknowledgement ambiguity window.",
+    "No automatic dual-send or transport failover is provided.",
+    "No Windows, Linux, or Intel macOS end-user runtime is claimed.",
+    "No hosted dashboard or team-policy surface is included.",
+    "Automation cannot prove that every ambient hook in the invoking shell or GUI session was disabled; exact hook-denied isolation and aggregate attribution mitigate this accepted Low residual, and contaminated windows fail closed."
+  ],
+  "publicationGates": [
+    "Explicit owner authorization is required for a tag, package, release, registry action, or repository promotion.",
+    "The bundled WhooshBang contracts and SDK require an owner-approved distributable license and notice decision before publication."
+  ],
+  "finalArtifactEvidence": "The clean reviewed release commit is bound later by the generated release manifest, SHA256SUMS, SPDX SBOM, and CI provenance; no final artifact or tag is asserted by this source file."
+}

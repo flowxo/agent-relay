@@ -37,7 +37,11 @@ import {
   resolveWebEnabled,
 } from "./cli-options.js";
 import { startDaemon } from "./daemon.js";
-import { observeHarnessVersions, runDoctor } from "./doctor.js";
+import {
+  observeAppleSiliconHardware,
+  observeHarnessVersions,
+  runDoctor,
+} from "./doctor.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
@@ -670,6 +674,12 @@ async function main(): Promise<void> {
       packageVersion: AGENT_RELAY_VERSION,
       runtimeEntryPath: installEntryPath(args),
       runtimeNodePath: process.execPath,
+      runtime: {
+        platform: process.platform,
+        architecture: process.arch,
+        nodeVersion: process.versions.node,
+        appleSiliconHardware: observeAppleSiliconHardware(),
+      },
       transportReadiness,
       ...(!liveRequested
         ? {}
