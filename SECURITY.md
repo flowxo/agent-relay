@@ -39,12 +39,12 @@ Include only the minimum information needed to reproduce the issue:
 - any known preconditions or mitigations; and
 - a safe way to continue the private conversation through GitHub.
 
-The repository remains private until FXO-1164. FXO-1568 authorizes making it
-public and then enabling and verifying GitHub private vulnerability reporting
-and the available repository security controls during FXO-1164 before release
-promotion. Until that happens, invited collaborators should use the repository's
-existing private GitHub access. Agent Relay does not advertise an unmonitored
-security email address.
+The repository is public. During FXO-1164, GitHub private vulnerability
+reporting and the available repository security controls were enabled and
+verified before release promotion. Use the private advisory path above for
+security reports; Agent Relay does not advertise an unmonitored security email
+address. The stopped alpha.1 publication attempt and the corrected alpha.2
+candidate do not weaken this reporting boundary.
 
 ## What to expect
 

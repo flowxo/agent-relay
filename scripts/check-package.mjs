@@ -738,7 +738,7 @@ try {
         "This credential-free proof is not a live-provider test.",
         "This proof does not create a tag or signed GitHub provenance.",
         "Native release-exit remains a separate exact-runtime and exact-harness gate.",
-        "FXO-1568 approved the bundled WhooshBang MIT license/notices and a bounded future FXO-1164 publication; this proof performs neither publication nor repository mutation.",
+        "FXO-1568 approved the bundled WhooshBang MIT license/notices; FXO-1574 requires renewed exact-candidate approval before FXO-1164 publication, and this proof performs neither publication nor repository mutation.",
         "The accepted non-green native release-exit and Low ambient-hook isolation residuals remain explicit and are not credited as green.",
       ],
     };

@@ -236,6 +236,14 @@ function topicCleanupCommand(mode: TopicCleanupMode): "/purge" | "/cleanup" {
   return mode === "inactive" ? "/purge" : "/cleanup";
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+  return value.slice(0, end);
+}
+
 export class RelayService {
   private readonly retryPolicy: RetryPolicy;
   private readonly logger: RelayLogger;
@@ -271,9 +279,8 @@ export class RelayService {
             ...(options.interactionHandoff.baseUrl === undefined
               ? {}
               : {
-                  baseUrl: options.interactionHandoff.baseUrl.replace(
-                    /\/+$/,
-                    "",
+                  baseUrl: trimTrailingSlashes(
+                    options.interactionHandoff.baseUrl,
                   ),
                 }),
             fallbackWhenTransportUnavailable:

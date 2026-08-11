@@ -3,16 +3,17 @@
 The machine-readable source of truth is
 [`packaging/v1-release-boundary.json`](../packaging/v1-release-boundary.json).
 This summary freezes the support, privacy, compatibility, and provenance
-boundary for `@flowxo/agent-relay@0.1.0-alpha.1`. FXO-1568 authorizes one
-bounded future FXO-1164 publication after the final exact candidate is recorded;
-this source record does not claim that publication has occurred.
+boundary for the corrected `@flowxo/agent-relay@0.1.0-alpha.2` candidate.
+FXO-1574 requires renewed exact-candidate approval before FXO-1164 publication
+may resume; this source record does not claim that alpha.2 publication has
+occurred.
 
 ## Package and source
 
-- Package version: `0.1.0-alpha.1`.
-- Intended tag: `v0.1.0-alpha.1`. The FXO-1162 freeze created no tag. FXO-1568
-  now authorizes its future creation in FXO-1164 on the recorded exact green
-  candidate; generated manifests still record observed build-time tag state.
+- Package version: `0.1.0-alpha.2`.
+- Intended tag: `v0.1.0-alpha.2`. It does not exist and is not authorized until
+  renewed approval names the exact corrected candidate; generated manifests
+  record observed build-time tag state.
 - The source candidate entering this freeze is PR #40, reviewed head
   `9a5e6a68609e3764ba5198c350528254bd37da62`, merged as
   `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`.
@@ -52,6 +53,21 @@ PR #41's clean-commit credential-free release-bundle proof has SHA-256
 bytes, 11 packed files, and six SPDX packages. It contains PR #40 and PR #41,
 but it was not live-tested. It is a separate proof from both the retained PR #39
 tarball and PR #40's ephemeral package.
+
+## Preserved alpha.1 publication attempt
+
+Immutable tag `v0.1.0-alpha.1` points to exact source commit
+`cda92d179e76c00eac848a3d496fa298115cce45`. Its protected tagged workflow passed
+repository, browser, audit, bundle, upload, and build/SBOM attestation jobs. The
+Linux archive SHA-256 is
+`4e6dca3e14767444c4125c72a7d0f124b7818d45f585784a59f01d24a47b1e89`, while the
+authorized macOS archive SHA-256 is
+`eaead1f9011b8968a76dadb5e37ed3bcd020f6f477484b24db1e259e88ebeaa2`. They have
+identical extracted files and uncompressed tar SHA-256
+`504c991da1a6a9cf43db8658eb9b83917fbd054738a4a4a9c281fd1cd4a3b211`; only gzip
+header offset 9 (the tenth byte) differs (`0x03` versus `0x13`). No npm package
+or GitHub release was created. The alpha.1 tag, run, and attestations are
+retained and must never be deleted, moved, or reused.
 
 ## Support and compatibility
 
@@ -120,20 +136,17 @@ authorization carries forward.
 
 ## Publication boundary
 
-FXO-1568 records a go with the two named non-blocking residuals above. It
-approves MIT plus `Copyright (c) 2026 Flow XO, LLC` for the exact bundled
-WhooshBang contracts rc.12 and SDK rc.13 artifacts, the
-`@flowxo/agent-relay@0.1.0-alpha.1` package on npm's `alpha` channel, immutable
-tag `v0.1.0-alpha.1`, public repository, GitHub private vulnerability reporting
-and available security controls, and a GitHub prerelease with verified artifacts
-and attestations.
+FXO-1568's MIT and `Copyright (c) 2026 Flow XO, LLC` decision remains valid for
+the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts. Its
+alpha.1 source/version/archive authorization does not carry to alpha.2.
+`packaging/release.json` therefore keeps publication false and registry action
+blocked. FXO-1574 must record the exact corrected commit and regenerated
+artifact, SBOM, checksum, notes, manifest, clean-home, and signed-attestation
+digests, then obtain renewed owner approval before FXO-1164 resumes.
 
-Those are future FXO-1164 operations. Before execution, FXO-1568 must record the
-exact green post-merge commit and regenerated artifact digests. Because npm
-requires the package to already exist before trusted-publisher configuration,
-the first publish uses the approved interactive 2FA bootstrap and immediately
-configures the exact `flowxo/agent-relay` / `prerelease.yml` / `npm-prerelease`
-publisher. No token is retained; every later publish uses OIDC.
+If approved, the first npm publish uses the reviewed interactive 2FA bootstrap
+and immediately configures the exact `flowxo/agent-relay` / `prerelease.yml` /
+`npm-prerelease` publisher. No token is retained; every later publish uses OIDC.
 
 The authorization excludes production deployment or mutation, the central
 workspace release, live-provider traffic, credential disclosure or retention,

@@ -4,7 +4,28 @@ All notable user-visible changes to Agent Relay will be documented here. The
 project uses Semantic Versioning; prerelease entries explicitly call out
 breaking changes and required operator action.
 
-## 0.1.0-alpha.1 — Unreleased
+## 0.1.0-alpha.2 — Unreleased
+
+### Fixed
+
+- Normalize the npm archive's platform-specific gzip operating-system byte
+  before reproducibility comparison and verification, so supported macOS and
+  protected Linux builds produce identical compressed bytes.
+- Replace two CodeQL High findings with bounded operations: encode every slash
+  in SPDX npm purls consistently and trim handoff URL slashes in linear time.
+
+### Changed
+
+- Preserve `v0.1.0-alpha.1`, its tagged workflow, and its build/SBOM
+  attestations as immutable stopped-publication evidence. The corrected
+  candidate advances to `0.1.0-alpha.2`; publication remains blocked until
+  FXO-1574 records renewed exact-candidate approval.
+- The packed lifecycle proof now upgrades from an alpha.1 fixture to alpha.2.
+
+Native release-exit remains **not green**, and the accepted Low ambient-hook
+isolation residual remains named and uncredited. No live traffic was run.
+
+## 0.1.0-alpha.1 — Stopped before registry publication
 
 ### Added
 
@@ -159,9 +180,9 @@ breaking changes and required operator action.
   warning:** an older binary refuses a database written at a newer schema; use
   the newer package or restore a reviewed private backup rather than editing
   `user_version`.
-- The release candidate version advances to `0.1.0-alpha.1`. Its staged package
-  is registry-eligible under the bounded FXO-1568 go, but it remains unpublished
-  and the workspace root remains private.
+- The release candidate version advanced to `0.1.0-alpha.1`. It remained
+  unpublished; the later tagged attempt stopped on cross-platform artifact
+  drift, and the workspace root remained private.
 
 ### Known limitations
 
@@ -188,12 +209,12 @@ breaking changes and required operator action.
   release bundle has SHA-256
   `3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
   bytes, 11 packed files, and six SPDX packages, and was not live-tested.
-- The FXO-1162 freeze created no `v0.1.0-alpha.1` tag. The generated manifest
-  records build-time tag state. FXO-1568 authorizes its future creation and the
-  exact alpha publication only in FXO-1164 after the final green post-merge
-  commit and regenerated digests are recorded. The authorization excludes
-  production, central workspace release, live-provider traffic, credential
-  retention, live cards, and broader publication.
+- The FXO-1162 freeze created no `v0.1.0-alpha.1` tag. FXO-1164 later created
+  the immutable tag, but stopped before npm or GitHub release publication when
+  its cross-platform archive digest differed. The tag and attestations remain
+  preserved evidence. The authorization excluded production, central workspace
+  release, live-provider traffic, credential retention, live cards, and broader
+  publication.
 
 ## 0.1.0-alpha.0 — 2026-07-26 (local candidate only)
 

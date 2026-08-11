@@ -51,5 +51,5 @@ if (process.env.GITHUB_OUTPUT !== undefined) {
 }
 
 process.stdout.write(
-  `Release bundle verified (${result.version}, ${String(result.artifactBytes)} bytes, ${String(result.sbomPackages)} SPDX packages, ${String(result.sbomFiles)} files, two identical builds).\n`,
+  `Release bundle verified (${result.version}, ${String(result.artifactBytes)} bytes, SHA-256 ${result.artifactSha256}, ${String(result.sbomPackages)} SPDX packages, ${String(result.sbomFiles)} files, two identical builds).\n`,
 );

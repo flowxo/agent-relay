@@ -2,33 +2,49 @@
   "schema": "agent-relay-v1-release-boundary.v1",
   "package": {
     "name": "@flowxo/agent-relay",
-    "version": "0.1.0-alpha.1",
-    "intendedTag": "v0.1.0-alpha.1",
-    "tagStatus": "not-created-publication-authorized",
-    "publicationApproved": true
+    "version": "0.1.0-alpha.2",
+    "intendedTag": "v0.1.0-alpha.2",
+    "tagStatus": "not-created-renewed-approval-required",
+    "publicationApproved": false
   },
   "releaseAuthorization": {
-    "decision": "go-with-named-nonblocking-residuals",
-    "decisionReference": "https://linear.app/flowxo/issue/FXO-1568/ar43a-complete-one-owner-interview-implement-the-decisions-and-unblock",
+    "decision": "renewed-exact-candidate-approval-required",
+    "decisionReference": "https://linear.app/flowxo/issue/FXO-1574/ar44a-normalize-agent-relay-archive-bytes-and-authorize-a-corrected",
     "executionIssue": "https://linear.app/flowxo/issue/FXO-1164/ar44-publish-and-verify-the-agent-relay-package-repository-and-release",
-    "authorizedOperations": [
-      "make-the-agent-relay-repository-public",
-      "enable-and-verify-github-private-vulnerability-reporting",
-      "enable-available-github-security-controls",
-      "create-the-immutable-v0.1.0-alpha.1-tag-on-the-recorded-exact-candidate",
-      "publish-flowxo-agent-relay-0.1.0-alpha.1-to-the-npm-alpha-channel",
-      "configure-the-npm-trusted-publisher-immediately-after-the-initial-interactive-2fa-publish",
-      "create-the-github-prerelease-and-attach-verified-artifacts-and-attestations"
-    ],
+    "authorizedOperations": [],
     "excludedOperations": [
       "production-deployment-or-mutation",
       "central-workspace-release",
       "live-provider-traffic",
       "credential-disclosure-or-retention",
       "live-card-authorization",
+      "publication-before-renewed-exact-candidate-approval",
       "publication-beyond-the-exact-agent-relay-alpha-candidate"
     ],
-    "candidateBinding": "Record the exact green post-merge source commit and regenerated artifact digests in FXO-1568 before any FXO-1164 execution; substantive drift requires renewed owner approval."
+    "candidateBinding": "FXO-1574 must record the exact corrected source commit and regenerated artifact digests and obtain renewed owner approval before FXO-1164 resumes."
+  },
+  "preservedFailedPublicationEvidence": {
+    "package": "@flowxo/agent-relay@0.1.0-alpha.1",
+    "sourceCommit": "cda92d179e76c00eac848a3d496fa298115cce45",
+    "tag": "v0.1.0-alpha.1",
+    "tagObject": "31fcdc9f19071bd0a73a90acc710f87255018980",
+    "tagImmutable": true,
+    "completedOperations": [
+      "made-the-agent-relay-repository-public",
+      "enabled-and-verified-github-private-vulnerability-reporting-and-available-security-controls",
+      "protected-the-npm-prerelease-environment-for-the-exact-alpha1-tag",
+      "created-the-immutable-v0.1.0-alpha.1-tag",
+      "ran-the-protected-tagged-build-and-produced-build-and-sbom-attestations"
+    ],
+    "workflowRun": "https://github.com/flowxo/agent-relay/actions/runs/31541234262",
+    "linuxArtifactSha256": "4e6dca3e14767444c4125c72a7d0f124b7818d45f585784a59f01d24a47b1e89",
+    "authorizedMacosArtifactSha256": "eaead1f9011b8968a76dadb5e37ed3bcd020f6f477484b24db1e259e88ebeaa2",
+    "uncompressedTarSha256": "504c991da1a6a9cf43db8658eb9b83917fbd054738a4a4a9c281fd1cd4a3b211",
+    "buildAttestation": "https://github.com/flowxo/agent-relay/attestations/40141535",
+    "sbomAttestation": "https://github.com/flowxo/agent-relay/attestations/40141561",
+    "npmPublished": false,
+    "githubReleaseCreated": false,
+    "failure": "cross-platform-gzip-operating-system-header-byte-changed-the-artifact-digest"
   },
   "sourceCandidateEnteringFreeze": {
     "pullRequest": 40,

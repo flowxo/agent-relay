@@ -305,8 +305,8 @@ for (const pattern of [
 
 const releaseNotes = await text("packaging/release-notes.md");
 for (const pattern of [
-  /FXO-1568 approved one bounded[\s\S]*future FXO-1164 publication/,
-  /manifest's build-time[\s\S]*`tagStatus`/,
+  /FXO-1574 requires renewed exact-candidate[\s\S]*before FXO-1164 publication/,
+  /manifest's[\s\S]*build-time[\s\S]*`tagStatus`/,
   /Start here/,
   /Configuration, installer, schema, and privacy changes/,
   /Upgrade and rollback/,

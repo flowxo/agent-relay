@@ -73,8 +73,8 @@ requireText(
 );
 requireText(
   security,
-  /FXO-1568 authorizes[\s\S]*enabling and verifying GitHub private vulnerability reporting[\s\S]*FXO-1164/i,
-  "SECURITY.md must preserve the private-reporting promotion gate",
+  /repository is public[\s\S]*FXO-1164[\s\S]*private\s+vulnerability\s+reporting[\s\S]*enabled\s+and\s+verified/i,
+  "SECURITY.md must record the verified private-reporting boundary",
 );
 if (/mailto:/i.test(security)) {
   throw new Error("SECURITY.md must not advertise an unverified email address");

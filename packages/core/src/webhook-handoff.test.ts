@@ -135,6 +135,17 @@ function runtime(transport: NotificationTransport) {
 }
 
 describe("provider-neutral outbound metadata and local web handoff", () => {
+  it("normalizes an adversarial slash-heavy handoff URL in bounded time", () => {
+    const transport = new RecordingWebhookTransport();
+    const store = new RelayStore();
+    new RelayService(store, transport, {
+      interactionHandoff: {
+        baseUrl: `${"/".repeat(50_000)}x`,
+      },
+    });
+    store.close();
+  }, 500);
+
   it("attaches bounded session routing metadata and an exact request handoff", async () => {
     const transport = new RecordingWebhookTransport();
     const { service, store } = runtime(transport);

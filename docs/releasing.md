@@ -1,17 +1,19 @@
 # Prerelease build, attestation, and publication
 
-FXO-1568 records a go with named non-blocking residuals for one bounded future
-FXO-1164 publication. It approves the exact package scope, MIT licensing and
-notices, security path, intended immutable tag, npm `alpha` channel, and GitHub
-prerelease operations. FXO-1568 itself publishes nothing. FXO-1164 may execute
-only after the final post-merge commit, regenerated digests, and green checks
-are recorded; substantive drift stops for renewed approval.
+FXO-1568 approved the exact package scope and bundled WhooshBang MIT
+licenses/notices, plus the original alpha.1 operation set. FXO-1164 made the
+repository public, enabled the security path, protected the prerelease
+environment, and created the immutable alpha.1 tag. The tagged Linux archive
+then differed from the authorized macOS archive by one gzip operating-system
+header byte, so publication stopped before npm or GitHub release mutation.
+FXO-1574 prepares alpha.2 and requires renewed exact-candidate approval before
+FXO-1164 may resume.
 
-The current `packaging/release.json` has `publication.approved: true` and
-`registryAction: publish`. The staged package is therefore registry-eligible and
-records `private: false`; the monorepo root remains `private: true` to block
-accidental workspace publication. No public Agent Relay tag or package exists
-yet. Generated manifests continue to record observed build-time tag state.
+The current `packaging/release.json` has `publication.approved: false` and
+`registryAction: blocked`. The staged package and monorepo root therefore remain
+`private: true`. The public alpha.1 tag and its signed attestations remain
+immutable failed-publication evidence; no npm package, GitHub release, or
+alpha.2 tag exists. Generated manifests record observed alpha.2 tag state.
 
 ## Release inputs
 
@@ -45,6 +47,11 @@ pnpm release:bundle
 pnpm release:bundle:verify
 pnpm release:evidence
 ```
+
+Pull-request and default-branch CI also build the exact bundle without uploading
+it and report the normalized archive SHA-256. Compare that Linux digest with the
+clean macOS result before seeking candidate approval. Only the protected tagged
+workflow uploads or attests release artifacts.
 
 On the supported Apple-silicon target, the separate native Node 22
 installed-artifact matrix uses `pnpm release:exit`; see the
@@ -93,15 +100,14 @@ Signed provenance comes from the GitHub attestation job described below.
 Push an exact tag only after its commit is green:
 
 ```sh
-git tag --annotate v0.1.0-alpha.1 --message "Agent Relay 0.1.0-alpha.1"
-git push origin v0.1.0-alpha.1
+git tag --annotate v0.1.0-alpha.2 --message "Agent Relay 0.1.0-alpha.2"
+git push origin v0.1.0-alpha.2
 ```
 
-FXO-1568 authorizes this exact future tag operation only inside FXO-1164 after
-the final candidate binding is recorded. The `Prerelease` workflow also supports
+Do not run these commands until FXO-1574 records renewed approval for the exact
+alpha.2 source and regenerated digests. The `Prerelease` workflow also supports
 a manual dispatch, but the selected ref must be the exact tag or the build
-fails. No second owner interview is required unless the candidate or authorized
-scope drifts substantively.
+fails. The immutable alpha.1 tag must never be deleted, moved, or reused.
 
 The workflow:
 
@@ -130,7 +136,7 @@ After downloading the bundle:
 sha256sum --check SHA256SUMS
 node scripts/verify-release-bundle.mjs /path/to/release-bundle
 gh attestation verify \
-  flowxo-agent-relay-0.1.0-alpha.1.tgz \
+  flowxo-agent-relay-0.1.0-alpha.2.tgz \
   --repo flowxo/agent-relay
 ```
 
@@ -168,12 +174,12 @@ requires the protected environment and
 `AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED=true`; it cannot bootstrap a new npm
 package.
 
-The owner has approved the exact `@flowxo/agent-relay` name and scope, MIT for
-the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts, their
-notices, two-factor authentication, and this publication path. npm requires a
-package to already exist before its trusted publisher can be configured. The
-first package therefore uses one bounded interactive 2FA bootstrap, with no
-long-lived or retained token:
+The owner has approved the exact `@flowxo/agent-relay` name and scope and MIT
+for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts and
+their notices. Alpha.2 source/version/archive publication is not approved yet.
+After renewed approval, npm requires the package to already exist before its
+trusted publisher can be configured, so the package-first constraint uses one
+bounded interactive 2FA bootstrap, with no long-lived or retained token:
 
 1. make the repository public; enable and verify GitHub private vulnerability
    reporting and the available security controls; protect the `npm-prerelease`
@@ -187,7 +193,7 @@ long-lived or retained token:
 
    ```sh
    pnpm release:bootstrap-publish -- --execute \
-     --confirm @flowxo/agent-relay@0.1.0-alpha.1
+     --confirm @flowxo/agent-relay@0.1.0-alpha.2
    ```
 
 5. the script verifies the public GitHub repository, clean tagged source, and

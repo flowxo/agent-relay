@@ -84,17 +84,18 @@ assert(
 );
 assert(boundary.package.intendedTag === release.gitTag, "intended tag differs");
 assert(
-  boundary.package.tagStatus === "not-created-publication-authorized",
+  boundary.package.tagStatus === "not-created-renewed-approval-required",
   "tag authorization boundary differs",
 );
 assert(
-  boundary.package.publicationApproved === true &&
-    release.publication.approved === true,
-  "bounded publication approval differs",
+  boundary.package.publicationApproved === false &&
+    release.publication.approved === false &&
+    release.publication.registryAction === "blocked",
+  "renewed publication approval gate differs",
 );
 assert(
   boundary.releaseAuthorization.decision ===
-    "go-with-named-nonblocking-residuals" &&
+    "renewed-exact-candidate-approval-required" &&
     boundary.releaseAuthorization.decisionReference ===
       release.publication.decisionReference &&
     boundary.releaseAuthorization.executionIssue ===
@@ -103,15 +104,7 @@ assert(
 );
 assert(
   JSON.stringify(boundary.releaseAuthorization.authorizedOperations) ===
-    JSON.stringify([
-      "make-the-agent-relay-repository-public",
-      "enable-and-verify-github-private-vulnerability-reporting",
-      "enable-available-github-security-controls",
-      "create-the-immutable-v0.1.0-alpha.1-tag-on-the-recorded-exact-candidate",
-      "publish-flowxo-agent-relay-0.1.0-alpha.1-to-the-npm-alpha-channel",
-      "configure-the-npm-trusted-publisher-immediately-after-the-initial-interactive-2fa-publish",
-      "create-the-github-prerelease-and-attach-verified-artifacts-and-attestations",
-    ]),
+    JSON.stringify([]),
   "authorized operation list differs",
 );
 assert(
@@ -122,9 +115,44 @@ assert(
       "live-provider-traffic",
       "credential-disclosure-or-retention",
       "live-card-authorization",
+      "publication-before-renewed-exact-candidate-approval",
       "publication-beyond-the-exact-agent-relay-alpha-candidate",
     ]),
   "excluded operation list differs",
+);
+assert(
+  JSON.stringify(boundary.preservedFailedPublicationEvidence) ===
+    JSON.stringify({
+      package: "@flowxo/agent-relay@0.1.0-alpha.1",
+      sourceCommit: "cda92d179e76c00eac848a3d496fa298115cce45",
+      tag: "v0.1.0-alpha.1",
+      tagObject: "31fcdc9f19071bd0a73a90acc710f87255018980",
+      tagImmutable: true,
+      completedOperations: [
+        "made-the-agent-relay-repository-public",
+        "enabled-and-verified-github-private-vulnerability-reporting-and-available-security-controls",
+        "protected-the-npm-prerelease-environment-for-the-exact-alpha1-tag",
+        "created-the-immutable-v0.1.0-alpha.1-tag",
+        "ran-the-protected-tagged-build-and-produced-build-and-sbom-attestations",
+      ],
+      workflowRun:
+        "https://github.com/flowxo/agent-relay/actions/runs/31541234262",
+      linuxArtifactSha256:
+        "4e6dca3e14767444c4125c72a7d0f124b7818d45f585784a59f01d24a47b1e89",
+      authorizedMacosArtifactSha256:
+        "eaead1f9011b8968a76dadb5e37ed3bcd020f6f477484b24db1e259e88ebeaa2",
+      uncompressedTarSha256:
+        "504c991da1a6a9cf43db8658eb9b83917fbd054738a4a4a9c281fd1cd4a3b211",
+      buildAttestation:
+        "https://github.com/flowxo/agent-relay/attestations/40141535",
+      sbomAttestation:
+        "https://github.com/flowxo/agent-relay/attestations/40141561",
+      npmPublished: false,
+      githubReleaseCreated: false,
+      failure:
+        "cross-platform-gzip-operating-system-header-byte-changed-the-artifact-digest",
+    }),
+  "preserved alpha.1 failed-publication evidence differs",
 );
 assert(
   release.bundledComponentLicenseReview.status === "owner-approved" &&

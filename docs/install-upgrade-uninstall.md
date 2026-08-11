@@ -1,6 +1,6 @@
 # Install, upgrade, uninstall, and erase
 
-> **Current distribution:** locally packable `0.1.0-alpha.1` candidate; not
+> **Current distribution:** locally packable `0.1.0-alpha.2` candidate; not
 > published to npm
 >
 > **Verified target:** macOS on Apple silicon, Node.js 22, pnpm 11
@@ -41,14 +41,14 @@ pnpm package:lifecycle:check
 To retain the exact candidate tarball locally:
 
 ```sh
-pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.1.tgz
-tar -tzf .artifacts/agent-relay-0.1.0-alpha.1.tgz
+pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.2.tgz
+tar -tzf .artifacts/agent-relay-0.1.0-alpha.2.tgz
 ```
 
 Packing runs only the repository's deterministic staging build. It does not
-publish or change harness configuration. FXO-1568 makes the staged artifact
-registry-eligible while the workspace root remains `private`; only the bounded
-future FXO-1164 sequence may actually publish it.
+publish or change harness configuration. The staged artifact and workspace root
+remain `private`; FXO-1574 requires renewed exact-candidate approval before
+FXO-1164 may publish alpha.2.
 
 The automated proof installs the tarball with dependency lifecycle scripts
 disabled, explicitly rebuilds the reviewed SQLite native dependency, and runs
@@ -62,7 +62,7 @@ For a retained local installation from that exact tarball:
 mkdir -p .artifacts/local-install
 pnpm --dir .artifacts/local-install add \
   --ignore-scripts \
-  "$PWD/.artifacts/agent-relay-0.1.0-alpha.1.tgz"
+  "$PWD/.artifacts/agent-relay-0.1.0-alpha.2.tgz"
 pnpm --dir .artifacts/local-install rebuild better-sqlite3
 .artifacts/local-install/node_modules/.bin/agent-relay --version
 ```
