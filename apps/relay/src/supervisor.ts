@@ -393,6 +393,7 @@ export async function runSupervisor(
   const lateResumePolicy = deriveLateResumePolicy(
     options.harness,
     options.initialInvocation.args,
+    options.initialInvocation.executable,
   );
   const env = supervisedEnvironment(options.env ?? process.env, {
     machineId: options.machineId,

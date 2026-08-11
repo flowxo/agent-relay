@@ -312,14 +312,27 @@ supervisor:
 ~/.agent-relay/bin/agent-relay run claude \
   --harness-version 2.1.219 -- --print "work on the task"
 
+CURSOR_AGENT_EXACT="/absolute/path/to/approved/cursor-agent"
 ~/.agent-relay/bin/agent-relay run cursor \
-  --harness-version 2026.07.23-e383d2b -- --trust "work on the task"
+  --harness-version "$("$CURSOR_AGENT_EXACT" --version)" \
+  --executable "$CURSOR_AGENT_EXACT" \
+  --cwd "$PWD" \
+  -- --mode plan --sandbox enabled --trust --workspace "$PWD" -- \
+  "work on the task"
 ```
 
 Arguments after `--` are passed directly to the harness without a shell. The
 supervisor owns the child process, so it can report a non-zero exit or
 unexpected signal without guessing. A correlated answer can then start the
 harness's official resume command once the original child has exited.
+
+Cursor late resume reuses the exact initial executable and reconstructs only the
+allowlisted mode, sandbox, workspace, additional directories, trust, and force
+context. Keep the second `--` before the prompt; prompt text and unrelated
+credential, endpoint, model, plugin, and MCP arguments are never copied into the
+resume invocation. Use an immutable versioned executable or a fail-closed
+version-checking wrapper; a mutable `command -v` launcher is not exact-artifact
+proof.
 
 Agent Relay never calls inactivity a crash and does not automatically restart a
 silent process. Cursor IDE resume is also unsupported: an IDE stop hook cannot

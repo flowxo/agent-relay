@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveHookHarnessVersion, resolveWebEnabled } from "./cli-options.js";
+import {
+  resolveHookHarnessVersion,
+  resolveSupervisorExecutable,
+  resolveWebEnabled,
+} from "./cli-options.js";
 
 describe("hook harness version resolution", () => {
   it("prefers the live supervisor version over install-time hook metadata", () => {
@@ -81,5 +85,37 @@ describe("local web companion enablement", () => {
         disabledByFlag: false,
       }),
     ).toThrow("AGENT_RELAY_WEB_ENABLED");
+  });
+});
+
+describe("supervisor executable resolution", () => {
+  it("uses the explicit executable or the harness fallback", () => {
+    expect(resolveSupervisorExecutable([], "cursor-agent")).toBe(
+      "cursor-agent",
+    );
+    expect(
+      resolveSupervisorExecutable(
+        ["--executable", "/approved/cursor-agent"],
+        "cursor-agent",
+      ),
+    ).toBe("/approved/cursor-agent");
+  });
+
+  it("fails closed on missing, flag-shaped, empty, or duplicate values", () => {
+    for (const args of [
+      ["--executable"],
+      ["--executable", ""],
+      ["--executable", "--max-resumes", "1"],
+    ]) {
+      expect(() => resolveSupervisorExecutable(args, "cursor-agent")).toThrow(
+        "--executable requires a value",
+      );
+    }
+    expect(() =>
+      resolveSupervisorExecutable(
+        ["--executable", "/first", "--executable", "/second"],
+        "cursor-agent",
+      ),
+    ).toThrow("--executable may be provided only once");
   });
 });

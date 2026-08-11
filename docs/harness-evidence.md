@@ -64,11 +64,14 @@ command output. These fixtures do not invoke a model.
 
 Late-resume argv is derived from the initial invocation once. Codex defaults to
 `read-only` and retains an explicit sandbox or dangerous bypass; Claude defaults
-to `plan` and retains an explicit permission mode or dangerous bypass; Cursor
-retains workspace trust and `--force` only when the initial invocation had them.
-Codex's documented one-invocation hook-trust override is also retained so an
-approved headless resume continues to emit hooks. The answer is always a
-discrete argv value and is never shell-interpreted.
+to `plan` and retains an explicit permission mode or dangerous bypass. Cursor
+reuses the exact initial executable and retains only the allowlisted mode,
+sandbox, workspace, additional directories, workspace trust, and `--force`.
+Parsing stops at the initial option terminator, unrelated arguments are not
+copied, and the answer follows a generated option terminator. Codex's documented
+one-invocation hook-trust override is also retained so an approved headless
+resume continues to emit hooks. Every answer remains a discrete argv value and
+is never shell-interpreted.
 
 ## Telegram adapter observations
 

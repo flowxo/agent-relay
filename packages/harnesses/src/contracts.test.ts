@@ -328,13 +328,17 @@ describe("late resume capability", () => {
     });
     expect(deriveLateResumePolicy("cursor", ["--print"])).toEqual({
       harness: "cursor",
+      executable: "cursor-agent",
       force: false,
       trustWorkspace: false,
+      additionalDirectories: [],
     });
     expect(deriveLateResumePolicy("cursor", ["--print", "--force"])).toEqual({
       harness: "cursor",
+      executable: "cursor-agent",
       force: true,
       trustWorkspace: false,
+      additionalDirectories: [],
     });
     expect(
       buildLateResumeInvocation(
@@ -344,12 +348,231 @@ describe("late resume capability", () => {
         "continue",
         deriveLateResumePolicy("cursor", ["--print", "--trust"]),
       ).args,
-    ).toEqual(["--resume=session_12345678", "--print", "--trust", "continue"]);
+    ).toEqual([
+      "--resume=session_12345678",
+      "--print",
+      "--trust",
+      "--",
+      "continue",
+    ]);
     expect(deriveLateResumePolicy("cursor", ["--print", "--yolo"])).toEqual({
       harness: "cursor",
+      executable: "cursor-agent",
       force: true,
       trustWorkspace: false,
+      additionalDirectories: [],
     });
+  });
+
+  it("preserves Cursor read-only resume context without duplicating roots", () => {
+    const policy = deriveLateResumePolicy(
+      "cursor",
+      [
+        "--print",
+        "--plan",
+        "--sandbox=enabled",
+        "--trust",
+        "--workspace",
+        "/isolated/workspace",
+        "--add-dir=/workspace/repository",
+        "--add-dir",
+        "/workspace/repository",
+        "--add-dir",
+        "/workspace/secondary",
+      ],
+      "/approved/cursor-agent",
+    );
+
+    expect(policy).toEqual({
+      harness: "cursor",
+      executable: "/approved/cursor-agent",
+      force: false,
+      trustWorkspace: true,
+      mode: "plan",
+      sandbox: "enabled",
+      workspace: "/isolated/workspace",
+      additionalDirectories: ["/workspace/repository", "/workspace/secondary"],
+    });
+    expect(
+      buildLateResumeInvocation(
+        "cursor",
+        "cli",
+        "session_12345678",
+        "continue",
+        policy,
+      ),
+    ).toEqual({
+      executable: "/approved/cursor-agent",
+      args: [
+        "--resume=session_12345678",
+        "--print",
+        "--mode",
+        "plan",
+        "--sandbox",
+        "enabled",
+        "--workspace",
+        "/isolated/workspace",
+        "--add-dir",
+        "/workspace/repository",
+        "--add-dir",
+        "/workspace/secondary",
+        "--trust",
+        "--",
+        "continue",
+      ],
+    });
+  });
+
+  it("keeps answers and unrelated Cursor arguments out of resume authority", () => {
+    const policy = deriveLateResumePolicy(
+      "cursor",
+      [
+        "--print",
+        "--mode=ask",
+        "--sandbox=disabled",
+        "--api-key",
+        "private-value",
+        "--plugin-dir=/private/plugin",
+        "--",
+        "--force",
+      ],
+      "/approved/cursor-agent",
+    );
+    expect(policy).toEqual({
+      harness: "cursor",
+      executable: "/approved/cursor-agent",
+      force: false,
+      trustWorkspace: false,
+      mode: "ask",
+      sandbox: "disabled",
+      additionalDirectories: [],
+    });
+    const invocation = buildLateResumeInvocation(
+      "cursor",
+      "cli",
+      "session_12345678",
+      "--force",
+      policy,
+    );
+    expect(invocation.args).toEqual([
+      "--resume=session_12345678",
+      "--print",
+      "--mode",
+      "ask",
+      "--sandbox",
+      "disabled",
+      "--",
+      "--force",
+    ]);
+    expect(JSON.stringify(invocation)).not.toContain("private-value");
+    expect(JSON.stringify(invocation)).not.toContain("/private/plugin");
+  });
+
+  it("preserves Cursor force and workspace trust independently", () => {
+    const invocation = buildLateResumeInvocation(
+      "cursor",
+      "cli",
+      "session_12345678",
+      "continue",
+      deriveLateResumePolicy("cursor", ["--force", "--trust"]),
+    );
+    expect(invocation.args).toEqual([
+      "--resume=session_12345678",
+      "--print",
+      "--force",
+      "--trust",
+      "--",
+      "continue",
+    ]);
+    for (const args of [
+      ["-fp"],
+      ["-pf"],
+      ["-fH", "header-value"],
+      ["-fe", "endpoint-value"],
+      ["-fw"],
+      ["-pfH", "header-value"],
+    ]) {
+      expect(deriveLateResumePolicy("cursor", args)).toMatchObject({
+        force: true,
+      });
+    }
+    for (const args of [["-Hf"], ["-ef"], ["-wf"], ["-H", "-pf"]]) {
+      expect(deriveLateResumePolicy("cursor", args)).toMatchObject({
+        force: false,
+      });
+    }
+  });
+
+  it("does not reinterpret unrelated Cursor option values as authority", () => {
+    for (const args of [
+      ["--plugin-dir", "--sandbox=disabled"],
+      ["--model", "--force"],
+      ["--plugin-dir", "--mode=plan"],
+      ["--header", "--trust"],
+      ["--api-key", "-pf"],
+      ["-H", "--force"],
+      ["-e", "--sandbox=disabled"],
+    ]) {
+      expect(deriveLateResumePolicy("cursor", args)).toEqual({
+        harness: "cursor",
+        executable: "cursor-agent",
+        force: false,
+        trustWorkspace: false,
+        additionalDirectories: [],
+      });
+    }
+    expect(
+      deriveLateResumePolicy("cursor", ["--workspace", "--trust"]),
+    ).toEqual({
+      harness: "cursor",
+      executable: "cursor-agent",
+      force: false,
+      trustWorkspace: false,
+      workspace: "--trust",
+      additionalDirectories: [],
+    });
+  });
+
+  it("rejects conflicting or malformed Cursor resume context", () => {
+    expect(() =>
+      deriveLateResumePolicy("cursor", ["--plan", "--mode=ask"]),
+    ).toThrow("conflicting Cursor mode values");
+    expect(() =>
+      deriveLateResumePolicy("cursor", ["--mode=unsupported"]),
+    ).toThrow("unsupported Cursor mode");
+    expect(() =>
+      deriveLateResumePolicy("cursor", ["--sandbox=unknown"]),
+    ).toThrow("unsupported Cursor sandbox mode");
+    expect(() =>
+      deriveLateResumePolicy("cursor", [
+        "--sandbox=enabled",
+        "--sandbox=disabled",
+      ]),
+    ).toThrow("conflicting Cursor sandbox mode values");
+    expect(() => deriveLateResumePolicy("cursor", ["--mode"])).toThrow(
+      "Cursor mode requires a value",
+    );
+    expect(() =>
+      deriveLateResumePolicy("cursor", ["--mode", "--trust"]),
+    ).toThrow("unsupported Cursor mode");
+    expect(() =>
+      deriveLateResumePolicy("cursor", [
+        "--workspace=/first",
+        "--workspace=/second",
+      ]),
+    ).toThrow("conflicting Cursor workspace values");
+    expect(() => deriveLateResumePolicy("cursor", ["--add-dir="])).toThrow(
+      "Cursor additional directory requires a value",
+    );
+    expect(() => deriveLateResumePolicy("cursor", ["--workspace"])).toThrow(
+      "Cursor workspace requires a value",
+    );
+    expect(() => deriveLateResumePolicy("cursor", ["--future-option"])).toThrow(
+      "unsupported Cursor option",
+    );
+    expect(() => deriveLateResumePolicy("cursor", ["-z"])).toThrow(
+      "unsupported Cursor short option",
+    );
   });
 
   it("rejects Cursor IDE late resume explicitly", () => {

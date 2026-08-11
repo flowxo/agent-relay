@@ -184,8 +184,17 @@ closed:
   another mode;
 - Claude Code defaults to `plan` unless the initial argv selected another
   permission mode; and
-- Cursor preserves workspace trust and `--force` only when the initial argv
-  contained them.
+- Cursor reuses the exact initial executable and preserves only the allowlisted
+  execution context: `plan`/`ask` mode, sandbox mode, workspace, additional
+  directories, workspace trust, and `--force`. The operator answer follows an
+  option terminator so it cannot be reinterpreted as execution authority.
+
+Cursor resume context is parsed only before the initial option terminator.
+Credentials, endpoints, model selection, plugins, MCP approval, auto-review,
+prompts, and arbitrary arguments are never copied into a later invocation.
+Missing, unsupported, or conflicting allowlisted values and unrecognized option
+forms fail closed before the initial supervised child starts. This prevents an
+unknown option's value from being reinterpreted as resume authority.
 
 A claimed resume is at-most-once. If the supervisor dies after the durable claim
 but before process creation, the command remains visibly `claimed` for manual
