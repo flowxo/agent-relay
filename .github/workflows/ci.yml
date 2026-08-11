@@ -32,6 +32,8 @@ jobs:
       - run: pnpm contracts:preinstall
       - run: pnpm rebuild
       - run: pnpm check
+      - name: Build two identical release archives and report the exact digest
+        run: pnpm release:bundle
       - run: pnpm audit --prod
 
   browser-e2e:

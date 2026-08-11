@@ -48,6 +48,11 @@ pnpm release:bundle:verify
 pnpm release:evidence
 ```
 
+Pull-request and default-branch CI also build the exact bundle without uploading
+it and report the normalized archive SHA-256. Compare that Linux digest with the
+clean macOS result before seeking candidate approval. Only the protected tagged
+workflow uploads or attests release artifacts.
+
 On the supported Apple-silicon target, the separate native Node 22
 installed-artifact matrix uses `pnpm release:exit`; see the
 [release-readiness evaluation](release-readiness.md). The current attempt is

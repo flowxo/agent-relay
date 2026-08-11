@@ -121,6 +121,7 @@ for (const pattern of [
   /pnpm contracts:preinstall/,
   /pnpm rebuild/,
   /pnpm check/,
+  /pnpm release:bundle/,
   /pnpm audit --prod/,
   /pnpm test:e2e/,
   /timeout-minutes:/,
