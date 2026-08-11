@@ -123,6 +123,18 @@ assert(
   "native Node evidence pin differs",
 );
 assert(
+  JSON.stringify(boundary.runtime.nativeReleaseExit) ===
+    JSON.stringify({
+      targetReached: true,
+      exactFrozenHarnessSnapshotAvailable: false,
+      status: "failed-closed-no-installed-exact-frozen-harness",
+      green: false,
+      credited: false,
+      liveTrafficRun: false,
+    }),
+  "native release-exit failure boundary differs",
+);
+assert(
   boundary.runtime.hardware === "Apple silicon" &&
     JSON.stringify(boundary.runtime.nodeArchitectures) ===
       JSON.stringify(["arm64", "x64 through Rosetta"]) &&
@@ -146,7 +158,7 @@ for (const [label, checkSource] of [
 ]) {
   requireText(
     checkSource,
-    /isSupportedReleaseRuntime\(release, currentReleaseRuntime\(\)\)/,
+    /isSupportedReleaseRuntime\(\s*release,\s*currentReleaseRuntime\(\)\s*,?\s*\)/,
     `${label} proof does not enforce the shared OS, CPU, and Node support boundary`,
   );
 }
@@ -227,6 +239,7 @@ const notices = await source("THIRD_PARTY_NOTICES.md");
 const support = await source("SUPPORT.md");
 const readme = await source("README.md");
 const charter = await source("docs/product/open-source-v1-charter.md");
+const releaseNotes = await source("packaging/release-notes.md");
 const webhookDocumentation = await source("docs/outbound-webhooks.md");
 const webhookFixture = await json(
   "packages/webhook-transport/fixtures/webhook/delivery-v1.json",
@@ -240,6 +253,7 @@ const combinedReleaseDocs = [
   installation,
   changelog,
   charter,
+  releaseNotes,
 ].join("\n");
 
 for (const [pattern, message] of [
@@ -250,6 +264,18 @@ for (const [pattern, message] of [
   [
     /8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543/,
     "PR #40 proof digest is missing",
+  ],
+  [
+    /0adb7288483df331fbaaefb9b392ee2f4f3c7d84/,
+    "current frozen PR #41 merge is missing",
+  ],
+  [
+    /3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106/,
+    "PR #41 release-bundle proof digest is missing",
+  ],
+  [
+    /native release-exit is (?:\*\*)?not green/i,
+    "native release-exit non-green status is missing",
   ],
   [/SQLite schema (?:is |version )`?9`?/, "current SQLite schema is missing"],
   [/Cursor IDE late resume is unsupported/i, "Cursor IDE limit is missing"],

@@ -9,22 +9,26 @@ export function resolveHookHarnessVersion(options: {
   return preferred ?? "unknown";
 }
 
-const canaryCommands = new Set([
-  "canary",
-  "telegram-canary",
-  "whooshbang-canary",
-  "webhook-canary",
+const commandsWithDedicatedHelp = new Set([
+  "runner-bridge",
+  "transport",
+  "webhook",
+  "whooshbang",
 ]);
 
-export function isInertCanaryHelpRequest(
+export function isInertCommandHelpRequest(
   command: string | undefined,
   args: string[],
 ): boolean {
-  return (
-    command !== undefined &&
-    canaryCommands.has(command) &&
-    args.some((argument) => argument === "--help" || argument === "-h")
+  const separator = command === "run" ? args.indexOf("--") : -1;
+  const relayArguments = separator === -1 ? args : args.slice(0, separator);
+  const helpRequested = relayArguments.some(
+    (argument) => argument === "--help" || argument === "-h",
   );
+  const dedicatedHelpRequested =
+    commandsWithDedicatedHelp.has(command ?? "") &&
+    (args[0] === "--help" || args[0] === "-h");
+  return helpRequested && !dedicatedHelpRequested;
 }
 
 export function resolveWebEnabled(options: {

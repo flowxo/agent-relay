@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import {
+  chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -10,7 +13,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
 
@@ -20,6 +23,18 @@ import {
   isSupportedReleaseRuntime,
   stagedPackageIsPrivate,
 } from "./lib/release-policy.mjs";
+import {
+  packageProofToolEnvironment,
+  packedRuntimePathEntries,
+  safePackedRuntimeEnvironment,
+} from "./lib/safe-packed-environment.mjs";
+import {
+  assertCleanGit,
+  readGitBuildInfo,
+  releaseArtifactNames,
+  runtimeDependencyGraph,
+  verifyReleaseBundle,
+} from "./lib/release-bundle.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const packageSnapshot = JSON.parse(
@@ -32,9 +47,80 @@ const rootPackage = JSON.parse(
   await readFile(resolve(root, "package.json"), "utf8"),
 );
 assertReleaseConfiguration(release, rootPackage);
+let packageToolEnvironment = {};
+
+function flag(name) {
+  const index = process.argv.indexOf(name);
+  if (index === -1) {
+    return undefined;
+  }
+  const value = process.argv[index + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
+}
+
+const releaseBundleArgument = flag("--release-bundle");
+const evidenceOutputArgument = flag("--evidence-output");
+const knownArguments = new Set([
+  "--release-bundle",
+  releaseBundleArgument,
+  "--evidence-output",
+  evidenceOutputArgument,
+]);
+for (const argument of process.argv.slice(2)) {
+  if (!knownArguments.has(argument)) {
+    throw new Error(`unknown package-check argument: ${argument}`);
+  }
+}
+if (
+  (releaseBundleArgument === undefined) !==
+  (evidenceOutputArgument === undefined)
+) {
+  throw new Error(
+    "--release-bundle and --evidence-output must be provided together",
+  );
+}
+const expectedReleaseBundlePath = resolve(root, ".artifacts/release");
+const expectedEvidencePath = resolve(
+  root,
+  ".artifacts/release-evidence/agent-relay-public-candidate-evidence.json",
+);
+if (
+  releaseBundleArgument !== undefined &&
+  (resolve(root, releaseBundleArgument) !== expectedReleaseBundlePath ||
+    resolve(root, evidenceOutputArgument) !== expectedEvidencePath)
+) {
+  throw new Error(
+    "release evidence is constrained to the repository's exact ignored artifact paths",
+  );
+}
+
+let exactBundle;
+let exactGit;
+let inputTarball;
+if (releaseBundleArgument !== undefined) {
+  await assertCleanGit(root);
+  exactGit = await readGitBuildInfo(root);
+  const bundleDirectory = resolve(root, releaseBundleArgument);
+  exactBundle = await verifyReleaseBundle({
+    root,
+    release,
+    rootPackage,
+    directory: bundleDirectory,
+    expectedCommit: exactGit.commit,
+  });
+  inputTarball = resolve(
+    bundleDirectory,
+    releaseArtifactNames(release).tarball,
+  );
+}
 
 function sanitized(value, temporaryRoot) {
-  return value.replaceAll(temporaryRoot, "<isolated-package-check>");
+  return value
+    .replaceAll(temporaryRoot, "<isolated-package-check>")
+    .replaceAll(process.env.HOME ?? "\0", "<package-store-home>");
 }
 
 async function run(
@@ -42,7 +128,7 @@ async function run(
   args,
   {
     cwd = root,
-    env = process.env,
+    env = packageToolEnvironment,
     timeoutMs = 120_000,
     temporaryRoot = "",
   } = {},
@@ -65,7 +151,7 @@ async function run(
       child.kill("SIGTERM");
       reject(
         new Error(
-          `${executable} ${args.join(" ")} exceeded ${String(timeoutMs)}ms`,
+          `${sanitized(`${executable} ${args.join(" ")}`, temporaryRoot)} exceeded ${String(timeoutMs)}ms`,
         ),
       );
     }, timeoutMs);
@@ -75,6 +161,10 @@ async function run(
     });
     child.once("exit", (code, signal) => {
       clearTimeout(timer);
+      const command = sanitized(
+        `${executable} ${args.join(" ")}`,
+        temporaryRoot,
+      );
       const result = {
         code,
         signal,
@@ -85,9 +175,9 @@ async function run(
         reject(
           new Error(
             [
-              `${executable} ${args.join(" ")} failed (${String(code ?? signal)})`,
-              result.stdout,
-              result.stderr,
+              `${command} failed (${String(code ?? signal)})`,
+              sanitized(stdout, temporaryRoot),
+              sanitized(stderr, temporaryRoot),
             ]
               .filter((part) => part.length > 0)
               .join("\n"),
@@ -147,6 +237,12 @@ function parseJsonOutput(output, label) {
   }
 }
 
+async function fileSha256(path) {
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
+}
+
 async function freePort() {
   const server = createServer();
   await new Promise((resolvePromise, reject) => {
@@ -192,17 +288,56 @@ async function waitForHealth(baseUrl, daemon, timeoutMs = 15_000) {
   throw new Error("packed daemon did not become healthy within 15 seconds");
 }
 
+const supportedRuntime = isSupportedReleaseRuntime(
+  release,
+  currentReleaseRuntime(),
+);
+if (evidenceOutputArgument !== undefined && !supportedRuntime) {
+  throw new Error(
+    "public candidate evidence requires the frozen supported runtime; no partial evidence was written",
+  );
+}
 const temporaryRoot = await mkdtemp(
   resolve(tmpdir(), "agent-relay-package-check-"),
 );
+const packageToolHome = resolve(temporaryRoot, "package-tool-home");
+const packageUserConfig = resolve(packageToolHome, "empty-npmrc");
+await mkdir(packageToolHome, { recursive: true, mode: 0o700 });
+await writeFile(packageUserConfig, "", { encoding: "utf8", mode: 0o600 });
+packageToolEnvironment = packageProofToolEnvironment({
+  ambientEnvironment: process.env,
+  home: packageToolHome,
+  temporaryRoot,
+  userConfigPath: packageUserConfig,
+  overrides: {
+    npm_config_nodedir: resolve(dirname(process.execPath), ".."),
+    npm_config_offline: "true",
+  },
+});
 let daemon;
 let daemonOutput = "";
 try {
-  const tarball = resolve(temporaryRoot, "agent-relay.tgz");
-  await run("pnpm", ["pack", "--out", tarball], {
-    temporaryRoot,
-    timeoutMs: 180_000,
-  });
+  const runtimeDependencies = await runtimeDependencyGraph(root, release);
+  const dependencyOverrides = {};
+  for (const dependency of runtimeDependencies.packages) {
+    const tarball = resolve(
+      temporaryRoot,
+      `dependency-${dependency.name.replaceAll("/", "-").replace(/^@/, "")}-${dependency.version}.tgz`,
+    );
+    await run(
+      "pnpm",
+      ["--dir", dirname(dependency.manifestPath), "pack", "--out", tarball],
+      { temporaryRoot, timeoutMs: 180_000 },
+    );
+    dependencyOverrides[dependency.name] = `file:${tarball}`;
+  }
+  const tarball = inputTarball ?? resolve(temporaryRoot, "agent-relay.tgz");
+  if (inputTarball === undefined) {
+    await run("pnpm", ["pack", "--out", tarball], {
+      temporaryRoot,
+      timeoutMs: 180_000,
+    });
+  }
 
   const tarballSize = (await stat(tarball)).size;
   if (tarballSize > packageSnapshot.maxTarballBytes) {
@@ -300,13 +435,30 @@ try {
     [/sourceMappingURL=/, "source map reference"],
     [/\.env\.activation/, "private activation filename"],
     [/\b\d{6,12}:[A-Za-z0-9_-]{20,}\b/, "Telegram token shape"],
+    [
+      /AGENT_RELAY_(?:WEBHOOK_(?:URL|SECRET)|WHOOSHBANG_(?:BASE_URL|PROJECT_CREDENTIAL|PROJECT_SELECTOR|SUBSCRIBER_ID|NOTIFIER_ID))\s*=(?!=)\s*(?!["']?<)[^\s#]+/,
+      "populated private transport assignment",
+    ],
   ]) {
     if (pattern.test(combined)) {
       throw new Error(`packed content contains a forbidden ${label}`);
     }
   }
 
-  if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
+  let cleanHomeEvidence = {
+    status: "skipped-unsupported-runtime",
+    isolatedInstall: false,
+    cliHelp: false,
+    version: false,
+    capabilities: false,
+    fakeCanaryDelivered: 0,
+    fakeCanaryRetrying: 0,
+    fakeCanaryDeadLettered: 0,
+    webAssets: false,
+    authenticatedWebApi: false,
+  };
+
+  if (!supportedRuntime) {
     process.stdout.write(
       `Package content verified (${String(archivedFiles.length)} files, ${String(tarballSize)} packed bytes, ${String(unpackedSize)} unpacked bytes). Isolated runtime skipped outside the frozen ${process.platform}/${process.arch} Node.js ${process.versions.node} boundary.\n`,
     );
@@ -318,7 +470,23 @@ try {
     await mkdir(isolatedHome, { recursive: true, mode: 0o700 });
     await writeFile(
       resolve(prefix, "package.json"),
-      `${JSON.stringify({ name: "agent-relay-package-check", private: true })}\n`,
+      `${JSON.stringify({
+        name: "agent-relay-package-check",
+        private: true,
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      resolve(prefix, "pnpm-workspace.yaml"),
+      [
+        "packages: []",
+        "overrides:",
+        ...Object.entries(dependencyOverrides).map(
+          ([name, value]) =>
+            `  ${JSON.stringify(name)}: ${JSON.stringify(value)}`,
+        ),
+        "",
+      ].join("\n"),
       "utf8",
     );
     await run(
@@ -335,8 +503,19 @@ try {
     });
 
     const binary = resolve(prefix, "node_modules/.bin/agent-relay");
+    const stateDir = resolve(isolatedHome, ".agent-relay");
+    const packedEnvironment = safePackedRuntimeEnvironment({
+      home: isolatedHome,
+      pathEntries: packedRuntimePathEntries({
+        prefix,
+        systemPath: process.env.PATH ?? "/usr/bin:/bin",
+      }),
+      stateDirectory: stateDir,
+      temporaryRoot,
+      webEnabled: true,
+    });
     const help = await run(binary, ["--help"], {
-      env: { ...process.env, HOME: isolatedHome },
+      env: packedEnvironment,
       temporaryRoot,
     });
     if (
@@ -347,7 +526,7 @@ try {
       throw new Error("packed executable help output is incomplete");
     }
     const version = await run(binary, ["--version"], {
-      env: { ...process.env, HOME: isolatedHome },
+      env: packedEnvironment,
       temporaryRoot,
     });
     if (version.stdout.trim() !== release.version) {
@@ -356,7 +535,7 @@ try {
     const compatibility = parseJsonOutput(
       (
         await run(binary, ["capabilities"], {
-          env: { ...process.env, HOME: isolatedHome },
+          env: packedEnvironment,
           temporaryRoot,
         })
       ).stdout,
@@ -382,30 +561,17 @@ try {
 
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${String(port)}`;
-    const stateDir = resolve(isolatedHome, ".agent-relay");
-    const daemonEnvironment = {
-      ...process.env,
-      HOME: isolatedHome,
-      PATH: `${resolve(prefix, "node_modules/.bin")}${delimiter}${process.env.PATH ?? ""}`,
-      AGENT_RELAY_STATE_DIR: stateDir,
-      AGENT_RELAY_WEB_ENABLED: "1",
-    };
-    for (const name of [
-      "AGENT_RELAY_DAEMON_TOKEN",
-      "AGENT_RELAY_TELEGRAM_TOKEN",
-      "AGENT_RELAY_TELEGRAM_CHAT_ID",
-      "AGENT_RELAY_TELEGRAM_OPERATOR_ID",
-      "AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
-      "AGENT_RELAY_TELEGRAM_UPDATE_MODE",
-    ]) {
-      delete daemonEnvironment[name];
-    }
+    const daemonEnvironment = packedEnvironment;
 
-    daemon = spawn(binary, ["daemon", "--port", String(port)], {
-      cwd: isolatedHome,
-      env: daemonEnvironment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    daemon = spawn(
+      binary,
+      ["daemon", "--transport", "fake", "--port", String(port)],
+      {
+        cwd: isolatedHome,
+        env: daemonEnvironment,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     const captureDaemon = (chunk) => {
       daemonOutput = `${daemonOutput}${String(chunk)}`.slice(-128_000);
     };
@@ -462,6 +628,19 @@ try {
       "packed web API/assets are not version-compatible",
     );
 
+    cleanHomeEvidence = {
+      status: "passed",
+      isolatedInstall: true,
+      cliHelp: true,
+      version: true,
+      capabilities: true,
+      fakeCanaryDelivered: 1,
+      fakeCanaryRetrying: canaryResult.drain.retrying,
+      fakeCanaryDeadLettered: canaryResult.drain.deadLettered,
+      webAssets: true,
+      authenticatedWebApi: true,
+    };
+
     daemon.kill("SIGTERM");
     await new Promise((resolvePromise, reject) => {
       const timer = setTimeout(() => {
@@ -485,6 +664,149 @@ try {
 
     process.stdout.write(
       `Package verified (${String(archivedFiles.length)} files, ${String(tarballSize)} packed bytes, ${String(unpackedSize)} unpacked bytes): isolated install, CLI help, fake canary, web assets, and authenticated API passed.\n`,
+    );
+  }
+
+  if (
+    evidenceOutputArgument !== undefined &&
+    exactBundle !== undefined &&
+    exactGit !== undefined
+  ) {
+    const contentFiles = [];
+    let exactUnpackedBytes = 0;
+    for (const path of archivedFiles) {
+      const extractedPath = resolve(extractedPackage, path);
+      const metadata = await stat(extractedPath);
+      exactUnpackedBytes += metadata.size;
+      contentFiles.push({
+        path,
+        bytes: metadata.size,
+        sha256: await fileSha256(extractedPath),
+      });
+    }
+    const evidence = {
+      schema: "agent-relay-public-candidate-evidence.v1",
+      source: {
+        repository: "https://github.com/flowxo/agent-relay",
+        commit: exactGit.commit,
+        commitCreatedAt: exactGit.createdAt,
+        intendedTag: release.gitTag,
+        tagStatus: exactBundle.tagStatus,
+      },
+      package: {
+        name: release.name,
+        version: release.version,
+        artifact: exactBundle.artifact,
+        bytes: exactBundle.artifactBytes,
+        sha256: exactBundle.artifactSha256,
+        files: contentFiles.length,
+        unpackedBytes: exactUnpackedBytes,
+      },
+      releaseBundle: {
+        checksums: "SHA256SUMS",
+        sbom: exactBundle.sbom,
+        sbomPackages: exactBundle.sbomPackages,
+        sbomFiles: exactBundle.sbomFiles,
+        packageContents: exactBundle.packageContents,
+        releaseNotes: exactBundle.releaseNotes,
+        twoBuildsMatched: true,
+      },
+      runtime: {
+        platform: process.platform,
+        architecture: process.arch,
+        node: process.version,
+      },
+      isolation: {
+        cleanHome: true,
+        temporaryInstallPrefix: true,
+        credentialVariablesForwardedToPackedRuntime: false,
+        tarballDependencyResolution: "offline",
+        selectedTransport: "fake",
+        liveProviderTraffic: false,
+        liveTested: false,
+      },
+      cleanHome: cleanHomeEvidence,
+      provenance: {
+        localBundle: "unsigned-clean-commit",
+        signedGitHubAttestations: "not-produced-by-this-proof",
+      },
+      nativeReleaseExit: {
+        credited: false,
+        status: "not-run-by-this-proof",
+      },
+      limitations: [
+        "This credential-free proof is not a live-provider test.",
+        "This proof does not create a tag or signed GitHub provenance.",
+        "Native release-exit remains a separate exact-runtime and exact-harness gate.",
+        "Publication and the bundled WhooshBang license/notice decision remain owner-authorized gates.",
+      ],
+    };
+    const evidenceSource = `${JSON.stringify(evidence, null, 2)}\n`;
+    for (const [pattern, label] of [
+      [/\/Users\/[^/\s]+/, "machine-specific macOS path"],
+      [/[A-Za-z]:\\Users\\[^\\\s]+/i, "machine-specific Windows path"],
+      [/\b\d{6,12}:[A-Za-z0-9_-]{20,}\b/, "Telegram token shape"],
+      [/\bgh[pousr]_[A-Za-z0-9]{12,}\b/, "GitHub token shape"],
+      [
+        /"(?:answer|question|summary|transcript)"\s*:/i,
+        "message content field",
+      ],
+    ]) {
+      if (pattern.test(evidenceSource)) {
+        throw new Error(`public candidate evidence contains a ${label}`);
+      }
+    }
+    const evidencePath = expectedEvidencePath;
+    const evidenceDirectory = dirname(evidencePath);
+    const artifactsDirectory = resolve(root, ".artifacts");
+    try {
+      const artifactsMetadata = await lstat(artifactsDirectory);
+      if (
+        artifactsMetadata.isSymbolicLink() ||
+        !artifactsMetadata.isDirectory()
+      ) {
+        throw new Error(".artifacts must be a real directory");
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        throw error;
+      }
+      await mkdir(artifactsDirectory, { mode: 0o700 });
+    }
+    await rm(evidenceDirectory, { recursive: true, force: true });
+    await mkdir(evidenceDirectory, { mode: 0o700 });
+    await chmod(evidenceDirectory, 0o700);
+    await writeFile(evidencePath, evidenceSource, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await chmod(evidencePath, 0o600);
+    const evidenceChecksum = await fileSha256(evidencePath);
+    const evidenceChecksumsPath = resolve(evidenceDirectory, "SHA256SUMS");
+    await writeFile(
+      evidenceChecksumsPath,
+      `${evidenceChecksum}  ${basename(evidencePath)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+    await chmod(evidenceChecksumsPath, 0o600);
+    const evidenceFiles = (await readdir(evidenceDirectory)).sort();
+    if (
+      JSON.stringify(evidenceFiles) !==
+      JSON.stringify([basename(evidencePath), "SHA256SUMS"].sort())
+    ) {
+      throw new Error("public candidate evidence directory is not exact");
+    }
+    for (const path of [evidencePath, evidenceChecksumsPath]) {
+      const metadata = await lstat(path);
+      if (metadata.isSymbolicLink() || (metadata.mode & 0o777) !== 0o600) {
+        throw new Error("public candidate evidence file mode is not 0600");
+      }
+    }
+    if (((await lstat(evidenceDirectory)).mode & 0o777) !== 0o700) {
+      throw new Error("public candidate evidence directory mode is not 0700");
+    }
+    process.stdout.write(
+      `Public candidate evidence recorded (${cleanHomeEvidence.status}, fake transport, ${exactBundle.tagStatus}).\n`,
     );
   }
 } finally {

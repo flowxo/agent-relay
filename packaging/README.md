@@ -10,18 +10,39 @@ library API.
 > XO npm scope, public repository, protected environment, trusted publisher, and
 > first prerelease still require explicit approval.
 
-The intended `v0.1.0-alpha.1` tag has not been created. Tagging and publication
-are separate owner-authorized actions. Public distribution is also blocked until
-the bundled WhooshBang contracts and SDK receive an owner-approved distributable
-license and notice decision.
+The FXO-1162 freeze created or authorized no `v0.1.0-alpha.1` tag. Consult the
+release manifest for build-time tag state. Tagging and publication are separate
+owner-authorized actions. Public distribution is also blocked until the bundled
+WhooshBang contracts and SDK receive an owner-approved distributable license and
+notice decision.
 
 ## Supported target
 
 - macOS on Apple silicon
 - Node.js 22 or newer
 
-Native release-exit evidence uses exact Node.js 22.23.1. Windows, Linux, and
+The native release-exit target is exact Node.js 22.23.1. That gate is **not
+green**: it reached the arm64 Node target and then failed closed because no
+installed harness matched an exact frozen verified snapshot. Windows, Linux, and
 Intel macOS end-user runtimes are not claimed.
+
+## Safe onboarding order
+
+1. Evaluate the repository's release-readiness, support, privacy, and known
+   limitations; run the sanitized `web-demo` if useful.
+2. Inspect `agent-relay install --dry-run`, apply `agent-relay install`, and run
+   `agent-relay doctor`.
+3. Start the fake transport and require one durable fake canary delivery.
+4. Explicitly choose fake, direct Telegram, signed webhook, or WhooshBang.
+   Direct Telegram uses your own bot and needs no hosted Agent Relay account or
+   public server; WhooshBang remains optional.
+5. Start a supported harness normally or use `agent-relay run` when supervised
+   exit evidence is required.
+6. Reconcile upgrades with dry-run, owned install, an unchanged second install,
+   doctor, and fake canary. SQLite migrations are forward-only; use an older
+   binary only with an explicitly supported schema or a reviewed backup.
+7. Run owned uninstall before package removal. Erase the exact retained state
+   directory only as a separate, optional destructive action.
 
 Start with the credential-free local proof:
 
@@ -29,7 +50,7 @@ Start with the credential-free local proof:
 agent-relay --help
 agent-relay --version
 agent-relay capabilities
-agent-relay daemon
+agent-relay daemon --transport fake --no-web
 ```
 
 In another terminal:
@@ -141,10 +162,15 @@ poll, and acknowledgement work. After a disconnect or rotation, reconnect and
 restart explicitly. The exact mock-based packed proof remains credential-free.
 AR3 separately approved bounded hosted dogfood and reliability exit as
 `go with named residuals`. The retained live-reviewed alpha.1 tarball came from
-PR #39 and does not contain PR #40; PR #40 source passed a separate ephemeral
-packed proof that was not retained or live-tested. The repository's V1 release
-record freezes the exact commits and SHA-256 values. No live authorization
-carries forward.
+PR #39 and does not contain PR #40 or PR #41; PR #40 source passed a separate
+ephemeral packed proof that was not retained or live-tested. PR #41's distinct
+credential-free release bundle has SHA-256
+`3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
+bytes, 11 packed files, and six SPDX packages; it was not live-tested. The
+current frozen source after FXO-1161 is PR #41 merge
+`0adb7288483df331fbaaefb9b392ee2f4f3c7d84`. The repository's V1 release record
+freezes the exact commits and SHA-256 values. No live authorization carries
+forward.
 
 Before changing user-level harness configuration, inspect the exact plan:
 

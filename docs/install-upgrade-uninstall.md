@@ -115,10 +115,11 @@ agent-relay capabilities
 
 ## Start with the fake canary
 
-Leave Telegram credentials unset:
+Use an explicit fake override so a retained durable transport choice cannot
+contact a configured provider:
 
 ```sh
-node apps/relay/dist/cli.js daemon
+node apps/relay/dist/cli.js daemon --transport fake --no-web
 ```
 
 In another terminal:
@@ -164,6 +165,27 @@ database advertises a newer schema than the running package supports, Agent
 Relay refuses to open it and doctor reports `refusing unsafe downgrade`; use the
 newer package or restore a database backup instead of forcing the older binary.
 Arbitrary downgrade safety is not claimed.
+
+## Roll back a candidate
+
+Do not move or reuse a tag or semantic version. For a normal bad prerelease,
+stop the daemon and supervised processes, explicitly select `fake`, preserve the
+diagnostic IDs and a private database backup, and prefer a fixed forward
+version. Deprecate the affected registry version and mark its GitHub prerelease
+only after those owner-authorized artifacts exist; do not normally delete or
+unpublish it.
+
+Use an older binary only when its documented maximum SQLite schema includes the
+current database schema. Otherwise restore a reviewed private backup made before
+the migration. Never edit SQLite `user_version` to force a downgrade. After
+installing the selected artifact, repeat `doctor`, `install --dry-run`, owned
+install reconciliation, an unchanged second install, and the fake canary before
+choosing a network transport.
+
+If compromise is suspected, do not use the public issue tracker. Stop promotion,
+preserve the artifact and provenance evidence, and follow the private process in
+[SECURITY.md](../SECURITY.md). Maintainers then revoke or replace affected
+trust, deprecate the version, and issue a new version with corrected provenance.
 
 Runner-protocol vendor updates are source changes, not a substitute for this
 installed-package reconciliation. Check a producer candidate with

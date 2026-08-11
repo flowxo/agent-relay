@@ -7,10 +7,10 @@ GitHub environment, a public-repository check, and npm OIDC.
 
 The current `packaging/release.json` has `publication.approved: false` and
 `registryAction: blocked`. The staged package therefore remains private and
-`scripts/publish-release.mjs` refuses to contact the registry. The intended tag
-is recorded but has not been created. The frozen
-[V1 release boundary](v1-release-boundary.md) is a documentation/control record,
-not tag authorization.
+`scripts/publish-release.mjs` refuses to contact the registry. The FXO-1162
+freeze created or authorized no tag; generated manifests record build-time tag
+state. The frozen [V1 release boundary](v1-release-boundary.md) is a
+documentation/control record, not tag authorization.
 
 ## Release inputs
 
@@ -42,30 +42,47 @@ From the clean commit, run:
 ```sh
 pnpm release:bundle
 pnpm release:bundle:verify
+pnpm release:evidence
 ```
 
-On the supported Apple-silicon target, complete the separate native Node 22
-installed-artifact matrix with `pnpm release:exit`; see the
-[release-readiness evaluation](release-readiness.md). That command publishes
-nothing.
+On the supported Apple-silicon target, the separate native Node 22
+installed-artifact matrix uses `pnpm release:exit`; see the
+[release-readiness evaluation](release-readiness.md). The current attempt is
+**not green**: it reached exact arm64 Node.js 22.23.1, then failed closed
+because no installed harness matched an exact frozen verified snapshot. Do not
+widen support or run live traffic merely to remove that limitation. The command
+publishes nothing.
 
 The builder rebuilds and packs twice with the commit timestamp as
 `SOURCE_DATE_EPOCH`, then rejects different SHA-256 digests. It emits only:
 
 ```text
 .artifacts/release/
+├── RELEASE_NOTES.md
 ├── SHA256SUMS
 ├── agent-relay-release.json
 ├── flowxo-agent-relay-<version>.spdx.json
+├── package-contents.json
 └── flowxo-agent-relay-<version>.tgz
 ```
 
 The SPDX 2.3 SBOM binds to the tarball SHA-256, inventories every packed file
 with SHA-1 and SHA-256, includes the exact runtime dependency closure, and
 records the bundled WhooshBang contracts/SDK components and their source archive
-checksums. The release manifest records the exact commit, commit time, intended
-tag, package identity, package manager, source-input paths/digests, artifact and
-SBOM digests/sizes, and two-build match.
+checksums. `package-contents.json` independently records every exact packed
+path, byte size, and SHA-256. `RELEASE_NOTES.md` is copied from the reviewed
+source. The release manifest records the exact commit, commit time, intended
+tag, whether that tag existed at build time, package identity, package manager,
+source-input paths/digests, artifact/SBOM/content/note digests and sizes, and
+the two-build match.
+
+`pnpm release:evidence` re-verifies that exact clean-commit bundle, installs its
+tarball into an isolated home and prefix, and proves help, version,
+capabilities, the fake canary, web assets, and authenticated loopback API
+without forwarding provider credentials to the installed runtime. Its ignored
+mode-`0600` JSON and checksum live under `.artifacts/release-evidence/`. This is
+credential-free evidence, not a live provider test or a replacement for native
+release-exit.
 
 `SHA256SUMS` and the manifest are integrity metadata, not signed provenance.
 Signed provenance comes from the GitHub attestation job described below.
@@ -88,7 +105,7 @@ The workflow:
 1. checks out the full tagged commit without persisted Git credentials;
 2. performs the frozen scripts-disabled install and approved native rebuild;
 3. runs `pnpm check`, packaged Chromium E2E, and the production audit;
-4. produces the reproducible four-file bundle;
+4. produces the reproducible six-file bundle;
 5. uploads the bundle for 14 days; and
 6. grants OIDC/attestation write permissions only to a separate attestation job.
 
@@ -120,7 +137,7 @@ verification is meaningful only after the signed job ran.
 ## GitHub prerelease procedure
 
 Create a draft GitHub prerelease from the exact tag. Do not rebuild or replace
-an asset from a laptop. Attach the four workflow artifacts and record:
+an asset from a laptop. Attach the six workflow artifacts and record:
 
 - package name, semantic prerelease version, tag, and exact commit;
 - all artifact filenames and the `SHA256SUMS` content;

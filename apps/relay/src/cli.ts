@@ -5,6 +5,7 @@ import { realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   CompositeLogger,
@@ -24,6 +25,8 @@ import { RelayClient } from "./client.js";
 import {
   INTERACTIVE_CANARY_DEFAULT_REQUEST_TTL_MS,
   INTERACTIVE_CANARY_DEFAULT_WAIT_MS,
+  assertFakeCanaryReady,
+  canaryOutcomeExitCode,
   isWhooshBangCanaryAcknowledged,
   runFakeCanary,
   runTelegramCanary,
@@ -31,7 +34,7 @@ import {
   runWhooshBangCanary,
 } from "./canary.js";
 import {
-  isInertCanaryHelpRequest,
+  isInertCommandHelpRequest,
   resolveHookHarnessVersion,
   resolveSupervisorExecutable,
   resolveWebEnabled,
@@ -71,6 +74,7 @@ import {
   telegramReadinessInputFromEnvironment,
 } from "./transport-command.js";
 import {
+  fakeOnlyTransportReadiness,
   inspectTransportReadiness,
   resolveTransportSelection,
 } from "./transport-config.js";
@@ -95,7 +99,7 @@ Commands:
   maintain           Apply retention policy
   install            Install or reconcile user-level harness hooks
   uninstall          Remove only Agent Relay-owned hooks and launcher
-  doctor             Diagnose local installation; --live checks the daemon
+  doctor             Diagnose installation; --live checks WhooshBang evidence
   capabilities       Print the generated harness capability registry
   canary             Prove the local fake-transport delivery loop
   telegram-canary    Prove a configured direct-Telegram reply loop
@@ -106,18 +110,16 @@ Commands:
   runner-bridge      Inspect or select the experimental runner bridge
   transport          Select a notification transport
 
-Canary command --help and -h requests are inert: they print this usage without
-checking a daemon, creating an event, or contacting a provider. Agent Relay
-currently supports macOS on Apple silicon with Node.js 22 or newer.
+Every command's --help and -h requests are inert: they print this usage without
+changing local state, checking a daemon, creating an event, or contacting a
+provider. Agent Relay currently supports macOS on Apple silicon with Node.js 22
+or newer.
 `;
 
 function environment(name: string): string | undefined {
   const value = process.env[name];
   return value === undefined || value.length === 0 ? undefined : value;
 }
-
-const stateDir =
-  environment("AGENT_RELAY_STATE_DIR") ?? join(homedir(), ".agent-relay");
 
 function flag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
@@ -210,8 +212,10 @@ function installEntryPath(args: string[]): string {
   return currentEntry;
 }
 
-async function main(): Promise<void> {
-  const [command, ...args] = process.argv.slice(2);
+export async function main(
+  commandArguments = process.argv.slice(2),
+): Promise<void> {
+  const [command, ...args] = commandArguments;
   if (
     command === undefined ||
     command === "help" ||
@@ -225,13 +229,23 @@ async function main(): Promise<void> {
     process.stdout.write(`${AGENT_RELAY_VERSION}\n`);
     return;
   }
-  if (isInertCanaryHelpRequest(command, args)) {
+  if (isInertCommandHelpRequest(command, args)) {
     process.stdout.write(USAGE);
     return;
   }
+  const stateDir =
+    environment("AGENT_RELAY_STATE_DIR") ?? join(homedir(), ".agent-relay");
   if (command === "daemon" || command === "web-demo") {
     const demo = command === "web-demo";
     const commandStateDir = demo ? join(stateDir, "web-demo") : stateDir;
+    if (
+      demo &&
+      ["--db", "--host", "--log"].some((option) => args.includes(option))
+    ) {
+      throw new Error(
+        "web-demo fixes its database, log, and host inside the loopback demo boundary",
+      );
+    }
     const transportFlagCount = args.filter(
       (argument) => argument === "--transport",
     ).length;
@@ -266,14 +280,17 @@ async function main(): Promise<void> {
             ? {}
             : { environmentOverride: transportEnvironment }),
         });
-    const transportReadiness = await inspectTransportReadiness({
-      selection: transportSelection,
-      stateDirectory: commandStateDir,
-      telegram: telegramReadinessInputFromEnvironment(process.env),
-      webhookEnvironment: process.env,
-    });
-    const databasePath =
-      flag(args, "--db") ?? join(commandStateDir, "relay.sqlite");
+    const transportReadiness = demo
+      ? fakeOnlyTransportReadiness(transportSelection)
+      : await inspectTransportReadiness({
+          selection: transportSelection,
+          stateDirectory: commandStateDir,
+          telegram: telegramReadinessInputFromEnvironment(process.env),
+          webhookEnvironment: process.env,
+        });
+    const databasePath = demo
+      ? join(commandStateDir, "relay.sqlite")
+      : (flag(args, "--db") ?? join(commandStateDir, "relay.sqlite"));
     const runnerBridgeConfiguration = demo
       ? undefined
       : await readRunnerBridgeConfiguration(
@@ -361,9 +378,11 @@ async function main(): Promise<void> {
     const daemonLogger = new CompositeLogger([
       stderrLogger,
       new RotatingFileLogger(
-        flag(args, "--log") ??
-          environment("AGENT_RELAY_LOG_PATH") ??
-          join(commandStateDir, "relay.ndjson"),
+        demo
+          ? join(commandStateDir, "relay.ndjson")
+          : (flag(args, "--log") ??
+              environment("AGENT_RELAY_LOG_PATH") ??
+              join(commandStateDir, "relay.ndjson")),
         {
           maxBytes: integerFlag(
             args,
@@ -408,7 +427,7 @@ async function main(): Promise<void> {
       selectedTransport: transportSelection.selected,
       transportSelection,
       transportReadiness,
-      host: flag(args, "--host") ?? "127.0.0.1",
+      host: demo ? "127.0.0.1" : (flag(args, "--host") ?? "127.0.0.1"),
       port: Number(flag(args, "--port") ?? (demo ? "4318" : "4317")),
       ...(daemonToken === undefined ? {} : { token: daemonToken }),
       ...(telegramToken === undefined ? {} : { telegramToken }),
@@ -863,13 +882,15 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "canary" || command === "webhook-canary") {
+    const daemonStatus = await client.status();
     if (command === "webhook-canary") {
-      const daemonStatus = await client.status();
       if (daemonStatus.selectedTransport !== "webhook") {
         throw new Error(
           "webhook-canary requires a daemon using the webhook transport",
         );
       }
+    } else {
+      assertFakeCanaryReady(daemonStatus);
     }
     await mkdir(stateDir, { recursive: true, mode: 0o700 });
     const machineId =
@@ -910,9 +931,7 @@ async function main(): Promise<void> {
     } as const;
     const result = await runFakeCanary({ client, event });
     output(result);
-    if (command === "webhook-canary" && result.outcome !== "delivered") {
-      process.exitCode = 1;
-    }
+    process.exitCode = canaryOutcomeExitCode(result.outcome);
     return;
   }
   if (command === "telegram-canary") {
@@ -1064,7 +1083,7 @@ async function main(): Promise<void> {
   process.exitCode = 2;
 }
 
-void main().catch((error: unknown) => {
+function reportMainError(error: unknown): void {
   const errorCode =
     typeof error === "object" &&
     error !== null &&
@@ -1081,4 +1100,13 @@ void main().catch((error: unknown) => {
     })}\n`,
   );
   process.exitCode = 1;
-});
+}
+
+const invokedEntry = process.argv[1];
+if (
+  invokedEntry !== undefined &&
+  realpathSync(resolve(invokedEntry)) ===
+    realpathSync(fileURLToPath(import.meta.url))
+) {
+  void main().catch(reportMainError);
+}

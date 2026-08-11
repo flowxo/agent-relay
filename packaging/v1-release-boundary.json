@@ -12,6 +12,11 @@
     "reviewedHead": "9a5e6a68609e3764ba5198c350528254bd37da62",
     "mergeCommit": "eb5ae1316949f5053c6ae64fdf6d624243e2b2ee"
   },
+  "currentFrozenSourceAfterFXO1161": {
+    "pullRequest": 41,
+    "reviewedHead": "875e5631ad45bbeb86c377e73dabe4d616b46413",
+    "mergeCommit": "0adb7288483df331fbaaefb9b392ee2f4f3c7d84"
+  },
   "sourceInputs": {
     "packageManager": "pnpm@11.17.0",
     "lockfile": {
@@ -26,6 +31,14 @@
     "nodeArchitectures": ["arm64", "x64 through Rosetta"],
     "nodeRange": ">=22",
     "nativeReleaseExitNode": "22.23.1",
+    "nativeReleaseExit": {
+      "targetReached": true,
+      "exactFrozenHarnessSnapshotAvailable": false,
+      "status": "failed-closed-no-installed-exact-frozen-harness",
+      "green": false,
+      "credited": false,
+      "liveTrafficRun": false
+    },
     "unsupportedEndUserClaims": ["Windows", "Linux", "Intel macOS"]
   },
   "installerAndState": {
@@ -222,6 +235,7 @@
       "reviewedHead": "4ba4b1fbd832c34f465cd40f199e5c1dac7ed890",
       "mergeCommit": "85d2d0a1f8649bf4359031227d1b9b844208cc15",
       "containsPullRequest40": false,
+      "containsPullRequest41": false,
       "liveTested": true,
       "retained": true
     },
@@ -230,6 +244,16 @@
       "containsPullRequest40": true,
       "liveTested": false,
       "retained": false
+    },
+    "pullRequest41CredentialFreeReleaseBundleProof": {
+      "sha256": "3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106",
+      "bytes": 277069,
+      "files": 11,
+      "spdxPackages": 6,
+      "containsPullRequest40": true,
+      "containsPullRequest41": true,
+      "liveTested": false,
+      "nativeReleaseExitGreen": false
     }
   },
   "knownLimitations": [
@@ -246,5 +270,5 @@
     "Explicit owner authorization is required for a tag, package, release, registry action, or repository promotion.",
     "The bundled WhooshBang contracts and SDK require an owner-approved distributable license and notice decision before publication."
   ],
-  "finalArtifactEvidence": "The clean reviewed release commit is bound later by the generated release manifest, SHA256SUMS, SPDX SBOM, and CI provenance; no final artifact or tag is asserted by this source file."
+  "finalArtifactEvidence": "The clean reviewed release commit is bound later by the generated package-content snapshot, release notes, release manifest, SHA256SUMS, SPDX SBOM, sanitized clean-home evidence, and any separately authorized CI provenance; no final artifact, tag, or signed provenance is asserted by this source file."
 }

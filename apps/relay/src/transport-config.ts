@@ -97,6 +97,48 @@ export interface TransportReadinessReport {
   };
 }
 
+export function fakeOnlyTransportReadiness(
+  selection: ResolvedTransportSelection,
+): TransportReadinessReport {
+  if (selection.selected !== "fake") {
+    throw new Error("fake-only readiness requires the fake transport");
+  }
+  return {
+    schema: "agent-relay-transport-readiness.v1",
+    selectedTransport: "fake",
+    selection,
+    transports: {
+      fake: { ready: true },
+      whooshbang: {
+        binding: "unavailable",
+        configured: false,
+        credentialPermissions: "unavailable",
+        credentialPresent: false,
+        issueCodes: ["whooshbang-not-configured"],
+        pendingRevocations: 0,
+        ready: false,
+        resolutionPresentation: "unsupported-in-pinned-contract",
+      },
+      telegram: {
+        configured: "none",
+        deliveryReady: false,
+        issueCodes: ["telegram-not-configured"],
+        replyReady: false,
+        ready: false,
+        updateMode: "poll",
+        webhookReady: true,
+      },
+      webhook: {
+        configured: false,
+        issueCodes: ["webhook-not-configured"],
+        ready: false,
+        secretPresent: false,
+        source: "none",
+      },
+    },
+  };
+}
+
 export interface TelegramReadinessInput {
   chatId?: string;
   operatorId?: string;

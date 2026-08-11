@@ -84,11 +84,11 @@ environment. The command arguments and output then contain no provider or
 subscriber identity:
 
 ```sh
-export AGENT_RELAY_WHOOSHBANG_BASE_URL=https://whooshbang.example.test
-export AGENT_RELAY_WHOOSHBANG_PROJECT_SELECTOR=private_project_selector
+export AGENT_RELAY_WHOOSHBANG_BASE_URL='<WhooshBang-base-URL>'
+export AGENT_RELAY_WHOOSHBANG_PROJECT_SELECTOR='<project-selector>'
 export AGENT_RELAY_WHOOSHBANG_ENVIRONMENT=test
-export AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID=private_synthetic_subscriber
-export AGENT_RELAY_WHOOSHBANG_NOTIFIER_ID=private_notifier
+export AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID='<subscriber-id>'
+export AGENT_RELAY_WHOOSHBANG_NOTIFIER_ID='<notifier-id>'
 node apps/relay/dist/cli.js whooshbang connect
 ```
 
@@ -143,6 +143,10 @@ node apps/relay/dist/cli.js whooshbang-canary \
   --request-ttl-ms 300000
 node apps/relay/dist/cli.js doctor --live
 ```
+
+`doctor --live` is the WhooshBang-specific running-daemon evidence check; use
+plain `doctor` for fake, direct Telegram, and webhook installation/readiness
+diagnosis.
 
 The canary succeeds only when the reply arrives through WhooshBang, matches the
 fixed synthetic challenge, resolves exactly once locally, and the daemon proves
@@ -441,9 +445,11 @@ skip only the native installed-runtime portion.
 
 AR3 completed hosted dogfood and reliability exit with
 `go with named residuals`. The retained live-reviewed package came from PR #39
-and does not contain PR #40. PR #40 source separately passed credential-free
-packed proof; its ephemeral package was neither retained nor live-tested. The
-exact heads, merges, and SHA-256 values are frozen in the
+and does not contain PR #40 or PR #41. PR #40 source separately passed
+credential-free packed proof; its ephemeral package was neither retained nor
+live-tested. PR #41's distinct credential-free release bundle was also not
+live-tested, and native release-exit remains non-green. The exact heads, merges,
+and SHA-256 values are frozen in the
 [V1 release record](v1-release-boundary.md). No live authorization carries
 forward, and this evidence does not authorize another provider observation.
 

@@ -79,13 +79,16 @@ pnpm test:e2e
 pnpm audit --prod
 pnpm release:bundle
 pnpm release:bundle:verify
+pnpm release:evidence
+# Separate native gate; currently expected to fail closed without an exact
+# installed frozen harness snapshot:
 pnpm release:exit
 ```
 
 `pnpm release:exit` does not publish, tag, edit the real user home, or forward
 credential environment variables. It:
 
-1. requires a clean git tree and a four-file bundle bound to `HEAD`;
+1. requires a clean git tree and a six-file bundle bound to `HEAD`;
 2. verifies the artifact, checksums, exact commit, SPDX file inventory, and
    runtime dependency records;
 3. downloads or reuses the exact hash-verified Node.js 22.23.1 native arm64
@@ -120,24 +123,28 @@ before a release claims GitHub build/SBOM attestations.
 
 ## Recorded release evidence
 
-The native lifecycle matrix completed on macOS with official Node.js 22.23.1
-`darwin/arm64`. AR3 subsequently approved hosted dogfood and reliability exit
-evidence as `go with named residuals`; required repository checks and browser
-E2E passed on PR #40 reviewed head and its merge commit. No Critical or High
-Agent Relay boundary finding remains open.
+Native release-exit is **not green**. It reached official Node.js 22.23.1
+`darwin/arm64`, then failed closed because the machine did not have any harness
+installed at an exact frozen verified snapshot. Do not credit it as a completed
+lifecycle matrix, widen support, or run live traffic merely to remove this
+limitation.
 
-Doctor observed exact verified Codex `0.145.0` and Cursor `2026.07.23-e383d2b`
-records. Installed Claude Code `2.1.220` correctly remained
-`compatible-unverified` against the last live-proven `2.1.219` record rather
-than silently widening support.
+AR3 approved hosted dogfood and reliability exit evidence as
+`go with named residuals`; required repository checks and browser E2E passed on
+PR #40 and PR #41 reviewed heads and their merge commits. No Critical or High
+Agent Relay boundary finding remains open.
 
 The exact retained live-reviewed `@flowxo/agent-relay@0.1.0-alpha.1` tarball has
 SHA-256 `654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198`. It
-came from PR #39 and does **not** contain PR #40. PR #40 source separately
-passed credential-free packed proof with ephemeral package SHA-256
+came from PR #39 and does **not** contain PR #40 or PR #41. PR #40 source
+separately passed credential-free packed proof with ephemeral package SHA-256
 `8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543`; that package
-was neither retained nor live-tested. See the
-[V1 release record](v1-release-boundary.md) for exact heads and merges.
+was neither retained nor live-tested. PR #41's separate clean-commit
+credential-free release-bundle proof has SHA-256
+`3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
+bytes, 11 packed files, and six SPDX packages; it was not live-tested. The
+current frozen PR #41 merge is `0adb7288483df331fbaaefb9b392ee2f4f3c7d84`. See
+the [V1 release record](v1-release-boundary.md) for exact heads and merges.
 Publication, tagging, and signed release provenance were not attempted.
 
 ## How to diagnose
@@ -211,7 +218,8 @@ session launched with every ambient hook disabled. Exact hook-denied isolation
 and aggregate attribution mitigate this limitation, and contaminated windows
 fail closed. No live-card authorization carries forward.
 
-The intended `v0.1.0-alpha.1` tag has not been created. This evaluation does not
-publish, tag, promote, contact live providers, or authorize any of those
-actions. The bundled WhooshBang contracts and SDK also require an owner-approved
-distributable license and notice decision before public publication.
+The FXO-1162 evaluation created or authorized no `v0.1.0-alpha.1` tag; generated
+manifests record build-time tag state. This evaluation does not publish, tag,
+promote, contact live providers, or authorize any of those actions. The bundled
+WhooshBang contracts and SDK also require an owner-approved distributable
+license and notice decision before public publication.

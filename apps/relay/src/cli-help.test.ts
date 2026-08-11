@@ -1,17 +1,16 @@
-import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { main } from "./cli.js";
 
 const temporaryDirectories: string[] = [];
-const cliPath = fileURLToPath(new URL("./cli.ts", import.meta.url));
-const repositoryRoot = resolve(dirname(cliPath), "../../..");
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     temporaryDirectories.splice(0).map(async (directory) => {
       await rm(directory, { recursive: true, force: true });
@@ -19,49 +18,61 @@ afterEach(async () => {
   );
 });
 
-describe("canary CLI help boundary", () => {
-  for (const command of [
-    "canary",
-    "telegram-canary",
-    "whooshbang-canary",
-    "webhook-canary",
-  ]) {
-    for (const helpFlag of ["--help", "-h"]) {
-      it(`keeps ${command} ${helpFlag} inert`, async () => {
-        const root = await mkdtemp(join(tmpdir(), "agent-relay-help-"));
-        temporaryDirectories.push(root);
-        const stateDirectory = join(root, "state");
-        const result = spawnSync(
-          process.execPath,
-          [
-            "--conditions=development",
-            "--import",
-            "tsx",
-            cliPath,
-            command,
-            helpFlag,
-          ],
-          {
-            cwd: repositoryRoot,
-            encoding: "utf8",
-            env: {
-              ...process.env,
-              AGENT_RELAY_DAEMON_URL: "http://127.0.0.1:1",
-              AGENT_RELAY_STATE_DIR: stateDirectory,
-              NO_COLOR: "1",
-            },
-            timeout: 10_000,
-          },
-        );
+describe("CLI help boundary", () => {
+  it("keeps every top-level help flag inert", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-relay-help-"));
+    temporaryDirectories.push(root);
+    const stateDirectory = join(root, "state");
+    const originalStateDirectory = process.env["AGENT_RELAY_STATE_DIR"];
+    process.env["AGENT_RELAY_STATE_DIR"] = stateDirectory;
+    const output = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
 
-        expect(result.error).toBeUndefined();
-        expect(result.signal).toBeNull();
-        expect(result.status).toBe(0);
-        expect(result.stdout).toContain("Agent Relay");
-        expect(result.stdout).toContain("Usage:");
-        expect(result.stderr).toBe("");
+    try {
+      for (const command of [
+        "daemon",
+        "web-demo",
+        "hook",
+        "run",
+        "status",
+        "drain",
+        "replay-fallback",
+        "maintain",
+        "install",
+        "uninstall",
+        "doctor",
+        "capabilities",
+        "canary",
+        "telegram-canary",
+        "whooshbang-canary",
+        "webhook-canary",
+        "webhook",
+        "whooshbang",
+        "runner-bridge",
+        "transport",
+      ]) {
+        for (const helpFlag of ["--help", "-h"]) {
+          output.mockClear();
+          await main([command, helpFlag]);
+          expect(output).toHaveBeenCalledTimes(1);
+          expect(String(output.mock.calls[0]?.[0])).toContain("Usage:");
+          expect(existsSync(stateDirectory)).toBe(false);
+        }
+      }
+
+      for (const helpFlag of ["--help", "-h"]) {
+        output.mockClear();
+        await main([helpFlag]);
+        expect(String(output.mock.calls[0]?.[0])).toContain("Usage:");
         expect(existsSync(stateDirectory)).toBe(false);
-      });
+      }
+    } finally {
+      if (originalStateDirectory === undefined) {
+        delete process.env["AGENT_RELAY_STATE_DIR"];
+      } else {
+        process.env["AGENT_RELAY_STATE_DIR"] = originalStateDirectory;
+      }
     }
-  }
+  });
 });

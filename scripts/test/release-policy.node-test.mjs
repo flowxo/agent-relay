@@ -114,6 +114,8 @@ test("accepts an exact blocked prerelease configuration", () => {
   assert.deepEqual(releaseArtifactNames(release), {
     tarball: "flowxo-agent-relay-0.1.0-alpha.1.tgz",
     sbom: "flowxo-agent-relay-0.1.0-alpha.1.spdx.json",
+    packageContents: "package-contents.json",
+    releaseNotes: "RELEASE_NOTES.md",
     manifest: "agent-relay-release.json",
     checksums: "SHA256SUMS",
   });

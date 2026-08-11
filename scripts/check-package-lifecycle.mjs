@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
 
@@ -20,14 +20,23 @@ import {
   currentReleaseRuntime,
   isSupportedReleaseRuntime,
 } from "./lib/release-policy.mjs";
+import {
+  packageProofToolEnvironment,
+  packedRuntimePathEntries,
+  safePackedRuntimeEnvironment,
+} from "./lib/safe-packed-environment.mjs";
+import { runtimeDependencyGraph } from "./lib/release-bundle.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const release = JSON.parse(
   await readFile(resolve(root, "packaging/release.json"), "utf8"),
 );
+let packageToolEnvironment = {};
 
 function sanitized(value, temporaryRoot) {
-  return value.replaceAll(temporaryRoot, "<isolated-lifecycle-check>");
+  return value
+    .replaceAll(temporaryRoot, "<isolated-lifecycle-check>")
+    .replaceAll(process.env.HOME ?? "\0", "<package-store-home>");
 }
 
 async function run(
@@ -35,7 +44,7 @@ async function run(
   args,
   {
     cwd = root,
-    env = process.env,
+    env = packageToolEnvironment,
     expectedCodes = [0],
     timeoutMs = 120_000,
     temporaryRoot = "",
@@ -59,7 +68,7 @@ async function run(
       child.kill("SIGTERM");
       reject(
         new Error(
-          `${executable} ${args.join(" ")} exceeded ${String(timeoutMs)}ms`,
+          `${sanitized(`${executable} ${args.join(" ")}`, temporaryRoot)} exceeded ${String(timeoutMs)}ms`,
         ),
       );
     }, timeoutMs);
@@ -69,6 +78,10 @@ async function run(
     });
     child.once("exit", (code, signal) => {
       clearTimeout(timer);
+      const command = sanitized(
+        `${executable} ${args.join(" ")}`,
+        temporaryRoot,
+      );
       const result = {
         code,
         signal,
@@ -79,9 +92,9 @@ async function run(
         reject(
           new Error(
             [
-              `${executable} ${args.join(" ")} failed (${String(code ?? signal)})`,
-              result.stdout,
-              result.stderr,
+              `${command} failed (${String(code ?? signal)})`,
+              sanitized(stdout, temporaryRoot),
+              sanitized(stderr, temporaryRoot),
             ]
               .filter((part) => part.length > 0)
               .join("\n"),
@@ -176,11 +189,15 @@ let daemonOutput = "";
 async function startDaemon(binary, isolatedHome, environment) {
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
-  activeDaemon = spawn(binary, ["daemon", "--port", String(port)], {
-    cwd: isolatedHome,
-    env: environment,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  activeDaemon = spawn(
+    binary,
+    ["daemon", "--transport", "fake", "--port", String(port)],
+    {
+      cwd: isolatedHome,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   const capture = (chunk) => {
     daemonOutput = `${daemonOutput}${String(chunk)}`.slice(-128_000);
   };
@@ -260,7 +277,44 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
   const temporaryRoot = await mkdtemp(
     resolve(tmpdir(), "agent-relay-lifecycle-check-"),
   );
+  const packageToolHome = resolve(temporaryRoot, "package-tool-home");
+  const packageUserConfig = resolve(packageToolHome, "empty-npmrc");
+  await mkdir(packageToolHome, { recursive: true, mode: 0o700 });
+  await writeFile(packageUserConfig, "", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  packageToolEnvironment = packageProofToolEnvironment({
+    ambientEnvironment: process.env,
+    home: packageToolHome,
+    temporaryRoot,
+    userConfigPath: packageUserConfig,
+    overrides: {
+      npm_config_nodedir: resolve(dirname(process.execPath), ".."),
+      npm_config_offline: "true",
+    },
+  });
   try {
+    const runtimeDependencies = await runtimeDependencyGraph(root, release);
+    const dependencyOverrides = {};
+    for (const dependency of runtimeDependencies.packages) {
+      const dependencyTarball = resolve(
+        temporaryRoot,
+        `dependency-${dependency.name.replaceAll("/", "-").replace(/^@/, "")}-${dependency.version}.tgz`,
+      );
+      await run(
+        "pnpm",
+        [
+          "--dir",
+          dirname(dependency.manifestPath),
+          "pack",
+          "--out",
+          dependencyTarball,
+        ],
+        { temporaryRoot, timeoutMs: 180_000 },
+      );
+      dependencyOverrides[dependency.name] = `file:${dependencyTarball}`;
+    }
     const currentTarball = resolve(temporaryRoot, "current.tgz");
     await run("pnpm", ["pack", "--out", currentTarball], {
       temporaryRoot,
@@ -314,6 +368,19 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       name: "agent-relay-lifecycle-check",
       private: true,
     });
+    await writeFile(
+      resolve(prefix, "pnpm-workspace.yaml"),
+      [
+        "packages: []",
+        "overrides:",
+        ...Object.entries(dependencyOverrides).map(
+          ([name, value]) =>
+            `  ${JSON.stringify(name)}: ${JSON.stringify(value)}`,
+        ),
+        "",
+      ].join("\n"),
+      "utf8",
+    );
 
     for (const [name, version] of [
       ["codex", "codex-cli 0.145.0"],
@@ -328,24 +395,17 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       await chmod(path, 0o700);
     }
 
-    const environment = {
-      ...process.env,
-      HOME: isolatedHome,
-      PATH: `${harnessBin}${delimiter}${resolve(prefix, "node_modules/.bin")}${delimiter}${process.env.PATH ?? ""}`,
-      AGENT_RELAY_STATE_DIR: stateDir,
-      AGENT_RELAY_WEB_ENABLED: "1",
-    };
-    for (const name of [
-      "AGENT_RELAY_DAEMON_TOKEN",
-      "AGENT_RELAY_DAEMON_URL",
-      "AGENT_RELAY_TELEGRAM_TOKEN",
-      "AGENT_RELAY_TELEGRAM_CHAT_ID",
-      "AGENT_RELAY_TELEGRAM_OPERATOR_ID",
-      "AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
-      "AGENT_RELAY_TELEGRAM_UPDATE_MODE",
-    ]) {
-      delete environment[name];
-    }
+    const environment = safePackedRuntimeEnvironment({
+      home: isolatedHome,
+      pathEntries: packedRuntimePathEntries({
+        prefix,
+        harnessBin,
+        systemPath: process.env.PATH ?? "/usr/bin:/bin",
+      }),
+      stateDirectory: stateDir,
+      temporaryRoot,
+      webEnabled: true,
+    });
 
     const codexConfig = resolve(isolatedHome, ".codex/hooks.json");
     const claudeConfig = resolve(isolatedHome, ".claude/settings.json");

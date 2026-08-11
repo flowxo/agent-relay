@@ -12,11 +12,14 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
 import test from "node:test";
 import { promisify } from "node:util";
 
 import {
+  readGitBuildInfo,
   releaseArtifactNames,
+  run as runReleaseCommand,
   verifyReleaseBundle,
 } from "../lib/release-bundle.mjs";
 
@@ -96,7 +99,13 @@ async function fileDigest(algorithm, path) {
 
 async function rewriteChecksums(bundle, names) {
   const checksumLines = [];
-  for (const file of [names.manifest, names.sbom, names.tarball].sort()) {
+  for (const file of [
+    names.manifest,
+    names.packageContents,
+    names.releaseNotes,
+    names.sbom,
+    names.tarball,
+  ].sort()) {
     checksumLines.push(
       `${await fileDigest("sha256", join(bundle, file))}  ${file}`,
     );
@@ -227,12 +236,46 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
   };
   const sbomPath = join(bundle, names.sbom);
   await writeFile(sbomPath, `${JSON.stringify(sbom, null, 2)}\n`);
+  const packageContentFiles = [];
+  let unpackedBytes = 0;
+  for (const file of ["dist/cli.js", "package.json"]) {
+    const path = join(packageDirectory, file);
+    const bytes = (await stat(path)).size;
+    unpackedBytes += bytes;
+    packageContentFiles.push({
+      path: file,
+      bytes,
+      sha256: await fileDigest("sha256", path),
+    });
+  }
+  const packageContents = {
+    schema: "agent-relay-package-content-evidence.v1",
+    package: {
+      name: release.name,
+      version: release.version,
+    },
+    artifactSha256: tarballSha256,
+    fileCount: packageContentFiles.length,
+    unpackedBytes,
+    files: packageContentFiles,
+  };
+  const packageContentsPath = join(bundle, names.packageContents);
+  await writeFile(
+    packageContentsPath,
+    `${JSON.stringify(packageContents, null, 2)}\n`,
+  );
+  const releaseNotesPath = join(bundle, names.releaseNotes);
+  await writeFile(
+    releaseNotesPath,
+    `# Agent Relay ${release.version} release candidate\n\nFXO-1162 candidate freeze created or authorized no tag. Consult the manifest's build-time \`tagStatus\`.\n`,
+  );
   const manifest = {
     schema: "agent-relay-release-bundle.v1",
     sourceRepository: "https://github.com/flowxo/agent-relay",
     commit,
     createdAt: "2026-08-11T12:00:00.000Z",
-    tag: release.gitTag,
+    intendedTag: release.gitTag,
+    tagStatus: "not-created",
     package: {
       name: release.name,
       version: release.version,
@@ -254,19 +297,45 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
       sha256: await fileDigest("sha256", sbomPath),
       subjectSha256: tarballSha256,
     },
+    packageContents: {
+      file: names.packageContents,
+      format: packageContents.schema,
+      bytes: (await stat(packageContentsPath)).size,
+      sha256: await fileDigest("sha256", packageContentsPath),
+      subjectSha256: tarballSha256,
+      fileCount: packageContents.fileCount,
+      unpackedBytes: packageContents.unpackedBytes,
+    },
+    releaseNotes: {
+      file: names.releaseNotes,
+      bytes: (await stat(releaseNotesPath)).size,
+      sha256: await fileDigest("sha256", releaseNotesPath),
+      status: "candidate-without-tag",
+    },
     reproducibility: {
       builds: 2,
       matched: true,
       sha256: tarballSha256,
     },
     checksumsFile: names.checksums,
-    provenance:
-      "GitHub Actions attaches signed build and SBOM attestations to the tarball when repository support is available.",
+    provenance: {
+      source: "clean-git-commit",
+      localBuild: "unsigned",
+      signedAttestations: "not-produced-by-this-local-bundle",
+      taggedWorkflow:
+        "GitHub Actions may attach signed build and SBOM attestations only after the intended tag exists and the separately authorized workflow succeeds.",
+    },
   };
   const manifestPath = join(bundle, names.manifest);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const checksumLines = [];
-  for (const file of [names.manifest, names.sbom, names.tarball].sort()) {
+  for (const file of [
+    names.manifest,
+    names.packageContents,
+    names.releaseNotes,
+    names.sbom,
+    names.tarball,
+  ].sort()) {
     checksumLines.push(
       `${await fileDigest("sha256", join(bundle, file))}  ${file}`,
     );
@@ -277,6 +346,100 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
   );
   return { bundle, names, release };
 }
+
+test("resolves an immutable intended tag as absent, at HEAD, or elsewhere", async () => {
+  const temporaryRoot = await mkdtemp(
+    join(tmpdir(), "agent-relay-git-tag-test-"),
+  );
+  try {
+    await runFile("git", ["init", "--object-format=sha1"], {
+      cwd: temporaryRoot,
+    });
+    await writeFile(join(temporaryRoot, "candidate.txt"), "candidate\n");
+    await runFile("git", ["add", "candidate.txt"], { cwd: temporaryRoot });
+    const commitArguments = [
+      "-c",
+      "user.name=Agent Relay Test",
+      "-c",
+      "user.email=agent-relay@example.test",
+      "commit",
+      "-m",
+      "candidate",
+    ];
+    await runFile("git", commitArguments, { cwd: temporaryRoot });
+
+    const intendedTag = "v0.1.0-alpha.1";
+    const absent = await readGitBuildInfo(temporaryRoot, intendedTag);
+    assert.deepEqual(absent.intendedTagState, {
+      status: "not-created",
+      commit: null,
+    });
+
+    await runFile("git", ["tag", intendedTag], { cwd: temporaryRoot });
+    const atHead = await readGitBuildInfo(temporaryRoot, intendedTag);
+    assert.deepEqual(atHead.intendedTagState, {
+      status: "verified-at-head",
+      commit: atHead.commit,
+    });
+
+    await runFile(
+      "git",
+      [
+        "-c",
+        "user.name=Agent Relay Test",
+        "-c",
+        "user.email=agent-relay@example.test",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "later",
+      ],
+      { cwd: temporaryRoot },
+    );
+    const elsewhere = await readGitBuildInfo(temporaryRoot, intendedTag);
+    assert.deepEqual(elsewhere.intendedTagState, {
+      status: "exists-elsewhere",
+      commit: atHead.commit,
+    });
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("redacts machine paths from release-command failures", async () => {
+  const temporaryRoot = await mkdtemp(
+    join(tmpdir(), "agent-relay-release-failure-test-"),
+  );
+  try {
+    const privateHome = join(temporaryRoot, "synthetic-home");
+    const privateArgument = join(temporaryRoot, "synthetic-artifact.tgz");
+    let failure;
+    try {
+      await runReleaseCommand(
+        process.execPath,
+        [
+          "-e",
+          "process.stdout.write(process.cwd()); process.stderr.write(process.env.HOME ?? ''); process.exit(9)",
+          privateArgument,
+        ],
+        {
+          cwd: temporaryRoot,
+          env: { ...process.env, HOME: privateHome },
+        },
+      );
+    } catch (error) {
+      failure = error;
+    }
+    assert(failure instanceof Error);
+    assert.equal(failure.message.includes(temporaryRoot), false);
+    assert.equal(failure.message.includes(privateHome), false);
+    assert.equal(failure.message.includes(privateArgument), false);
+    assert.match(failure.message, /<path:synthetic-artifact\.tgz>/u);
+    assert.match(failure.message, /<checkout>/u);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test("verifies a bound bundle and rejects a changed artifact", async () => {
   const temporaryRoot = await mkdtemp(

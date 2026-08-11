@@ -16,14 +16,15 @@ Agent Relay is local-first: the daemon and its SQLite database run on your
 machine. Telegram and the optional WhooshBang service are adapters, not places
 where Agent Relay keeps its source of truth.
 
-> **Project status:** Agent Relay is an early alpha and is not published to npm
-> yet. Install it from source. The currently tested setup is macOS on Apple
-> silicon with Node.js 22 or newer and pnpm 11.
+> **FXO-1162 freeze status:** Agent Relay was an early alpha and had not been
+> published to npm. Evaluate that candidate from source. The tested setup is
+> macOS on Apple silicon with Node.js 22 or newer and pnpm 11.
 
 The [frozen V1 release boundary](docs/v1-release-boundary.md) records exact
 package/source provenance, lockfile, support, transport/privacy fields, and
-known limitations. The intended tag has not been created, and this repository
-does not authorize publication or live-provider work.
+known limitations. FXO-1162 created or authorized no tag; the generated manifest
+records build-time tag state. This repository text does not authorize
+publication or live-provider work.
 
 ## What you get
 
@@ -50,10 +51,20 @@ team-policy surface.
 
 ## Get started
 
-### 1. Build Agent Relay
+Follow this order so every state-changing step has a credential-free check in
+front of it.
+
+### 1. Evaluate and build
 
 You need Node.js 22 or newer, pnpm 11, and at least one supported coding
 harness.
+
+Before installing anything, read the
+[release-readiness evaluation](docs/release-readiness.md),
+[support policy](SUPPORT.md), [privacy policy](PRIVACY.md), and
+[known limitations](docs/v1-release-boundary.md#known-limitations-and-accepted-residual).
+For a visual evaluation with no external account, credential, or live provider,
+build and start the sanitized concurrent-session demo:
 
 ```sh
 git clone https://github.com/flowxo/agent-relay.git
@@ -63,17 +74,38 @@ pnpm install --frozen-lockfile --ignore-scripts
 pnpm contracts:preinstall
 pnpm rebuild
 pnpm build
+node apps/relay/dist/cli.js web-demo
 ```
 
 The install starts with dependency lifecycle scripts disabled. The contract
 preflight checks the vendored packages, then `pnpm rebuild` builds the reviewed
-SQLite dependency.
+SQLite dependency. `web-demo` uses a separate local database and fake transport;
+its sessions, topics, project labels, and messages are synthetic. It does not
+read your Relay state or include credentials, transcripts, source, usernames,
+hostnames, raw paths, private identifiers, or live-provider data.
 
 Do not install the unrelated unscoped `agent-relay` package from npm. This
 project's future package name is `@flowxo/agent-relay`, but it has not been
 published.
 
-### 2. Prove the local loop
+### 2. Inspect, install, and diagnose
+
+Inspect the complete user-level change before applying it, then diagnose the
+result:
+
+```sh
+node apps/relay/dist/cli.js install --dry-run
+node apps/relay/dist/cli.js install
+node apps/relay/dist/cli.js doctor
+```
+
+The installer preserves unrelated settings, makes private backups, and owns only
+the entries it adds. It may update `~/.codex/hooks.json`,
+`~/.claude/settings.json`, and `~/.cursor/hooks.json`, and creates the launcher
+at `~/.agent-relay/bin/agent-relay`. Keep this source checkout in place while
+those hooks are installed; the launcher points to the exact build you inspected.
+
+### 3. Prove the local loop
 
 Before adding Telegram credentials, run the complete ingest, database, and
 delivery path against the built-in fake transport.
@@ -93,34 +125,66 @@ node apps/relay/dist/cli.js canary
 The canary should finish in a durable `delivered` state. Stop the daemon with
 `Ctrl-C`.
 
-### 3. Install the harness hooks
+### 4. Choose one transport
 
-Agent Relay can install user-level hooks for all three harnesses. Inspect the
-dry run first:
+Exactly one transport is active. Credentials never select one, and Agent Relay
+does not automatically dual-send or fail over.
+
+| Choice       | Account boundary                                                 | Setup                                                |
+| ------------ | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| `fake`       | No network or account                                            | Already proven above                                 |
+| `telegram`   | Your own bot; no hosted Agent Relay account or public server     | [Direct Telegram onboarding](docs/onboarding.md)     |
+| `webhook`    | Your own HTTPS receiver                                          | [Signed outbound webhook](docs/outbound-webhooks.md) |
+| `whooshbang` | Optional hosted WhooshBang account and narrow machine credential | [WhooshBang onboarding](docs/hosted-whooshbang.md)   |
+
+Select deliberately, then restart the daemon:
 
 ```sh
-node apps/relay/dist/cli.js install --dry-run
-node apps/relay/dist/cli.js install
-node apps/relay/dist/cli.js doctor
+node apps/relay/dist/cli.js transport select telegram
+# or: transport select webhook | whooshbang | fake
+node apps/relay/dist/cli.js daemon
 ```
 
-The installer preserves unrelated settings, makes private backups, and owns only
-the entries it adds. It may update:
+Direct Telegram and WhooshBang are independent choices. You never need a
+WhooshBang or other hosted Agent Relay account to use direct Telegram.
 
-- `~/.codex/hooks.json`
-- `~/.claude/settings.json`
-- `~/.cursor/hooks.json`
-
-It also creates the launcher at `~/.agent-relay/bin/agent-relay`.
-
-Keep this source checkout in place while those hooks are installed; the launcher
-points to the exact build you inspected.
+### 5. Use a supported harness
 
 Review newly installed hooks in each harness. In Codex, use `/hooks` and trust
 the exact Agent Relay entry. Claude Code and Cursor have their own hook views.
+Then start Codex, Claude Code, or Cursor normally. Use the optional
+[`agent-relay run`](#supervise-a-cli-when-exits-matter) supervisor only when you
+need proven process exits or supported late CLI resume.
 
-For upgrade, rollback, and removal details, read the
-[installation guide](docs/install-upgrade-uninstall.md).
+### 6. Reconcile an upgrade
+
+Stop Relay processes, install the newer reviewed source or artifact, run
+`doctor`, inspect `install --dry-run`, apply `install` twice, and require the
+second result to be unchanged. Then run `doctor` and the fake canary before
+reselecting a live transport. SQLite migrations are forward-only; read the
+[upgrade and rollback procedure](docs/install-upgrade-uninstall.md#reconcile-an-upgrade)
+and
+[candidate rollback boundary](docs/install-upgrade-uninstall.md#roll-back-a-candidate)
+before crossing a schema boundary.
+
+### 7. Uninstall owned integration
+
+Remove owned hooks and the launcher before removing the package or source:
+
+```sh
+node apps/relay/dist/cli.js uninstall --dry-run
+node apps/relay/dist/cli.js uninstall
+```
+
+Uninstall preserves unrelated hooks, local state, transport configuration,
+private backups, and provider-side records.
+
+### 8. Optionally erase retained data
+
+Erasure is a separate destructive choice. After uninstalling and stopping every
+Relay process, inspect and remove only the exact configured state directory,
+then handle provider data separately. Follow the bounded
+[optional-erasure procedure](docs/install-upgrade-uninstall.md#optional-erasure).
 
 ## Connect Telegram
 
@@ -418,9 +482,10 @@ machine.
 | Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                    |
 
 Supported runtime: macOS on Apple silicon with native arm64 Node or x64 Node
-through Rosetta, Node.js 22 or newer; release-exit evidence uses native Node.js
-22.23.1. Not claimed: Windows, Linux end-user runtime, Intel macOS, Cursor IDE
-late resume, native-hook crash proof, Cursor permission automation.
+through Rosetta, Node.js 22 or newer; the release-exit target is native Node.js
+22.23.1 and the current gate is not green. Not claimed: Windows, Linux end-user
+runtime, Intel macOS, Cursor IDE late resume, native-hook crash proof, Cursor
+permission automation.
 <!-- END GENERATED HARNESS SUPPORT -->
 
 The current runtime validation target is macOS on Apple silicon with Node.js 22.
@@ -479,7 +544,9 @@ for the part you are changing:
 - [Package contents and artifact boundary](docs/packaging.md)
 - [Prerelease builds and publication](docs/releasing.md)
 - [Release-readiness evidence](docs/release-readiness.md)
+- [Non-implementer public release walkthrough](docs/public-release-walkthrough.md)
 - [Frozen V1 support, privacy, and provenance boundary](docs/v1-release-boundary.md)
+- [Curated prerelease notes](packaging/release-notes.md)
 - [Safe fixtures and evidence](docs/fixtures.md)
 - [Hosted WhooshBang boundary](docs/hosted-whooshbang.md)
 - [Experimental runner bridge](docs/runner-bridge.md)

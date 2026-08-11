@@ -80,7 +80,9 @@ pnpm audit --prod
 
 These commands publish nothing and require no npm, Telegram, GitHub, or hosted
 service credential. `pnpm release:bundle` additionally requires a clean checkout
-and produces a local four-file bundle without publishing it; follow the
+and produces a local six-file bundle without publishing it. From that exact
+clean commit, `pnpm release:evidence` verifies the bundle and writes a sanitized
+clean-home fake-transport proof. Follow the
 [prerelease guide](docs/releasing.md).
 
 ## Architecture boundaries

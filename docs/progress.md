@@ -1254,41 +1254,42 @@ also remain free of silent delivery, hook, or correlation failures.
   limits, first-writer conflict responses, reverse-proxy trust, bind defaults,
   and audit/privacy behavior before any remote response API is claimed.
 
-## Next action
+## AR4.2 public onboarding and artifact freeze — 2026-08-11
 
-Continue bounded direct-Telegram dogfood with the state-aware topic titles and
-invoke `/status` naturally in both a coding topic and New Chat. Verify that
-subsequent lifecycle events move titles between running, waiting, muted,
-crashed, stale, and ended without creating duplicate topics. Treat the first
-natural exact/global status responses as UX evidence, not as a release blocker;
-the command, persistence, formatting, failure diagnostics, retry behavior, and
-concurrent-session isolation are already deterministic-test proven.
+FXO-1162 converts the frozen PR #41 source boundary into the public onboarding,
+sanitized concurrent fake-session demonstration, curated release notes, and
+reviewable package evidence. The README now presents evaluate → install dry-run
+→ install → doctor → fake canary → chosen transport → harness use → upgrade →
+uninstall → optional erasure in that order. Direct Telegram needs no hosted
+Agent Relay account or public server; WhooshBang remains an optional explicit
+transport.
 
-Treat custom receiver delivery as V1-ready and continue bounded dogfood without
-changing the live direct-Telegram selection. Keep FXO-1365 inbound responses in
-the post-release design backlog until its threat model and API contract are
-approved.
+The release bundle expands to six files: the tarball, exact package-content
+snapshot, SPDX SBOM, curated notes, manifest, and `SHA256SUMS`. The manifest
+records an intended tag and observed tag status rather than implying that a tag
+exists. A separate ignored mode-`0600` evidence record verifies that exact
+clean-commit bundle through an isolated install, fake canary, and authenticated
+loopback web check without forwarding provider credentials.
 
-Continue bounded direct-Telegram dogfood. If any pruned session emits another
-event, verify that it provisions a fresh topic without changing its retained
-lane state; this is the only FXO-1357 behavior still waiting for a natural live
-observation. `/cleanup` remains available for explicitly ended sessions.
+The first non-implementer walkthrough found that several subcommand help flags
+could execute the command. Every top-level `--help` and `-h` request is now
+intercepted before dispatch and regression-tested to create no state. Packed
+package and lifecycle proofs now use an allowlisted fake-only child environment,
+closing the ambient webhook/WhooshBang selection path.
 
-Continue bounded local direct-Telegram dogfood. The consumer now pins the exact
-WhooshBang `contracts@1.0.0-rc.12`, `sdk@1.0.0-rc.13`, and
-`contract-mock@1.0.0-rc.15` candidates from producer commit
-`50de931fed8d819d1a70ec27201351b09f0ef251`. Its credential-free consumer proof
-covers the published answer-redaction boundary, acknowledged-event omission, and
-acknowledgement replay from current durable state. WhooshBang's N2-10 and N2-11
-machine routes are shipped, and FXO-1156 has now proven the authorized AR3.1
-staging OAuth/bootstrap/send/reply/acknowledgement boundary from the exact
-packed candidate without putting credentials or private content in Git or
-Linear. The next hosted increment is FXO-1157's first sustained
-dogfood/reliability evidence; revalidate it against current Linear state before
-starting it. npm scope/publication and the monitored public security-contact
-path remain owner-controlled promotion gates.
+Native release-exit remains explicitly non-green: exact arm64 Node.js 22.23.1
+was reached, then the gate failed closed because no installed harness matched an
+exact frozen verified snapshot. The retained live-reviewed PR #39 tarball, PR
+#40 ephemeral packed proof, PR #41 credential-free release bundle, and the final
+FXO-1162 candidate evidence remain distinct. No live traffic, tag, package,
+release, registry change, repository promotion, production mutation, or license
+decision is implied.
 
-The former multi-session Phase 4 hosted fleet, Mini App, and multi-operator
-explorations remain post-V1 backlog. They require separate product demand,
-privacy, threat-model, cost, and hosting evidence rather than being folded into
-AR2 or AR3.
+## Release sequence
+
+After FXO-1162 is complete, refresh AR4, the Agent Relay initiative, Release
+Control, and owner decisions before selecting the next ready release-gate issue.
+Do not infer publication approval or a bundled WhooshBang license/notice
+decision. The former hosted fleet, Mini App, multi-operator, and inbound webhook
+response explorations remain post-V1 backlog unless the owner changes the
+release horizon.

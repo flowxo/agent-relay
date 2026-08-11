@@ -16,6 +16,17 @@ export interface FakeCanaryClient {
   drain(limit?: number): Promise<DrainResult>;
 }
 
+export function assertFakeCanaryReady(
+  status: Pick<RelayDaemonStatus, "selectedTransport">,
+): void {
+  if (status.selectedTransport !== "fake") {
+    throw Object.assign(
+      new Error("canary requires a daemon using the fake transport"),
+      { code: "fake-transport-not-selected" },
+    );
+  }
+}
+
 export interface FakeCanaryResult {
   outcome: "delivered" | "retrying" | "dead-lettered" | "timeout";
   ingest: IngestResult;
@@ -28,6 +39,12 @@ export interface FakeCanaryOptions {
   event: AgentAttentionEventV1;
   waitMs?: number;
   pollIntervalMs?: number;
+}
+
+export function canaryOutcomeExitCode(
+  outcome: FakeCanaryResult["outcome"],
+): 0 | 1 {
+  return outcome === "delivered" ? 0 : 1;
 }
 
 export interface InteractiveCanaryClient {

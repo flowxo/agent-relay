@@ -70,7 +70,9 @@ The staged manifest restricts installation to macOS on Apple silicon. It accepts
 native arm64 Node and x64 Node through Rosetta; this does not create an Intel
 Mac support claim. Windows, Linux, and Intel macOS are not V1 end-user support
 claims. Node.js 22 or newer is the metadata range; native arm64 release-exit
-validation uses exact Node.js 22.23.1.
+targets exact Node.js 22.23.1. The current release-exit attempt is not green: it
+reached that target and failed closed because no installed harness matched an
+exact frozen verified snapshot.
 
 ## Source-map policy
 
@@ -107,6 +109,11 @@ pnpm package:lifecycle:check
 8. starts the packed daemon with an isolated home and fake transport;
 9. proves one delivery with no retry or dead letter; and
 10. proves the packaged web UI and authenticated API versions agree.
+
+The packed runtime environment is built from an explicit allowlist and forces
+`AGENT_RELAY_TRANSPORT=fake`; it never forwards ambient Telegram, webhook, or
+WhooshBang credentials or selection from the invoking shell. The lifecycle proof
+uses the same boundary.
 
 The runtime portion runs on macOS; unsupported CI operating systems still prove
 the content, manifest, scan, and size boundary and report the runtime skip
@@ -177,11 +184,14 @@ files, databases, logs, or private transcripts into the staging directory. Do
 not reuse this filename as retained evidence: move reviewed evidence into a
 private content-addressed location keyed by its SHA-256 before packing another
 same-version candidate. The [V1 release record](v1-release-boundary.md) keeps
-the PR #39 retained package distinct from the PR #40 source proof.
+the retained PR #39 package, PR #40 ephemeral proof, and PR #41 release-bundle
+proof distinct.
 
-For the clean-commit, two-build release bundle with SHA-256 checksums, SPDX 2.3
-SBOM, signed GitHub attestation boundary, OIDC gates, and rollback procedure,
-follow the [prerelease guide](releasing.md).
+For the clean-commit, two-build six-file release bundle with SHA-256 checksums,
+exact package-content snapshot, curated notes, SPDX 2.3 SBOM, explicit tag
+status, signed GitHub attestation boundary, OIDC gates, and rollback procedure,
+follow the [prerelease guide](releasing.md). `pnpm release:evidence` verifies
+that exact bundle and records a sanitized clean-home fake-transport proof.
 
 The final native Apple-silicon/Node 22 installed-artifact proof is separate:
 follow the [release-readiness evaluation](release-readiness.md) after building
