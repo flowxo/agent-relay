@@ -12,10 +12,12 @@ import { RelayClient } from "./client.js";
 import { startDaemon } from "./daemon.js";
 import type { TelegramCanaryClient } from "./canary.js";
 import {
+  assertTelegramCanaryReady,
   isWhooshBangCanaryAcknowledged,
   runFakeCanary,
   runTelegramCanary,
   runWhooshBangCanary,
+  waitForTelegramCanaryReady,
 } from "./canary.js";
 
 const temporaryDirectories: string[] = [];
@@ -181,6 +183,208 @@ describe("Fake local canary", () => {
 });
 
 describe("Telegram activation canary", () => {
+  it("refuses before ingestion unless reply intake is active and locally owned", () => {
+    const status = (intake: {
+      mode: "poll";
+      localOwnership: "held" | "not-held";
+      state: "starting" | "active" | "blocked";
+      replyReady: boolean;
+    }) =>
+      ({
+        selectedTransport: "telegram" as const,
+        transportRuntime: {
+          telegram: {
+            intake: {
+              ...intake,
+              lastSuccessfulPollAt: null,
+              lastError: null,
+            },
+          },
+        },
+      }) as Parameters<typeof assertTelegramCanaryReady>[0];
+
+    expect(() =>
+      assertTelegramCanaryReady(
+        status({
+          mode: "poll",
+          localOwnership: "held",
+          state: "starting",
+          replyReady: false,
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "telegram-intake-not-ready" }));
+    expect(() =>
+      assertTelegramCanaryReady(
+        status({
+          mode: "poll",
+          localOwnership: "held",
+          state: "blocked",
+          replyReady: false,
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "telegram-intake-not-ready" }));
+    expect(() =>
+      assertTelegramCanaryReady(
+        status({
+          mode: "poll",
+          localOwnership: "not-held",
+          state: "active",
+          replyReady: true,
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "telegram-intake-not-ready" }));
+    expect(() =>
+      assertTelegramCanaryReady(
+        status({
+          mode: "poll",
+          localOwnership: "held",
+          state: "active",
+          replyReady: true,
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("refuses legacy and internally inconsistent status with one stable code", () => {
+    const legacy = {
+      selectedTransport: "telegram",
+      transportRuntime: { selection: {} },
+    } as unknown as Parameters<typeof assertTelegramCanaryReady>[0];
+    expect(() => assertTelegramCanaryReady(legacy)).toThrow(
+      expect.objectContaining({ code: "telegram-intake-not-ready" }),
+    );
+
+    const inconsistent = {
+      selectedTransport: "telegram",
+      transportRuntime: {
+        telegram: {
+          intake: {
+            mode: "poll",
+            localOwnership: "held",
+            state: "blocked",
+            replyReady: true,
+            lastSuccessfulPollAt: null,
+            lastError: null,
+          },
+        },
+      },
+    } as Parameters<typeof assertTelegramCanaryReady>[0];
+    expect(() => assertTelegramCanaryReady(inconsistent)).toThrow(
+      expect.objectContaining({ code: "telegram-intake-not-ready" }),
+    );
+  });
+
+  it("waits locally for a starting poller without creating a request", async () => {
+    let now = 0;
+    const starting = {
+      selectedTransport: "telegram",
+      transportRuntime: {
+        telegram: {
+          intake: {
+            mode: "poll",
+            localOwnership: "held",
+            state: "starting",
+            replyReady: false,
+            lastSuccessfulPollAt: null,
+            lastError: null,
+          },
+        },
+      },
+    } as const;
+    const active = {
+      selectedTransport: "telegram",
+      transportRuntime: {
+        telegram: {
+          intake: {
+            mode: "poll",
+            localOwnership: "held",
+            state: "active",
+            replyReady: true,
+            lastSuccessfulPollAt: "2026-08-10T22:49:45.000Z",
+            lastError: null,
+          },
+        },
+      },
+    } as const;
+    const status = vi
+      .fn()
+      .mockResolvedValueOnce(starting)
+      .mockResolvedValueOnce(active);
+    const sleep = vi.fn(async (delayMs: number) => {
+      now += delayMs;
+    });
+
+    await expect(
+      waitForTelegramCanaryReady({
+        client: { status },
+        waitMs: 1_000,
+        pollIntervalMs: 100,
+        now: () => now,
+        sleep,
+      }),
+    ).resolves.toEqual(active);
+    expect(status).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledOnce();
+  });
+
+  it("fails immediately when intake is blocked and times out while starting", async () => {
+    const blocked = {
+      selectedTransport: "telegram",
+      transportRuntime: {
+        telegram: {
+          intake: {
+            mode: "poll",
+            localOwnership: "held",
+            state: "blocked",
+            replyReady: false,
+            lastSuccessfulPollAt: null,
+            lastError: {
+              at: "2026-08-10T22:50:20.000Z",
+              code: "telegram-polling-conflict",
+            },
+          },
+        },
+      },
+    } as const;
+    const blockedStatus = vi.fn(async () => blocked);
+    const blockedSleep = vi.fn();
+    await expect(
+      waitForTelegramCanaryReady({
+        client: { status: blockedStatus },
+        sleep: blockedSleep,
+      }),
+    ).rejects.toMatchObject({ code: "telegram-intake-not-ready" });
+    expect(blockedStatus).toHaveBeenCalledOnce();
+    expect(blockedSleep).not.toHaveBeenCalled();
+
+    let now = 0;
+    const starting = {
+      ...blocked,
+      transportRuntime: {
+        telegram: {
+          intake: {
+            ...blocked.transportRuntime.telegram.intake,
+            state: "starting" as const,
+            lastError: null,
+          },
+        },
+      },
+    };
+    const startingStatus = vi.fn(async () => starting);
+    await expect(
+      waitForTelegramCanaryReady({
+        client: { status: startingStatus },
+        waitMs: 100,
+        pollIntervalMs: 100,
+        now: () => now,
+        sleep: async (delayMs) => {
+          now += delayMs;
+        },
+      }),
+    ).rejects.toMatchObject({ code: "telegram-intake-not-ready" });
+    expect(startingStatus).toHaveBeenCalledTimes(2);
+  });
+
   it("delivers a bounded correlated question and confirms a Telegram reply", async () => {
     const fake = client({
       state: "answered",
@@ -212,6 +416,61 @@ describe("Telegram activation canary", () => {
       },
     });
     expect(JSON.stringify(result)).not.toContain("relay-canary-ok");
+  });
+
+  it("activates a Telegram canary through the atomic daemon endpoint", async () => {
+    const fake = client({
+      state: "answered",
+      resolvedBy: "telegram",
+      answer: "relay-canary-ok",
+    });
+    const activateTelegramCanary = vi.fn(
+      async (event: AgentAttentionEventV1) => ({
+        ingest: {
+          eventId: event.eventId,
+          inserted: true,
+          status: "queued" as const,
+        },
+        drain: {
+          claimed: 1,
+          delivered: 1,
+          retrying: 0,
+          deadLettered: 0,
+        },
+      }),
+    );
+    fake.activateTelegramCanary = activateTelegramCanary;
+    vi.mocked(fake.ingest).mockRejectedValue(
+      new Error("legacy ingest must not run"),
+    );
+    vi.mocked(fake.drain).mockRejectedValue(
+      new Error("legacy drain must not run"),
+    );
+
+    await expect(
+      runTelegramCanary({
+        client: fake,
+        machineId: "machine_telegram_canary_12345678",
+        projectPath: "/workspace/example",
+        waitMs: 1_000,
+        pollIntervalMs: 50,
+        now: () => new Date("2026-07-24T12:00:00.000Z"),
+        randomId: () => "12345678-1234-1234-1234-123456789012",
+      }),
+    ).resolves.toMatchObject({
+      outcome: "answered",
+      drain: { delivered: 1 },
+    });
+
+    expect(activateTelegramCanary).toHaveBeenCalledOnce();
+    expect(activateTelegramCanary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "input.required",
+        request: expect.objectContaining({ kind: "input" }),
+      }),
+    );
+    expect(fake.ingest).not.toHaveBeenCalled();
+    expect(fake.drain).not.toHaveBeenCalled();
   });
 
   it("fails before waiting when Telegram delivery is queued for retry", async () => {
@@ -320,7 +579,18 @@ describe("Telegram activation canary", () => {
     expect(daemon.service.transport).toBeInstanceOf(FakeNotificationTransport);
     const transport = daemon.service.transport as FakeNotificationTransport;
     const running = runTelegramCanary({
-      client: relayClient,
+      client: {
+        ingest: async (event) => await relayClient.ingest(event),
+        drain: async (limit) => await relayClient.drain(limit),
+        getRequest: async (correlationId) =>
+          await relayClient.getRequest(correlationId),
+        waitForAnswer: async (correlationId, timeoutMs, pollIntervalMs) =>
+          await relayClient.waitForAnswer(
+            correlationId,
+            timeoutMs,
+            pollIntervalMs,
+          ),
+      },
       machineId: "machine_telegram_canary_12345678",
       projectPath: "/workspace/example",
       waitMs: 10_000,

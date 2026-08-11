@@ -35,12 +35,17 @@ import { createRelayHttpServer } from "./http-server.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
 import type { FallbackReplayResult } from "./fallback-spool.js";
 import { TelegramUpdatePoller } from "./telegram-poller.js";
+import {
+  acquireTelegramPollingLease,
+  type TelegramPollingLease,
+} from "./telegram-polling-lease.js";
 import type {
   AgentRelayTransport,
   ResolvedTransportSelection,
   TransportReadinessReport,
 } from "./transport-config.js";
 import { buildDaemonTransportStatus } from "./transport-status.js";
+import type { TelegramIntakeRuntimeStatus } from "./transport-status.js";
 import { loadOrCreateWebCredential } from "./web-credential.js";
 import {
   whooshbangStreamKey,
@@ -80,6 +85,7 @@ export interface DaemonOptions {
   telegramWebhookSecret?: string;
   telegramUpdateMode?: "poll" | "webhook";
   telegramFetch?: typeof fetch;
+  telegramPollingLeasePort?: number;
   whooshbang?: DaemonWhooshBangOptions;
   webhook?: WebhookTransportOptions;
   runnerBridgeEnabled?: boolean;
@@ -248,16 +254,6 @@ export async function startDaemon(
       "Telegram webhook mode requires AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
     );
   }
-  if (transport instanceof TelegramBotTransport) {
-    const report = await transport.verifySetup(telegramUpdateMode);
-    logger.log({
-      level: "info",
-      code: "telegram.preflight-succeeded",
-      message: "Telegram private-topic setup verified",
-      at: new Date().toISOString(),
-      details: { ...report },
-    });
-  }
   const store = new RelayStore(options.databasePath);
   const service = new RelayService(store, transport, {
     logger,
@@ -304,6 +300,44 @@ export async function startDaemon(
           topicCleanup: service,
           logger,
         });
+  const telegramPoller =
+    telegramUpdateMode === "poll" &&
+    transport instanceof TelegramBotTransport &&
+    replyRouter !== undefined
+      ? new TelegramUpdatePoller({
+          source: transport,
+          handler: replyRouter,
+          logger,
+          localOwnership: "held",
+        })
+      : undefined;
+  const telegramIntakeStatus = (): TelegramIntakeRuntimeStatus => {
+    if (telegramPoller !== undefined) {
+      return telegramPoller.status();
+    }
+    if (!(transport instanceof TelegramBotTransport)) {
+      return {
+        mode: "disabled",
+        localOwnership: "not-applicable",
+        state: "not-started",
+        replyReady: false,
+        lastSuccessfulPollAt: null,
+        lastError: null,
+      };
+    }
+    const replyReady =
+      telegramUpdateMode === "webhook" &&
+      replyRouter !== undefined &&
+      options.telegramWebhookSecret !== undefined;
+    return {
+      mode: telegramUpdateMode === "webhook" ? "webhook" : "disabled",
+      localOwnership: "not-applicable",
+      state: replyReady ? "active" : "blocked",
+      replyReady,
+      lastSuccessfulPollAt: null,
+      lastError: null,
+    };
+  };
   const server = createRelayHttpServer(service, {
     ...(options.token === undefined ? {} : { token: options.token }),
     ...(replyRouter === undefined ? {} : { replyRouter }),
@@ -326,6 +360,7 @@ export async function startDaemon(
         ...(options.transportReadiness === undefined
           ? {}
           : { readiness: options.transportReadiness }),
+        telegramIntake: telegramIntakeStatus(),
       }),
       runnerBridge: options.runnerBridge?.status() ?? {
         enabled: false,
@@ -333,6 +368,9 @@ export async function startDaemon(
       },
     }),
     logger,
+    telegramCanaryReady: () =>
+      transport instanceof TelegramBotTransport &&
+      telegramIntakeStatus().replyReady,
   });
 
   let activeFallbackReplay:
@@ -421,7 +459,25 @@ export async function startDaemon(
     throw error;
   }
 
+  let telegramPollingLease: TelegramPollingLease | undefined;
   try {
+    if (telegramPoller !== undefined) {
+      telegramPollingLease = await acquireTelegramPollingLease({
+        ...(options.telegramPollingLeasePort === undefined
+          ? {}
+          : { port: options.telegramPollingLeasePort }),
+      });
+    }
+    if (transport instanceof TelegramBotTransport) {
+      const report = await transport.verifySetup(telegramUpdateMode);
+      logger.log({
+        level: "info",
+        code: "telegram.preflight-succeeded",
+        message: "Telegram private-topic setup verified",
+        at: new Date().toISOString(),
+        details: { ...report },
+      });
+    }
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(options.port ?? 4317, options.host ?? "127.0.0.1", () => {
@@ -430,6 +486,7 @@ export async function startDaemon(
       });
     });
   } catch (error) {
+    await telegramPollingLease?.release().catch(() => undefined);
     await options.runnerBridge?.stop().catch(() => undefined);
     store.close();
     throw error;
@@ -437,26 +494,15 @@ export async function startDaemon(
 
   let telegramPollingAbort: AbortController | undefined;
   let telegramPolling: Promise<void> | undefined;
-  if (
-    telegramUpdateMode === "poll" &&
-    transport instanceof TelegramBotTransport &&
-    replyRouter !== undefined
-  ) {
+  if (telegramPoller !== undefined) {
     telegramPollingAbort = new AbortController();
-    telegramPolling = new TelegramUpdatePoller({
-      source: transport,
-      handler: replyRouter,
-      logger,
-    })
+    telegramPolling = telegramPoller
       .run(telegramPollingAbort.signal)
-      .catch((error: unknown) => {
+      .catch(() => {
         logger.log({
           level: "error",
           code: "telegram.poll-crashed",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Telegram polling stopped unexpectedly",
+          message: "Telegram polling stopped unexpectedly",
           at: new Date().toISOString(),
         });
       });
@@ -622,16 +668,35 @@ export async function startDaemon(
       });
       server.closeAllConnections();
     });
-    closePromise = Promise.all([
-      serverClosed,
-      options.runnerBridge?.stop() ?? Promise.resolve(),
-      activeDrain ?? Promise.resolve(),
-      activeFallbackReplay ?? Promise.resolve(),
-      telegramPolling ?? Promise.resolve(),
-      whooshbangPolling ?? Promise.resolve(),
-    ]).then(() => {
-      store.close();
-    });
+    closePromise = (async () => {
+      const results = await Promise.allSettled([
+        serverClosed,
+        options.runnerBridge?.stop() ?? Promise.resolve(),
+        activeDrain ?? Promise.resolve(),
+        activeFallbackReplay ?? Promise.resolve(),
+        telegramPolling ?? Promise.resolve(),
+        whooshbangPolling ?? Promise.resolve(),
+      ]);
+      const errors = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      try {
+        store.close();
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        await telegramPollingLease?.release();
+      } catch (error) {
+        errors.push(error);
+      }
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "Agent Relay daemon shutdown failed");
+      }
+    })();
     return closePromise;
   };
 

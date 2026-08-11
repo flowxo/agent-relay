@@ -1347,6 +1347,7 @@ async function waitForAnswered(baseUrl, correlationId, expectedAnswer) {
 
 function telegramPreloadSource() {
   return `
+import { writeFileSync } from "node:fs";
 const originalFetch = globalThis.fetch.bind(globalThis);
 let nextMessageId = 100;
 let nextTopicId = 1000;
@@ -1354,6 +1355,8 @@ let nextUpdateId = 1;
 const updates = [];
 let scopedCommands = [];
 const reply = ["relay", "canary", "ok"].join("-");
+const pollingConflict = process.env.AGENT_RELAY_PACKED_TELEGRAM_CONFLICT === "1";
+const sendMarker = process.env.AGENT_RELAY_PACKED_TELEGRAM_SEND_MARKER;
 const json = (value) => new Response(JSON.stringify(value), {
   headers: { "content-type": "application/json" },
 });
@@ -1403,6 +1406,9 @@ globalThis.fetch = async (input, init = {}) => {
     } });
   }
   if (method === "sendMessage") {
+    if (sendMarker !== undefined) {
+      writeFileSync(sendMarker, "sent\\n", { mode: 0o600 });
+    }
     const messageId = nextMessageId++;
     updates.push({
       update_id: nextUpdateId++,
@@ -1418,6 +1424,16 @@ globalThis.fetch = async (input, init = {}) => {
     return json({ ok: true, result: { message_id: messageId, date: 0 } });
   }
   if (method === "getUpdates") {
+    if (pollingConflict) {
+      return new Response(JSON.stringify({
+        ok: false,
+        error_code: 409,
+        description: "synthetic private polling conflict detail",
+      }), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (updates.length === 0) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
     }
@@ -1458,6 +1474,7 @@ if (process.platform !== "darwin") {
   let recoveryDaemon;
   let fakeDaemon;
   let telegramDaemon;
+  let contendingTelegramDaemon;
   let oauthMock;
   let whooshbangMock;
   let oauthPrivateValues;
@@ -2152,9 +2169,14 @@ if (process.platform !== "darwin") {
     const telegramPreload = resolve(temporaryRoot, "telegram-preload.mjs");
     await writeFile(telegramPreload, telegramPreloadSource(), "utf8");
     const telegramPort = await allocatePort();
+    const telegramLeasePort = await allocatePort();
     const telegramDaemonEnvironment = {
       ...telegramEnvironment,
+      AGENT_RELAY_INTERNAL_TEST_MODE: "1",
+      AGENT_RELAY_INTERNAL_TEST_TELEGRAM_POLLING_LEASE_PORT:
+        String(telegramLeasePort),
       NODE_OPTIONS: `--import=${telegramPreload}`,
+      TMPDIR: resolve(temporaryRoot, "runtime"),
     };
     telegramDaemon = startDaemon(
       binary,
@@ -2163,12 +2185,76 @@ if (process.platform !== "darwin") {
       telegramDaemonEnvironment,
       temporaryRoot,
     );
-    const directStatus = await telegramDaemon.ready();
+    await telegramDaemon.ready();
+    const directStatus = await waitFor(
+      "packed direct Telegram reply readiness",
+      async () => {
+        const status = await daemonRequest(
+          telegramDaemon.baseUrl,
+          "/v1/status",
+        );
+        return status.transportRuntime?.telegram?.intake?.replyReady === true
+          ? status
+          : undefined;
+      },
+    );
     assert(
       directStatus.selectedTransport === "telegram" &&
-        directStatus.transport === "telegram",
+        directStatus.transport === "telegram" &&
+        directStatus.transportRuntime.telegram.intake.mode === "poll" &&
+        directStatus.transportRuntime.telegram.intake.localOwnership ===
+          "held" &&
+        directStatus.transportRuntime.telegram.intake.state === "active",
       "packed daemon did not start the direct Telegram transport",
     );
+
+    const contendingStateDirectory = resolve(
+      temporaryRoot,
+      "state-telegram-contender",
+    );
+    contendingTelegramDaemon = startDaemon(
+      binary,
+      await allocatePort(),
+      isolatedHome,
+      safeRuntimeEnvironment({
+        home: isolatedHome,
+        prefix,
+        stateDirectory: contendingStateDirectory,
+        extra: {
+          AGENT_RELAY_TRANSPORT: "telegram",
+          AGENT_RELAY_TELEGRAM_TOKEN: TELEGRAM_TOKEN,
+          AGENT_RELAY_TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID,
+          AGENT_RELAY_TELEGRAM_OPERATOR_ID: TELEGRAM_OPERATOR_ID,
+          AGENT_RELAY_TELEGRAM_UPDATE_MODE: "poll",
+          AGENT_RELAY_INTERNAL_TEST_MODE: "1",
+          AGENT_RELAY_INTERNAL_TEST_TELEGRAM_POLLING_LEASE_PORT:
+            String(telegramLeasePort),
+          NODE_OPTIONS: `--import=${telegramPreload}`,
+          TMPDIR: resolve(temporaryRoot, "alternate-runtime"),
+        },
+      }),
+      temporaryRoot,
+    );
+    const contendingExit = await waitFor(
+      "packed competing direct Telegram refusal",
+      async () =>
+        childIsRunning(contendingTelegramDaemon.child)
+          ? undefined
+          : await contendingTelegramDaemon.exited,
+    );
+    const contendingOutput = contendingTelegramDaemon.output();
+    assert(
+      contendingExit.code !== 0 &&
+        contendingOutput.includes("telegram-poller-already-owned"),
+      "packed competing direct Telegram daemon did not fail closed",
+    );
+    assertAbsent(
+      contendingOutput,
+      [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_OPERATOR_ID],
+      "packed competing Telegram poller refusal",
+    );
+    daemonOutputs.push(contendingOutput);
+    contendingTelegramDaemon = undefined;
     const directCanary = parseJson(
       (
         await run(
@@ -2202,6 +2288,74 @@ if (process.platform !== "darwin") {
           deadLettered: directCanary.drain?.deadLettered,
         },
       )}`,
+    );
+    await telegramDaemon.stop();
+    daemonOutputs.push(telegramDaemon.output());
+    telegramDaemon = undefined;
+
+    const blockedSendMarker = resolve(
+      temporaryRoot,
+      "blocked-telegram-send.marker",
+    );
+    const blockedTelegramStateDirectory = resolve(
+      temporaryRoot,
+      "state-telegram-blocked",
+    );
+    telegramDaemon = startDaemon(
+      binary,
+      await allocatePort(),
+      isolatedHome,
+      safeRuntimeEnvironment({
+        home: isolatedHome,
+        prefix,
+        stateDirectory: blockedTelegramStateDirectory,
+        extra: {
+          AGENT_RELAY_TRANSPORT: "telegram",
+          AGENT_RELAY_TELEGRAM_TOKEN: TELEGRAM_TOKEN,
+          AGENT_RELAY_TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID,
+          AGENT_RELAY_TELEGRAM_OPERATOR_ID: TELEGRAM_OPERATOR_ID,
+          AGENT_RELAY_TELEGRAM_UPDATE_MODE: "poll",
+          AGENT_RELAY_PACKED_TELEGRAM_CONFLICT: "1",
+          AGENT_RELAY_PACKED_TELEGRAM_SEND_MARKER: blockedSendMarker,
+          AGENT_RELAY_INTERNAL_TEST_MODE: "1",
+          AGENT_RELAY_INTERNAL_TEST_TELEGRAM_POLLING_LEASE_PORT:
+            String(telegramLeasePort),
+          NODE_OPTIONS: `--import=${telegramPreload}`,
+        },
+      }),
+      temporaryRoot,
+    );
+    await telegramDaemon.ready();
+    await waitFor("packed blocked Telegram intake", async () => {
+      const status = await daemonRequest(telegramDaemon.baseUrl, "/v1/status");
+      return status.transportRuntime?.telegram?.intake?.state === "blocked"
+        ? status
+        : undefined;
+    });
+    let blockedCanaryFailure;
+    try {
+      await run(
+        binary,
+        ["telegram-canary", "--wait-ms", "10000", "--poll-interval-ms", "50"],
+        {
+          env: safeRuntimeEnvironment({
+            home: isolatedHome,
+            prefix,
+            stateDirectory: blockedTelegramStateDirectory,
+            daemonUrl: telegramDaemon.baseUrl,
+          }),
+          temporaryRoot,
+          timeoutMs: 30_000,
+        },
+      );
+    } catch (error) {
+      blockedCanaryFailure = error;
+    }
+    assert(
+      blockedCanaryFailure instanceof Error &&
+        blockedCanaryFailure.message.includes("telegram-intake-not-ready") &&
+        !(await exists(blockedSendMarker)),
+      "packed blocked Telegram canary did not refuse before delivery",
     );
     await telegramDaemon.stop();
     daemonOutputs.push(telegramDaemon.output());
@@ -2323,6 +2477,7 @@ if (process.platform !== "darwin") {
           disconnect: "revoked-and-erased",
         },
         directTelegramCanary: "answered",
+        directTelegramOwnership: "exclusive-and-blocked-safe",
         retainedLocalAuthority: "passed",
         uninstall: "owned-files-removed-state-retained",
         privacyScan: "passed",
@@ -2334,6 +2489,7 @@ if (process.platform !== "darwin") {
       recoveryDaemon,
       fakeDaemon,
       telegramDaemon,
+      contendingTelegramDaemon,
     ]) {
       if (daemon !== undefined && childIsRunning(daemon.child)) {
         daemon.child.kill("SIGTERM");

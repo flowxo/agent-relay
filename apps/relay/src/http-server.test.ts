@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
@@ -111,6 +112,7 @@ async function setup(
   token?: string,
   telegramWebhookSecret?: string,
   credential?: WebCredential,
+  telegramCanaryReady?: () => boolean,
 ) {
   const store = new RelayStore();
   const transport = new FakeNotificationTransport();
@@ -130,6 +132,7 @@ async function setup(
     replyRouter,
     ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
     ...(credential === undefined ? {} : { webCredential: credential }),
+    ...(telegramCanaryReady === undefined ? {} : { telegramCanaryReady }),
     webStreamPollMs: 10,
   });
   server.listen(0, "127.0.0.1");
@@ -167,6 +170,34 @@ function webHeaders(
 }
 
 describe("relay HTTP daemon", () => {
+  it("checks Telegram canary readiness after the complete bounded body arrives", async () => {
+    let ready = true;
+    const runtime = await setup(undefined, undefined, undefined, () => ready);
+    const input = JSON.stringify(event());
+    const request = httpRequest(`${runtime.baseUrl}/v1/canaries/telegram`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    const response = once(request, "response");
+    request.write(input.slice(0, Math.floor(input.length / 2)));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    ready = false;
+    request.end(input.slice(Math.floor(input.length / 2)));
+
+    const [incoming] = await response;
+    const chunks: Buffer[] = [];
+    for await (const chunk of incoming) {
+      chunks.push(Buffer.from(chunk));
+    }
+    expect(incoming.statusCode).toBe(409);
+    expect(JSON.parse(Buffer.concat(chunks).toString("utf8"))).toMatchObject({
+      code: "telegram-intake-not-ready",
+    });
+    expect(runtime.store.getEvent(event().eventId)).toBeUndefined();
+    expect(runtime.transport.deliveries).toHaveLength(0);
+    await runtime.close();
+  });
+
   it("serves the credential-free console shell with a locked-down policy", async () => {
     const runtime = await setup(
       "synthetic-daemon-secret",

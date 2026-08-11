@@ -260,6 +260,22 @@ Expected startup evidence includes:
 - loopback host and port `127.0.0.1:4317`; and
 - transport `telegram`, not `fake-telegram`.
 
+Poll mode also holds one kernel-managed, per-user polling lease across isolated
+state directories. The lease is an exclusive loopback listener on a stable port
+derived from the Unix user ID; it stores no credential or provider identity. A
+second lease-aware local Telegram poller, or an unrelated listener on that
+coordination port, fails closed before provider setup or HTTP startup with
+`telegram-poller-already-owned`; stop and later restore an existing developer
+daemon explicitly rather than terminating it automatically. A pre-lease Agent
+Relay version or non-Agent-Relay poller cannot advertise ownership through this
+local protocol. Before a bounded canary, use the non-secret listener check below
+and coordinate the known developer daemon's explicit stop and restoration. After
+the first successful `getUpdates`, `agent-relay status` reports
+`transportRuntime.telegram.intake` as `active`, `replyReady: true`, and
+`localOwnership: held`. `telegram-canary` refuses to create a card until that
+reply path is ready. A provider `telegram-polling-conflict` moves intake to
+`blocked` after one attempt instead of retrying indefinitely.
+
 Before a real transport begins automatic drain, the installed daemon marks
 queued/retrying events older than `AGENT_RELAY_STARTUP_BACKLOG_MAX_AGE_MS` as
 visible dead letters. Still-open, unexpired requests and proven `owned-child`
@@ -493,9 +509,11 @@ pnpm package:hosted:check
 The check installs the exact tarball into a clean home, configures the pinned
 loopback mock through the public CLI, resolves confirm/select/input, proves
 crash-before-ack replay, revocation/erasure with retained SQLite authority, and
-an unchanged direct-Telegram canary against a synthetic Bot API. It rejects
-workspace/sibling runtime dependencies and scans packed output and logs for
-private fixture values.
+an unchanged direct-Telegram canary against a synthetic Bot API. It also proves
+that a competing lease-aware poller is refused before provider setup and that a
+terminal provider conflict blocks the packaged canary without sending. It
+rejects workspace/sibling runtime dependencies and scans packed output and logs
+for private fixture values.
 
 Do not place a broad WhooshBang project credential in git or pass it as a
 positional argument. Supply it only through the command's stdin, environment
@@ -566,6 +584,16 @@ crash evidence or late CLI resume is required.
 ```
 
 ### Cursor CLI
+
+Complete and verify Cursor authentication before opening a bounded
+notification-producing window. Do not use a supervised launch to discover
+whether authentication is ready. If the exact Cursor artifact's supported
+authentication-status command has already been characterized for network and
+privacy behavior, capture and discard all of its output and use only its exit
+status; otherwise authenticate interactively outside the bounded window. Reserve
+the worst-case card before starting supervision. Any unexpected non-zero exit
+consumes that attempt's reservation and ends the attempt without an independent
+supervisor retry.
 
 ```sh
 ~/.agent-relay/bin/agent-relay run cursor \
@@ -668,6 +696,7 @@ Agent Relay classifies provider responses before retry policy is applied:
 | `telegram-webhook-conflict`        | Poll mode found an active webhook; inspect `getWebhookInfo`, then remove the stale webhook or select webhook mode. |
 | `telegram-webhook-missing`         | Webhook mode has no configured HTTPS URL; set the webhook before restarting.                                       |
 | `telegram-polling-conflict`        | Another process is calling `getUpdates`; stop the other consumer and restart this daemon.                          |
+| `telegram-poller-already-owned`    | Another local Agent Relay poller holds the per-user lease; coordinate its explicit stop before retrying.           |
 
 Startup failures are emitted as structured `cli.failed` output with the stable
 provider code in `errorCode`. Runtime topic failures remain on the durable topic
@@ -718,13 +747,37 @@ restarting. Do not erase SQLite or publish its contents.
 
 ### The daemon port is already in use
 
-Check for an existing daemon before starting another:
+Check the default daemon port before starting another:
 
 ```sh
 lsof -nP -iTCP:4317 -sTCP:LISTEN
 ```
 
-Single-instance service management is not implemented yet.
+If the developer daemon uses a recorded custom URL or port, run the same
+listener-only check against that exact port as well; checking `4317` does not
+discover it. A non-Agent-Relay poller exposes no generic read-only ownership
+API. For one of those pollers, `telegram-polling-conflict` is the provider-side
+fail-closed signal and no canary may begin.
+
+The HTTP listener still has no general single-instance service manager. Poll
+mode separately enforces one kernel-managed per-user Telegram polling lease,
+including when daemons use different Agent Relay state directories. Never kill
+the listener automatically; coordinate its stop and restoration explicitly. This
+listener check remains mandatory when coordinating a daemon version that
+predates the local lease.
+
+If startup reports `telegram-poller-already-owned` and no lease-aware daemon is
+expected, check the non-secret coordination port without printing listener
+details:
+
+```sh
+agent_relay_lease_port=$((38000 + $(id -u)))
+lsof -nP -iTCP:"${agent_relay_lease_port}" -sTCP:LISTEN >/dev/null
+```
+
+A zero exit confirms that some local process holds the derived loopback port;
+identify and coordinate it through the host's normal service records. Do not
+terminate an unknown listener automatically.
 
 ### Codex does not execute a newly installed hook
 

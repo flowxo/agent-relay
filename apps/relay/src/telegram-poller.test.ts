@@ -107,7 +107,88 @@ describe("TelegramUpdatePoller", () => {
     );
   });
 
+  it("blocks after one explicitly non-retryable polling conflict", async () => {
+    const logger = new MemoryLogger();
+    const privateProviderDetail = "synthetic-private-provider-detail";
+    const source: TelegramUpdateSource = {
+      getUpdates: vi
+        .fn()
+        .mockRejectedValue(
+          new TransportError(
+            privateProviderDetail,
+            "telegram-polling-conflict",
+            false,
+            409,
+          ),
+        ),
+    };
+    const sleep = vi.fn();
+    const poller = new TelegramUpdatePoller({
+      source,
+      handler: { handle: vi.fn() },
+      logger,
+      localOwnership: "held",
+      sleep,
+      now: () => new Date("2026-08-10T22:50:20.000Z"),
+    });
+
+    await poller.run(new AbortController().signal);
+
+    expect(source.getUpdates).toHaveBeenCalledOnce();
+    expect(sleep).not.toHaveBeenCalled();
+    expect(poller.status()).toEqual({
+      mode: "poll",
+      localOwnership: "held",
+      state: "blocked",
+      replyReady: false,
+      lastSuccessfulPollAt: null,
+      lastError: {
+        at: "2026-08-10T22:50:20.000Z",
+        code: "telegram-polling-conflict",
+      },
+    });
+    expect(logger.records.map((record) => record.code)).toEqual([
+      "telegram.poll-started",
+      "telegram.poll-failed",
+      "telegram.poll-blocked",
+      "telegram.poll-stopped",
+    ]);
+    expect(JSON.stringify(logger.records)).not.toContain(privateProviderDetail);
+  });
+
+  it("reports reply readiness only after a complete successful poll", async () => {
+    const controller = new AbortController();
+    const source: TelegramUpdateSource = {
+      getUpdates: vi.fn().mockImplementation(async () => {
+        controller.abort();
+        return [];
+      }),
+    };
+    const poller = new TelegramUpdatePoller({
+      source,
+      handler: { handle: vi.fn() },
+      localOwnership: "held",
+      now: () => new Date("2026-08-10T22:49:45.000Z"),
+    });
+    expect(poller.status()).toMatchObject({
+      state: "not-started",
+      replyReady: false,
+    });
+
+    await poller.run(controller.signal);
+
+    expect(poller.status()).toEqual({
+      mode: "poll",
+      localOwnership: "held",
+      state: "stopped",
+      replyReady: false,
+      lastSuccessfulPollAt: "2026-08-10T22:49:45.000Z",
+      lastError: null,
+    });
+  });
+
   it("does not confirm a failed update and retries it after earlier successes", async () => {
+    const privateHandlerDetail = "synthetic-private-handler-detail";
     const offsets: Array<number | undefined> = [];
     const controller = new AbortController();
     let batch = 0;
@@ -129,7 +210,7 @@ describe("TelegramUpdatePoller", () => {
       handle: vi
         .fn<TelegramUpdateHandler["handle"]>()
         .mockResolvedValueOnce(undefined)
-        .mockRejectedValue(new Error("database unavailable")),
+        .mockRejectedValue(new Error(privateHandlerDetail)),
     };
     const logger = new MemoryLogger();
     const sleeps: number[] = [];
@@ -153,6 +234,7 @@ describe("TelegramUpdatePoller", () => {
         details: { updateId: 21 },
       }),
     );
+    expect(JSON.stringify(logger.records)).not.toContain(privateHandlerDetail);
   });
 
   it("stops an active long poll without logging shutdown as a failure", async () => {
