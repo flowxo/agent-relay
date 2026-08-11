@@ -182,6 +182,67 @@ describe("Fake local canary", () => {
   });
 });
 
+describe("Relay client Telegram canary activation", () => {
+  it("allows the atomic delivery attempt to outlive the normal daemon timeout", async () => {
+    const event = fakeCanaryEvent();
+    const fetchMock = vi.fn<typeof fetch>(
+      async (_input, init) =>
+        await new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            resolve(
+              new Response(
+                JSON.stringify({
+                  ingest: {
+                    eventId: event.eventId,
+                    inserted: true,
+                    status: "delivered",
+                  },
+                  drain: {
+                    claimed: 1,
+                    delivered: 1,
+                    retrying: 0,
+                    deadLettered: 0,
+                  },
+                }),
+                {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                },
+              ),
+            );
+          }, 100);
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              reject(new DOMException("aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        }),
+    );
+    const relayClient = new RelayClient({
+      baseUrl: "http://127.0.0.1:4317",
+      fetch: fetchMock,
+      timeoutMs: 50,
+    });
+
+    await expect(relayClient.activateTelegramCanary(event)).resolves.toEqual({
+      ingest: {
+        eventId: event.eventId,
+        inserted: true,
+        status: "delivered",
+      },
+      drain: {
+        claimed: 1,
+        delivered: 1,
+        retrying: 0,
+        deadLettered: 0,
+      },
+    });
+  });
+});
+
 describe("Telegram activation canary", () => {
   it("refuses before ingestion unless reply intake is active and locally owned", () => {
     const status = (intake: {
