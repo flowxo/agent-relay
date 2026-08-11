@@ -92,6 +92,7 @@ describe("RelayService durable delivery loop", () => {
     expect(await service.drain()).toMatchObject({ claimed: 0 });
     expect(transport.deliveries).toHaveLength(1);
     expect(store.status().events.delivered).toBe(1);
+    expect(store.status().eventActivity).toEqual({ inserted: 1, deleted: 0 });
     expect(
       store.transportDeliverySummary("fake-telegram", "fake-"),
     ).toMatchObject({

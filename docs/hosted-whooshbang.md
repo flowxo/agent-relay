@@ -138,15 +138,22 @@ the one answerable hosted canary only when that traffic is explicitly approved:
 ```sh
 node apps/relay/dist/cli.js transport select whooshbang
 node apps/relay/dist/cli.js daemon
-node apps/relay/dist/cli.js whooshbang-canary --wait-ms 120000
+node apps/relay/dist/cli.js whooshbang-canary \
+  --wait-ms 120000 \
+  --request-ttl-ms 300000
 node apps/relay/dist/cli.js doctor --live
 ```
 
 The canary succeeds only when the reply arrives through WhooshBang, matches the
 fixed synthetic challenge, resolves exactly once locally, and the daemon proves
-a committed hosted cursor with zero unacknowledged events. Its output contains
-only hashed message/diagnostic references, safe timestamps, cursor reference,
-and capability state.
+a committed hosted cursor with zero unacknowledged events. The client wait and
+durable request TTL are separate, the TTL must outlive the wait by at least one
+minute, and the aggregate pre/post status must attribute exactly one newly
+delivered event to the canary. A ceiling-bound run must use a normal terminal or
+exact hook-denied agent boundary; `canary-attribution-conflict` invalidates the
+proof. Its output contains only hashed message/diagnostic references, safe
+timestamps, cursor reference, capability state, and bounded aggregate
+attribution counts.
 
 ## Explicit legacy mock and administration path
 

@@ -102,6 +102,25 @@ Common stable provider codes:
 Real Telegram fails closed and never falls back to an unthreaded conversation.
 See the [Telegram guide](telegram.md) for setup and preflight behavior.
 
+## An interactive canary refuses success
+
+Run `agent-relay status` and `agent-relay doctor` locally; do not publish raw
+state or logs. Interactive canaries create one bounded synthetic event per
+invocation and do not automatically rerun themselves.
+
+| Code                           | Meaning and safe action                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `canary-request-ttl-invalid`   | Keep `--request-ttl-ms` between 1 and 3,600,000 milliseconds                                                              |
+| `canary-request-ttl-too-short` | Set the durable request TTL at least 60 seconds beyond `--wait-ms`                                                        |
+| `canary-attribution-conflict`  | Ambient event activity overlapped an answered canary; do not count it, deny ordinary hooks, and require any planned rerun |
+
+A client timeout does not cancel an otherwise valid durable request. A later
+first-writer answer can therefore be retained without converting the timed-out
+CLI invocation into a successful canary. For a precise live-card ceiling, use a
+normal terminal or exact hook-denied agent boundary for the primary operator and
+every helper. The observation plan—not a retry loop—sets the allowed invocation
+count and authorization.
+
 ## `/cleanup` or `/purge` finds nothing, or deletion fails
 
 Cleanup accepts only topics whose sessions have an explicit End tombstone or a

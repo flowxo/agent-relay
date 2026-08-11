@@ -22,6 +22,8 @@ import { WhooshBangContractTransport } from "@agent-relay/whooshbang-transport";
 
 import { RelayClient } from "./client.js";
 import {
+  INTERACTIVE_CANARY_DEFAULT_REQUEST_TTL_MS,
+  INTERACTIVE_CANARY_DEFAULT_WAIT_MS,
   isWhooshBangCanaryAcknowledged,
   runFakeCanary,
   runTelegramCanary,
@@ -913,7 +915,16 @@ async function main(): Promise<void> {
       client,
       machineId,
       projectPath: process.cwd(),
-      waitMs: integerFlag(args, "--wait-ms", 2 * 60_000),
+      waitMs: integerFlag(
+        args,
+        "--wait-ms",
+        INTERACTIVE_CANARY_DEFAULT_WAIT_MS,
+      ),
+      requestTtlMs: integerFlag(
+        args,
+        "--request-ttl-ms",
+        INTERACTIVE_CANARY_DEFAULT_REQUEST_TTL_MS,
+      ),
       pollIntervalMs: integerFlag(args, "--poll-interval-ms", 500),
     });
     output(result);
@@ -944,13 +955,24 @@ async function main(): Promise<void> {
       client,
       machineId,
       projectPath: process.cwd(),
-      waitMs: integerFlag(args, "--wait-ms", 2 * 60_000),
+      waitMs: integerFlag(
+        args,
+        "--wait-ms",
+        INTERACTIVE_CANARY_DEFAULT_WAIT_MS,
+      ),
+      requestTtlMs: integerFlag(
+        args,
+        "--request-ttl-ms",
+        INTERACTIVE_CANARY_DEFAULT_REQUEST_TTL_MS,
+      ),
       pollIntervalMs: integerFlag(args, "--poll-interval-ms", 500),
     });
     if (result.outcome !== "answered" || result.resolvedBy !== "whooshbang") {
       output({
         outcome: result.outcome,
         resolvedBy: result.resolvedBy ?? null,
+        diagnosticCode: result.diagnosticCode ?? null,
+        attribution: result.attribution ?? null,
       });
       process.exitCode = 1;
       return;
@@ -1015,6 +1037,7 @@ async function main(): Promise<void> {
     output({
       outcome: "answered",
       resolvedBy: "whooshbang",
+      attribution: result.attribution,
       messageRef: safeReference(diagnostic.messageId),
       diagnosticRef: safeReference(diagnostic.diagnosticId),
       providerState: diagnostic.state,

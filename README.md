@@ -171,12 +171,20 @@ set -a
 . ./.env.activation
 set +a
 
-~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
+~/.agent-relay/bin/agent-relay telegram-canary \
+  --wait-ms 120000 \
+  --request-ttl-ms 300000
 ```
 
 Agent Relay creates a Telegram topic and asks for the exact reply
-`relay-canary-ok`. When that succeeds, start Codex, Claude Code, or Cursor as
-usual. Their installed hooks will send attention events to the daemon.
+`relay-canary-ok`. The client wait and durable request lifetime are separate;
+the request TTL must outlive the wait by at least one minute. A successful
+one-card proof also requires the daemon's aggregate event counts to advance by
+exactly one delivered event. Run a ceiling-bound live canary from a normal
+terminal or an exact hook-denied agent boundary, never from an agent session
+that can emit ambient Relay events. When that succeeds, start Codex, Claude
+Code, or Cursor as usual. Their installed hooks will send attention events to
+the daemon.
 
 ## Send alerts to your own tools
 

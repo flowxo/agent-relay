@@ -19,7 +19,8 @@ stores:
   bounded agent summaries or excerpts, operator answers, session metadata,
   diagnostics, resume claims, transport message/topic identifiers,
   topic-cleanup/prune modes, inactivity cutoffs, bounded candidate metadata,
-  decisions, attempt state, and native-hook ordering allocations;
+  decisions, attempt state, native-hook ordering allocations, and two monotonic
+  event insertion/deletion counters;
 - `fallback-spool.ndjson`, containing bounded normalized hook records that could
   not reach the daemon yet;
 - `relay.ndjson` and rotated siblings, containing structured redacted
@@ -145,6 +146,12 @@ persists until replay succeeds or the user deliberately removes it. Rotating
 logs default to five files of at most 4 MiB each. Retention values and log
 limits are configurable through the documented daemon flags and `AGENT_RELAY_*`
 environment variables.
+
+SQLite also retains two content-free lifetime scalars: the number of event rows
+inserted and deleted. They let a bounded canary detect when retention would
+otherwise hide overlapping event traffic. Individual event retention does not
+reset these counters; they remain local, contain no identifiers or content, and
+are removed only when the configured state directory is erased.
 
 Local retention does not delete messages already accepted by Telegram or another
 provider. The direct-Telegram `/cleanup` command is an explicit exception: after
