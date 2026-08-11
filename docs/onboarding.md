@@ -596,15 +596,27 @@ consumes that attempt's reservation and ends the attempt without an independent
 supervisor retry.
 
 ```sh
+CURSOR_AGENT_EXACT="/absolute/path/to/approved/cursor-agent"
 ~/.agent-relay/bin/agent-relay run cursor \
-  --harness-version "$(cursor-agent --version)" \
+  --harness-version "$("$CURSOR_AGENT_EXACT" --version)" \
+  --executable "$CURSOR_AGENT_EXACT" \
+  --cwd "$PWD" \
   --max-resumes 10 \
-  -- --trust "Describe the repository and ask what to work on next."
+  -- --mode plan --sandbox enabled --trust --workspace "$PWD" -- \
+  "Describe the repository and ask what to work on next."
 ```
 
 The tested Cursor build emits its initial Stop hook interactively, not through
 `--print`. Exit the idle initial Cursor process after its Stop notification so
 the supervisor can launch the exact late-resume invocation.
+
+The Cursor supervisor reuses the exact `--executable` for late resume and
+reconstructs only its allowlisted execution context: mode, sandbox, workspace,
+additional directories, trust, and force. Keep the second `--` before the prompt
+so prompt text cannot be parsed as a Cursor option. A custom executable or
+wrapper must support both the initial argv and Cursor's resume argv. Use an
+immutable versioned executable or a fail-closed version-checking wrapper; a
+mutable `command -v` launcher is not exact-artifact evidence.
 
 For all three harnesses:
 

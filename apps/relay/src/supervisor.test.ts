@@ -39,6 +39,15 @@ const codexStop = JSON.stringify({
   last_assistant_message: "Synthetic supervised stop.",
 });
 
+const cursorStop = JSON.stringify({
+  hook_event_name: "stop",
+  conversation_id: "cursor-supervisor-12345678",
+  status: "completed",
+  loop_count: 0,
+  workspace_roots: ["/workspace/example"],
+  transcript_path: "/workspace/synthetic-transcript.jsonl",
+});
+
 interface ChildResultOverrides {
   startedAt?: string;
   exitedAt?: string;
@@ -282,7 +291,7 @@ describe("opt-in harness supervisor", () => {
       cwd: "/workspace/example",
       initialInvocation: {
         executable: "/private/machine/path/cursor-agent",
-        args: ["--secret-looking-argument"],
+        args: ["--model", "secret-looking-argument"],
       },
       client: new RelayClient({
         fetch: async () => {
@@ -436,6 +445,209 @@ describe("opt-in harness supervisor", () => {
         exitCode: 0,
       }),
     ]);
+    await runtime.close();
+  });
+
+  it("resumes Cursor with the exact executable and initial safety context", async () => {
+    const runtime = await setup();
+    const invocations: ChildRunRequest[] = [];
+    const logger = new MemoryLogger();
+    const runner = async (
+      request: ChildRunRequest,
+    ): Promise<OwnedChildResult> => {
+      invocations.push(request);
+      if (invocations.length === 1) {
+        await runHook({
+          harness: "cursor",
+          surface: "cli",
+          harnessVersion: "2026.07.23-e383d2b",
+          raw: cursorStop,
+          machineId,
+          bridgeSessionId,
+          occurredAt: "2026-07-24T12:00:00.000Z",
+          client: runtime.client,
+          fallbackPath: runtime.fallbackPath,
+          lateResume: true,
+          lateResumeTtlMs: 60_000,
+        });
+        await runtime.service.drain();
+        const delivery = runtime.transport.deliveries[0];
+        await runtime.router.handle({
+          update_id: 810,
+          message: {
+            message_id: 811,
+            message_thread_id: Number(delivery?.context.topicId),
+            from: { id: 7001 },
+            chat: { id: 9001 },
+            text: "Continue read-only",
+            reply_to_message: {
+              message_id: Number(delivery?.receipt.messageId),
+            },
+          },
+        });
+      }
+      return childResult();
+    };
+
+    const result = await runSupervisor({
+      harness: "cursor",
+      harnessVersion: "2026.07.23-e383d2b",
+      machineId,
+      bridgeSessionId,
+      supervisorId,
+      cwd: "/isolated/workspace",
+      initialInvocation: {
+        executable: "/approved/cursor-agent-2026.07.23-e383d2b",
+        args: [
+          "--print",
+          "--mode",
+          "plan",
+          "--sandbox",
+          "enabled",
+          "--trust",
+          "--workspace",
+          "/isolated/workspace",
+          "--add-dir",
+          "/workspace/example",
+          "--",
+          "bounded prompt",
+        ],
+      },
+      client: runtime.client,
+      logger,
+      childRunner: runner,
+      resumeWaitMs: 100,
+      pollIntervalMs: 25,
+      maxResumes: 1,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      classification: "clean-exit",
+      resumed: 1,
+    });
+    expect(invocations).toHaveLength(2);
+    expect(invocations[1]).toMatchObject({
+      executable: "/approved/cursor-agent-2026.07.23-e383d2b",
+      cwd: "/isolated/workspace",
+      args: [
+        "--resume=cursor-supervisor-12345678",
+        "--print",
+        "--mode",
+        "plan",
+        "--sandbox",
+        "enabled",
+        "--workspace",
+        "/isolated/workspace",
+        "--add-dir",
+        "/workspace/example",
+        "--trust",
+        "--",
+        "Continue read-only",
+      ],
+    });
+    expect(invocations[0]?.env["AGENT_RELAY_SUPERVISED"]).toBe("1");
+    expect(invocations[1]?.env["AGENT_RELAY_SUPERVISED"]).toBe("0");
+    expect(JSON.stringify(logger.records)).not.toContain("/isolated/workspace");
+    expect(JSON.stringify(logger.records)).not.toContain("/workspace/example");
+    expect(JSON.stringify(logger.records)).not.toContain("/approved/");
+    expect(JSON.stringify(logger.records)).not.toContain("Continue read-only");
+    await runtime.close();
+  });
+
+  it("keeps Cursor resume spawn-failure diagnostics free of argv and paths", async () => {
+    const runtime = await setup();
+    const invocations: ChildRunRequest[] = [];
+    const logger = new MemoryLogger();
+    const runner = async (
+      request: ChildRunRequest,
+    ): Promise<OwnedChildResult> => {
+      invocations.push(request);
+      if (invocations.length === 1) {
+        await runHook({
+          harness: "cursor",
+          surface: "cli",
+          harnessVersion: "2026.07.23-e383d2b",
+          raw: cursorStop,
+          machineId,
+          bridgeSessionId,
+          occurredAt: "2026-07-24T12:00:00.000Z",
+          client: runtime.client,
+          fallbackPath: runtime.fallbackPath,
+          lateResume: true,
+          lateResumeTtlMs: 60_000,
+        });
+        await runtime.service.drain();
+        const delivery = runtime.transport.deliveries[0];
+        await runtime.router.handle({
+          update_id: 820,
+          message: {
+            message_id: 821,
+            message_thread_id: Number(delivery?.context.topicId),
+            from: { id: 7001 },
+            chat: { id: 9001 },
+            text: "Private resume answer",
+            reply_to_message: {
+              message_id: Number(delivery?.receipt.messageId),
+            },
+          },
+        });
+        return childResult();
+      }
+      return childResult({
+        pid: null,
+        exitCode: null,
+        spawnErrorCode: "ENOENT",
+      });
+    };
+
+    const result = await runSupervisor({
+      harness: "cursor",
+      harnessVersion: "2026.07.23-e383d2b",
+      machineId,
+      bridgeSessionId,
+      supervisorId,
+      cwd: "/private/isolated-workspace",
+      initialInvocation: {
+        executable: "/private/exact-cursor-agent",
+        args: [
+          "--mode=plan",
+          "--sandbox=enabled",
+          "--trust",
+          "--workspace=/private/isolated-workspace",
+          "--add-dir=/private/repository",
+          "--",
+          "private initial prompt",
+        ],
+      },
+      client: runtime.client,
+      logger,
+      childRunner: runner,
+      resumeWaitMs: 100,
+      pollIntervalMs: 25,
+      maxResumes: 1,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 127,
+      classification: "spawn-error",
+      resumed: 1,
+    });
+    expect(invocations).toHaveLength(2);
+    expect(runtime.store.listResumeCommands()).toEqual([
+      expect.objectContaining({
+        state: "failed",
+        errorCode: "resume-spawn-error",
+        errorMessage: "Supervised child could not be started (ENOENT)",
+      }),
+    ]);
+    const observable = JSON.stringify({
+      result,
+      logs: logger.records,
+    });
+    expect(observable).not.toContain("/private/");
+    expect(observable).not.toContain("private initial prompt");
+    expect(observable).not.toContain("Private resume answer");
     await runtime.close();
   });
 

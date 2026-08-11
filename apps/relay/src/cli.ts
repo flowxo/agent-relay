@@ -28,7 +28,11 @@ import {
   waitForTelegramCanaryReady,
   runWhooshBangCanary,
 } from "./canary.js";
-import { resolveHookHarnessVersion, resolveWebEnabled } from "./cli-options.js";
+import {
+  resolveHookHarnessVersion,
+  resolveSupervisorExecutable,
+  resolveWebEnabled,
+} from "./cli-options.js";
 import { startDaemon } from "./daemon.js";
 import { observeHarnessVersions, runDoctor } from "./doctor.js";
 import { replayFallbackSpool } from "./fallback-spool.js";
@@ -579,8 +583,10 @@ async function main(): Promise<void> {
     const configuredBridgeSessionId = environment(
       "AGENT_RELAY_BRIDGE_SESSION_ID",
     );
-    const executable =
-      flag(supervisorArgs, "--executable") ?? harnessExecutable(harness);
+    const executable = resolveSupervisorExecutable(
+      supervisorArgs,
+      harnessExecutable(harness),
+    );
     const result = await runSupervisor({
       harness,
       harnessVersion:

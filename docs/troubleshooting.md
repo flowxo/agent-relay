@@ -235,6 +235,13 @@ Check:
 - the resume state is not already `claimed`, `running`, or terminal; and
 - the original execution mode is still supported.
 
+For Cursor CLI, also confirm that the original `--executable` still exists and
+accepts resume argv, and that its initial mode, sandbox, workspace, and
+additional-directory values are valid and non-conflicting. The supervisor copies
+none of the original credential, endpoint, model, plugin, MCP, or prompt
+arguments into the resume command. An option form unknown to the pinned Cursor
+contract is rejected before the initial child starts rather than guessed.
+
 Do not manually retry a `claimed` command. At-most-once ownership deliberately
 prefers a visible interrupted claim over duplicate agent execution.
 
