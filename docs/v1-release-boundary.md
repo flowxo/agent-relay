@@ -27,7 +27,11 @@ occurred.
   its final post-merge candidate and new digests are recorded externally before
   FXO-1164 execution rather than self-referenced from this source file.
 - The frozen package manager is `pnpm@11.17.0`; `pnpm-lock.yaml` has SHA-256
-  `46b51f60a932e73533b43c7d605c350b36f01dcdd4e196ef61f14309bf2c6b38`.
+  `bb64bd2050d8f05f973e47785ee3806cf3ae931394e027ffd41f80e36e939723`.
+- Development-only security overrides pin `brace-expansion@5.0.9`,
+  `fast-uri@3.1.5`, and `postcss@8.5.26`. They clear GHSA-rgw5-rvv9-x895,
+  GHSA-7p8r-x3mc-p8w7, and GHSA-fxqj-rqcc-2cmp without changing the
+  three-package runtime graph.
 - The final clean reviewed release commit and tarball are bound later by the
   generated package-content snapshot, release notes, release manifest,
   `SHA256SUMS`, SPDX SBOM, sanitized clean-home evidence, and any separately

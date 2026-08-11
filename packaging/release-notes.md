@@ -63,6 +63,9 @@ traffic.
 - The release candidate identity is `@flowxo/agent-relay@0.1.0-alpha.2`.
 - Release packing canonicalizes the gzip operating-system byte to `255` before
   comparing final compressed bytes. Noncanonical bundles fail verification.
+- Development-only `brace-expansion`, `fast-uri`, and `postcss` are pinned to
+  patched versions after the public dependency scan and audit refresh; none
+  enters the shipped runtime graph.
 - The hosted transport identifier is `whooshbang`; stale `notifications`
   selection fails closed and requires an explicit reconnect and reselection.
 - Existing WhooshBang connections must reconnect after the exact contract pin
