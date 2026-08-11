@@ -3,20 +3,20 @@
 Agent Relay has one end-user package candidate:
 
 - **name:** `@flowxo/agent-relay`
-- **version:** `0.1.0-alpha.1`
+- **version:** `0.1.0-alpha.2`
 - **public surface:** the `agent-relay` executable
 - **supported target:** macOS on Apple silicon, Node.js 22 or newer
-- **publication state:** approved for bounded FXO-1164 execution; not yet
-  published
+- **publication state:** blocked pending renewed FXO-1574 exact-candidate
+  approval; not yet published
 
 The scoped name avoids the unrelated unscoped `agent-relay` package already on
 npm. FXO-1568 confirms owner control of the Flow XO scope and exact package
 name. Building, packing, or testing this candidate still does not publish it.
 `packaging/release.json` is the reviewed identity/runtime metadata used by the
-staging and verification scripts. Its bounded publication approval is true, so
-the staged artifact is registry-eligible; the workspace root always stays
-private to prevent accidental monorepo publication. FXO-1164 remains the only
-authorized execution gate.
+staging and verification scripts. Its publication approval is false and its
+registry action is blocked; the staged artifact and workspace root stay private
+to prevent accidental publication. FXO-1164 cannot resume until renewed approval
+names the exact alpha.2 source and artifact digests.
 
 ## Why one package
 
@@ -156,10 +156,10 @@ and sibling checkouts are rejected by the existing contract and package gates.
 Unsupported operating systems report a runtime skip, while content and
 exact-contract gates remain mandatory.
 
-The lifecycle check derives a sanitized `0.1.0-alpha.0` prior-package fixture
+The lifecycle check derives a sanitized `0.1.0-alpha.1` prior-package fixture
 from the exact current artifact, installs it with scripts disabled, records a
 durable answered request, and upgrades the same isolated prefix to
-`0.1.0-alpha.1`. It requires doctor to expose the stale package/entry mismatch
+`0.1.0-alpha.2`. It requires doctor to expose the stale package/entry mismatch
 before reconciliation, then proves:
 
 - install dry runs do not mutate configuration;
@@ -177,8 +177,8 @@ before reconciliation, then proves:
 To create a disposable tarball for manual review:
 
 ```sh
-pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.1.tgz
-tar -tzf .artifacts/agent-relay-0.1.0-alpha.1.tgz
+pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.2.tgz
+tar -tzf .artifacts/agent-relay-0.1.0-alpha.2.tgz
 ```
 
 `.artifacts/` is generated and gitignored. Never put credentials, activation

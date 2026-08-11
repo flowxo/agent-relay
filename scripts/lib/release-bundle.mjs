@@ -93,6 +93,29 @@ function sha(algorithm, value) {
   return createHash(algorithm).update(value).digest("hex");
 }
 
+function assertPackedArchiveHeader(archive) {
+  assert(
+    archive.length >= 10 &&
+      archive[0] === 0x1f &&
+      archive[1] === 0x8b &&
+      archive[2] === 0x08,
+    "packed artifact is not a gzip archive",
+  );
+  assert(
+    (archive[3] & 0x02) === 0,
+    "packed artifact uses a gzip header checksum that cannot be normalized safely",
+  );
+}
+
+export async function normalizePackedArchive(path) {
+  const archive = await readFile(path);
+  assertPackedArchiveHeader(archive);
+  if (archive[9] !== 0xff) {
+    archive[9] = 0xff;
+    await writeFile(path, archive);
+  }
+}
+
 async function fileSha(algorithm, path) {
   return sha(algorithm, await readFile(path));
 }
@@ -249,8 +272,8 @@ function dependencyId(name, version) {
   return `SPDXRef-Package-${sha("sha256", `${name}@${version}`).slice(0, 20)}`;
 }
 
-function packagePurl(name, version) {
-  const encodedName = encodeURIComponent(name).replace("%2F", "/");
+export function packagePurl(name, version) {
+  const encodedName = encodeURIComponent(name).replaceAll("%2F", "/");
   return `pkg:npm/${encodedName}@${version}`;
 }
 
@@ -613,6 +636,9 @@ export async function buildReleaseBundle({
       env: buildEnvironment,
     });
 
+    await normalizePackedArchive(first);
+    await normalizePackedArchive(second);
+
     const firstSha256 = await fileSha("sha256", first);
     const secondSha256 = await fileSha("sha256", second);
     assert(
@@ -909,6 +935,12 @@ export async function verifyReleaseBundle({
   }
 
   const tarball = resolve(directory, names.tarball);
+  const tarballBytes = await readFile(tarball);
+  assertPackedArchiveHeader(tarballBytes);
+  assert(
+    tarballBytes[9] === 0xff,
+    "packed artifact gzip operating-system byte is not canonical",
+  );
   const tarballSha256 = await fileSha("sha256", tarball);
   assert(
     manifest.artifact?.file === names.tarball &&
@@ -1080,11 +1112,11 @@ export async function verifyReleaseBundle({
   const releaseNotes = await readFile(releaseNotesPath, "utf8");
   assert(
     releaseNotes.includes(`${release.version} release candidate`) &&
-      /FXO-1568 approved one bounded[\s\S]*future FXO-1164 publication/.test(
+      /FXO-1574 requires renewed exact-candidate[\s\S]*before FXO-1164 publication/.test(
         releaseNotes,
       ) &&
-      /manifest's build-time[\s\S]*`tagStatus`/.test(releaseNotes),
-    "release notes do not preserve the candidate publication boundary",
+      /manifest's[\s\S]*build-time[\s\S]*`tagStatus`/.test(releaseNotes),
+    "release notes do not preserve the renewed candidate publication boundary",
   );
   if (root !== undefined) {
     assert(

@@ -16,17 +16,19 @@ Agent Relay is local-first: the daemon and its SQLite database run on your
 machine. Telegram and the optional WhooshBang service are adapters, not places
 where Agent Relay keeps its source of truth.
 
-> **Alpha release status:** Agent Relay has not yet been published to npm.
-> FXO-1568 approved one bounded future FXO-1164 publication after the exact
-> green post-merge commit and regenerated artifact digests are recorded. The
-> tested setup is macOS on Apple silicon with Node.js 22 or newer and pnpm 11.
+> **Alpha release status:** Agent Relay has not yet been published to npm. The
+> immutable alpha.1 tag exposed a cross-platform gzip-header digest mismatch
+> before registry publication. FXO-1574 prepares alpha.2, and renewed
+> exact-candidate approval is required before FXO-1164 can resume. The tested
+> setup is macOS on Apple silicon with Node.js 22 or newer and pnpm 11.
 
 The [frozen V1 release boundary](docs/v1-release-boundary.md) records exact
 package/source provenance, lockfile, support, transport/privacy fields, and
-known limitations. FXO-1162 created no tag; the generated manifest records
-build-time tag state. FXO-1164 owns the approved public repository, security,
-immutable tag, npm alpha, trusted-publisher, and GitHub prerelease operations.
-No production or live-provider work is authorized.
+known limitations. The repository and security-reporting path are public. The
+failed alpha.1 tag and attestations remain immutable evidence; the generated
+manifest records alpha.2 build-time tag state. No alpha.2 tag, npm package,
+GitHub release, production change, or live-provider work is authorized before
+the renewed decision.
 
 ## What you get
 

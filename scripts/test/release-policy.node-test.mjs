@@ -100,7 +100,7 @@ function approvePublication(release, registryAction = "publish") {
     approved: true,
     decision: "go-with-named-nonblocking-residuals",
     decisionReference:
-      "https://linear.app/flowxo/issue/FXO-1568/synthetic-decision",
+      "https://linear.app/flowxo/issue/FXO-1574/synthetic-decision",
     executionIssue:
       "https://linear.app/flowxo/issue/FXO-1164/synthetic-execution",
     registryAction,
@@ -121,8 +121,6 @@ function approvePublication(release, registryAction = "publish") {
       requiredForSubsequentPublishes: true,
     },
   };
-  release.bundledComponentLicenseReview.decisionReference =
-    release.publication.decisionReference;
 }
 
 function publishContext(overrides = {}) {
@@ -275,8 +273,6 @@ test("enforces current npm minimums for publish and staged publishing", () => {
   const release = configuration();
   approvePublication(release);
   approveBundledLicense(release);
-  release.bundledComponentLicenseReview.decisionReference =
-    release.publication.decisionReference;
   assert.throws(
     () =>
       assertPublishContext(release, publishContext({ npmVersion: "11.5.0" })),

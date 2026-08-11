@@ -1,10 +1,10 @@
-# Agent Relay 0.1.0-alpha.1 release candidate
+# Agent Relay 0.1.0-alpha.2 release candidate
 
-> **Candidate status:** FXO-1162 created no tag. FXO-1568 approved one bounded
-> future FXO-1164 publication after the exact green post-merge commit and
-> regenerated digests are recorded. Consult the generated manifest's build-time
-> `tagStatus`; these notes do not claim that the tag, package, public
-> repository, or GitHub prerelease already exists.
+> **Candidate status:** FXO-1574 requires renewed exact-candidate approval
+> before FXO-1164 publication can resume. Consult the generated manifest's
+> build-time `tagStatus`; these notes do not claim that the alpha.2 tag, npm
+> package, or GitHub prerelease exists. The repository is public, while the
+> immutable alpha.1 tag and attestations remain stopped-publication evidence.
 
 Agent Relay is a local-first attention and control layer for concurrent Codex,
 Claude Code, and Cursor sessions. It keeps SQLite authoritative on the
@@ -60,7 +60,9 @@ traffic.
 
 ## Configuration, installer, schema, and privacy changes
 
-- The release candidate identity is `@flowxo/agent-relay@0.1.0-alpha.1`.
+- The release candidate identity is `@flowxo/agent-relay@0.1.0-alpha.2`.
+- Release packing canonicalizes the gzip operating-system byte to `255` before
+  comparing final compressed bytes. Noncanonical bundles fail verification.
 - The hosted transport identifier is `whooshbang`; stale `notifications`
   selection fails closed and requires an explicit reconnect and reselection.
 - Existing WhooshBang connections must reconnect after the exact contract pin
@@ -106,8 +108,9 @@ the private vulnerability-reporting path.
 - FXO-1568 approves MIT and `Copyright (c) 2026 Flow XO, LLC` for the exact
   bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts. Different
   versions, source commits, or archive digests require a new review.
-- The first npm publish is an approved interactive 2FA bootstrap because the
-  package must already exist before trusted-publisher setup. The exact OIDC
+- Alpha.2 publication is blocked pending renewed exact-candidate approval. If
+  approved, the first npm publish remains an interactive 2FA bootstrap because
+  the package must already exist before trusted-publisher setup. The exact OIDC
   publisher is installed immediately afterward; no token is retained and every
   later publish uses OIDC.
 
@@ -118,6 +121,14 @@ snapshot, these release notes, source manifest, and `SHA256SUMS` from one clean
 commit. The manifest records whether the intended tag actually points at that
 commit. A local build is unsigned evidence; only the separately authorized
 tagged GitHub workflow can create signed build and SBOM attestations.
+
+The immutable alpha.1 source commit `cda92d179e76c00eac848a3d496fa298115cce45`
+produced equal-size Linux and macOS archives whose extracted files and
+uncompressed tar stream were identical. Only gzip header offset 9 (the tenth
+byte) differed (`0x03` versus `0x13`), changing the artifact digest and its
+downstream SBOM/checksum/attestation bindings. The alpha.1 tag, tagged run, and
+attestations are retained; the version and tag are never deleted, moved, or
+reused.
 
 `pnpm release:evidence` then verifies that exact bundle and records a sanitized
 clean-home packed-package fake-canary result. It never forwards provider
@@ -138,5 +149,6 @@ release-bundle proof had SHA-256
 bytes, 11 packed files, and six SPDX packages; it was not live-tested. No
 live-card authorization carries forward. The completed onboarding predecessor is
 PR #42, reviewed head `52f04958bc6f3b838ff080eb8bc9111ac7e6f338`, merge
-`c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`; the final FXO-1568 post-merge commit
-and regenerated digests are recorded before FXO-1164 execution.
+`c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`. FXO-1574 records the corrected
+alpha.2 source and regenerated digests before requesting renewed approval and
+resuming FXO-1164.

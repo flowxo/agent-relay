@@ -147,8 +147,17 @@ current frozen PR #41 merge is `0adb7288483df331fbaaefb9b392ee2f4f3c7d84`. See
 the [V1 release record](v1-release-boundary.md) for exact heads and merges. The
 completed onboarding predecessor is PR #42, reviewed head
 `52f04958bc6f3b838ff080eb8bc9111ac7e6f338`, merge
-`c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`. Publication, tagging, and signed
-release provenance have not yet been attempted.
+`c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`.
+
+FXO-1164 made the repository public, enabled the available GitHub security
+controls, protected the prerelease environment, and created immutable tag
+`v0.1.0-alpha.1` on exact commit `cda92d179e76c00eac848a3d496fa298115cce45`. The
+protected tagged run passed the repository, browser, audit, bundle, upload, and
+build/SBOM attestation jobs, but publication stopped because the Linux artifact
+SHA-256 differed from the authorized macOS artifact SHA-256. Their extracted
+bytes and uncompressed tar stream were identical; only gzip header offset 9 (the
+tenth byte) differed. No npm package or GitHub release was created. The tag,
+run, and attestations remain immutable failed-publication evidence.
 
 ## How to diagnose
 
@@ -221,14 +230,14 @@ session launched with every ambient hook disabled. Exact hook-denied isolation
 and aggregate attribution mitigate this limitation, and contaminated windows
 fail closed. No live-card authorization carries forward.
 
-The FXO-1162 evaluation created no `v0.1.0-alpha.1` tag; generated manifests
-record build-time tag state. FXO-1568 now approves MIT and the shipped notices
-for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts and a
-bounded future FXO-1164 publication. Before execution, the exact green
-post-merge commit and regenerated digests must be recorded. FXO-1164 may then
-make the repository public, enable and verify GitHub security controls, create
-the immutable tag, perform the approved interactive 2FA first publish, install
-the OIDC trusted publisher immediately, and create the GitHub prerelease.
+The immutable `v0.1.0-alpha.1` tag records the stopped cross-platform digest
+attempt and must not move. FXO-1568 still approves MIT and the shipped notices
+for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts.
+FXO-1574 advances the corrected source to `0.1.0-alpha.2`, canonicalizes the
+gzip operating-system byte, and requires renewed approval for its exact source
+and regenerated digests. Until that decision is recorded, no alpha.2 tag,
+interactive 2FA first publish, OIDC trusted-publisher configuration, or GitHub
+prerelease is authorized.
 
 The accepted non-green native release-exit and Low hook-isolation residuals are
 explicitly non-blocking for this alpha and remain accurately described. No

@@ -244,14 +244,13 @@ export function assertReleaseConfiguration(release, rootPackage) {
     );
     assert(
       publication.decision === "go-with-named-nonblocking-residuals" &&
-        publication.decisionReference === licenseReview.decisionReference &&
-        /^https:\/\/linear\.app\/flowxo\/issue\/FXO-1568\//.test(
+        /^https:\/\/linear\.app\/flowxo\/issue\/FXO-1574\//.test(
           publication.decisionReference,
         ) &&
         /^https:\/\/linear\.app\/flowxo\/issue\/FXO-1164\//.test(
           publication.executionIssue,
         ),
-      "approved publication must preserve the bounded owner decision and execution issue",
+      "approved publication must preserve the renewed exact-candidate decision and execution issue",
     );
     assert(
       publication.initialPublish?.mode === "interactive-2fa-bootstrap" &&

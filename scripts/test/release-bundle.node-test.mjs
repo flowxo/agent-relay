@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -15,8 +16,11 @@ import { join } from "node:path";
 import process from "node:process";
 import test from "node:test";
 import { promisify } from "node:util";
+import { gzipSync } from "node:zlib";
 
 import {
+  normalizePackedArchive,
+  packagePurl,
   readGitBuildInfo,
   releaseArtifactNames,
   run as runReleaseCommand,
@@ -98,6 +102,38 @@ async function fileDigest(algorithm, path) {
   return digest(algorithm, await readFile(path));
 }
 
+test("normalizes platform-specific gzip headers to identical archive bytes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "release-gzip-header-"));
+  try {
+    const linuxPath = join(directory, "linux.tgz");
+    const macosPath = join(directory, "macos.tgz");
+    const source = gzipSync("platform-stable release archive");
+    const linux = Buffer.from(source);
+    const macos = Buffer.from(source);
+    linux[9] = 0x03;
+    macos[9] = 0x13;
+    await writeFile(linuxPath, linux);
+    await writeFile(macosPath, macos);
+
+    await normalizePackedArchive(linuxPath);
+    await normalizePackedArchive(macosPath);
+
+    const normalizedLinux = await readFile(linuxPath);
+    const normalizedMacos = await readFile(macosPath);
+    assert.deepEqual(normalizedLinux, normalizedMacos);
+    assert.equal(normalizedLinux[9], 0xff);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("encodes every npm package-name slash in SPDX purls consistently", () => {
+  assert.equal(
+    packagePurl("@scope/nested/name", "1.2.3"),
+    "pkg:npm/%40scope/nested/name@1.2.3",
+  );
+});
+
 async function rewriteChecksums(bundle, names) {
   const checksumLines = [];
   for (const file of [
@@ -150,6 +186,7 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
 
   const tarball = join(bundle, names.tarball);
   await runFile("tar", ["-czf", tarball, "-C", source, "package"]);
+  await normalizePackedArchive(tarball);
   const tarballSha256 = await fileDigest("sha256", tarball);
   const fileRecords = [];
   for (const file of ["dist/cli.js", "package.json"]) {
@@ -273,7 +310,7 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
   const releaseNotesPath = join(bundle, names.releaseNotes);
   await writeFile(
     releaseNotesPath,
-    `# Agent Relay ${release.version} release candidate\n\nFXO-1568 approved one bounded future FXO-1164 publication. Consult the manifest's build-time \`tagStatus\`.\n`,
+    `# Agent Relay ${release.version} release candidate\n\nFXO-1574 requires renewed exact-candidate approval before FXO-1164 publication. Consult the manifest's build-time \`tagStatus\`.\n`,
   );
   const manifest = {
     schema: "agent-relay-release-bundle.v1",
@@ -472,6 +509,33 @@ test("verifies a bound bundle and rejects a changed artifact", async () => {
         expectedCommit: commit,
       }),
       /checksum differs/,
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects a noncanonical archive even when SHA256SUMS is refreshed", async () => {
+  const temporaryRoot = await mkdtemp(
+    join(tmpdir(), "agent-relay-bundle-test-"),
+  );
+  try {
+    const { bundle, names, release } =
+      await writeSyntheticBundle(temporaryRoot);
+    const tarballPath = join(bundle, names.tarball);
+    const tarball = await readFile(tarballPath);
+    tarball[9] = 0x03;
+    await writeFile(tarballPath, tarball);
+    await rewriteChecksums(bundle, names);
+
+    await assert.rejects(
+      verifyReleaseBundle({
+        release,
+        rootPackage: rootPackage(),
+        directory: bundle,
+        expectedCommit: commit,
+      }),
+      /gzip operating-system byte is not canonical/,
     );
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });

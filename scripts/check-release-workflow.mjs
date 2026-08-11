@@ -201,12 +201,13 @@ for (const forbidden of [
 }
 
 if (
-  release.publication.approved !== true ||
-  release.publication.registryAction !== "publish" ||
-  release.publication.initialPublish?.mode !== "interactive-2fa-bootstrap"
+  release.publication.initialPublish?.mode !== "interactive-2fa-bootstrap" ||
+  (release.publication.approved === true
+    ? release.publication.registryAction !== "publish"
+    : release.publication.registryAction !== "blocked")
 ) {
   throw new Error(
-    "Release workflow violation: bounded prerelease publication approval differs",
+    "Release workflow violation: prerelease publication decision differs",
   );
 }
 
@@ -247,7 +248,7 @@ for (const pattern of [
 }
 
 for (const pattern of [
-  /FXO-1568/i,
+  /FXO-1574/i,
   /FXO-1164/i,
   /SHA256SUMS/,
   /SPDX/,
@@ -273,5 +274,5 @@ for (const pattern of [
 }
 
 process.stdout.write(
-  `Release workflow boundary verified (${String(usedActions.size)} immutable actions, ${String(runtimeGraph.packages.length)} runtime dependency packages, ${String(release.bundledComponents.length)} MIT-approved bundled components, bounded publication approved, interactive bootstrap and OIDC/attestation gates present).\n`,
+  `Release workflow boundary verified (${String(usedActions.size)} immutable actions, ${String(runtimeGraph.packages.length)} runtime dependency packages, ${String(release.bundledComponents.length)} MIT-approved bundled components, publication ${release.publication.approved === true ? "approved" : "blocked pending renewed approval"}, interactive bootstrap and OIDC/attestation gates present).\n`,
 );
