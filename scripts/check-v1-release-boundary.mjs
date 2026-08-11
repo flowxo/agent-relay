@@ -177,6 +177,30 @@ assert(
   boundary.sourceInputs.lockfile.sha256 === (await sha256("pnpm-lock.yaml")),
   "lockfile digest differs",
 );
+assert(
+  JSON.stringify(boundary.sourceInputs.developmentSecurityOverrides) ===
+    JSON.stringify([
+      {
+        name: "brace-expansion",
+        version: "5.0.9",
+        advisory: "GHSA-rgw5-rvv9-x895",
+        scope: "development-only",
+      },
+      {
+        name: "fast-uri",
+        version: "3.1.5",
+        advisory: "GHSA-7p8r-x3mc-p8w7",
+        scope: "development-only",
+      },
+      {
+        name: "postcss",
+        version: "8.5.26",
+        advisory: "GHSA-fxqj-rqcc-2cmp",
+        scope: "development-only",
+      },
+    ]),
+  "development security override boundary differs",
+);
 assertFrozenEvidenceProvenance(boundary);
 
 assert(

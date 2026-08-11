@@ -13,6 +13,10 @@ breaking changes and required operator action.
   protected Linux builds produce identical compressed bytes.
 - Replace two CodeQL High findings with bounded operations: encode every slash
   in SPDX npm purls consistently and trim handoff URL slashes in linear time.
+- Pin patched development-only `brace-expansion@5.0.9`, `fast-uri@3.1.5`, and
+  `postcss@8.5.26` after the public repository's post-merge dependency scan and
+  audit feed exposed two High and one Medium advisories. The shipped runtime
+  dependency graph is unchanged.
 
 ### Changed
 
