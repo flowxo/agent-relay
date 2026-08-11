@@ -86,6 +86,7 @@ function rootPackage() {
     name: "@flowxo/agent-relay",
     version: "0.1.0-alpha.1",
     private: true,
+    license: "MIT",
   };
 }
 
@@ -181,6 +182,9 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
         SPDXID: mainPackageId,
         name: release.name,
         versionInfo: release.version,
+        licenseConcluded: "MIT",
+        licenseDeclared: "MIT",
+        copyrightText: "Copyright (c) 2026 Flow XO, LLC",
         checksums: [{ algorithm: "SHA256", checksumValue: tarballSha256 }],
         packageVerificationCode: {
           packageVerificationCodeValue: verificationCode,
@@ -201,7 +205,9 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
         name: component.name,
         versionInfo: component.version,
         downloadLocation: `${component.sourceRepository}/tree/${component.sourceCommit}`,
+        licenseConcluded: component.licenseDeclared,
         licenseDeclared: component.licenseDeclared,
+        copyrightText: component.copyrightText,
         checksums: [
           {
             algorithm: "SHA256",
@@ -267,7 +273,7 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
   const releaseNotesPath = join(bundle, names.releaseNotes);
   await writeFile(
     releaseNotesPath,
-    `# Agent Relay ${release.version} release candidate\n\nFXO-1162 candidate freeze created or authorized no tag. Consult the manifest's build-time \`tagStatus\`.\n`,
+    `# Agent Relay ${release.version} release candidate\n\nFXO-1568 approved one bounded future FXO-1164 publication. Consult the manifest's build-time \`tagStatus\`.\n`,
   );
   const manifest = {
     schema: "agent-relay-release-bundle.v1",

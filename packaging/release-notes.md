@@ -1,10 +1,10 @@
 # Agent Relay 0.1.0-alpha.1 release candidate
 
-> **Candidate status:** FXO-1162 candidate freeze created or authorized no tag.
-> Consult the generated manifest's build-time `tagStatus` to distinguish a
-> credential-free untagged bundle from a later, separately owner-authorized
-> tagged candidate. These notes never authorize package publication, repository
-> promotion, production change, or a live-provider run.
+> **Candidate status:** FXO-1162 created no tag. FXO-1568 approved one bounded
+> future FXO-1164 publication after the exact green post-merge commit and
+> regenerated digests are recorded. Consult the generated manifest's build-time
+> `tagStatus`; these notes do not claim that the tag, package, public
+> repository, or GitHub prerelease already exists.
 
 Agent Relay is a local-first attention and control layer for concurrent Codex,
 Claude Code, and Cursor sessions. It keeps SQLite authoritative on the
@@ -103,8 +103,13 @@ the private vulnerability-reporting path.
 - The accepted Low residual remains: automation cannot prove that every ambient
   hook was disabled in the invoking shell or GUI. Exact hook-denied isolation
   and aggregate attribution mitigate it; contaminated windows fail closed.
-- The bundled WhooshBang contracts and SDK still require an owner-approved
-  distributable license and notice decision before public publication.
+- FXO-1568 approves MIT and `Copyright (c) 2026 Flow XO, LLC` for the exact
+  bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts. Different
+  versions, source commits, or archive digests require a new review.
+- The first npm publish is an approved interactive 2FA bootstrap because the
+  package must already exist before trusted-publisher setup. The exact OIDC
+  publisher is installed immediately afterward; no token is retained and every
+  later publish uses OIDC.
 
 ## Exact artifact and provenance boundary
 
@@ -121,9 +126,9 @@ not substitute for the currently non-green native release-exit gate.
 
 The retained live-reviewed package remains the earlier PR #39 alpha.1 tarball,
 SHA-256 `654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198`. It
-contains neither PR #40 nor PR #41. The source candidate entering the freeze was
-PR #40 merge `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`; its ephemeral package
-proof had SHA-256
+contains none of PR #40, PR #41, or PR #42. The source candidate entering the
+freeze was PR #40 merge `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`; its
+ephemeral package proof had SHA-256
 `8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543` and was
 neither retained nor live-tested. The current frozen source after FXO-1161 is PR
 #41 reviewed head `875e5631ad45bbeb86c377e73dabe4d616b46413`, merge
@@ -131,4 +136,7 @@ neither retained nor live-tested. The current frozen source after FXO-1161 is PR
 release-bundle proof had SHA-256
 `3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
 bytes, 11 packed files, and six SPDX packages; it was not live-tested. No
-live-card authorization carries forward.
+live-card authorization carries forward. The completed onboarding predecessor is
+PR #42, reviewed head `52f04958bc6f3b838ff080eb8bc9111ac7e6f338`, merge
+`c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`; the final FXO-1568 post-merge commit
+and regenerated digests are recorded before FXO-1164 execution.

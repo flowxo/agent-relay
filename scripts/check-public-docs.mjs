@@ -305,15 +305,17 @@ for (const pattern of [
 
 const releaseNotes = await text("packaging/release-notes.md");
 for (const pattern of [
-  /FXO-1162 candidate freeze created or authorized no tag/,
-  /manifest's build-time `tagStatus`/,
+  /FXO-1568 approved one bounded[\s\S]*future FXO-1164 publication/,
+  /manifest's build-time[\s\S]*`tagStatus`/,
   /Start here/,
   /Configuration, installer, schema, and privacy changes/,
   /Upgrade and rollback/,
   /Known limitations and publication gates/,
   /Exact artifact and provenance boundary/,
   /native release-exit is \*\*not green\*\*/i,
-  /contains neither PR #40 nor PR #41/,
+  /contains none of PR #40, PR #41, or PR #42/,
+  /interactive 2FA bootstrap/,
+  /no token is retained/,
 ]) {
   requireText(
     releaseNotes,

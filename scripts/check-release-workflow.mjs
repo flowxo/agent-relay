@@ -18,14 +18,23 @@ function requireText(source, pattern, message) {
   }
 }
 
-const [ci, prerelease, releasing, thirdPartyNotices, packageSource] =
-  await Promise.all([
-    text(".github/workflows/ci.yml"),
-    text(".github/workflows/prerelease.yml"),
-    text("docs/releasing.md"),
-    text("THIRD_PARTY_NOTICES.md"),
-    text("package.json"),
-  ]);
+const [
+  ci,
+  prerelease,
+  bootstrapPublish,
+  releasePolicy,
+  releasing,
+  thirdPartyNotices,
+  packageSource,
+] = await Promise.all([
+  text(".github/workflows/ci.yml"),
+  text(".github/workflows/prerelease.yml"),
+  text("scripts/bootstrap-publish-release.mjs"),
+  text("scripts/lib/release-policy.mjs"),
+  text("docs/releasing.md"),
+  text("THIRD_PARTY_NOTICES.md"),
+  text("package.json"),
+]);
 const rootPackage = JSON.parse(packageSource);
 const release = JSON.parse(await text("packaging/release.json"));
 const releaseExit = JSON.parse(await text("packaging/release-exit.json"));
@@ -53,8 +62,8 @@ for (const component of release.bundledComponents) {
 }
 requireText(
   thirdPartyNotices,
-  /NOASSERTION[\s\S]*owner-approved[\s\S]*before public/i,
-  "bundled component licensing must remain an explicit publication gate",
+  /WhooshBang[\s\S]*MIT[\s\S]*Copyright \(c\) 2026 Flow XO, LLC/i,
+  "bundled component licensing must preserve the approved MIT notice",
 );
 
 if (
@@ -167,6 +176,7 @@ for (const pattern of [
   /github\.event_name == 'workflow_dispatch' && inputs\.publish == true/,
   /publish-release\.mjs \.artifacts\/release --execute/,
   /AGENT_RELAY_REPOSITORY_VISIBILITY/,
+  /AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED/,
   /persist-credentials: false/,
 ]) {
   requireText(
@@ -191,16 +201,54 @@ for (const forbidden of [
 }
 
 if (
-  release.publication.approved !== false ||
-  release.publication.registryAction !== "blocked"
+  release.publication.approved !== true ||
+  release.publication.registryAction !== "publish" ||
+  release.publication.initialPublish?.mode !== "interactive-2fa-bootstrap"
 ) {
   throw new Error(
-    "Release workflow violation: first prerelease publication must remain blocked",
+    "Release workflow violation: bounded prerelease publication approval differs",
   );
 }
 
 for (const pattern of [
-  /This story does not authorize publication/i,
+  /assertBootstrapPublishContext/,
+  /assertCleanGit/,
+  /verifyReleaseBundle/,
+  /--resume-after-publish/,
+  /process\.stdin\.isTTY/,
+  /api\.github\.com\/repos/,
+  /repository\.private === false/,
+  /registryCredentialEnvironmentPresent/,
+  /"trust",\s*"github"/,
+  /"trust",\s*"list"/,
+  /"logout"/,
+  /--allow-publish/,
+]) {
+  requireText(
+    bootstrapPublish,
+    pattern,
+    `interactive bootstrap is missing ${String(pattern)}`,
+  );
+}
+
+for (const pattern of [
+  /registryCredentialEnvironmentPresent/,
+  /name\.toUpperCase\(\)/,
+  /NPM_TOKEN/,
+  /NODE_AUTH_TOKEN/,
+  /NPM_CONFIG_/,
+  /AUTH\|TOKEN/,
+]) {
+  requireText(
+    releasePolicy,
+    pattern,
+    `registry credential environment refusal is missing ${String(pattern)}`,
+  );
+}
+
+for (const pattern of [
+  /FXO-1568/i,
+  /FXO-1164/i,
   /SHA256SUMS/,
   /SPDX/,
   /gh attestation verify/,
@@ -211,6 +259,9 @@ for (const pattern of [
   /deprecat/i,
   /npm-prerelease/,
   /trusted publisher/i,
+  /interactive[\s\S]*2FA/i,
+  /package[\s\S]*already exist/i,
+  /no (?:long-lived|retained)[\s\S]*token/i,
   /stage-only/i,
   /two-factor|2FA/i,
 ]) {
@@ -222,5 +273,5 @@ for (const pattern of [
 }
 
 process.stdout.write(
-  `Release workflow boundary verified (${String(usedActions.size)} immutable actions, ${String(runtimeGraph.packages.length)} runtime dependency packages, ${String(release.bundledComponents.length)} bundled components, publication blocked, OIDC/attestation gates present).\n`,
+  `Release workflow boundary verified (${String(usedActions.size)} immutable actions, ${String(runtimeGraph.packages.length)} runtime dependency packages, ${String(release.bundledComponents.length)} MIT-approved bundled components, bounded publication approved, interactive bootstrap and OIDC/attestation gates present).\n`,
 );

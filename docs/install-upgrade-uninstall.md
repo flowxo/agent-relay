@@ -46,8 +46,9 @@ tar -tzf .artifacts/agent-relay-0.1.0-alpha.1.tgz
 ```
 
 Packing runs only the repository's deterministic staging build. It does not
-publish or change harness configuration. The package remains marked `private`
-until scope ownership and prerelease promotion are approved.
+publish or change harness configuration. FXO-1568 makes the staged artifact
+registry-eligible while the workspace root remains `private`; only the bounded
+future FXO-1164 sequence may actually publish it.
 
 The automated proof installs the tarball with dependency lifecycle scripts
 disabled, explicitly rebuilds the reviewed SQLite native dependency, and runs

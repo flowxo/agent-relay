@@ -5,16 +5,17 @@ Claude Code, and Cursor sessions. This package contains the supported
 `agent-relay` command-line application; it does not expose a public JavaScript
 library API.
 
-> This is the unpublished `0.1.0-alpha.1` candidate. The package remains marked
-> `private` while the checked-in owner publication approval is false. The Flow
-> XO npm scope, public repository, protected environment, trusted publisher, and
-> first prerelease still require explicit approval.
+> This is the unpublished `0.1.0-alpha.1` candidate. FXO-1568 approved the
+> package scope, exact bundled WhooshBang MIT licenses/notices, and one bounded
+> future FXO-1164 publication. The staged artifact is registry-eligible; the
+> workspace root remains private to prevent accidental publication.
 
-The FXO-1162 freeze created or authorized no `v0.1.0-alpha.1` tag. Consult the
-release manifest for build-time tag state. Tagging and publication are separate
-owner-authorized actions. Public distribution is also blocked until the bundled
-WhooshBang contracts and SDK receive an owner-approved distributable license and
-notice decision.
+The FXO-1162 freeze created no `v0.1.0-alpha.1` tag. Consult the release
+manifest for observed build-time tag state. FXO-1164 may create the tag and
+publish only after the exact green post-merge commit and regenerated digests are
+recorded. Because npm requires the package to exist before trusted-publisher
+setup, the first publish uses the approved interactive 2FA bootstrap and
+immediately installs the OIDC publisher; no token is retained.
 
 ## Supported target
 

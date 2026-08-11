@@ -41,6 +41,21 @@ function versionAtLeast(actual, minimum) {
   return true;
 }
 
+export function registryCredentialEnvironmentPresent(environment) {
+  return Object.entries(environment).some(([name, value]) => {
+    if (typeof value !== "string" || value.length === 0) {
+      return false;
+    }
+    const normalizedName = name.toUpperCase();
+    return (
+      normalizedName === "NPM_TOKEN" ||
+      normalizedName === "NODE_AUTH_TOKEN" ||
+      (normalizedName.startsWith("NPM_CONFIG_") &&
+        /AUTH|TOKEN/u.test(normalizedName))
+    );
+  });
+}
+
 export function isSupportedReleaseRuntime(
   release,
   { platform, architecture, nodeVersion, appleSiliconHardware },
@@ -171,6 +186,12 @@ export function assertReleaseConfiguration(release, rootPackage) {
       typeof component.licenseDeclared === "string",
       `${component.name} bundled license state is missing`,
     );
+    if (component.licenseDeclared !== "NOASSERTION") {
+      assert(
+        component.copyrightText === "Copyright (c) 2026 Flow XO, LLC",
+        `${component.name} bundled copyright notice differs`,
+      );
+    }
   }
   const licenseReview = release.bundledComponentLicenseReview;
   assert(
@@ -221,6 +242,38 @@ export function assertReleaseConfiguration(release, rootPackage) {
         publication.registryAction === "stage",
       "an approved publication must name one registry action",
     );
+    assert(
+      publication.decision === "go-with-named-nonblocking-residuals" &&
+        publication.decisionReference === licenseReview.decisionReference &&
+        /^https:\/\/linear\.app\/flowxo\/issue\/FXO-1568\//.test(
+          publication.decisionReference,
+        ) &&
+        /^https:\/\/linear\.app\/flowxo\/issue\/FXO-1164\//.test(
+          publication.executionIssue,
+        ),
+      "approved publication must preserve the bounded owner decision and execution issue",
+    );
+    assert(
+      publication.initialPublish?.mode === "interactive-2fa-bootstrap" &&
+        publication.initialPublish?.nodeVersion === "22.23.1" &&
+        publication.initialPublish?.minimumNpmVersion === "11.15.0" &&
+        publication.initialPublish?.packageMustBeAbsent === true &&
+        publication.initialPublish?.credentialPersistence ===
+          "forbidden-after-bootstrap" &&
+        publication.initialPublish?.trustedPublisherSetup ===
+          "immediate-after-publish",
+      "initial publication must retain the approved interactive 2FA bootstrap boundary",
+    );
+    assert(
+      publication.trustedPublisher?.provider === "github-actions" &&
+        publication.trustedPublisher?.repository === "flowxo/agent-relay" &&
+        publication.trustedPublisher?.workflow === publication.workflow &&
+        publication.trustedPublisher?.environment === publication.environment &&
+        publication.trustedPublisher?.permission ===
+          publication.registryAction &&
+        publication.trustedPublisher?.requiredForSubsequentPublishes === true,
+      "subsequent publication must retain the exact GitHub Actions OIDC identity",
+    );
   } else {
     assert(
       publication.registryAction === "blocked",
@@ -261,6 +314,10 @@ export function assertPublishContext(release, context) {
   assert(
     release.bundledComponentLicenseReview.status === "owner-approved",
     "bundled component license review is unresolved",
+  );
+  assert(
+    context.trustedPublisherConfigured === "true",
+    "trusted publisher has not been confirmed after the initial bootstrap",
   );
   assert(
     context.githubActions === "true",
@@ -306,4 +363,61 @@ export function assertPublishContext(release, context) {
   );
 
   return release.publication.registryAction;
+}
+
+export function assertBootstrapPublishContext(release, context) {
+  assert(
+    release.publication.approved === true &&
+      release.publication.registryAction === "publish",
+    "initial bootstrap publish is not owner-approved",
+  );
+  assert(
+    release.bundledComponentLicenseReview.status === "owner-approved",
+    "bundled component license review is unresolved",
+  );
+  assert(
+    release.publication.initialPublish?.mode === "interactive-2fa-bootstrap",
+    "initial bootstrap mode differs",
+  );
+  assert(
+    context.githubActions !== "true" && context.interactive === true,
+    "initial bootstrap requires a local interactive owner session",
+  );
+  assert(
+    context.confirmation === `${release.name}@${release.version}`,
+    "initial bootstrap confirmation differs from the exact package",
+  );
+  assert(
+    context.repositoryVisibility === "public",
+    "initial bootstrap requires the public source repository",
+  );
+  assert(
+    context.tagStatus === "verified-at-head",
+    "initial bootstrap requires the immutable intended tag at HEAD",
+  );
+  assert(
+    context.nodeVersion === release.publication.initialPublish.nodeVersion,
+    "initial bootstrap requires exact Node 22.23.1",
+  );
+  assert(
+    versionAtLeast(
+      context.npmVersion,
+      release.publication.initialPublish.minimumNpmVersion,
+    ),
+    `initial bootstrap requires npm ${release.publication.initialPublish.minimumNpmVersion} or newer`,
+  );
+  assert(
+    context.credentialEnvironmentPresent === false,
+    "initial bootstrap refuses registry credentials supplied through the environment",
+  );
+  assert(
+    context.packageVersionState === "absent" ||
+      (context.resumeAfterPublish === true &&
+        context.packageVersionState === "exact-artifact-present"),
+    "initial bootstrap requires an absent version or an exact-artifact recovery",
+  );
+
+  return context.packageVersionState === "absent"
+    ? "publish-and-trust"
+    : "trust-only";
 }

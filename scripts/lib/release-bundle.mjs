@@ -456,9 +456,9 @@ export async function createSpdxDocument({
     checksums: [
       { algorithm: "SHA256", checksumValue: component.artifactSha256 },
     ],
-    licenseConcluded: "NOASSERTION",
+    licenseConcluded: component.licenseDeclared,
     licenseDeclared: component.licenseDeclared,
-    copyrightText: "NOASSERTION",
+    copyrightText: component.copyrightText,
     externalRefs: [
       {
         referenceCategory: "PACKAGE-MANAGER",
@@ -494,7 +494,7 @@ export async function createSpdxDocument({
           packageVerificationCodeValue: verificationCode,
         },
         checksums: [{ algorithm: "SHA256", checksumValue: tarballSha256 }],
-        licenseConcluded: "NOASSERTION",
+        licenseConcluded: rootPackage.license,
         licenseDeclared: rootPackage.license,
         copyrightText: "Copyright (c) 2026 Flow XO, LLC",
         primaryPackagePurpose: "APPLICATION",
@@ -941,7 +941,10 @@ export async function verifyReleaseBundle({
   );
   assert(
     mainPackage?.name === release.name &&
-      mainPackage?.versionInfo === release.version,
+      mainPackage?.versionInfo === release.version &&
+      mainPackage?.licenseConcluded === rootPackage.license &&
+      mainPackage?.licenseDeclared === rootPackage.license &&
+      mainPackage?.copyrightText === "Copyright (c) 2026 Flow XO, LLC",
     "SBOM package identity differs",
   );
   assert(
@@ -967,7 +970,9 @@ export async function verifyReleaseBundle({
     assert(
       record?.name === component.name &&
         record?.versionInfo === component.version &&
+        record?.licenseConcluded === component.licenseDeclared &&
         record?.licenseDeclared === component.licenseDeclared &&
+        record?.copyrightText === component.copyrightText &&
         record?.downloadLocation ===
           `${component.sourceRepository}/tree/${component.sourceCommit}` &&
         record?.checksums?.some(
@@ -1075,10 +1080,10 @@ export async function verifyReleaseBundle({
   const releaseNotes = await readFile(releaseNotesPath, "utf8");
   assert(
     releaseNotes.includes(`${release.version} release candidate`) &&
-      /FXO-1162 candidate freeze created or authorized no tag/.test(
+      /FXO-1568 approved one bounded[\s\S]*future FXO-1164 publication/.test(
         releaseNotes,
       ) &&
-      /manifest's build-time `tagStatus`/.test(releaseNotes),
+      /manifest's build-time[\s\S]*`tagStatus`/.test(releaseNotes),
     "release notes do not preserve the candidate publication boundary",
   );
   if (root !== undefined) {

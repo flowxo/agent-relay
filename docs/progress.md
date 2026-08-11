@@ -1227,8 +1227,9 @@ also remain free of silent delivery, hook, or correlation failures.
   Safari/Firefox compatibility is not yet claimed.
 - GitHub private vulnerability reporting is unavailable while the repository
   remains private. The policy and exact private-report URL are ready, but
-  enabling and verifying the feature is a mandatory part of the later,
-  explicitly approved public-promotion step. No security email was invented.
+  FXO-1568 authorizes enabling and verifying the feature and available security
+  controls during the bounded FXO-1164 public-promotion step. No security email
+  was invented.
 - The pinned C0 mock authenticates readable machine tokens from startup
   fixtures; registering a digest does not dynamically add that bearer to its
   authentication map. FXO-1150 generates the real credential locally, supplies
@@ -1236,10 +1237,10 @@ also remain free of silent delivery, hook, or correlation failures.
   registration contains only the ID/digest. Real digest verification and human
   subscription activation remain contract-backed assumptions until AR3 runs
   against the approved real service.
-- The private pinned WhooshBang client/contract artifacts declare no
-  distributable license metadata. They are bundled only into an unpublished
-  local candidate today. Public package publication must still resolve the final
-  artifact license/notice boundary.
+- FXO-1568 grants MIT and approves the shipped notice for the exact pinned
+  WhooshBang contracts rc.12 and SDK rc.13 artifacts. The approval is bounded to
+  their frozen versions, source commit, and archive digests; a changed artifact
+  requires a new review.
 - The runner bridge remains an internal, default-off Gate 3 component. Its
   `runner.protocol/v1` artifacts are immutable development inputs with an
   `internal-until-gate-5` commitment, and the actuator claim covers only exact
@@ -1285,11 +1286,45 @@ FXO-1162 candidate evidence remain distinct. No live traffic, tag, package,
 release, registry change, repository promotion, production mutation, or license
 decision is implied.
 
+## AR4.3a consolidated owner decision and implementation — 2026-08-11
+
+FXO-1568 replaces a sequence of ceremony-only release stories with one owner
+interview and the implementation it authorizes. The result is go with two named
+non-blocking alpha residuals: native release-exit remains not green, and ambient
+hook isolation remains an accepted Low residual. Neither is represented as green
+or generalized beyond the frozen support boundary.
+
+The owner confirms the `@flowxo/agent-relay` npm scope/name, MIT for Agent
+Relay, MIT plus `Copyright (c) 2026 Flow XO, LLC` for the exact bundled
+WhooshBang contracts rc.12 and SDK rc.13 artifacts, `alpha` as the npm channel,
+and `v0.1.0-alpha.1` as the intended immutable tag. The future FXO-1164 sequence
+may make the repository public, enable and verify GitHub private vulnerability
+reporting and available security controls, create that exact tag, publish the
+recorded exact package, and create a GitHub prerelease with verified artifacts
+and attestations.
+
+npm requires a package to exist before its trusted publisher can be configured.
+The owner therefore approves one interactive 2FA first-publish bootstrap with no
+registry credential printed, committed, attached to CI, or retained. The exact
+`flowxo/agent-relay` / `prerelease.yml` / `npm-prerelease` OIDC publisher is
+configured and verified immediately afterward; every later publish uses OIDC.
+The implementation adds a clean-tagged-bundle check, exact confirmation,
+registry-integrity recovery, environment-token refusal, trust verification, and
+session logout. The normal workflow additionally fails closed until the trusted
+publisher is explicitly confirmed.
+
+FXO-1568 performs no tag, package, release, registry, visibility, production, or
+live-provider mutation. Its authorization takes effect only after its final
+post-merge commit and regenerated digests are recorded. Substantive drift
+requires renewed approval. Production deployment, the central workspace release,
+live-provider traffic, credential retention, live cards, and unrelated
+publication remain excluded.
+
 ## Release sequence
 
-After FXO-1162 is complete, refresh AR4, the Agent Relay initiative, Release
-Control, and owner decisions before selecting the next ready release-gate issue.
-Do not infer publication approval or a bundled WhooshBang license/notice
-decision. The former hosted fleet, Mini App, multi-operator, and inbound webhook
-response explorations remain post-V1 backlog unless the owner changes the
-release horizon.
+After FXO-1568 is complete and its exact candidate record is green, refresh AR4,
+the Agent Relay initiative, Release Control, and owner decisions. FXO-1164 is
+the expected next release-gate issue, subject to revalidation, and remains
+unstarted until its own execution session. The former hosted fleet, Mini App,
+multi-operator, and inbound webhook response explorations remain post-V1 backlog
+unless the owner changes the release horizon.

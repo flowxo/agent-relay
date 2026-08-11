@@ -136,16 +136,19 @@ Agent Relay boundary finding remains open.
 
 The exact retained live-reviewed `@flowxo/agent-relay@0.1.0-alpha.1` tarball has
 SHA-256 `654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198`. It
-came from PR #39 and does **not** contain PR #40 or PR #41. PR #40 source
-separately passed credential-free packed proof with ephemeral package SHA-256
-`8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543`; that package
-was neither retained nor live-tested. PR #41's separate clean-commit
+came from PR #39 and does **not** contain PR #40, PR #41, or PR #42. PR #40
+source separately passed credential-free packed proof with ephemeral package
+SHA-256 `8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543`; that
+package was neither retained nor live-tested. PR #41's separate clean-commit
 credential-free release-bundle proof has SHA-256
 `3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
 bytes, 11 packed files, and six SPDX packages; it was not live-tested. The
 current frozen PR #41 merge is `0adb7288483df331fbaaefb9b392ee2f4f3c7d84`. See
-the [V1 release record](v1-release-boundary.md) for exact heads and merges.
-Publication, tagging, and signed release provenance were not attempted.
+the [V1 release record](v1-release-boundary.md) for exact heads and merges. The
+completed onboarding predecessor is PR #42, reviewed head
+`52f04958bc6f3b838ff080eb8bc9111ac7e6f338`, merge
+`c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`. Publication, tagging, and signed
+release provenance have not yet been attempted.
 
 ## How to diagnose
 
@@ -218,8 +221,16 @@ session launched with every ambient hook disabled. Exact hook-denied isolation
 and aggregate attribution mitigate this limitation, and contaminated windows
 fail closed. No live-card authorization carries forward.
 
-The FXO-1162 evaluation created or authorized no `v0.1.0-alpha.1` tag; generated
-manifests record build-time tag state. This evaluation does not publish, tag,
-promote, contact live providers, or authorize any of those actions. The bundled
-WhooshBang contracts and SDK also require an owner-approved distributable
-license and notice decision before public publication.
+The FXO-1162 evaluation created no `v0.1.0-alpha.1` tag; generated manifests
+record build-time tag state. FXO-1568 now approves MIT and the shipped notices
+for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts and a
+bounded future FXO-1164 publication. Before execution, the exact green
+post-merge commit and regenerated digests must be recorded. FXO-1164 may then
+make the repository public, enable and verify GitHub security controls, create
+the immutable tag, perform the approved interactive 2FA first publish, install
+the OIDC trusted publisher immediately, and create the GitHub prerelease.
+
+The accepted non-green native release-exit and Low hook-isolation residuals are
+explicitly non-blocking for this alpha and remain accurately described. No
+production change, central workspace release, live-provider traffic, credential
+retention, live card, or broader publication is authorized.

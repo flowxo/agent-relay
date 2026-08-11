@@ -11,9 +11,11 @@ import {
   releaseArtifactNames,
 } from "../lib/release-bundle.mjs";
 import {
+  assertBootstrapPublishContext,
   assertPublishContext,
   assertReleaseConfiguration,
   isSupportedReleaseRuntime,
+  registryCredentialEnvironmentPresent,
   stagedPackageIsPrivate,
 } from "../lib/release-policy.mjs";
 
@@ -80,13 +82,47 @@ function rootPackage() {
 function approveBundledLicense(release) {
   for (const component of release.bundledComponents) {
     component.licenseDeclared = "MIT";
+    component.copyrightText = "Copyright (c) 2026 Flow XO, LLC";
   }
   release.bundledComponentLicenseReview = {
     status: "owner-approved",
     ownerApproved: true,
     noticeApproved: true,
-    decisionReference: "https://linear.app/example/decision/synthetic",
+    decisionReference:
+      release.publication.decisionReference ??
+      "https://linear.app/example/decision/synthetic",
   };
+}
+
+function approvePublication(release, registryAction = "publish") {
+  release.publication = {
+    ...release.publication,
+    approved: true,
+    decision: "go-with-named-nonblocking-residuals",
+    decisionReference:
+      "https://linear.app/flowxo/issue/FXO-1568/synthetic-decision",
+    executionIssue:
+      "https://linear.app/flowxo/issue/FXO-1164/synthetic-execution",
+    registryAction,
+    initialPublish: {
+      mode: "interactive-2fa-bootstrap",
+      nodeVersion: "22.23.1",
+      minimumNpmVersion: "11.15.0",
+      packageMustBeAbsent: true,
+      credentialPersistence: "forbidden-after-bootstrap",
+      trustedPublisherSetup: "immediate-after-publish",
+    },
+    trustedPublisher: {
+      provider: "github-actions",
+      repository: "flowxo/agent-relay",
+      workflow: "prerelease.yml",
+      environment: "npm-prerelease",
+      permission: registryAction,
+      requiredForSubsequentPublishes: true,
+    },
+  };
+  release.bundledComponentLicenseReview.decisionReference =
+    release.publication.decisionReference;
 }
 
 function publishContext(overrides = {}) {
@@ -102,6 +138,7 @@ function publishContext(overrides = {}) {
     workflowRef:
       "flowxo/agent-relay/.github/workflows/prerelease.yml@refs/tags/v0.1.0-alpha.1",
     environment: "npm-prerelease",
+    trustedPublisherConfigured: "true",
     npmVersion: "11.18.0",
     ...overrides,
   };
@@ -193,8 +230,7 @@ test("freezes OS, Apple-silicon architecture, and Node support together", () => 
 
 test("accepts only the exact public OIDC publish context", () => {
   const release = configuration();
-  release.publication.approved = true;
-  release.publication.registryAction = "publish";
+  approvePublication(release);
   assert.throws(
     () => assertPublishContext(release, publishContext()),
     /bundled component license review is unresolved/,
@@ -227,6 +263,7 @@ test("accepts only the exact public OIDC publish context", () => {
       "flowxo/agent-relay/.github/workflows/prerelease.yml@refs/heads/main",
     ],
     ["environment", "unprotected"],
+    ["trustedPublisherConfigured", "false"],
   ]) {
     assert.throws(() =>
       assertPublishContext(release, publishContext({ [field]: value })),
@@ -236,16 +273,17 @@ test("accepts only the exact public OIDC publish context", () => {
 
 test("enforces current npm minimums for publish and staged publishing", () => {
   const release = configuration();
-  release.publication.approved = true;
-  release.publication.registryAction = "publish";
+  approvePublication(release);
   approveBundledLicense(release);
+  release.bundledComponentLicenseReview.decisionReference =
+    release.publication.decisionReference;
   assert.throws(
     () =>
       assertPublishContext(release, publishContext({ npmVersion: "11.5.0" })),
     /npm 11\.5\.1 or newer/,
   );
 
-  release.publication.registryAction = "stage";
+  approvePublication(release, "stage");
   assert.throws(
     () =>
       assertPublishContext(release, publishContext({ npmVersion: "11.14.9" })),
@@ -254,6 +292,75 @@ test("enforces current npm minimums for publish and staged publishing", () => {
   assert.equal(
     assertPublishContext(release, publishContext({ npmVersion: "11.15.0" })),
     "stage",
+  );
+});
+
+test("accepts only the exact interactive first-publish bootstrap", () => {
+  const release = configuration();
+  approveBundledLicense(release);
+  approvePublication(release);
+  const context = {
+    githubActions: undefined,
+    interactive: true,
+    confirmation: "@flowxo/agent-relay@0.1.0-alpha.1",
+    repositoryVisibility: "public",
+    tagStatus: "verified-at-head",
+    nodeVersion: "22.23.1",
+    npmVersion: "11.15.0",
+    credentialEnvironmentPresent: false,
+    packageVersionState: "absent",
+    resumeAfterPublish: false,
+  };
+  assert.equal(
+    assertBootstrapPublishContext(release, context),
+    "publish-and-trust",
+  );
+  assert.equal(
+    assertBootstrapPublishContext(release, {
+      ...context,
+      packageVersionState: "exact-artifact-present",
+      resumeAfterPublish: true,
+    }),
+    "trust-only",
+  );
+
+  for (const overrides of [
+    { githubActions: "true" },
+    { interactive: false },
+    { confirmation: "@flowxo/agent-relay@0.1.0-alpha.2" },
+    { repositoryVisibility: "private" },
+    { tagStatus: "not-created" },
+    { nodeVersion: "22.23.0" },
+    { npmVersion: "11.14.9" },
+    { credentialEnvironmentPresent: true },
+    { packageVersionState: "different-artifact-present" },
+    {
+      packageVersionState: "exact-artifact-present",
+      resumeAfterPublish: false,
+    },
+  ]) {
+    assert.throws(() =>
+      assertBootstrapPublishContext(release, { ...context, ...overrides }),
+    );
+  }
+});
+
+test("recognizes registry credentials in upper- and lower-case environment keys", () => {
+  for (const environment of [
+    { NPM_TOKEN: "present" },
+    { node_auth_token: "present" },
+    { npm_config_auth: "present" },
+    { npm_config_registry_token: "present" },
+  ]) {
+    assert.equal(registryCredentialEnvironmentPresent(environment), true);
+  }
+  assert.equal(
+    registryCredentialEnvironmentPresent({
+      NPM_CONFIG_USERCONFIG: "/private/config-path",
+      npm_token: "",
+      UNRELATED: "present",
+    }),
+    false,
   );
 });
 
