@@ -225,14 +225,16 @@ pnpm build
 node apps/relay/dist/cli.js web-demo
 ```
 
-The command uses `127.0.0.1:4318`, the fake Telegram transport, a dedicated demo
-SQLite file, and four bounded synthetic lanes (running, waiting, and crashed).
-It ignores Telegram and daemon bearer environment credentials, never contains
-assistant transcript content, and does not log either generated local credential
-value. Open `http://127.0.0.1:4318/ui/` and copy the two fields from
-`~/.agent-relay/web-demo/web-credential.json`. With `--db`, the credential is
-named `web-credential.json` beside that database. Use `--port` or `--log` to
-isolate another demo instance.
+The command uses `127.0.0.1:4318`, the fake Telegram transport, a fixed
+dedicated demo SQLite file and log beneath `~/.agent-relay/web-demo/`, and four
+bounded synthetic lanes (running, waiting, and crashed). It ignores provider and
+daemon bearer environment credentials, never contains assistant transcript
+content, and does not log either generated local credential value. Open
+`http://127.0.0.1:4318/ui/` and copy the two fields from
+`~/.agent-relay/web-demo/web-credential.json`. Only `--port` is configurable;
+the command rejects `--db`, `--log`, and `--host` so a demo cannot read another
+database, write another log, or leave the loopback boundary. Stop an existing
+demo before reusing its fixed state directory.
 
 ### Automated package and browser proof
 

@@ -35,7 +35,19 @@ test("accepts ordinary source and blank environment examples", () => {
     ),
   );
   assert.doesNotThrow(() =>
+    scanTrackedText(
+      "docs/setup.md",
+      "AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID='<subscriber-id>'\n",
+    ),
+  );
+  assert.doesNotThrow(() =>
     scanTrackedText("src/example.ts", "const value = 'synthetic';\n"),
+  );
+  assert.doesNotThrow(() =>
+    scanTrackedText(
+      "src/example.ts",
+      "environment.AGENT_RELAY_WHOOSHBANG_PROJECT_CREDENTIAL === undefined;\n",
+    ),
   );
 });
 
@@ -55,11 +67,21 @@ test("rejects secret-shaped values while allowing explicit synthetic tests", () 
 });
 
 test("rejects populated sensitive environment assignments", () => {
-  const assignment = ["NPM", "_TOKEN", "=", "actual-value"].join("");
-  assert.throws(
-    () => scanTrackedText("release.txt", assignment),
-    /populated sensitive environment assignment/,
-  );
+  for (const assignment of [
+    ["NPM", "_TOKEN", "=", "actual-value"].join(""),
+    ["AGENT_RELAY_WEBHOOK", "_SECRET=actual-value"].join(""),
+    ["AGENT_RELAY_RECEIVER", "_SECRET=actual-value"].join(""),
+    ["AGENT_RELAY_WEBHOOK", "_URL=https://private.example.test/events"].join(
+      "",
+    ),
+    ["AGENT_RELAY_WHOOSHBANG_PROJECT", "_CREDENTIAL=actual-value"].join(""),
+    ["AGENT_RELAY_WHOOSHBANG_SUBSCRIBER", "_ID=private-subscriber"].join(""),
+  ]) {
+    assert.throws(
+      () => scanTrackedText("release.txt", assignment),
+      /populated sensitive environment assignment/,
+    );
+  }
 });
 
 test("rejects machine user paths except bounded redaction tests", () => {

@@ -12,7 +12,9 @@ import { RelayClient } from "./client.js";
 import { startDaemon } from "./daemon.js";
 import type { TelegramCanaryClient } from "./canary.js";
 import {
+  assertFakeCanaryReady,
   assertTelegramCanaryReady,
+  canaryOutcomeExitCode,
   isWhooshBangCanaryAcknowledged,
   runFakeCanary,
   runTelegramCanary,
@@ -122,6 +124,16 @@ function fakeCanaryEvent(): AgentAttentionEventV1 {
 }
 
 describe("Fake local canary", () => {
+  it("maps every unsuccessful local outcome to a failing exit", () => {
+    expect(canaryOutcomeExitCode("delivered")).toBe(0);
+    for (const outcome of ["retrying", "dead-lettered", "timeout"] as const) {
+      expect(canaryOutcomeExitCode(outcome)).toBe(1);
+    }
+    expect(() =>
+      assertFakeCanaryReady({ selectedTransport: "fake" }),
+    ).not.toThrow();
+  });
+
   it("verifies durable delivery when the daemon background drain wins the race", async () => {
     const event = fakeCanaryEvent();
     const ingest = vi

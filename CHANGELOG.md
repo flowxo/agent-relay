@@ -26,14 +26,16 @@ breaking changes and required operator action.
 - A 64 KiB sanitized JSON fixture boundary with exact manifest inventories,
   provenance requirements, privacy scanning, and negative regression tests.
 - A clean-commit prerelease bundle with two-build reproducibility proof, SHA-256
-  checksums, an SPDX 2.3 file/runtime-dependency SBOM, and an exact source
-  manifest.
+  checksums, an SPDX 2.3 file/runtime-dependency SBOM, exact package-content
+  evidence, curated release notes, and an exact source manifest.
 - Immutable GitHub Action pins, separate build/SBOM attestation permissions,
   repository secret scanning, and a protected npm OIDC publication path that
   remains disabled pending owner approval.
 - A native Apple-silicon Node.js 22.23.1 release-exit gate that verifies the
   exact bundle, installs without workspace links in a temporary home/prefix,
   proves doctor and one fake delivery, and removes owned hooks and the package.
+  The current attempt reached the exact Node target but is not green because no
+  installed harness matched an exact frozen verified snapshot.
 - An optional hosted WhooshBang adapter with secret-safe narrow machine
   bootstrap, explicit transport selection, durable confirm/select/input polling,
   crash-safe acknowledgement replay, safe diagnosis, explicit revocation, and
@@ -68,6 +70,11 @@ breaking changes and required operator action.
 
 ### Changed
 
+- Every top-level command now treats `--help` and `-h` as inert. Help cannot
+  install, uninstall, create local state, start a daemon, or contact a provider.
+- Packed package and lifecycle proofs now build an allowlisted environment,
+  explicitly force the fake transport, and cannot inherit Telegram, webhook, or
+  WhooshBang credentials or transport selection from the invoking shell.
 - Interactive Telegram and WhooshBang canaries now expose separate bounded
   client-wait and durable-request-TTL controls. Exit-zero acceptance also
   requires aggregate pre/post status to prove exactly one new delivered event;
@@ -168,10 +175,16 @@ breaking changes and required operator action.
   session launched with every ambient hook disabled. Exact hook-denied isolation
   and aggregate attribution mitigate it; contaminated windows fail closed.
 - The retained live-reviewed alpha.1 tarball came from PR #39 and does not
-  contain PR #40. PR #40 passed separate credential-free packed proof from an
-  ephemeral tarball that was neither retained nor live-tested.
-- The intended `v0.1.0-alpha.1` tag has not been created. Tagging, publication,
-  and live-provider operations require separate owner authorization. Public
+  contain PR #40 or PR #41. PR #40 passed separate credential-free packed proof
+  from an ephemeral tarball that was neither retained nor live-tested. The
+  current frozen source after FXO-1161 is PR #41 merge
+  `0adb7288483df331fbaaefb9b392ee2f4f3c7d84`; its separate credential-free
+  release bundle has SHA-256
+  `3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
+  bytes, 11 packed files, and six SPDX packages, and was not live-tested.
+- The FXO-1162 freeze created or authorized no `v0.1.0-alpha.1` tag. The
+  generated manifest records build-time tag state; tagging, publication, and
+  live-provider operations remain separately owner-authorized. Public
   distribution is additionally blocked until the bundled WhooshBang contracts
   and SDK receive an owner-approved distributable license and notice decision.
 

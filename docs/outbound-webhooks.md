@@ -58,8 +58,8 @@ You can inject configuration instead of writing the file:
 
 ```dotenv
 AGENT_RELAY_TRANSPORT=webhook
-AGENT_RELAY_WEBHOOK_URL=https://alerts.example.test/agent-relay
-AGENT_RELAY_WEBHOOK_SECRET=<shared secret of at least 32 bytes>
+AGENT_RELAY_WEBHOOK_URL='<HTTPS-receiver-URL>'
+AGENT_RELAY_WEBHOOK_SECRET='<shared-secret-of-at-least-32-bytes>'
 AGENT_RELAY_WEBHOOK_TIMEOUT_MS=5000
 ```
 

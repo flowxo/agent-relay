@@ -72,13 +72,21 @@ const sensitiveEnvironmentPattern = new RegExp(
       "AGENT_RELAY_TELEGRAM_CHAT_ID",
       "AGENT_RELAY_TELEGRAM_OPERATOR_ID",
       "AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
+      "AGENT_RELAY_RECEIVER_SECRET",
+      "AGENT_RELAY_WEBHOOK_URL",
+      "AGENT_RELAY_WEBHOOK_SECRET",
+      "AGENT_RELAY_WHOOSHBANG_BASE_URL",
+      "AGENT_RELAY_WHOOSHBANG_PROJECT_CREDENTIAL",
+      "AGENT_RELAY_WHOOSHBANG_PROJECT_SELECTOR",
+      "AGENT_RELAY_WHOOSHBANG_SUBSCRIBER_ID",
+      "AGENT_RELAY_WHOOSHBANG_NOTIFIER_ID",
       "NPM_TOKEN",
       "NODE_AUTH_TOKEN",
       "GITHUB_TOKEN",
       "OPENAI_API_KEY",
       "AWS_SECRET_ACCESS_KEY",
     ].join("|"),
-    ")[ \\t]*=[ \\t]*([^\\s#]+)",
+    ")[ \\t]*=(?!=)[ \\t]*([^\\s#]+)",
   ].join(""),
   "g",
 );
@@ -134,7 +142,7 @@ export function scanTrackedText(path, source, environment = {}) {
   sensitiveEnvironmentPattern.lastIndex = 0;
   for (const match of source.matchAll(sensitiveEnvironmentPattern)) {
     const value = match[1];
-    if (value?.startsWith("<")) {
+    if (value !== undefined && /^(?:["']?<)/.test(value)) {
       continue;
     }
     if (

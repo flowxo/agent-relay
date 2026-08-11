@@ -9,16 +9,23 @@ a publication.
 ## Package and source
 
 - Package version: `0.1.0-alpha.1`.
-- Intended tag: `v0.1.0-alpha.1`. It has not been created. Tagging and
-  publication require separate owner authorization.
+- Intended tag: `v0.1.0-alpha.1`. The FXO-1162 freeze created or authorized no
+  tag; generated manifests record build-time tag state. Tagging and publication
+  require separate owner authorization.
 - The source candidate entering this freeze is PR #40, reviewed head
   `9a5e6a68609e3764ba5198c350528254bd37da62`, merged as
   `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`.
+- The current frozen source after FXO-1161 is PR #41, reviewed head
+  `875e5631ad45bbeb86c377e73dabe4d616b46413`, merged as
+  `0adb7288483df331fbaaefb9b392ee2f4f3c7d84`. These are two distinct points in
+  the release history, not interchangeable provenance labels.
 - The frozen package manager is `pnpm@11.17.0`; `pnpm-lock.yaml` has SHA-256
   `46b51f60a932e73533b43c7d605c350b36f01dcdd4e196ef61f14309bf2c6b38`.
 - The final clean reviewed release commit and tarball are bound later by the
-  generated release manifest, `SHA256SUMS`, SPDX SBOM, and CI provenance. This
-  document deliberately does not try to self-record a future tarball digest.
+  generated package-content snapshot, release notes, release manifest,
+  `SHA256SUMS`, SPDX SBOM, sanitized clean-home evidence, and any separately
+  authorized CI provenance. This document deliberately does not try to
+  self-record a future tarball digest.
 
 ## Same-version evidence distinction
 
@@ -26,13 +33,19 @@ The exact retained live-reviewed package is `@flowxo/agent-relay@0.1.0-alpha.1`,
 SHA-256 `654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198`. It
 came from PR #39 reviewed head `4ba4b1fbd832c34f465cd40f199e5c1dac7ed890`,
 merged as `85d2d0a1f8649bf4359031227d1b9b844208cc15`. It does **not** contain PR
-#40.
+#40 or PR #41.
 
 PR #40 source separately passed credential-free packed proof with ephemeral
 package SHA-256
 `8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543`. That package
 was not retained and was not live-tested. No live rerun is needed to erase this
 distinction.
+
+PR #41's clean-commit credential-free release-bundle proof has SHA-256
+`3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, size 277,069
+bytes, 11 packed files, and six SPDX packages. It contains PR #40 and PR #41,
+but it was not live-tested. It is a separate proof from both the retained PR #39
+tarball and PR #40's ephemeral package.
 
 ## Support and compatibility
 
@@ -43,6 +56,12 @@ claims. The exact harness snapshots remain Codex CLI `codex-cli 0.145.0`, Claude
 Code CLI `2.1.219 (Claude Code)`, and Cursor CLI `2026.07.23-e383d2b`; the
 generated [capability matrix](capability-matrix.md) freezes the individual
 surfaces and capabilities.
+
+Native release-exit is **not green**. The exact arm64 Node.js `22.23.1` target
+was reached, then the proof failed closed because the machine had no installed
+harness at an exact frozen verified snapshot. The result is not credited as a
+completed lifecycle matrix and no live traffic should be run merely to change
+that evidence state.
 
 The installer manifest is `agent-relay-install.v1` version `1`. The current
 SQLite schema is `9`; migrations are forward-only and a newer schema fails

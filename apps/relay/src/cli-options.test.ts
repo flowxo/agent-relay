@@ -1,35 +1,47 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  isInertCanaryHelpRequest,
+  isInertCommandHelpRequest,
   resolveHookHarnessVersion,
   resolveSupervisorExecutable,
   resolveWebEnabled,
 } from "./cli-options.js";
 
-describe("canary help isolation", () => {
-  it("recognizes both inert help flags for every canary command", () => {
+describe("command help isolation", () => {
+  it("recognizes both inert help flags in any argument position", () => {
+    expect(isInertCommandHelpRequest("install", ["--help"])).toBe(true);
+    expect(isInertCommandHelpRequest("doctor", ["-h"])).toBe(true);
+    expect(
+      isInertCommandHelpRequest("canary", ["--wait-ms", "100", "--help"]),
+    ).toBe(true);
+  });
+
+  it("leaves normal execution and dedicated inert help handlers intact", () => {
+    expect(isInertCommandHelpRequest("install", [])).toBe(false);
+    expect(isInertCommandHelpRequest("canary", ["--wait-ms", "100"])).toBe(
+      false,
+    );
     for (const command of [
-      "canary",
-      "telegram-canary",
-      "whooshbang-canary",
-      "webhook-canary",
+      "runner-bridge",
+      "transport",
+      "webhook",
+      "whooshbang",
     ]) {
-      expect(isInertCanaryHelpRequest(command, ["--help"])).toBe(true);
-      expect(isInertCanaryHelpRequest(command, ["-h"])).toBe(true);
-      expect(
-        isInertCanaryHelpRequest(command, ["--wait-ms", "100", "--help"]),
-      ).toBe(true);
+      expect(isInertCommandHelpRequest(command, ["--help"])).toBe(false);
+      expect(isInertCommandHelpRequest(command, ["-h"])).toBe(false);
+      expect(isInertCommandHelpRequest(command, ["status", "--help"])).toBe(
+        true,
+      );
     }
   });
 
-  it("does not intercept execution or unrelated commands", () => {
-    expect(isInertCanaryHelpRequest("telegram-canary", [])).toBe(false);
+  it("does not intercept a supervised harness help argument after --", () => {
+    expect(isInertCommandHelpRequest("run", ["codex", "--", "--help"])).toBe(
+      false,
+    );
     expect(
-      isInertCanaryHelpRequest("telegram-canary", ["--wait-ms", "100"]),
-    ).toBe(false);
-    expect(isInertCanaryHelpRequest("status", ["--help"])).toBe(false);
-    expect(isInertCanaryHelpRequest(undefined, ["--help"])).toBe(false);
+      isInertCommandHelpRequest("run", ["codex", "--help", "--", "exec"]),
+    ).toBe(true);
   });
 });
 

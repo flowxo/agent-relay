@@ -17,10 +17,16 @@ test("freezes exact source and same-version package provenance", () => {
       candidate.sourceCandidateEnteringFreeze.mergeCommit = "a".repeat(40);
     },
     (candidate) => {
+      candidate.currentFrozenSourceAfterFXO1161.reviewedHead = "a".repeat(40);
+    },
+    (candidate) => {
       candidate.evidenceArtifacts.retainedLiveReviewed.sha256 = "b".repeat(64);
     },
     (candidate) => {
       candidate.evidenceArtifacts.pullRequest40CredentialFreePackedProof.retained = true;
+    },
+    (candidate) => {
+      candidate.evidenceArtifacts.pullRequest41CredentialFreeReleaseBundleProof.nativeReleaseExitGreen = true;
     },
   ]) {
     const candidate = JSON.parse(JSON.stringify(boundary));

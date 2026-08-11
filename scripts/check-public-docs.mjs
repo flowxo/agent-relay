@@ -21,6 +21,8 @@ const focusedDocuments = [
   "docs/hosted-whooshbang.md",
   "docs/runner-bridge.md",
   "docs/v1-release-boundary.md",
+  "docs/public-release-walkthrough.md",
+  "packaging/release-notes.md",
 ];
 
 const checkedDocuments = [
@@ -28,6 +30,7 @@ const checkedDocuments = [
   "CONTRIBUTING.md",
   ...focusedDocuments,
   "docs/onboarding.md",
+  "docs/local-web-api.md",
   "PRIVACY.md",
   "SECURITY.md",
   "SUPPORT.md",
@@ -98,6 +101,25 @@ for (const path of focusedDocuments) {
   );
 }
 
+const onboardingHeadings = [
+  "### 1. Evaluate and build",
+  "### 2. Inspect, install, and diagnose",
+  "### 3. Prove the local loop",
+  "### 4. Choose one transport",
+  "### 5. Use a supported harness",
+  "### 6. Reconcile an upgrade",
+  "### 7. Uninstall owned integration",
+  "### 8. Optionally erase retained data",
+];
+let previousOnboardingIndex = -1;
+for (const heading of onboardingHeadings) {
+  const index = readme.indexOf(heading);
+  if (index === -1 || index <= previousOnboardingIndex) {
+    throw new Error(`README onboarding order differs at: ${heading}`);
+  }
+  previousOnboardingIndex = index;
+}
+
 for (const [pattern, message] of [
   [/macOS on Apple silicon/, "README must state the supported OS/architecture"],
   [/Node\.js\s+22/, "README must state the supported runtime"],
@@ -109,6 +131,14 @@ for (const [pattern, message] of [
   [
     /private vulnerability reporting/i,
     "README must link private security reporting",
+  ],
+  [
+    /no hosted Agent Relay account or public server/i,
+    "README must keep direct Telegram independent of hosted onboarding",
+  ],
+  [
+    /optional hosted WhooshBang account/i,
+    "README must keep optional WhooshBang onboarding visible",
   ],
 ]) {
   requireText(readme, pattern, message);
@@ -140,12 +170,14 @@ if (fakeCanary === -1 || directTelegram === -1 || directTelegram < fakeCanary) {
 }
 for (const pattern of [
   /install --dry-run/,
+  /daemon --transport fake --no-web/,
   /package:lifecycle:check/,
   /Reconcile an upgrade/,
   /refusing unsafe downgrade/,
   /Uninstall safely/,
   /Package-manager removal alone/,
   /Optional erasure/,
+  /Roll back a candidate/,
 ]) {
   requireText(
     installation,
@@ -153,6 +185,12 @@ for (const pattern of [
     `installation guide is missing lifecycle guidance: ${String(pattern)}`,
   );
 }
+const packagedReadme = await text("packaging/README.md");
+requireText(
+  packagedReadme,
+  /agent-relay daemon --transport fake --no-web/,
+  "packed onboarding must override retained transport state with fake",
+);
 
 const hosted = await text("docs/hosted-whooshbang.md");
 for (const pattern of [
@@ -168,6 +206,19 @@ for (const pattern of [
     hosted,
     pattern,
     `hosted boundary is missing required statement: ${String(pattern)}`,
+  );
+}
+
+const localWebApi = await text("docs/local-web-api.md");
+for (const pattern of [
+  /Only `--port` is configurable/,
+  /rejects `--db`, `--log`, and `--host`/,
+  /cannot read another\s+database, write another log, or leave the loopback boundary/,
+]) {
+  requireText(
+    localWebApi,
+    pattern,
+    `local web demo boundary is missing: ${String(pattern)}`,
   );
 }
 
@@ -223,6 +274,9 @@ for (const pattern of [
   /native arm64/,
   /globally linked workspace package/i,
   /PR #40/,
+  /PR #41/,
+  /native release-exit is \*\*not green\*\*/i,
+  /3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106/,
   /does \*\*not\*\* contain PR #40/,
   /SQLite schema (?:is |version )`?9`?/,
   /does not publish/i,
@@ -247,6 +301,82 @@ for (const pattern of [
     pattern,
     `SUPPORT.md is missing safe compatibility-report guidance: ${String(pattern)}`,
   );
+}
+
+const releaseNotes = await text("packaging/release-notes.md");
+for (const pattern of [
+  /FXO-1162 candidate freeze created or authorized no tag/,
+  /manifest's build-time `tagStatus`/,
+  /Start here/,
+  /Configuration, installer, schema, and privacy changes/,
+  /Upgrade and rollback/,
+  /Known limitations and publication gates/,
+  /Exact artifact and provenance boundary/,
+  /native release-exit is \*\*not green\*\*/i,
+  /contains neither PR #40 nor PR #41/,
+]) {
+  requireText(
+    releaseNotes,
+    pattern,
+    `release notes are missing release boundary: ${String(pattern)}`,
+  );
+}
+
+for (const path of [
+  ".github/ISSUE_TEMPLATE/config.yml",
+  ".github/ISSUE_TEMPLATE/bug.yml",
+  ".github/ISSUE_TEMPLATE/docs.yml",
+  ".github/ISSUE_TEMPLATE/security-change.yml",
+]) {
+  await assertFile(resolve(root, path), "public reporting paths");
+}
+const security = await text("SECURITY.md");
+const issueConfig = await text(".github/ISSUE_TEMPLATE/config.yml");
+const releasing = await text("docs/releasing.md");
+for (const [source, pattern, message] of [
+  [
+    security,
+    /security\/advisories\/new/,
+    "private vulnerability path is missing",
+  ],
+  [support, /sanitized/i, "sanitized support-report path is missing"],
+  [
+    support,
+    /https:\/\/github\.com\/flowxo\/agent-relay\/issues\/new\/choose/,
+    "support issue-chooser route is missing",
+  ],
+  [
+    issueConfig,
+    /blank_issues_enabled:\s*false/,
+    "blank public issues are not disabled",
+  ],
+  [
+    issueConfig,
+    /security\/advisories\/new/,
+    "issue chooser private-security route is missing",
+  ],
+  [
+    issueConfig,
+    /https:\/\/github\.com\/flowxo\/agent-relay\/blob\/main\/SUPPORT\.md/,
+    "issue chooser support route is missing",
+  ],
+  [
+    issueConfig,
+    /https:\/\/github\.com\/flowxo\/agent-relay\/blob\/main\/CONTRIBUTING\.md/,
+    "issue chooser contribution route is missing",
+  ],
+  [
+    releasing,
+    /Rollback, deprecation, and compromise/,
+    "release rollback path is missing",
+  ],
+  [
+    releasing,
+    /Do not delete or unpublish a normal bad prerelease/,
+    "release yank policy is missing",
+  ],
+]) {
+  requireText(source, pattern, message);
 }
 
 const combined = (

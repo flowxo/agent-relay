@@ -13,7 +13,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 
@@ -21,10 +28,26 @@ import {
   assertReleaseConfiguration,
   stagedPackageIsPrivate,
 } from "./release-policy.mjs";
+import { packageProofToolEnvironment } from "./safe-packed-environment.mjs";
 
 const runFile = promisify(execFile);
 const mainPackageId = "SPDXRef-Package-agent-relay";
 const checksumPattern = /^([a-f0-9]{64}) {2}([A-Za-z0-9._@+-]+)$/;
+
+function sanitizedReleaseOutput(value, cwd) {
+  let sanitized = value;
+  for (const [privatePath, replacement] of [
+    [cwd, "<checkout>"],
+    [process.cwd(), "<checkout>"],
+    [process.env.HOME, "<home>"],
+    [tmpdir(), "<temporary-root>"],
+  ]) {
+    if (privatePath !== undefined && privatePath.length > 0) {
+      sanitized = sanitized.replaceAll(privatePath, replacement);
+    }
+  }
+  return sanitized;
+}
 
 function assert(condition, message) {
   if (!condition) {
@@ -32,7 +55,7 @@ function assert(condition, message) {
   }
 }
 
-async function run(executable, args, options = {}) {
+export async function run(executable, args, options = {}) {
   try {
     return await runFile(executable, args, {
       ...options,
@@ -40,12 +63,25 @@ async function run(executable, args, options = {}) {
       maxBuffer: 16 * 1024 * 1024,
     });
   } catch (error) {
+    const cwd = typeof options.cwd === "string" ? options.cwd : undefined;
     const stdout =
-      typeof error.stdout === "string" ? error.stdout.slice(-16_000) : "";
+      typeof error.stdout === "string"
+        ? sanitizedReleaseOutput(error.stdout.slice(-16_000), cwd)
+        : "";
     const stderr =
-      typeof error.stderr === "string" ? error.stderr.slice(-16_000) : "";
+      typeof error.stderr === "string"
+        ? sanitizedReleaseOutput(error.stderr.slice(-16_000), cwd)
+        : "";
+    const command = [
+      executable,
+      ...args.map((argument) =>
+        isAbsolute(argument)
+          ? `<path:${basename(argument)}>`
+          : sanitizedReleaseOutput(argument, cwd),
+      ),
+    ].join(" ");
     throw new Error(
-      [`${executable} ${args.join(" ")} failed`, stdout.trim(), stderr.trim()]
+      [`${command} failed`, stdout.trim(), stderr.trim()]
         .filter((part) => part.length > 0)
         .join("\n"),
       { cause: error },
@@ -101,6 +137,8 @@ export function releaseArtifactNames(release) {
   return {
     tarball: `${safeName}-${release.version}.tgz`,
     sbom: `${safeName}-${release.version}.spdx.json`,
+    packageContents: "package-contents.json",
+    releaseNotes: "RELEASE_NOTES.md",
     manifest: "agent-relay-release.json",
     checksums: "SHA256SUMS",
   };
@@ -118,7 +156,7 @@ export async function assertCleanGit(root) {
   );
 }
 
-export async function readGitBuildInfo(root) {
+export async function readGitBuildInfo(root, intendedTag) {
   const [
     { stdout: commitOutput },
     { stdout: dateOutput },
@@ -132,6 +170,37 @@ export async function readGitBuildInfo(root) {
   const createdAt = new Date(dateOutput.trim()).toISOString();
   assert(/^[a-f0-9]{40}$/.test(commit), "git commit must be one full SHA-1");
   assert(!Number.isNaN(Date.parse(createdAt)), "git commit date is invalid");
+  let intendedTagState;
+  if (intendedTag !== undefined) {
+    const { stdout: matchingTagsOutput } = await run(
+      "git",
+      ["tag", "--list", "--format=%(refname:short)", intendedTag],
+      { cwd: root },
+    );
+    const matchingTags = matchingTagsOutput
+      .trim()
+      .split("\n")
+      .filter((value) => value.length > 0);
+    const exists = matchingTags.includes(intendedTag);
+    if (!exists) {
+      intendedTagState = { status: "not-created", commit: null };
+    } else {
+      const { stdout: tagCommitOutput } = await run(
+        "git",
+        ["rev-list", "-n", "1", `refs/tags/${intendedTag}`],
+        { cwd: root },
+      );
+      const tagCommit = tagCommitOutput.trim();
+      assert(
+        /^[a-f0-9]{40}$/.test(tagCommit),
+        "intended git tag does not resolve to one full commit",
+      );
+      intendedTagState = {
+        status: tagCommit === commit ? "verified-at-head" : "exists-elsewhere",
+        commit: tagCommit,
+      };
+    }
+  }
   return {
     commit,
     createdAt,
@@ -140,6 +209,7 @@ export async function readGitBuildInfo(root) {
       .split("\n")
       .filter((value) => value.length > 0)
       .sort(),
+    ...(intendedTagState === undefined ? {} : { intendedTagState }),
   };
 }
 
@@ -208,6 +278,7 @@ async function sourceInputRecords(root, rootPackage) {
     "packaging/release.json",
     "packaging/package-files.json",
     "packaging/actions-lock.json",
+    "packaging/release-notes.md",
     "contracts/contract-lock.json",
     "packaging/v1-release-boundary.json",
   ];
@@ -219,6 +290,35 @@ async function sourceInputRecords(root, rootPackage) {
         sha256: await fileSha("sha256", resolve(root, path)),
       })),
     ),
+  };
+}
+
+async function createPackageContentSnapshot({
+  release,
+  tarball,
+  extractedPackage,
+}) {
+  const files = [];
+  let unpackedBytes = 0;
+  for (const path of await listRegularFiles(extractedPackage)) {
+    const metadata = await stat(resolve(extractedPackage, path));
+    unpackedBytes += metadata.size;
+    files.push({
+      path,
+      bytes: metadata.size,
+      sha256: await fileSha("sha256", resolve(extractedPackage, path)),
+    });
+  }
+  return {
+    schema: "agent-relay-package-content-evidence.v1",
+    package: {
+      name: release.name,
+      version: release.version,
+    },
+    artifactSha256: await fileSha("sha256", tarball),
+    fileCount: files.length,
+    unpackedBytes,
+    files,
   };
 }
 
@@ -249,6 +349,7 @@ export async function runtimeDependencyGraph(root, release) {
       id,
       name: manifest.name,
       version: manifest.version,
+      manifestPath,
       license:
         typeof manifest.license === "string" ? manifest.license : "NOASSERTION",
       repository: packageRepository(manifest.repository),
@@ -457,31 +558,51 @@ export async function buildReleaseBundle({
 }) {
   assertReleaseConfiguration(release, rootPackage);
   await assertCleanGit(root);
-  const git = await readGitBuildInfo(root);
+  const git = await readGitBuildInfo(root, release.gitTag);
+  assert(
+    git.intendedTagState?.status !== "exists-elsewhere",
+    "the immutable intended release tag already points at another commit",
+  );
   if (expectedTag !== undefined) {
     assert(
       expectedTag === release.gitTag,
       "workflow tag differs from release metadata",
     );
     assert(
-      git.tags.includes(expectedTag),
+      git.intendedTagState?.status === "verified-at-head",
       "the expected release tag does not point at HEAD",
     );
   }
+  const tagStatus =
+    git.intendedTagState?.status === "verified-at-head"
+      ? "verified-at-head"
+      : "not-created";
 
   const names = releaseArtifactNames(release);
   const temporaryRoot = await mkdtemp(
     resolve(tmpdir(), "agent-relay-release-build-"),
   );
   try {
+    const packageToolHome = resolve(temporaryRoot, "package-tool-home");
+    const packageUserConfig = resolve(packageToolHome, "empty-npmrc");
+    await mkdir(packageToolHome, { recursive: true, mode: 0o700 });
+    await writeFile(packageUserConfig, "", {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     const first = resolve(temporaryRoot, "first.tgz");
     const second = resolve(temporaryRoot, "second.tgz");
-    const buildEnvironment = {
-      ...process.env,
-      SOURCE_DATE_EPOCH: String(
-        Math.floor(new Date(git.createdAt).getTime() / 1000),
-      ),
-    };
+    const buildEnvironment = packageProofToolEnvironment({
+      ambientEnvironment: process.env,
+      home: packageToolHome,
+      temporaryRoot,
+      userConfigPath: packageUserConfig,
+      overrides: {
+        SOURCE_DATE_EPOCH: String(
+          Math.floor(new Date(git.createdAt).getTime() / 1000),
+        ),
+      },
+    });
 
     await run("pnpm", ["pack", "--out", first], {
       cwd: root,
@@ -518,14 +639,34 @@ export async function buildReleaseBundle({
     const sbomPath = resolve(outputDirectory, names.sbom);
     await writeFile(sbomPath, `${JSON.stringify(sbom, null, 2)}\n`, "utf8");
 
+    const packageContents = await createPackageContentSnapshot({
+      release,
+      tarball,
+      extractedPackage,
+    });
+    const packageContentsPath = resolve(outputDirectory, names.packageContents);
+    await writeFile(
+      packageContentsPath,
+      `${JSON.stringify(packageContents, null, 2)}\n`,
+      "utf8",
+    );
+    const releaseNotesPath = resolve(outputDirectory, names.releaseNotes);
+    await copyFile(
+      resolve(root, "packaging/release-notes.md"),
+      releaseNotesPath,
+    );
+
     const tarballMetadata = await stat(tarball);
     const sbomMetadata = await stat(sbomPath);
+    const packageContentsMetadata = await stat(packageContentsPath);
+    const releaseNotesMetadata = await stat(releaseNotesPath);
     const manifest = {
       schema: "agent-relay-release-bundle.v1",
       sourceRepository: "https://github.com/flowxo/agent-relay",
       commit: git.commit,
       createdAt: git.createdAt,
-      tag: release.gitTag,
+      intendedTag: release.gitTag,
+      tagStatus,
       package: {
         name: release.name,
         version: release.version,
@@ -545,14 +686,37 @@ export async function buildReleaseBundle({
         sha256: await fileSha("sha256", sbomPath),
         subjectSha256: secondSha256,
       },
+      packageContents: {
+        file: names.packageContents,
+        format: packageContents.schema,
+        bytes: packageContentsMetadata.size,
+        sha256: await fileSha("sha256", packageContentsPath),
+        subjectSha256: secondSha256,
+        fileCount: packageContents.fileCount,
+        unpackedBytes: packageContents.unpackedBytes,
+      },
+      releaseNotes: {
+        file: names.releaseNotes,
+        bytes: releaseNotesMetadata.size,
+        sha256: await fileSha("sha256", releaseNotesPath),
+        status:
+          tagStatus === "verified-at-head"
+            ? "tagged-candidate"
+            : "candidate-without-tag",
+      },
       reproducibility: {
         builds: 2,
         matched: true,
         sha256: secondSha256,
       },
       checksumsFile: names.checksums,
-      provenance:
-        "GitHub Actions attaches signed build and SBOM attestations to the tarball when repository support is available.",
+      provenance: {
+        source: "clean-git-commit",
+        localBuild: "unsigned",
+        signedAttestations: "not-produced-by-this-local-bundle",
+        taggedWorkflow:
+          "GitHub Actions may attach signed build and SBOM attestations only after the intended tag exists and the separately authorized workflow succeeds.",
+      },
     };
     const manifestPath = resolve(outputDirectory, names.manifest);
     await writeFile(
@@ -561,7 +725,13 @@ export async function buildReleaseBundle({
       "utf8",
     );
 
-    const checksummedFiles = [names.manifest, names.sbom, names.tarball].sort();
+    const checksummedFiles = [
+      names.manifest,
+      names.packageContents,
+      names.releaseNotes,
+      names.sbom,
+      names.tarball,
+    ].sort();
     const checksumLines = [];
     for (const file of checksummedFiles) {
       checksumLines.push(
@@ -614,13 +784,15 @@ export async function verifyReleaseBundle({
   const expectedFiles = [
     names.checksums,
     names.manifest,
+    names.packageContents,
+    names.releaseNotes,
     names.sbom,
     names.tarball,
   ].sort();
   assert(
     JSON.stringify(await listRegularFiles(directory)) ===
       JSON.stringify(expectedFiles),
-    "release directory differs from the four-file bundle contract",
+    "release directory differs from the six-file bundle contract",
   );
 
   const manifest = JSON.parse(
@@ -630,7 +802,14 @@ export async function verifyReleaseBundle({
     manifest.schema === "agent-relay-release-bundle.v1",
     "release manifest schema differs",
   );
-  assert(manifest.tag === release.gitTag, "release manifest tag differs");
+  assert(
+    manifest.intendedTag === release.gitTag,
+    "release manifest intended tag differs",
+  );
+  assert(
+    ["verified-at-head", "not-created"].includes(manifest.tagStatus),
+    "release manifest tag-status evidence differs",
+  );
   assert(
     manifest.sourceRepository === "https://github.com/flowxo/agent-relay",
     "release manifest source repository differs",
@@ -654,8 +833,13 @@ export async function verifyReleaseBundle({
     "release manifest dist-tag differs",
   );
   assert(
-    manifest.provenance ===
-      "GitHub Actions attaches signed build and SBOM attestations to the tarball when repository support is available.",
+    manifest.provenance?.source === "clean-git-commit" &&
+      manifest.provenance?.localBuild === "unsigned" &&
+      manifest.provenance?.signedAttestations ===
+        "not-produced-by-this-local-bundle" &&
+      /only after the intended tag exists/.test(
+        manifest.provenance?.taggedWorkflow ?? "",
+      ),
     "release manifest provenance statement differs",
   );
   assert(
@@ -668,6 +852,22 @@ export async function verifyReleaseBundle({
       JSON.stringify(manifest.sourceInputs) ===
         JSON.stringify(await sourceInputRecords(root, rootPackage)),
       "release manifest source inputs differ",
+    );
+    const currentGit = await readGitBuildInfo(root, release.gitTag);
+    assert(
+      currentGit.intendedTagState?.status !== "exists-elsewhere",
+      "the immutable intended release tag already points at another commit",
+    );
+    assert(
+      manifest.commit === currentGit.commit,
+      "release manifest commit differs from the checked source",
+    );
+    assert(
+      manifest.tagStatus ===
+        (currentGit.intendedTagState?.status === "verified-at-head"
+          ? "verified-at-head"
+          : "not-created"),
+      "release manifest tag status differs from the checked source",
     );
   }
   assert(
@@ -691,6 +891,8 @@ export async function verifyReleaseBundle({
   );
   const expectedChecksummed = [
     names.manifest,
+    names.packageContents,
+    names.releaseNotes,
     names.sbom,
     names.tarball,
   ].sort();
@@ -844,6 +1046,60 @@ export async function verifyReleaseBundle({
     "release manifest checksum filename differs",
   );
 
+  const packageContentsPath = resolve(directory, names.packageContents);
+  const packageContents = JSON.parse(
+    await readFile(packageContentsPath, "utf8"),
+  );
+  assert(
+    packageContents.schema === "agent-relay-package-content-evidence.v1" &&
+      packageContents.package?.name === release.name &&
+      packageContents.package?.version === release.version &&
+      packageContents.artifactSha256 === tarballSha256 &&
+      Array.isArray(packageContents.files),
+    "package-content snapshot boundary differs",
+  );
+  assert(
+    manifest.packageContents?.file === names.packageContents &&
+      manifest.packageContents?.format === packageContents.schema &&
+      manifest.packageContents?.sha256 ===
+        (await fileSha("sha256", packageContentsPath)) &&
+      manifest.packageContents?.bytes ===
+        (await stat(packageContentsPath)).size &&
+      manifest.packageContents?.subjectSha256 === tarballSha256 &&
+      manifest.packageContents?.fileCount === packageContents.fileCount &&
+      manifest.packageContents?.unpackedBytes === packageContents.unpackedBytes,
+    "release manifest package-content evidence differs",
+  );
+
+  const releaseNotesPath = resolve(directory, names.releaseNotes);
+  const releaseNotes = await readFile(releaseNotesPath, "utf8");
+  assert(
+    releaseNotes.includes(`${release.version} release candidate`) &&
+      /FXO-1162 candidate freeze created or authorized no tag/.test(
+        releaseNotes,
+      ) &&
+      /manifest's build-time `tagStatus`/.test(releaseNotes),
+    "release notes do not preserve the candidate publication boundary",
+  );
+  if (root !== undefined) {
+    assert(
+      releaseNotes ===
+        (await readFile(resolve(root, "packaging/release-notes.md"), "utf8")),
+      "release notes differ from the reviewed source input",
+    );
+  }
+  assert(
+    manifest.releaseNotes?.file === names.releaseNotes &&
+      manifest.releaseNotes?.sha256 ===
+        (await fileSha("sha256", releaseNotesPath)) &&
+      manifest.releaseNotes?.bytes === (await stat(releaseNotesPath)).size &&
+      manifest.releaseNotes?.status ===
+        (manifest.tagStatus === "verified-at-head"
+          ? "tagged-candidate"
+          : "candidate-without-tag"),
+    "release manifest release-note evidence differs",
+  );
+
   const temporaryRoot = await mkdtemp(
     resolve(tmpdir(), "agent-relay-release-verify-"),
   );
@@ -859,6 +1115,17 @@ export async function verifyReleaseBundle({
       "tarball package manifest differs from release policy",
     );
     const extractedFiles = await listRegularFiles(extractedPackage);
+    const contentFiles = new Map(
+      packageContents.files.map((file) => [file.path, file]),
+    );
+    assert(
+      packageContents.fileCount === extractedFiles.length &&
+        contentFiles.size === extractedFiles.length &&
+        JSON.stringify([...contentFiles.keys()].sort()) ===
+          JSON.stringify(extractedFiles),
+      "package-content snapshot inventory differs from the tarball",
+    );
+    let unpackedBytes = 0;
     assert(
       Array.isArray(sbom.files) &&
         new Set(sbom.files.map((file) => file.fileName)).size ===
@@ -887,6 +1154,13 @@ export async function verifyReleaseBundle({
         resolve(extractedPackage, file),
       );
       verificationHashes.push(expectedSha1);
+      const metadata = await stat(resolve(extractedPackage, file));
+      unpackedBytes += metadata.size;
+      assert(
+        contentFiles.get(file)?.bytes === metadata.size &&
+          contentFiles.get(file)?.sha256 === expected,
+        `package-content snapshot differs for ${file}`,
+      );
       assert(
         record.checksums?.some(
           (checksum) =>
@@ -918,6 +1192,10 @@ export async function verifyReleaseBundle({
         sha("sha1", verificationHashes.sort().join("")),
       "SBOM package verification code differs",
     );
+    assert(
+      packageContents.unpackedBytes === unpackedBytes,
+      "package-content snapshot unpacked size differs",
+    );
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
@@ -931,5 +1209,8 @@ export async function verifyReleaseBundle({
     sbom: names.sbom,
     sbomPackages: sbom.packages.length,
     sbomFiles: sbom.files.length,
+    packageContents: names.packageContents,
+    releaseNotes: names.releaseNotes,
+    tagStatus: manifest.tagStatus,
   };
 }
