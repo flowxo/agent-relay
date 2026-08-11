@@ -137,6 +137,7 @@ export interface RelayHttpServerOptions {
   maxBodyBytes?: number;
   logger?: RelayLogger;
   statusDetails?: () => object;
+  telegramCanaryReady?: () => boolean;
   replyRouter?: TelegramReplyRouter;
   telegramWebhookSecret?: string;
   webEnabled?: boolean;
@@ -1273,6 +1274,27 @@ export function createRelayHttpServer(
           await readJson(request, maxBodyBytes),
         );
         sendJson(response, 200, await service.drain(command.limit));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/canaries/telegram"
+      ) {
+        const event = AgentAttentionEventV1Schema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        if (options.telegramCanaryReady?.() !== true) {
+          sendJson(response, 409, {
+            code: "telegram-intake-not-ready",
+            message: "Telegram reply intake is not ready for a canary",
+          });
+          return;
+        }
+        const ingest = service.ingest(event);
+        sendJson(response, 200, {
+          ingest,
+          drain: await service.drain(),
+        });
         return;
       }
       if (

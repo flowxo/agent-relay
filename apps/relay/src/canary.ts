@@ -8,6 +8,9 @@ import type {
 import { makeProjectRef, makeStableEventId } from "@agent-relay/protocol";
 import type { AgentAttentionEventV1 } from "@agent-relay/protocol";
 
+import type { RelayDaemonStatus } from "./client.js";
+import type { TelegramIntakeRuntimeStatus } from "./transport-status.js";
+
 export interface FakeCanaryClient {
   ingest(event: AgentAttentionEventV1): Promise<IngestResult>;
   drain(limit?: number): Promise<DrainResult>;
@@ -30,6 +33,10 @@ export interface FakeCanaryOptions {
 export interface InteractiveCanaryClient {
   ingest(event: AgentAttentionEventV1): Promise<IngestResult>;
   drain(limit?: number): Promise<DrainResult>;
+  activateTelegramCanary?(event: AgentAttentionEventV1): Promise<{
+    ingest: IngestResult;
+    drain: DrainResult;
+  }>;
   getRequest(correlationId: string): Promise<PendingRequestRecord | undefined>;
   waitForAnswer(
     correlationId: string,
@@ -71,6 +78,85 @@ export interface InteractiveCanaryOptions {
 
 export const TELEGRAM_CANARY_REPLY = "relay-canary-ok";
 export const WHOOSHBANG_CANARY_REPLY = TELEGRAM_CANARY_REPLY;
+
+export interface TelegramCanaryDaemonStatus {
+  selectedTransport?: RelayDaemonStatus["selectedTransport"];
+  transportRuntime?: {
+    telegram?: {
+      intake?: TelegramIntakeRuntimeStatus;
+    };
+  };
+}
+
+export interface TelegramCanaryReadinessClient {
+  status(): Promise<TelegramCanaryDaemonStatus>;
+}
+
+export function assertTelegramCanaryReady(
+  status: TelegramCanaryDaemonStatus,
+): void {
+  if (status.selectedTransport !== "telegram") {
+    throw Object.assign(
+      new Error(
+        "telegram-canary requires a daemon using the real Telegram transport",
+      ),
+      { code: "telegram-transport-not-selected" },
+    );
+  }
+  const intake = status.transportRuntime?.telegram?.intake;
+  const validOwnership =
+    (intake?.mode === "poll" && intake.localOwnership === "held") ||
+    (intake?.mode === "webhook" && intake.localOwnership === "not-applicable");
+  if (
+    intake?.state !== "active" ||
+    intake.replyReady !== true ||
+    !validOwnership
+  ) {
+    throw Object.assign(
+      new Error("telegram-canary requires active Telegram reply intake"),
+      { code: "telegram-intake-not-ready" },
+    );
+  }
+}
+
+export async function waitForTelegramCanaryReady(options: {
+  client: TelegramCanaryReadinessClient;
+  waitMs?: number;
+  pollIntervalMs?: number;
+  now?: () => number;
+  sleep?: (delayMs: number) => Promise<void>;
+}): Promise<TelegramCanaryDaemonStatus> {
+  const waitMs = options.waitMs ?? 35_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 250;
+  const now = options.now ?? Date.now;
+  const sleep =
+    options.sleep ??
+    (async (delayMs: number) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    });
+  const deadline = now() + waitMs;
+
+  while (true) {
+    const status = await options.client.status();
+    try {
+      assertTelegramCanaryReady(status);
+      return status;
+    } catch (error) {
+      const intake = status.transportRuntime?.telegram?.intake;
+      const mayBecomeReady =
+        status.selectedTransport === "telegram" &&
+        intake?.mode === "poll" &&
+        (intake.state === "not-started" ||
+          intake.state === "starting" ||
+          intake.state === "error");
+      const remaining = deadline - now();
+      if (!mayBecomeReady || remaining <= 0) {
+        throw error;
+      }
+      await sleep(Math.min(pollIntervalMs, remaining));
+    }
+  }
+}
 
 export function isWhooshBangCanaryAcknowledged(
   priorCursorRef: string | null,
@@ -233,8 +319,15 @@ export async function runInteractiveCanary(
     },
   };
 
-  const ingest = await options.client.ingest(event);
-  const drain = await options.client.drain();
+  const activation =
+    options.expectedResolvedBy === "telegram" &&
+    options.client.activateTelegramCanary !== undefined
+      ? await options.client.activateTelegramCanary(event)
+      : {
+          ingest: await options.client.ingest(event),
+          drain: await options.client.drain(),
+        };
+  const { ingest, drain } = activation;
   const deliveryWaitMs = Math.min(waitMs, 10_000);
   const deliveredRequest =
     drain.retrying > 0 || drain.deadLettered > 0

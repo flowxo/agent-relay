@@ -89,6 +89,19 @@ switches to the fake transport. Expected structured evidence includes
 `telegram.preflight-succeeded`, `telegram.poll-started` in poll mode, and
 `daemon.started` with transport `telegram`.
 
+Poll mode acquires one kernel-managed per-user lease before Telegram setup or
+HTTP startup, independent of the selected Agent Relay state directory. The lease
+is an exclusive loopback listener on a stable port derived from the Unix user ID
+and contains no credential or provider identity. If another lease-aware local
+daemon owns polling, or an unrelated listener occupies that coordination port,
+startup fails closed with `telegram-poller-already-owned` and leaves that daemon
+untouched. A daemon that predates this lease protocol must still be identified
+with the documented non-secret local listener check and stopped/restored
+explicitly. Once the first poll succeeds, `agent-relay status` reports Telegram
+intake as `active`, `replyReady: true`, and `localOwnership: held`. A terminal
+provider conflict reports `blocked` after one request rather than entering a
+retry loop.
+
 ## Run the bounded activation canary
 
 In another terminal with the same environment:
@@ -96,6 +109,11 @@ In another terminal with the same environment:
 ```sh
 ~/.agent-relay/bin/agent-relay telegram-canary --wait-ms 120000
 ```
+
+The canary waits up to 35 seconds for a starting poll, then checks the daemon's
+safe intake status before creating its request. It fails with
+`telegram-intake-not-ready` and sends no card while polling is stopped, blocked,
+or not locally owned.
 
 Open the new canary topic and send the exact synthetic challenge printed by the
 card:

@@ -12,6 +12,10 @@ import { webhookSignature } from "@agent-relay/webhook-transport";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startDaemon } from "./daemon.js";
+import {
+  acquireTelegramPollingLease,
+  TelegramPollingLeaseError,
+} from "./telegram-polling-lease.js";
 import { whooshbangStreamKey } from "./whooshbang-poller.js";
 import { WebCredentialSchema } from "./web-credential.js";
 
@@ -21,6 +25,22 @@ async function temporaryDatabase(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "agent-relay-daemon-"));
   temporaryDirectories.push(directory);
   return join(directory, "relay.sqlite");
+}
+
+async function availablePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("Synthetic daemon lease port is unavailable");
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error === undefined ? resolve() : reject(error)));
+  });
+  return address.port;
 }
 
 afterEach(async () => {
@@ -741,7 +761,151 @@ describe("startDaemon Telegram update mode", () => {
     await restarted.close();
   });
 
-  it("starts long polling for a fully configured local Telegram adapter", async () => {
+  it("keeps polling ownership until delayed shutdown settles even when another component fails", async () => {
+    let pollCalls = 0;
+    let finishPollAbort: (() => void) | undefined;
+    let observePollAbort: (() => void) | undefined;
+    const pollAbortObserved = new Promise<void>((resolve) => {
+      observePollAbort = resolve;
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.includes("/getMe")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: {
+                id: 10002,
+                is_bot: true,
+                has_topics_enabled: true,
+              },
+            }),
+          );
+        }
+        if (url.includes("/getChat")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: { id: 10001, type: "private" },
+            }),
+          );
+        }
+        if (url.includes("/getWebhookInfo")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: { url: "", pending_update_count: 0 },
+            }),
+          );
+        }
+        if (url.includes("/setMyCommands")) {
+          return new Response(JSON.stringify({ ok: true, result: true }));
+        }
+        if (url.includes("/getMyCommands")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: [
+                {
+                  command: "status",
+                  description: "Show this session or all open sessions",
+                },
+                {
+                  command: "purge",
+                  description: "Review inactive session topics for deletion",
+                },
+                {
+                  command: "cleanup",
+                  description: "Review ended session topics for deletion",
+                },
+              ],
+            }),
+          );
+        }
+        if (url.includes("/getUpdates")) {
+          pollCalls += 1;
+          if (pollCalls === 1) {
+            return new Response(JSON.stringify({ ok: true, result: [] }));
+          }
+        }
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            observePollAbort?.();
+            finishPollAbort = () =>
+              reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+      });
+    const pollingLeasePort = await availablePort();
+    const runnerBridge = {
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => {
+        throw new Error("synthetic runner stop failure");
+      }),
+      status: () => ({ enabled: true, state: "ready" }),
+    };
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "telegram",
+      telegramToken: "123456:synthetic-token-value",
+      telegramChatId: "10001",
+      telegramOperatorUserId: 10002,
+      telegramReplyChatId: 10001,
+      telegramFetch: fetchMock,
+      telegramUpdateMode: "poll",
+      telegramPollingLeasePort: pollingLeasePort,
+      runnerBridge,
+      runnerBridgeEnabled: true,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    const address = daemon.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Telegram daemon did not expose a TCP address");
+    }
+    const status = await (
+      await fetch(`http://127.0.0.1:${String(address.port)}/v1/status`)
+    ).json();
+    expect(status).toMatchObject({
+      transportRuntime: {
+        telegram: {
+          intake: {
+            mode: "poll",
+            localOwnership: "held",
+            state: "active",
+            replyReady: true,
+            lastSuccessfulPollAt: expect.any(String),
+            lastError: null,
+          },
+        },
+      },
+    });
+    const storeClose = vi.spyOn(daemon.service.store, "close");
+    const close = daemon.close();
+    expect(daemon.close()).toBe(close);
+    await pollAbortObserved;
+    await expect(
+      acquireTelegramPollingLease({ port: pollingLeasePort }),
+    ).rejects.toBeInstanceOf(TelegramPollingLeaseError);
+    finishPollAbort?.();
+    await expect(close).rejects.toThrow("synthetic runner stop failure");
+    expect(storeClose).toHaveBeenCalledOnce();
+
+    const replacement = await acquireTelegramPollingLease({
+      port: pollingLeasePort,
+    });
+    await replacement.release();
+
+    expect(String(fetchMock.mock.calls[5]?.[0])).toContain("/getUpdates");
+  });
+
+  it("refuses a second isolated local poller before any provider setup call", async () => {
+    const pollingLeasePort = await availablePort();
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockImplementation(async (input, init) => {
@@ -804,24 +968,211 @@ describe("startDaemon Telegram update mode", () => {
           });
         });
       });
-    const daemon = await startDaemon({
-      databasePath: await temporaryDatabase(),
+    const options = {
       port: 0,
-      selectedTransport: "telegram",
-      telegramToken: "123456:synthetic-token-value",
+      selectedTransport: "telegram" as const,
+      telegramToken: "223456:synthetic-shared-token-value",
       telegramChatId: "10001",
       telegramOperatorUserId: 10002,
       telegramReplyChatId: 10001,
       telegramFetch: fetchMock,
+      telegramUpdateMode: "poll" as const,
+      telegramPollingLeasePort: pollingLeasePort,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    };
+    const first = await startDaemon({
+      ...options,
+      databasePath: await temporaryDatabase(),
+    });
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).includes("/getUpdates"),
+        ),
+      ).toBe(true),
+    );
+    const providerCallsBeforeConflict = fetchMock.mock.calls.length;
+
+    await expect(
+      startDaemon({ ...options, databasePath: await temporaryDatabase() }),
+    ).rejects.toMatchObject({
+      code: "telegram-poller-already-owned",
+      retryable: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(providerCallsBeforeConflict);
+
+    await first.close();
+    const replacement = await startDaemon({
+      ...options,
+      databasePath: await temporaryDatabase(),
+    });
+    await replacement.close();
+  });
+
+  it("reports one terminal provider polling conflict without retrying or leaking identity", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.includes("/getMe")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: {
+                id: 10002,
+                is_bot: true,
+                has_topics_enabled: true,
+              },
+            }),
+          );
+        }
+        if (url.includes("/getChat")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: { id: 10001, type: "private" },
+            }),
+          );
+        }
+        if (url.includes("/getWebhookInfo")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: { url: "", pending_update_count: 0 },
+            }),
+          );
+        }
+        if (url.includes("/setMyCommands")) {
+          return new Response(JSON.stringify({ ok: true, result: true }));
+        }
+        if (url.includes("/getMyCommands")) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: [
+                {
+                  command: "status",
+                  description: "Show this session or all open sessions",
+                },
+                {
+                  command: "purge",
+                  description: "Review inactive session topics for deletion",
+                },
+                {
+                  command: "cleanup",
+                  description: "Review ended session topics for deletion",
+                },
+              ],
+            }),
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 409,
+            description:
+              "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running",
+          }),
+          { status: 409 },
+        );
+      });
+    const privateToken = "323456:synthetic-private-token-value";
+    const privateChat = "10001";
+    const daemon = await startDaemon({
+      databasePath: await temporaryDatabase(),
+      port: 0,
+      selectedTransport: "telegram",
+      telegramToken: privateToken,
+      telegramChatId: privateChat,
+      telegramOperatorUserId: 10002,
+      telegramReplyChatId: 10001,
+      telegramFetch: fetchMock,
       telegramUpdateMode: "poll",
+      telegramPollingLeasePort: await availablePort(),
       drainIntervalMs: 60_000,
       retentionIntervalMs: 60_000,
     });
-
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
-    await Promise.all([daemon.close(), daemon.close()]);
-
-    expect(String(fetchMock.mock.calls[5]?.[0])).toContain("/getUpdates");
+    const address = daemon.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Telegram daemon did not expose a TCP address");
+    }
+    let status: unknown;
+    await vi.waitFor(async () => {
+      status = await (
+        await fetch(`http://127.0.0.1:${String(address.port)}/v1/status`)
+      ).json();
+      expect(status).toMatchObject({
+        transportRuntime: {
+          telegram: {
+            intake: {
+              mode: "poll",
+              localOwnership: "held",
+              state: "blocked",
+              replyReady: false,
+              lastSuccessfulPollAt: null,
+              lastError: {
+                code: "telegram-polling-conflict",
+                at: expect.any(String),
+              },
+            },
+          },
+        },
+      });
+    });
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/getUpdates"),
+      ),
+    ).toHaveLength(1);
+    const blockedEvent = {
+      schema: "agent-attention.v1",
+      eventId: "event_blocked_telegram_delivery_12345678",
+      occurredAt: "2026-08-10T22:50:21.000Z",
+      sequence: 1,
+      machineId: "machine_blocked_telegram_12345678",
+      bridgeSessionId: "bridge_blocked_telegram_12345678",
+      harness: "codex",
+      surface: "cli",
+      harnessVersion: "test",
+      sessionId: "session_blocked_telegram_12345678",
+      turnId: "turn_blocked_telegram_12345678",
+      project: makeProjectRef("/workspace/blocked-telegram"),
+      type: "input.required",
+      request: {
+        correlationId: "request_blocked_telegram_12345678",
+        kind: "input",
+        question: "Synthetic blocked reply intake.",
+        expiresAt: "2026-08-10T23:50:21.000Z",
+      },
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    } as const;
+    const blockedActivation = await fetch(
+      `http://127.0.0.1:${String(address.port)}/v1/canaries/telegram`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(blockedEvent),
+      },
+    );
+    expect(blockedActivation.status).toBe(409);
+    await expect(blockedActivation.json()).resolves.toMatchObject({
+      code: "telegram-intake-not-ready",
+    });
+    expect(daemon.service.store.getEvent(blockedEvent.eventId)).toBeUndefined();
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/sendMessage"),
+      ),
+    ).toHaveLength(0);
+    expect(JSON.stringify(status)).not.toContain(privateToken);
+    expect(JSON.stringify(status)).not.toContain(privateChat);
+    await daemon.close();
   });
 
   it("leaves update intake to the HTTP endpoint in webhook mode", async () => {
@@ -950,6 +1301,7 @@ describe("startDaemon Telegram update mode", () => {
         telegramReplyChatId: 10001,
         telegramFetch: fetchMock,
         telegramUpdateMode: "poll",
+        telegramPollingLeasePort: await availablePort(),
       }),
     ).rejects.toMatchObject({
       code: "telegram-topics-disabled",

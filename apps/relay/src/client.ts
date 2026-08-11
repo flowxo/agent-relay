@@ -135,6 +135,19 @@ export class RelayClient {
     });
   }
 
+  public async activateTelegramCanary(event: AgentAttentionEventV1): Promise<{
+    ingest: IngestResult;
+    drain: DrainResult;
+  }> {
+    return await this.request<{
+      ingest: IngestResult;
+      drain: DrainResult;
+    }>("/v1/canaries/telegram", {
+      method: "POST",
+      body: JSON.stringify(event),
+    });
+  }
+
   public async reportDiagnostic(
     diagnostic: RelayDiagnosticV1,
   ): Promise<DiagnosticIngestResult> {

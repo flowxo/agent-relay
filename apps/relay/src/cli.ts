@@ -25,6 +25,7 @@ import {
   isWhooshBangCanaryAcknowledged,
   runFakeCanary,
   runTelegramCanary,
+  waitForTelegramCanaryReady,
   runWhooshBangCanary,
 } from "./canary.js";
 import { resolveHookHarnessVersion, resolveWebEnabled } from "./cli-options.js";
@@ -378,6 +379,14 @@ async function main(): Promise<void> {
         : undefined;
     const whooshbangCredentialId =
       whooshbangConnection?.credential?.credentialId;
+    const internalTelegramPollingLeasePort =
+      environment("AGENT_RELAY_INTERNAL_TEST_MODE") === "1"
+        ? Number(
+            environment(
+              "AGENT_RELAY_INTERNAL_TEST_TELEGRAM_POLLING_LEASE_PORT",
+            ),
+          )
+        : undefined;
     const daemon = await startDaemon({
       databasePath,
       webEnabled,
@@ -394,6 +403,9 @@ async function main(): Promise<void> {
         : { telegramOperatorUserId }),
       ...(telegramReplyChatId === undefined ? {} : { telegramReplyChatId }),
       ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
+      ...(internalTelegramPollingLeasePort === undefined
+        ? {}
+        : { telegramPollingLeasePort: internalTelegramPollingLeasePort }),
       ...(transportSelection.selected !== "whooshbang" ||
       whooshbangConnection?.credential === undefined ||
       whooshbangMachineId === undefined
@@ -881,12 +893,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "telegram-canary") {
-    const daemonStatus = await client.status();
-    if (daemonStatus.selectedTransport !== "telegram") {
-      throw new Error(
-        "telegram-canary requires a daemon using the real Telegram transport",
-      );
-    }
+    await waitForTelegramCanaryReady({ client });
     await mkdir(stateDir, { recursive: true, mode: 0o700 });
     const machineId =
       environment("AGENT_RELAY_MACHINE_ID") ??

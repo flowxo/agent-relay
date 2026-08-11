@@ -254,6 +254,23 @@ that a child normalizes to status 130 or 143 is expected only when it matches
 the signal observed and forwarded by the owning supervisor; unrelated non-zero
 exits remain crash evidence.
 
+Credentialed acceptance must establish a harness's authentication readiness
+before starting notification-producing supervision. When an exact harness offers
+an authentication-status command, the acceptance preflight captures and discards
+all output and uses only its success or failure; a failure stops before the
+supervised child or a card-capable daemon step begins. The real command is used
+only after its offline/network behavior is understood and the live window is
+explicitly authorized.
+
+`--max-resumes` bounds continuations inside one supervisor. It is not a ceiling
+for initial launches, independent supervisor retries, events, or cards. A
+bounded acceptance run therefore reserves the worst-case card count before each
+supervised attempt and stops after any unexpected exit instead of starting a
+second attempt under the same reservation. Independent non-zero authentication
+exits correctly remain distinct owned-child `process.exited` evidence; they are
+a setup-sequencing failure when supervision began before authentication was
+ready, not a reason to suppress or coalesce real process exits.
+
 ## Codex app-server structured profile
 
 The exact installed `codex-cli 0.145.0` app-server profile was verified on

@@ -12,6 +12,18 @@ import type {
   ResolvedTransportSelection,
   TransportReadinessReport,
 } from "./transport-config.js";
+import type { TelegramPollingRuntimeStatus } from "./telegram-poller.js";
+
+export type TelegramIntakeRuntimeStatus =
+  | TelegramPollingRuntimeStatus
+  | {
+      mode: "webhook" | "disabled";
+      localOwnership: "not-applicable";
+      state: "active" | "blocked" | "not-started";
+      replyReady: boolean;
+      lastSuccessfulPollAt: null;
+      lastError: { at: string; code: string } | null;
+    };
 
 export type WhooshBangErrorClassification =
   | "authentication"
@@ -26,6 +38,9 @@ export interface DaemonTransportStatus {
   selectedTransport: AgentRelayTransport;
   transportReadiness?: TransportReadinessReport;
   transportRuntime: {
+    telegram: {
+      intake: TelegramIntakeRuntimeStatus;
+    };
     webhook: {
       delivery: {
         lastError: {
@@ -205,6 +220,7 @@ export function buildDaemonTransportStatus(input: {
   service: RelayService;
   hostedStreamKey?: string;
   hostedPresentationCapability?: WhooshBangResolutionPresenter["capability"];
+  telegramIntake?: TelegramIntakeRuntimeStatus;
 }): DaemonTransportStatus {
   const storeStatus = input.service.store.status();
   const whooshbangDelivery =
@@ -227,6 +243,18 @@ export function buildDaemonTransportStatus(input: {
       : { transportReadiness: input.readiness }),
     transportRuntime: {
       selection: input.selection,
+      telegram: {
+        intake:
+          input.telegramIntake ??
+          ({
+            mode: "disabled",
+            localOwnership: "not-applicable",
+            state: "not-started",
+            replyReady: false,
+            lastSuccessfulPollAt: null,
+            lastError: null,
+          } satisfies TelegramIntakeRuntimeStatus),
+      },
       webhook: {
         delivery: {
           lastSuccessfulSendAt: webhookDelivery.lastSuccessfulSendAt ?? null,
