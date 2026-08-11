@@ -19,7 +19,8 @@
       "sourceRepository": "https://github.com/flowxo/whooshbang",
       "sourceCommit": "50de931fed8d819d1a70ec27201351b09f0ef251",
       "artifactSha256": "4b428d1d9094ea78e136084d56831a4c8bdee97b1c40e569cde5787ea176c2dd",
-      "licenseDeclared": "NOASSERTION"
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2026 Flow XO, LLC"
     },
     {
       "name": "@whooshbang/sdk",
@@ -27,21 +28,41 @@
       "sourceRepository": "https://github.com/flowxo/whooshbang",
       "sourceCommit": "50de931fed8d819d1a70ec27201351b09f0ef251",
       "artifactSha256": "c3e67296c392f54b4d432d0bb57c70a6b8d031b1acdb17c44a2cb79626afefec",
-      "licenseDeclared": "NOASSERTION"
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2026 Flow XO, LLC"
     }
   ],
   "bundledComponentLicenseReview": {
-    "status": "required-before-publication",
-    "ownerApproved": false,
-    "noticeApproved": false,
-    "decisionReference": null
+    "status": "owner-approved",
+    "ownerApproved": true,
+    "noticeApproved": true,
+    "decisionReference": "https://linear.app/flowxo/issue/FXO-1568/ar43a-complete-one-owner-interview-implement-the-decisions-and-unblock"
   },
   "publication": {
-    "approved": false,
-    "registryAction": "blocked",
+    "approved": true,
+    "decision": "go-with-named-nonblocking-residuals",
+    "decisionReference": "https://linear.app/flowxo/issue/FXO-1568/ar43a-complete-one-owner-interview-implement-the-decisions-and-unblock",
+    "executionIssue": "https://linear.app/flowxo/issue/FXO-1164/ar44-publish-and-verify-the-agent-relay-package-repository-and-release",
+    "registryAction": "publish",
     "registry": "https://registry.npmjs.org/",
     "workflow": "prerelease.yml",
     "environment": "npm-prerelease",
-    "requiresPublicRepository": true
+    "requiresPublicRepository": true,
+    "initialPublish": {
+      "mode": "interactive-2fa-bootstrap",
+      "nodeVersion": "22.23.1",
+      "minimumNpmVersion": "11.15.0",
+      "packageMustBeAbsent": true,
+      "credentialPersistence": "forbidden-after-bootstrap",
+      "trustedPublisherSetup": "immediate-after-publish"
+    },
+    "trustedPublisher": {
+      "provider": "github-actions",
+      "repository": "flowxo/agent-relay",
+      "workflow": "prerelease.yml",
+      "environment": "npm-prerelease",
+      "permission": "publish",
+      "requiredForSubsequentPublishes": true
+    }
   }
 }

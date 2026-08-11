@@ -1,16 +1,17 @@
 # Prerelease build, attestation, and publication
 
-This story does not authorize publication. The checked-in pipeline builds and
-verifies a reviewable prerelease bundle, while registry mutation remains behind
-an explicit code approval, an exact tag, a manual workflow input, a protected
-GitHub environment, a public-repository check, and npm OIDC.
+FXO-1568 records a go with named non-blocking residuals for one bounded future
+FXO-1164 publication. It approves the exact package scope, MIT licensing and
+notices, security path, intended immutable tag, npm `alpha` channel, and GitHub
+prerelease operations. FXO-1568 itself publishes nothing. FXO-1164 may execute
+only after the final post-merge commit, regenerated digests, and green checks
+are recorded; substantive drift stops for renewed approval.
 
-The current `packaging/release.json` has `publication.approved: false` and
-`registryAction: blocked`. The staged package therefore remains private and
-`scripts/publish-release.mjs` refuses to contact the registry. The FXO-1162
-freeze created or authorized no tag; generated manifests record build-time tag
-state. The frozen [V1 release boundary](v1-release-boundary.md) is a
-documentation/control record, not tag authorization.
+The current `packaging/release.json` has `publication.approved: true` and
+`registryAction: publish`. The staged package is therefore registry-eligible and
+records `private: false`; the monorepo root remains `private: true` to block
+accidental workspace publication. No public Agent Relay tag or package exists
+yet. Generated manifests continue to record observed build-time tag state.
 
 ## Release inputs
 
@@ -96,9 +97,11 @@ git tag --annotate v0.1.0-alpha.1 --message "Agent Relay 0.1.0-alpha.1"
 git push origin v0.1.0-alpha.1
 ```
 
-Tag creation and push are external release actions and require owner approval at
-execution time. The `Prerelease` workflow also supports a manual dispatch, but
-the selected ref must be the exact tag or the build fails.
+FXO-1568 authorizes this exact future tag operation only inside FXO-1164 after
+the final candidate binding is recorded. The `Prerelease` workflow also supports
+a manual dispatch, but the selected ref must be the exact tag or the build
+fails. No second owner interview is required unless the candidate or authorized
+scope drifts substantively.
 
 The workflow:
 
@@ -160,36 +163,52 @@ release record.
 
 No long-lived npm token belongs in GitHub. The workflow contains no `NPM_TOKEN`,
 `NODE_AUTH_TOKEN`, or `secrets.*` reference. npm trusted publishing exchanges
-GitHub's short-lived OIDC identity only inside the registry job.
+GitHub's short-lived OIDC identity only inside the registry job. That job also
+requires the protected environment and
+`AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED=true`; it cannot bootstrap a new npm
+package.
 
-Before changing `publication.approved` to `true`, the owner must:
+The owner has approved the exact `@flowxo/agent-relay` name and scope, MIT for
+the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts, their
+notices, two-factor authentication, and this publication path. npm requires a
+package to already exist before its trusted publisher can be configured. The
+first package therefore uses one bounded interactive 2FA bootstrap, with no
+long-lived or retained token:
 
-1. approve distributable license and notice metadata for the bundled
-   `@whooshbang/contracts` and `@whooshbang/sdk` components; `NOASSERTION` is
-   not a publication grant;
-2. confirm control of the `@flowxo` npm scope and the exact
-   `@flowxo/agent-relay` name;
-3. make the source repository public so npm provenance is supported;
-4. protect the `npm-prerelease` GitHub environment with a required reviewer and
-   prevent self-review when the plan supports it;
-5. configure the npm trusted publisher for organization `flowxo`, repository
-   `agent-relay`, workflow filename `prerelease.yml`, and environment
-   `npm-prerelease`;
-6. enable two-factor authentication and disallow traditional publish tokens;
-7. protect release tags; and
-8. approve a dedicated code change setting the registry action.
+1. make the repository public; enable and verify GitHub private vulnerability
+   reporting and the available security controls; protect the `npm-prerelease`
+   environment; and create the approved exact tag;
+2. let the tagged workflow build, test, attest, and upload the exact bundle with
+   `publish: false`;
+3. download and verify that workflow bundle from a clean exact Node.js `22.23.1`
+   environment with npm `11.15.0` or newer;
+4. start a local interactive npm owner session protected by 2FA, without
+   exporting a registry token, then run:
 
-An npm package must already exist before `npm stage publish` can be used. The
-first approved prerelease therefore requires a separately reviewed direct
-`publish` action. After that first package exists, prefer
-`registryAction: stage`, configure the trusted publisher as stage-only, and
-require a maintainer to inspect and approve the staged package with 2FA. Do not
-grant both actions after staged publishing is available.
+   ```sh
+   pnpm release:bootstrap-publish -- --execute \
+     --confirm @flowxo/agent-relay@0.1.0-alpha.1
+   ```
 
-To request the registry job, manually dispatch `Prerelease` on the exact tag and
-set `publish` to true. The job still refuses unless all checked-in and runtime
-gates agree. Building, tagging, attesting, or creating a GitHub prerelease does
-not implicitly approve npm publication.
+5. the script verifies the public GitHub repository, clean tagged source, and
+   exact bundle, confirms the version is absent, publishes it to `alpha`,
+   immediately configures `flowxo/agent-relay` / `prerelease.yml` /
+   `npm-prerelease` with `--allow-publish`, verifies that a trust relationship
+   exists, and runs `npm logout` before returning success; and
+6. verify the registry artifact and publisher settings, then set the protected
+   repository variable `AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED=true`. Every
+   later publish must use OIDC. Do not add a repository or CI registry token.
+
+If the exact package was published but trust setup was interrupted, restore a
+fresh interactive 2FA session and rerun the same command with
+`--resume-after-publish`. Recovery proceeds only when the registry's SHA-512
+integrity matches the exact local tarball. A different artifact fails closed.
+
+The initial version cannot be republished through OIDC after bootstrap. The
+tagged workflow provides its GitHub build and SBOM attestations; OIDC is the
+exclusive registry path for later versions. Staged publishing, including a
+stage-only publisher, is a later explicit policy change and is not inferred for
+this alpha.
 
 ## Rollback, deprecation, and compromise
 
@@ -215,5 +234,6 @@ not implicitly approve npm publication.
 - [npm staged publishing](https://docs.npmjs.com/staged-publishing/)
 - [npm SBOM command](https://docs.npmjs.com/cli/v11/commands/npm-sbom/)
 
-These contracts were rechecked on 2026-07-26. npm trusted publishing currently
-requires npm 11.5.1 or newer; staged publishing requires npm 11.15.0 or newer.
+These contracts were rechecked on 2026-08-11. OIDC publication requires npm
+11.5.1 or newer; the `npm trust` command and staged publishing require npm
+11.15.0 or newer.

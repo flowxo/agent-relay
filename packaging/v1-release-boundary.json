@@ -4,8 +4,31 @@
     "name": "@flowxo/agent-relay",
     "version": "0.1.0-alpha.1",
     "intendedTag": "v0.1.0-alpha.1",
-    "tagStatus": "not-created-owner-authorization-required",
-    "publicationApproved": false
+    "tagStatus": "not-created-publication-authorized",
+    "publicationApproved": true
+  },
+  "releaseAuthorization": {
+    "decision": "go-with-named-nonblocking-residuals",
+    "decisionReference": "https://linear.app/flowxo/issue/FXO-1568/ar43a-complete-one-owner-interview-implement-the-decisions-and-unblock",
+    "executionIssue": "https://linear.app/flowxo/issue/FXO-1164/ar44-publish-and-verify-the-agent-relay-package-repository-and-release",
+    "authorizedOperations": [
+      "make-the-agent-relay-repository-public",
+      "enable-and-verify-github-private-vulnerability-reporting",
+      "enable-available-github-security-controls",
+      "create-the-immutable-v0.1.0-alpha.1-tag-on-the-recorded-exact-candidate",
+      "publish-flowxo-agent-relay-0.1.0-alpha.1-to-the-npm-alpha-channel",
+      "configure-the-npm-trusted-publisher-immediately-after-the-initial-interactive-2fa-publish",
+      "create-the-github-prerelease-and-attach-verified-artifacts-and-attestations"
+    ],
+    "excludedOperations": [
+      "production-deployment-or-mutation",
+      "central-workspace-release",
+      "live-provider-traffic",
+      "credential-disclosure-or-retention",
+      "live-card-authorization",
+      "publication-beyond-the-exact-agent-relay-alpha-candidate"
+    ],
+    "candidateBinding": "Record the exact green post-merge source commit and regenerated artifact digests in FXO-1568 before any FXO-1164 execution; substantive drift requires renewed owner approval."
   },
   "sourceCandidateEnteringFreeze": {
     "pullRequest": 40,
@@ -267,8 +290,10 @@
     "Automation cannot prove that every ambient hook in the invoking shell or GUI session was disabled; exact hook-denied isolation and aggregate attribution mitigate this accepted Low residual, and contaminated windows fail closed."
   ],
   "publicationGates": [
-    "Explicit owner authorization is required for a tag, package, release, registry action, or repository promotion.",
-    "The bundled WhooshBang contracts and SDK require an owner-approved distributable license and notice decision before publication."
+    "FXO-1568 authorizes only the exact future FXO-1164 operations listed in releaseAuthorization after a green exact candidate is recorded; it performs no publication itself.",
+    "The first npm publish uses an interactive 2FA owner session because npm requires the package to exist before trusted publishing can be configured; no registry credential may be printed, committed, attached to CI, or retained after bootstrap.",
+    "The GitHub Actions OIDC publisher must be configured and verified immediately after the first publish and is required for every later publish.",
+    "Repository visibility and GitHub security controls must be changed and verified during FXO-1164 before the exact tag and public release are promoted."
   ],
   "finalArtifactEvidence": "The clean reviewed release commit is bound later by the generated package-content snapshot, release notes, release manifest, SHA256SUMS, SPDX SBOM, sanitized clean-home evidence, and any separately authorized CI provenance; no final artifact, tag, or signed provenance is asserted by this source file."
 }

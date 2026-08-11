@@ -30,7 +30,12 @@ breaking changes and required operator action.
   evidence, curated release notes, and an exact source manifest.
 - Immutable GitHub Action pins, separate build/SBOM attestation permissions,
   repository secret scanning, and a protected npm OIDC publication path that
-  remains disabled pending owner approval.
+  remains gated on the exact public repository, environment, tag, workflow, and
+  confirmed post-bootstrap trusted publisher.
+- An owner-approved MIT license and shipped notice for the exact bundled
+  WhooshBang contracts rc.12 and SDK rc.13 artifacts, plus a fail-closed
+  interactive 2FA first-publish bootstrap that configures the OIDC publisher,
+  verifies it, and ends the npm session without retaining a registry token.
 - A native Apple-silicon Node.js 22.23.1 release-exit gate that verifies the
   exact bundle, installs without workspace links in a temporary home/prefix,
   proves doctor and one fake delivery, and removes owned hooks and the package.
@@ -154,8 +159,9 @@ breaking changes and required operator action.
   warning:** an older binary refuses a database written at a newer schema; use
   the newer package or restore a reviewed private backup rather than editing
   `user_version`.
-- The release candidate version advances to `0.1.0-alpha.1`; it remains private
-  and unpublished.
+- The release candidate version advances to `0.1.0-alpha.1`. Its staged package
+  is registry-eligible under the bounded FXO-1568 go, but it remains unpublished
+  and the workspace root remains private.
 
 ### Known limitations
 
@@ -182,11 +188,12 @@ breaking changes and required operator action.
   release bundle has SHA-256
   `3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
   bytes, 11 packed files, and six SPDX packages, and was not live-tested.
-- The FXO-1162 freeze created or authorized no `v0.1.0-alpha.1` tag. The
-  generated manifest records build-time tag state; tagging, publication, and
-  live-provider operations remain separately owner-authorized. Public
-  distribution is additionally blocked until the bundled WhooshBang contracts
-  and SDK receive an owner-approved distributable license and notice decision.
+- The FXO-1162 freeze created no `v0.1.0-alpha.1` tag. The generated manifest
+  records build-time tag state. FXO-1568 authorizes its future creation and the
+  exact alpha publication only in FXO-1164 after the final green post-merge
+  commit and regenerated digests are recorded. The authorization excludes
+  production, central workspace release, live-provider traffic, credential
+  retention, live cards, and broader publication.
 
 ## 0.1.0-alpha.0 — 2026-07-26 (local candidate only)
 

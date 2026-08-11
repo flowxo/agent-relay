@@ -8,8 +8,8 @@ on:
     inputs:
       publish:
         description:
-          Request the separately protected npm registry job. The checked-in
-          owner approval still defaults to false.
+          Request the separately protected OIDC npm registry job. The initial
+          package bootstrap remains an interactive owner operation.
         required: true
         type: boolean
         default: false
@@ -112,4 +112,6 @@ jobs:
             ${{ github.event.repository.visibility }}
           AGENT_RELAY_RELEASE_WORKFLOW: prerelease.yml
           AGENT_RELAY_RELEASE_ENVIRONMENT: npm-prerelease
+          AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED:
+            ${{ vars.AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED }}
         run: node scripts/publish-release.mjs .artifacts/release --execute

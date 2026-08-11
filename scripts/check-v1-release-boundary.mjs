@@ -84,13 +84,58 @@ assert(
 );
 assert(boundary.package.intendedTag === release.gitTag, "intended tag differs");
 assert(
-  boundary.package.tagStatus === "not-created-owner-authorization-required",
+  boundary.package.tagStatus === "not-created-publication-authorized",
   "tag authorization boundary differs",
 );
 assert(
-  boundary.package.publicationApproved === false &&
-    release.publication.approved === false,
-  "publication must remain unapproved",
+  boundary.package.publicationApproved === true &&
+    release.publication.approved === true,
+  "bounded publication approval differs",
+);
+assert(
+  boundary.releaseAuthorization.decision ===
+    "go-with-named-nonblocking-residuals" &&
+    boundary.releaseAuthorization.decisionReference ===
+      release.publication.decisionReference &&
+    boundary.releaseAuthorization.executionIssue ===
+      release.publication.executionIssue,
+  "owner decision binding differs",
+);
+assert(
+  JSON.stringify(boundary.releaseAuthorization.authorizedOperations) ===
+    JSON.stringify([
+      "make-the-agent-relay-repository-public",
+      "enable-and-verify-github-private-vulnerability-reporting",
+      "enable-available-github-security-controls",
+      "create-the-immutable-v0.1.0-alpha.1-tag-on-the-recorded-exact-candidate",
+      "publish-flowxo-agent-relay-0.1.0-alpha.1-to-the-npm-alpha-channel",
+      "configure-the-npm-trusted-publisher-immediately-after-the-initial-interactive-2fa-publish",
+      "create-the-github-prerelease-and-attach-verified-artifacts-and-attestations",
+    ]),
+  "authorized operation list differs",
+);
+assert(
+  JSON.stringify(boundary.releaseAuthorization.excludedOperations) ===
+    JSON.stringify([
+      "production-deployment-or-mutation",
+      "central-workspace-release",
+      "live-provider-traffic",
+      "credential-disclosure-or-retention",
+      "live-card-authorization",
+      "publication-beyond-the-exact-agent-relay-alpha-candidate",
+    ]),
+  "excluded operation list differs",
+);
+assert(
+  release.bundledComponentLicenseReview.status === "owner-approved" &&
+    release.bundledComponentLicenseReview.ownerApproved === true &&
+    release.bundledComponentLicenseReview.noticeApproved === true &&
+    release.bundledComponents.every(
+      (component) =>
+        component.licenseDeclared === "MIT" &&
+        component.copyrightText === "Copyright (c) 2026 Flow XO, LLC",
+    ),
+  "bundled WhooshBang license and notice approval differs",
 );
 assert(
   boundary.sourceInputs.packageManager === rootPackage.packageManager,
@@ -498,8 +543,8 @@ for (const component of release.bundledComponents) {
 }
 requireText(
   notices,
-  /owner-approved[\s\S]*license[\s\S]*before public/i,
-  "bundled license publication gate is missing",
+  /owner-approved[\s\S]*MIT[\s\S]*Copyright \(c\) 2026 Flow XO, LLC/i,
+  "bundled license approval and notice are missing",
 );
 
 const documentedWebhookFixture = [

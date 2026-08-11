@@ -3,15 +3,16 @@
 The machine-readable source of truth is
 [`packaging/v1-release-boundary.json`](../packaging/v1-release-boundary.json).
 This summary freezes the support, privacy, compatibility, and provenance
-boundary for `@flowxo/agent-relay@0.1.0-alpha.1`; it does not authorize or claim
-a publication.
+boundary for `@flowxo/agent-relay@0.1.0-alpha.1`. FXO-1568 authorizes one
+bounded future FXO-1164 publication after the final exact candidate is recorded;
+this source record does not claim that publication has occurred.
 
 ## Package and source
 
 - Package version: `0.1.0-alpha.1`.
-- Intended tag: `v0.1.0-alpha.1`. The FXO-1162 freeze created or authorized no
-  tag; generated manifests record build-time tag state. Tagging and publication
-  require separate owner authorization.
+- Intended tag: `v0.1.0-alpha.1`. The FXO-1162 freeze created no tag. FXO-1568
+  now authorizes its future creation in FXO-1164 on the recorded exact green
+  candidate; generated manifests still record observed build-time tag state.
 - The source candidate entering this freeze is PR #40, reviewed head
   `9a5e6a68609e3764ba5198c350528254bd37da62`, merged as
   `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`.
@@ -19,6 +20,11 @@ a publication.
   `875e5631ad45bbeb86c377e73dabe4d616b46413`, merged as
   `0adb7288483df331fbaaefb9b392ee2f4f3c7d84`. These are two distinct points in
   the release history, not interchangeable provenance labels.
+- The completed onboarding/artifact predecessor is PR #42, reviewed head
+  `52f04958bc6f3b838ff080eb8bc9111ac7e6f338`, merged as
+  `c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`. FXO-1568 starts from that commit;
+  its final post-merge candidate and new digests are recorded externally before
+  FXO-1164 execution rather than self-referenced from this source file.
 - The frozen package manager is `pnpm@11.17.0`; `pnpm-lock.yaml` has SHA-256
   `46b51f60a932e73533b43c7d605c350b36f01dcdd4e196ef61f14309bf2c6b38`.
 - The final clean reviewed release commit and tarball are bound later by the
@@ -33,7 +39,7 @@ The exact retained live-reviewed package is `@flowxo/agent-relay@0.1.0-alpha.1`,
 SHA-256 `654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198`. It
 came from PR #39 reviewed head `4ba4b1fbd832c34f465cd40f199e5c1dac7ed890`,
 merged as `85d2d0a1f8649bf4359031227d1b9b844208cc15`. It does **not** contain PR
-#40 or PR #41.
+#40, PR #41, or PR #42.
 
 PR #40 source separately passed credential-free packed proof with ephemeral
 package SHA-256
@@ -114,8 +120,22 @@ authorization carries forward.
 
 ## Publication boundary
 
-No tag, package, release, registry action, repository promotion, production
-change, or live-provider operation is authorized by this freeze. The bundled
-WhooshBang contracts and SDK currently declare no distributable license
-metadata. An owner-approved license and notice decision is therefore a hard
-publication gate; Agent Relay does not infer one.
+FXO-1568 records a go with the two named non-blocking residuals above. It
+approves MIT plus `Copyright (c) 2026 Flow XO, LLC` for the exact bundled
+WhooshBang contracts rc.12 and SDK rc.13 artifacts, the
+`@flowxo/agent-relay@0.1.0-alpha.1` package on npm's `alpha` channel, immutable
+tag `v0.1.0-alpha.1`, public repository, GitHub private vulnerability reporting
+and available security controls, and a GitHub prerelease with verified artifacts
+and attestations.
+
+Those are future FXO-1164 operations. Before execution, FXO-1568 must record the
+exact green post-merge commit and regenerated artifact digests. Because npm
+requires the package to already exist before trusted-publisher configuration,
+the first publish uses the approved interactive 2FA bootstrap and immediately
+configures the exact `flowxo/agent-relay` / `prerelease.yml` / `npm-prerelease`
+publisher. No token is retained; every later publish uses OIDC.
+
+The authorization excludes production deployment or mutation, the central
+workspace release, live-provider traffic, credential disclosure or retention,
+live-card authorization, and any publication beyond that exact Agent Relay
+alpha. Substantive candidate or scope drift requires renewed approval.

@@ -73,7 +73,7 @@ requireText(
 );
 requireText(
   security,
-  /required public-promotion gate/i,
+  /FXO-1568 authorizes[\s\S]*enabling and verifying GitHub private vulnerability reporting[\s\S]*FXO-1164/i,
   "SECURITY.md must preserve the private-reporting promotion gate",
 );
 if (/mailto:/i.test(security)) {

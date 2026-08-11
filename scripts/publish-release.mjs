@@ -48,6 +48,8 @@ const action = assertPublishContext(release, {
   workflow: process.env.AGENT_RELAY_RELEASE_WORKFLOW,
   workflowRef: process.env.GITHUB_WORKFLOW_REF,
   environment: process.env.AGENT_RELAY_RELEASE_ENVIRONMENT,
+  trustedPublisherConfigured:
+    process.env.AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED,
   npmVersion,
 });
 await verifyReleaseBundle({

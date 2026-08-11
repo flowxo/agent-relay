@@ -6,15 +6,17 @@ Agent Relay has one end-user package candidate:
 - **version:** `0.1.0-alpha.1`
 - **public surface:** the `agent-relay` executable
 - **supported target:** macOS on Apple silicon, Node.js 22 or newer
-- **publication state:** private and unpublished
+- **publication state:** approved for bounded FXO-1164 execution; not yet
+  published
 
 The scoped name avoids the unrelated unscoped `agent-relay` package already on
-npm. Control of the Flow XO npm scope remains an explicit owner gate before any
-publication. Building, packing, or testing this candidate does not publish it.
+npm. FXO-1568 confirms owner control of the Flow XO scope and exact package
+name. Building, packing, or testing this candidate still does not publish it.
 `packaging/release.json` is the reviewed identity/runtime metadata used by the
-staging and verification scripts. Its separate publication approval remains
-false; the workspace root always stays private, while only a future explicitly
-approved release commit can make the staged artifact registry-eligible.
+staging and verification scripts. Its bounded publication approval is true, so
+the staged artifact is registry-eligible; the workspace root always stays
+private to prevent accidental monorepo publication. FXO-1164 remains the only
+authorized execution gate.
 
 ## Why one package
 
