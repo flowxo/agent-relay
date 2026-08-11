@@ -50,6 +50,8 @@ export interface RelayClientOptions {
   telegramWebhookSecret?: string;
 }
 
+const TELEGRAM_CANARY_ACTIVATION_TIMEOUT_MS = 15_000;
+
 export class RelayClient {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
@@ -68,9 +70,13 @@ export class RelayClient {
     this.telegramWebhookSecret = options.telegramWebhookSecret;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    timeoutMs = this.timeoutMs,
+  ): Promise<T> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
       response = await this.fetchImplementation(`${this.baseUrl}${path}`, {
@@ -142,10 +148,14 @@ export class RelayClient {
     return await this.request<{
       ingest: IngestResult;
       drain: DrainResult;
-    }>("/v1/canaries/telegram", {
-      method: "POST",
-      body: JSON.stringify(event),
-    });
+    }>(
+      "/v1/canaries/telegram",
+      {
+        method: "POST",
+        body: JSON.stringify(event),
+      },
+      Math.max(this.timeoutMs, TELEGRAM_CANARY_ACTIVATION_TIMEOUT_MS),
+    );
   }
 
   public async reportDiagnostic(

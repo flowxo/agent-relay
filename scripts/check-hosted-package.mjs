@@ -1357,6 +1357,12 @@ let scopedCommands = [];
 const reply = ["relay", "canary", "ok"].join("-");
 const pollingConflict = process.env.AGENT_RELAY_PACKED_TELEGRAM_CONFLICT === "1";
 const sendMarker = process.env.AGENT_RELAY_PACKED_TELEGRAM_SEND_MARKER;
+const sendDelayMs = Number(
+  process.env.AGENT_RELAY_PACKED_TELEGRAM_SEND_DELAY_MS ?? "0",
+);
+if (!Number.isSafeInteger(sendDelayMs) || sendDelayMs < 0 || sendDelayMs > 5000) {
+  throw new Error("invalid synthetic Telegram send delay");
+}
 const json = (value) => new Response(JSON.stringify(value), {
   headers: { "content-type": "application/json" },
 });
@@ -1408,6 +1414,11 @@ globalThis.fetch = async (input, init = {}) => {
   if (method === "sendMessage") {
     if (sendMarker !== undefined) {
       writeFileSync(sendMarker, "sent\\n", { mode: 0o600 });
+    }
+    if (sendDelayMs > 0) {
+      await new Promise((resolvePromise) =>
+        setTimeout(resolvePromise, sendDelayMs),
+      );
     }
     const messageId = nextMessageId++;
     updates.push({
@@ -2175,6 +2186,7 @@ if (process.platform !== "darwin") {
       AGENT_RELAY_INTERNAL_TEST_MODE: "1",
       AGENT_RELAY_INTERNAL_TEST_TELEGRAM_POLLING_LEASE_PORT:
         String(telegramLeasePort),
+      AGENT_RELAY_PACKED_TELEGRAM_SEND_DELAY_MS: "2500",
       NODE_OPTIONS: `--import=${telegramPreload}`,
       TMPDIR: resolve(temporaryRoot, "runtime"),
     };
