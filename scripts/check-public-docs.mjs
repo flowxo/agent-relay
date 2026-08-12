@@ -102,7 +102,7 @@ for (const path of focusedDocuments) {
 }
 
 const onboardingHeadings = [
-  "### 1. Evaluate and build",
+  "### 1. Evaluate or install",
   "### 2. Inspect, install, and diagnose",
   "### 3. Prove the local loop",
   "### 4. Choose one transport",
@@ -275,7 +275,7 @@ for (const pattern of [
   /globally linked workspace package/i,
   /PR #40/,
   /PR #41/,
-  /native release-exit is \*\*not green\*\*/i,
+  /native release-exit is \*\*green\*\*/i,
   /3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106/,
   /does \*\*not\*\* contain PR #40/,
   /SQLite schema (?:is |version )`?9`?/,

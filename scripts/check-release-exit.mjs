@@ -39,6 +39,7 @@ import {
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
   releaseExitSourceCommit,
+  summarizeCapabilitiesEvidence,
   summarizeDoctorEvidence,
   summarizePublicRegistryArtifact,
 } from "./lib/release-exit-policy.mjs";
@@ -722,6 +723,19 @@ try {
       /^\s+uninstall\s+Remove only Agent Relay-owned/m.test(help),
     "installed CLI help is incomplete",
   );
+  const capabilities = summarizeCapabilitiesEvidence(
+    exit,
+    parseJson(
+      (
+        await run(nativeNode, [cli, "capabilities"], {
+          cwd: isolatedHome,
+          env: environment,
+          privateValues,
+        })
+      ).stdout,
+      "native capabilities",
+    ),
+  );
 
   const installArguments = [
     cli,
@@ -966,6 +980,7 @@ try {
       reviewedNativeRebuild: true,
       packageIdentityVerified: true,
       packageSymlinks: 0,
+      capabilities,
       installDryRun: "changed",
       install: "changed",
       repeatedInstall: "unchanged",

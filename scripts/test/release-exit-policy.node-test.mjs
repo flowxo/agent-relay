@@ -8,6 +8,7 @@ import {
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
   releaseExitSourceCommit,
+  summarizeCapabilitiesEvidence,
   summarizeDoctorEvidence,
   summarizePublicRegistryArtifact,
 } from "../lib/release-exit-policy.mjs";
@@ -248,5 +249,48 @@ test("requires all harness observations and one exact verified record", () => {
         checks: checks.slice(0, 2),
       }),
     /missing the cursor/,
+  );
+});
+
+test("records the installed public capability registry", () => {
+  const records = [
+    ["codex", "codex-cli 0.145.0"],
+    ["claude", "2.1.219 (Claude Code)"],
+    ["cursor", "2026.07.23-e383d2b"],
+  ].map(([harness, verifiedVersion]) => ({
+    harness,
+    surface: "cli",
+    verifiedVersion,
+    classification: "verified",
+    evidenceId: `${harness}-evidence`,
+  }));
+  assert.deepEqual(
+    summarizeCapabilitiesEvidence(configuration(), {
+      schema: "agent-relay-compatibility.v1",
+      runtimeTarget: {
+        platform: "darwin",
+        architecture: "arm64",
+        minimumNodeMajor: 22,
+      },
+      records,
+    }),
+    {
+      schema: "agent-relay-compatibility.v1",
+      recordCount: 3,
+      cliRecords: records,
+    },
+  );
+  assert.throws(
+    () =>
+      summarizeCapabilitiesEvidence(configuration(), {
+        schema: "agent-relay-compatibility.v1",
+        runtimeTarget: {
+          platform: "darwin",
+          architecture: "arm64",
+          minimumNodeMajor: 22,
+        },
+        records: records.filter(({ harness }) => harness !== "cursor"),
+      }),
+    /missing the cursor CLI/,
   );
 });

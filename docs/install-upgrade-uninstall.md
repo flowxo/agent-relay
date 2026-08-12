@@ -1,7 +1,7 @@
 # Install, upgrade, uninstall, and erase
 
-> **Current distribution:** locally packable `0.1.0-alpha.2` candidate; not
-> published to npm
+> **Current distribution:** public npm prerelease
+> `@flowxo/agent-relay@0.1.0-alpha.2`
 >
 > **Verified target:** macOS on Apple silicon, Node.js 22, pnpm 11
 
@@ -24,10 +24,21 @@ The first install is scripts-disabled. The contract preflight verifies the exact
 vendored WhooshBang archives before the approved SQLite native build runs. No
 Telegram credential is needed.
 
-No public npm package exists yet. Do not install the unrelated unscoped
-`agent-relay` package from npm. The release candidate identity is
-`@flowxo/agent-relay`; FXO-1574 approved one bounded future alpha.2 publication,
-but this source-build procedure performs no registry operation.
+Do not install the unrelated unscoped `agent-relay` package from npm. For the
+public prerelease, use an exact version and keep dependency lifecycle scripts
+disabled until explicitly rebuilding the reviewed SQLite native dependency:
+
+```sh
+mkdir agent-relay-alpha && cd agent-relay-alpha
+npm init -y
+npm install --save-exact --ignore-scripts @flowxo/agent-relay@0.1.0-alpha.2
+npm rebuild better-sqlite3
+./node_modules/.bin/agent-relay --version
+./node_modules/.bin/agent-relay capabilities
+```
+
+The source-build procedure above remains a contributor path and performs no
+registry mutation.
 
 ## Build and inspect the local package candidate
 
@@ -46,9 +57,10 @@ tar -tzf .artifacts/agent-relay-0.1.0-alpha.2.tgz
 ```
 
 Packing runs only the repository's deterministic staging build. It does not
-publish or change harness configuration. FXO-1574 makes the staged artifact
-registry-eligible while the workspace root remains `private`; only the bounded
-FXO-1164 sequence may publish alpha.2 after the final candidate binding.
+publish or change harness configuration. The staged manifest remains
+registry-eligible while the workspace root remains `private`, but the bounded
+FXO-1164 alpha.2 authorization is consumed. Packing locally does not authorize
+publishing, replacing, or reusing that version.
 
 The automated proof installs the tarball with dependency lifecycle scripts
 disabled, explicitly rebuilds the reviewed SQLite native dependency, and runs
@@ -68,8 +80,8 @@ pnpm --dir .artifacts/local-install rebuild better-sqlite3
 ```
 
 Keep that prefix in place while hooks are installed because the owned launcher
-targets its exact package entry. A future registry release will replace this
-checkout-relative evaluation flow.
+targets its exact package entry. Prefer the exact public-registry installation
+above unless evaluating a source change.
 
 ## Inspect and install hooks
 

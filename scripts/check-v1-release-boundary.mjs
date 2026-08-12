@@ -84,8 +84,9 @@ assert(
 );
 assert(boundary.package.intendedTag === release.gitTag, "intended tag differs");
 assert(
-  boundary.package.tagStatus === "not-created-publication-authorized",
-  "tag authorization boundary differs",
+  boundary.package.tagStatus === "published-immutable" &&
+    boundary.package.publicationCompleted === true,
+  "published tag boundary differs",
 );
 assert(
   boundary.package.publicationApproved === true &&
@@ -133,6 +134,35 @@ assert(
   boundary.releaseAuthorization.candidateBinding ===
     "Record the exact green post-merge alpha.2 source commit and regenerated artifact digests in FXO-1574 before any tag or FXO-1164 publication execution; substantive drift requires renewed owner approval.",
   "final candidate binding differs",
+);
+assert(
+  JSON.stringify(boundary.publishedRelease) ===
+    JSON.stringify({
+      sourceCommit: "5649087a5789785737011fab49151287761fb276",
+      tag: "v0.1.0-alpha.2",
+      tagImmutable: true,
+      npmPackage: "@flowxo/agent-relay@0.1.0-alpha.2",
+      npmTarballSha256:
+        "d3f5e6dbf33755d7630bd1884ed1ee8286055c0c129e23ddd139e1617875a0c7",
+      npmTarballIntegrity:
+        "sha512-OI0sAhwZ192kagxFv2okysdLxZI4AmRyllmVpLnhB8H3CF6p/38BZTIfVspkz3zo5zw0QmFg3pIoY9q9FrsT8A==",
+      npmDistTags: {
+        alpha: "0.1.0-alpha.2",
+        latest: "0.1.0-alpha.2",
+      },
+      githubRelease:
+        "https://github.com/flowxo/agent-relay/releases/tag/v0.1.0-alpha.2",
+      workflowRun:
+        "https://github.com/flowxo/agent-relay/actions/runs/31549946869",
+      buildAttestation:
+        "https://github.com/flowxo/agent-relay/attestations/40157521",
+      sbomAttestation:
+        "https://github.com/flowxo/agent-relay/attestations/40157525",
+      oidcRequiredForFuturePublication: true,
+      registryCredentialRetained: false,
+      liveProviderTested: false,
+    }),
+  "published alpha.2 evidence differs",
 );
 assert(
   JSON.stringify(boundary.preservedFailedPublicationEvidence) ===
@@ -237,13 +267,13 @@ assert(
   JSON.stringify(boundary.runtime.nativeReleaseExit) ===
     JSON.stringify({
       targetReached: true,
-      exactFrozenHarnessSnapshotAvailable: false,
-      status: "failed-closed-no-installed-exact-frozen-harness",
-      green: false,
-      credited: false,
+      exactFrozenHarnessSnapshotAvailable: true,
+      status: "verified-exact-harness-clean-native-lifecycle",
+      green: true,
+      credited: true,
       liveTrafficRun: false,
     }),
-  "native release-exit failure boundary differs",
+  "native release-exit boundary differs",
 );
 assert(
   boundary.runtime.hardware === "Apple silicon" &&
@@ -385,8 +415,8 @@ for (const [pattern, message] of [
     "PR #41 release-bundle proof digest is missing",
   ],
   [
-    /native release-exit is (?:\*\*)?not green/i,
-    "native release-exit non-green status is missing",
+    /native release-exit is (?:\*\*)?green/i,
+    "native release-exit green status is missing",
   ],
   [/SQLite schema (?:is |version )`?9`?/, "current SQLite schema is missing"],
   [/Cursor IDE late resume is unsupported/i, "Cursor IDE limit is missing"],
@@ -593,7 +623,7 @@ for (const [document, requirements] of [
       /No live-card authorization carries forward/i,
     ],
   ],
-  [readme, [/frozen V1 release boundary/i, /no automatic\s+dual-send/i]],
+  [readme, [/V1 release boundary/i, /no automatic\s+dual-send/i]],
 ]) {
   for (const requirement of requirements) {
     requireText(document, requirement, `public document lost ${requirement}`);

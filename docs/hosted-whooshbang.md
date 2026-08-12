@@ -448,8 +448,8 @@ AR3 completed hosted dogfood and reliability exit with
 and does not contain PR #40 or PR #41. PR #40 source separately passed
 credential-free packed proof; its ephemeral package was neither retained nor
 live-tested. PR #41's distinct credential-free release bundle was also not
-live-tested, and native release-exit remains non-green. The exact heads, merges,
-and SHA-256 values are frozen in the
+live-tested, and native release-exit was still non-green at that earlier AR3
+evidence point. The exact heads, merges, and SHA-256 values are frozen in the
 [V1 release record](v1-release-boundary.md). No live authorization carries
 forward, and this evidence does not authorize another provider observation.
 

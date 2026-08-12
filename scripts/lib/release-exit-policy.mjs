@@ -209,3 +209,51 @@ export function summarizeDoctorEvidence(exit, doctor) {
   );
   return harnessChecks;
 }
+
+export function summarizeCapabilitiesEvidence(exit, capabilities) {
+  assert(
+    capabilities?.schema === "agent-relay-compatibility.v1",
+    "installed capabilities have an unknown schema",
+  );
+  assert(
+    capabilities.runtimeTarget?.platform === exit.target.platform &&
+      capabilities.runtimeTarget?.architecture === exit.target.architecture &&
+      capabilities.runtimeTarget?.minimumNodeMajor ===
+        Number(exit.target.node.version.split(".", 1)[0]),
+    "installed capabilities differ from the release target",
+  );
+  assert(
+    Array.isArray(capabilities.records) && capabilities.records.length > 0,
+    "installed capabilities contain no harness records",
+  );
+  const cliRecords = exit.requiredHarnesses.map((harness) => {
+    const record = capabilities.records.find(
+      (candidate) =>
+        candidate?.harness === harness && candidate?.surface === "cli",
+    );
+    assert(record !== undefined, `capabilities are missing the ${harness} CLI`);
+    assert(
+      typeof record.verifiedVersion === "string" &&
+        typeof record.classification === "string" &&
+        typeof record.evidenceId === "string",
+      `${harness} capabilities lack safe version and evidence metadata`,
+    );
+    return {
+      harness,
+      surface: record.surface,
+      verifiedVersion: record.verifiedVersion,
+      classification: record.classification,
+      evidenceId: record.evidenceId,
+    };
+  });
+  assert(
+    cliRecords.filter((record) => record.classification === "verified")
+      .length >= exit.minimumVerifiedHarnesses,
+    "capabilities contain too few exact verified CLI harnesses",
+  );
+  return {
+    schema: capabilities.schema,
+    recordCount: capabilities.records.length,
+    cliRecords,
+  };
+}

@@ -16,20 +16,20 @@ Agent Relay is local-first: the daemon and its SQLite database run on your
 machine. Telegram and the optional WhooshBang service are adapters, not places
 where Agent Relay keeps its source of truth.
 
-> **Alpha release status:** Agent Relay has not yet been published to npm. The
-> immutable alpha.1 tag exposed a cross-platform gzip-header digest mismatch
-> before registry publication. FXO-1574 approved one bounded alpha.2 publication
-> with the named non-blocking residuals; FXO-1164 may execute it only after the
-> exact final merge commit and regenerated digests are recorded. The tested
-> setup is macOS on Apple silicon with Node.js 22 or newer and pnpm 11.
+> **Alpha release status:**
+> [`@flowxo/agent-relay@0.1.0-alpha.2`](https://www.npmjs.com/package/@flowxo/agent-relay/v/0.1.0-alpha.2)
+> and its
+> [GitHub prerelease](https://github.com/flowxo/agent-relay/releases/tag/v0.1.0-alpha.2)
+> are public from immutable tag `v0.1.0-alpha.2` and source commit
+> `5649087a5789785737011fab49151287761fb276`. The supported setup is macOS on
+> Apple silicon with Node.js 22 or newer; source development uses pnpm 11.
 
-The [frozen V1 release boundary](docs/v1-release-boundary.md) records exact
+The [V1 release boundary](docs/v1-release-boundary.md) records exact
 package/source provenance, lockfile, support, transport/privacy fields, and
 known limitations. The repository and security-reporting path are public. The
-failed alpha.1 tag and attestations remain immutable evidence; the generated
-manifest records alpha.2 build-time tag state. No alpha.2 tag, npm package, or
-GitHub release exists yet. The authorization excludes production change,
-live-provider work, credential retention, and broader publication.
+failed alpha.1 tag and attestations remain immutable evidence. Alpha.2 was not
+live-provider tested; publication did not authorize production change,
+credential retention, live-provider work, or any later release.
 
 ## What you get
 
@@ -59,7 +59,7 @@ team-policy surface.
 Follow this order so every state-changing step has a credential-free check in
 front of it.
 
-### 1. Evaluate and build
+### 1. Evaluate or install
 
 You need Node.js 22 or newer, pnpm 11, and at least one supported coding
 harness.
@@ -68,8 +68,23 @@ Before installing anything, read the
 [release-readiness evaluation](docs/release-readiness.md),
 [support policy](SUPPORT.md), [privacy policy](PRIVACY.md), and
 [known limitations](docs/v1-release-boundary.md#known-limitations-and-accepted-residual).
-For a visual evaluation with no external account, credential, or live provider,
-build and start the sanitized concurrent-session demo:
+Install the exact public alpha into a directory you will retain while hooks are
+installed. Dependency lifecycle scripts stay disabled until the reviewed native
+SQLite dependency is rebuilt explicitly:
+
+```sh
+mkdir agent-relay-alpha && cd agent-relay-alpha
+npm init -y
+npm install --save-exact --ignore-scripts @flowxo/agent-relay@0.1.0-alpha.2
+npm rebuild better-sqlite3
+./node_modules/.bin/agent-relay --help
+./node_modules/.bin/agent-relay --version
+./node_modules/.bin/agent-relay capabilities
+```
+
+Do not install the unrelated unscoped `agent-relay` package. For a visual
+evaluation with no external account, credential, or live provider, build and
+start the sanitized concurrent-session demo from source instead:
 
 ```sh
 git clone https://github.com/flowxo/agent-relay.git
@@ -88,10 +103,6 @@ SQLite dependency. `web-demo` uses a separate local database and fake transport;
 its sessions, topics, project labels, and messages are synthetic. It does not
 read your Relay state or include credentials, transcripts, source, usernames,
 hostnames, raw paths, private identifiers, or live-provider data.
-
-Do not install the unrelated unscoped `agent-relay` package from npm. This
-project's future package name is `@flowxo/agent-relay`, but it has not been
-published.
 
 ### 2. Inspect, install, and diagnose
 
@@ -487,8 +498,8 @@ machine.
 | Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                    |
 
 Supported runtime: macOS on Apple silicon with native arm64 Node or x64 Node
-through Rosetta, Node.js 22 or newer; the release-exit target is native Node.js
-22.23.1 and the current gate is not green. Not claimed: Windows, Linux end-user
+through Rosetta, Node.js 22 or newer; native release-exit is green on exact
+Node.js 22.23.1 with Codex CLI 0.145.0. Not claimed: Windows, Linux end-user
 runtime, Intel macOS, Cursor IDE late resume, native-hook crash proof, Cursor
 permission automation.
 <!-- END GENERATED HARNESS SUPPORT -->

@@ -3,18 +3,21 @@
 The machine-readable source of truth is
 [`packaging/v1-release-boundary.json`](../packaging/v1-release-boundary.json).
 This summary freezes the support, privacy, compatibility, and provenance
-boundary for the corrected `@flowxo/agent-relay@0.1.0-alpha.2` candidate.
-FXO-1574 approved one bounded future FXO-1164 publication with the named
-non-blocking residuals after the exact final merge commit and regenerated
-digests are recorded; this source record does not claim that publication has
-occurred.
+boundary for published `@flowxo/agent-relay@0.1.0-alpha.2`. FXO-1164 consumed
+the bounded authorization and published the exact artifact from source commit
+`5649087a5789785737011fab49151287761fb276`. No later publication or registry
+mutation is authorized by this record.
 
 ## Package and source
 
 - Package version: `0.1.0-alpha.2`.
-- Intended tag: `v0.1.0-alpha.2`. It does not exist; FXO-1574 authorizes its
-  future creation only on the recorded exact corrected candidate. Generated
-  manifests record observed build-time tag state.
+- Immutable tag: `v0.1.0-alpha.2`, resolving to exact source commit
+  `5649087a5789785737011fab49151287761fb276`.
+- Published npm tarball SHA-256:
+  `d3f5e6dbf33755d7630bd1884ed1ee8286055c0c129e23ddd139e1617875a0c7`.
+- The public GitHub prerelease contains the byte-matched package, checksums,
+  SPDX SBOM, release manifest, package inventory, and release notes. Its build
+  and SBOM attestations verify against the immutable tag source.
 - The source candidate entering this freeze is PR #40, reviewed head
   `9a5e6a68609e3764ba5198c350528254bd37da62`, merged as
   `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`.
@@ -33,11 +36,9 @@ occurred.
   `fast-uri@3.1.5`, and `postcss@8.5.26`. They clear GHSA-rgw5-rvv9-x895,
   GHSA-7p8r-x3mc-p8w7, and GHSA-fxqj-rqcc-2cmp without changing the
   three-package runtime graph.
-- The final clean reviewed release commit and tarball are bound later by the
-  generated package-content snapshot, release notes, release manifest,
-  `SHA256SUMS`, SPDX SBOM, sanitized clean-home evidence, and any separately
-  authorized CI provenance. This document deliberately does not try to
-  self-record a future tarball digest.
+- The final clean reviewed release commit and tarball are bound by the generated
+  package-content snapshot, release notes, release manifest, `SHA256SUMS`, SPDX
+  SBOM, sanitized clean-home evidence, and signed CI provenance.
 
 ## Same-version evidence distinction
 
@@ -84,11 +85,12 @@ Code CLI `2.1.219 (Claude Code)`, and Cursor CLI `2026.07.23-e383d2b`; the
 generated [capability matrix](capability-matrix.md) freezes the individual
 surfaces and capabilities.
 
-Native release-exit is **not green**. The exact arm64 Node.js `22.23.1` target
-was reached, then the proof failed closed because the machine had no installed
-harness at an exact frozen verified snapshot. The result is not credited as a
-completed lifecycle matrix and no live traffic should be run merely to change
-that evidence state.
+Native release-exit is **green**. The exact arm64 Node.js `22.23.1` target used
+an isolated exact Codex CLI `0.145.0` harness and completed the credential-free,
+hook-denied install, doctor, fake-delivery, reinstall, owned uninstall, retained
+SQLite, and package-removal lifecycle. The public npm tarball then passed the
+same lifecycle after an independent registry download and byte match. No live
+traffic was run or credited.
 
 The installer manifest is `agent-relay-install.v1` version `1`. The current
 SQLite schema is `9`; migrations are forward-only and a newer schema fails
@@ -144,16 +146,15 @@ authorization carries forward.
 FXO-1568's MIT and `Copyright (c) 2026 Flow XO, LLC` decision remains valid for
 the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts. Its
 alpha.1 source/version/archive authorization did not carry to alpha.2, so
-FXO-1574 records a renewed go with the named non-blocking residuals.
+FXO-1574 recorded a renewed go with the named non-blocking residuals.
 `packaging/release.json` therefore sets publication true and registry action to
-`publish`. The exact final merge commit and regenerated artifact, SBOM,
-checksum, notes, manifest, and clean-home digests must be recorded before
-FXO-1164 creates the tag; tagged build and attestation digests are recorded
-before registry publication.
+`publish`. FXO-1164 consumed that authorization and completed the exact tag,
+package, GitHub prerelease, OIDC trusted-publisher setup, and verification.
 
-The first npm publish uses the reviewed interactive 2FA bootstrap and
-immediately configures the exact `flowxo/agent-relay` / `prerelease.yml` /
-`npm-prerelease` publisher. No token is retained; every later publish uses OIDC.
+The first npm publish used the reviewed interactive 2FA bootstrap and
+immediately configured the exact `flowxo/agent-relay` /
+`.github/workflows/prerelease.yml` / `npm-prerelease` publisher. No token was
+retained; every later publish uses OIDC.
 
 The authorization excludes production deployment or mutation, the central
 workspace release, live-provider traffic, credential disclosure or retention,

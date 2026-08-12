@@ -1,23 +1,23 @@
 # Package identity and artifact boundary
 
-Agent Relay has one end-user package candidate:
+Agent Relay has one published end-user package:
 
 - **name:** `@flowxo/agent-relay`
 - **version:** `0.1.0-alpha.2`
 - **public surface:** the `agent-relay` executable
 - **supported target:** macOS on Apple silicon, Node.js 22 or newer
-- **publication state:** approved for bounded FXO-1164 alpha.2 execution; not
-  yet published
+- **publication state:** published and immutable on npm `alpha`; the public
+  GitHub record is a prerelease
 
 The scoped name avoids the unrelated unscoped `agent-relay` package already on
 npm. FXO-1568 confirms owner control of the Flow XO scope and exact package
-name. Building, packing, or testing this candidate still does not publish it.
+name. Building, packing, or testing the repository still does not publish it.
 `packaging/release.json` is the reviewed identity/runtime metadata used by the
 staging and verification scripts. Its publication approval is true and its
 registry action is `publish`, so the staged artifact is registry-eligible; the
-workspace root stays private to prevent accidental publication. FXO-1164 may
-execute only after the exact final merge commit and regenerated digests are
-recorded, and substantive drift requires renewed approval.
+workspace root stays private to prevent accidental publication. FXO-1164's
+bounded alpha.2 authorization is consumed; any later version or registry
+mutation requires renewed approval and must use OIDC.
 
 ## Why one package
 
@@ -73,9 +73,9 @@ The staged manifest restricts installation to macOS on Apple silicon. It accepts
 native arm64 Node and x64 Node through Rosetta; this does not create an Intel
 Mac support claim. Windows, Linux, and Intel macOS are not V1 end-user support
 claims. Node.js 22 or newer is the metadata range; native arm64 release-exit
-targets exact Node.js 22.23.1. The current release-exit attempt is not green: it
-reached that target and failed closed because no installed harness matched an
-exact frozen verified snapshot.
+targets exact Node.js 22.23.1. Native release-exit is green on that target with
+an isolated exact Codex CLI `0.145.0` harness, credentials omitted, hooks
+denied, and one clean fake delivery. No live-provider traffic was run.
 
 ## Source-map policy
 

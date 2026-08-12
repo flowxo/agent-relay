@@ -1278,21 +1278,22 @@ intercepted before dispatch and regression-tested to create no state. Packed
 package and lifecycle proofs now use an allowlisted fake-only child environment,
 closing the ambient webhook/WhooshBang selection path.
 
-Native release-exit remains explicitly non-green: exact arm64 Node.js 22.23.1
-was reached, then the gate failed closed because no installed harness matched an
-exact frozen verified snapshot. The retained live-reviewed PR #39 tarball, PR
-#40 ephemeral packed proof, PR #41 credential-free release bundle, and the final
-FXO-1162 candidate evidence remain distinct. No live traffic, tag, package,
-release, registry change, repository promotion, production mutation, or license
-decision is implied.
+At that walkthrough point, native release-exit remained explicitly non-green:
+exact arm64 Node.js 22.23.1 was reached, then the gate failed closed because no
+installed harness matched an exact frozen verified snapshot. The retained
+live-reviewed PR #39 tarball, PR #40 ephemeral packed proof, PR #41
+credential-free release bundle, and the final FXO-1162 candidate evidence remain
+distinct. No live traffic, tag, package, release, registry change, repository
+promotion, production mutation, or license decision is implied.
 
 ## AR4.3a consolidated owner decision and implementation — 2026-08-11
 
 FXO-1568 replaces a sequence of ceremony-only release stories with one owner
-interview and the implementation it authorizes. The result is go with two named
-non-blocking alpha residuals: native release-exit remains not green, and ambient
-hook isolation remains an accepted Low residual. Neither is represented as green
-or generalized beyond the frozen support boundary.
+interview and the implementation it authorizes. At that decision point the
+result was go with two named non-blocking alpha residuals: native release-exit
+was not green, and ambient hook isolation remained an accepted Low residual.
+Neither was represented as green or generalized beyond the frozen support
+boundary.
 
 The owner confirms the `@flowxo/agent-relay` npm scope/name, MIT for Agent
 Relay, MIT plus `Copyright (c) 2026 Flow XO, LLC` for the exact bundled
@@ -1346,9 +1347,44 @@ credential retention, live cards, and unrelated publication remain excluded.
 
 ## Release sequence
 
-After the FXO-1574 approval implementation is merge-green and its exact final
-candidate record is complete, FXO-1164 resumes the protected tag, build,
-attestation, one-time interactive npm bootstrap, immediate trusted-publisher
-configuration, and GitHub prerelease sequence. The former hosted fleet, Mini
-App, multi-operator, and inbound webhook response explorations remain post-V1
-backlog unless the owner changes the release horizon.
+FXO-1164 completed the protected alpha.2 tag, build, attestation, one-time
+interactive npm bootstrap, immediate trusted-publisher configuration, and GitHub
+prerelease sequence. The former hosted fleet, Mini App, multi-operator, and
+inbound webhook response explorations remain post-V1 backlog unless the owner
+changes the release horizon.
+
+## AR4.5 native and public release validation — 2026-08-12
+
+FXO-1165 began by revalidating the remaining AR4 increment and provisioning an
+isolated native arm64 Codex CLI `0.145.0` harness without replacing the user's
+normal CLI. Exact Node.js `22.23.1` then completed release-exit with credentials
+omitted and hooks denied: help, version, capabilities, install dry-run, install,
+unchanged reinstall, healthy doctor, one clean fake delivery, owned uninstall,
+retained SQLite, and package removal all passed. No live provider was contacted.
+
+The first post-publication run exposed a release-tooling defect: installed
+package identity assumed the pre-publication private manifest and the runner
+assumed the immutable source tag must equal the current runner commit. The
+focused correction derives privacy from release policy, verifies source inputs
+from the immutable tag, and records source and runner commits separately.
+
+Public validation independently downloaded `@flowxo/agent-relay@0.1.0-alpha.2`
+from the canonical npm registry, matched its bytes, SHA-256, and SHA-512
+integrity to the authorized artifact, and repeated the complete native
+lifecycle. All six GitHub prerelease assets matched the authorized bundle and
+checksum manifest. The tag resolves to source commit
+`5649087a5789785737011fab49151287761fb276`; build and SPDX attestations verified
+against that source and the tarball SHA-256
+`d3f5e6dbf33755d7630bd1884ed1ee8286055c0c129e23ddd139e1617875a0c7`.
+
+npm exposes both `alpha` and `latest` at the same verified alpha.2 version. The
+publish path explicitly selected `alpha`; the registry requires each package to
+retain a `latest` tag, explaining the rejected attempt to remove it. No registry
+tag, package, GitHub release, production resource, central workspace, user
+installation, or live-provider state was mutated during validation.
+
+The repository's current operational documentation now records the green native
+gate and public release. The README embedded in the immutable npm tarball and
+the already-published GitHub release body still contain their pre-publication
+snapshot; correcting those public immutable surfaces requires a separately
+authorized future version and remains tracked as a bounded documentation defect.
