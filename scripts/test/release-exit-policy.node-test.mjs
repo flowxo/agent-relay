@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  assertInstalledPackageIdentity,
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
+  releaseExitSourceCommit,
   summarizeDoctorEvidence,
 } from "../lib/release-exit-policy.mjs";
 
@@ -67,6 +69,75 @@ test("rejects mutable or mismatched runtime targets", () => {
         version: "v22.23.1",
       }),
     /instead of arm64/,
+  );
+});
+
+test("accepts the policy-derived privacy of an approved public package", () => {
+  const release = {
+    name: "@flowxo/agent-relay",
+    version: "0.1.0-alpha.2",
+    publication: { approved: true },
+  };
+  assert.doesNotThrow(() =>
+    assertInstalledPackageIdentity(release, {
+      name: release.name,
+      version: release.version,
+      private: false,
+    }),
+  );
+  assert.throws(
+    () =>
+      assertInstalledPackageIdentity(release, {
+        name: release.name,
+        version: release.version,
+        private: true,
+      }),
+    /release policy/,
+  );
+
+  const blockedRelease = {
+    ...release,
+    publication: { approved: false },
+  };
+  assert.doesNotThrow(() =>
+    assertInstalledPackageIdentity(blockedRelease, {
+      name: release.name,
+      version: release.version,
+      private: true,
+    }),
+  );
+  assert.throws(
+    () =>
+      assertInstalledPackageIdentity(blockedRelease, {
+        name: release.name,
+        version: release.version,
+        private: false,
+      }),
+    /release policy/,
+  );
+});
+
+test("anchors post-publication release exit to the immutable source tag", () => {
+  const release = { gitTag: "v0.1.0-alpha.2" };
+  const commit = "a".repeat(40);
+  assert.equal(
+    releaseExitSourceCommit(release, {
+      intendedTagState: { status: "verified-at-head", commit },
+    }),
+    commit,
+  );
+  assert.equal(
+    releaseExitSourceCommit(release, {
+      intendedTagState: { status: "exists-elsewhere", commit },
+    }),
+    commit,
+  );
+  assert.throws(
+    () =>
+      releaseExitSourceCommit(release, {
+        intendedTagState: { status: "not-created", commit: null },
+      }),
+    /must exist before post-publication release exit/,
   );
 });
 

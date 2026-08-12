@@ -28,13 +28,16 @@ import { clearTimeout, setTimeout } from "node:timers";
 
 import {
   assertCleanGit,
+  readGitSourceInputRecords,
   readGitBuildInfo,
   releaseArtifactNames,
   verifyReleaseBundle,
 } from "./lib/release-bundle.mjs";
 import {
+  assertInstalledPackageIdentity,
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
+  releaseExitSourceCommit,
   summarizeDoctorEvidence,
 } from "./lib/release-exit-policy.mjs";
 
@@ -382,15 +385,27 @@ function assertSafeEvidence(source, privateValues) {
 }
 
 await assertCleanGit(root);
-const git = await readGitBuildInfo(root);
+const git = await readGitBuildInfo(root, release.gitTag);
+const sourceCommit = releaseExitSourceCommit(release, git);
 const releaseDirectory = resolve(root, ".artifacts/release");
 const bundle = await verifyReleaseBundle({
-  root,
   release,
   rootPackage,
   directory: releaseDirectory,
-  expectedCommit: git.commit,
+  expectedCommit: sourceCommit,
 });
+const releaseManifest = parseJson(
+  await readFile(
+    resolve(releaseDirectory, releaseArtifactNames(release).manifest),
+    "utf8",
+  ),
+  "release manifest",
+);
+assert(
+  JSON.stringify(releaseManifest.sourceInputs) ===
+    JSON.stringify(await readGitSourceInputRecords(root, sourceCommit)),
+  "release bundle source inputs differ from the immutable tag",
+);
 const names = releaseArtifactNames(release);
 const tarball = resolve(releaseDirectory, names.tarball);
 
@@ -585,12 +600,7 @@ try {
     await readFile(resolve(installedPackage, "package.json"), "utf8"),
     "installed package manifest",
   );
-  assert(
-    installedManifest.name === release.name &&
-      installedManifest.version === release.version &&
-      installedManifest.private === true,
-    "installed package identity differs from the blocked candidate",
-  );
+  assertInstalledPackageIdentity(release, installedManifest);
   const consumerManifest = parseJson(
     await readFile(resolve(consumer, "package.json"), "utf8"),
     "isolated consumer manifest",
@@ -845,6 +855,7 @@ try {
     generatedAt: new Date().toISOString(),
     release: {
       commit: bundle.commit,
+      tag: release.gitTag,
       name: release.name,
       version: bundle.version,
       artifact: bundle.artifact,
@@ -853,6 +864,10 @@ try {
       sbom: bundle.sbom,
       sbomPackages: bundle.sbomPackages,
       sbomFiles: bundle.sbomFiles,
+    },
+    qualification: {
+      runnerCommit: git.commit,
+      sourceCommit,
     },
     target: {
       operatingSystem: "macOS",
@@ -897,7 +912,8 @@ try {
       "Intel macOS is unclaimed.",
       "Windows and Linux end-user runtimes are unclaimed.",
       "This local proof does not create signed GitHub provenance.",
-      "npm scope control and publication remain unapproved.",
+      "This bundle proof does not install from the public npm registry; public artifact validation is recorded separately.",
+      "This proof performs no registry, GitHub release, production, or live-provider mutation.",
     ],
   };
   const evidenceSource = `${JSON.stringify(evidence, null, 2)}\n`;

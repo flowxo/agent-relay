@@ -22,6 +22,7 @@ import {
   normalizePackedArchive,
   packagePurl,
   readGitBuildInfo,
+  readGitSourceInputRecords,
   releaseArtifactNames,
   run as runReleaseCommand,
   verifyReleaseBundle,
@@ -444,6 +445,75 @@ test("resolves an immutable intended tag as absent, at HEAD, or elsewhere", asyn
       status: "exists-elsewhere",
       commit: atHead.commit,
     });
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("reads release source inputs from an immutable commit", async () => {
+  const temporaryRoot = await mkdtemp(
+    join(tmpdir(), "agent-relay-git-source-input-test-"),
+  );
+  try {
+    await runFile("git", ["init", "--object-format=sha1"], {
+      cwd: temporaryRoot,
+    });
+    const sourceFiles = [
+      "pnpm-lock.yaml",
+      "packaging/release.json",
+      "packaging/package-files.json",
+      "packaging/actions-lock.json",
+      "packaging/release-notes.md",
+      "contracts/contract-lock.json",
+      "packaging/v1-release-boundary.json",
+    ];
+    await mkdir(join(temporaryRoot, "packaging"), { recursive: true });
+    await mkdir(join(temporaryRoot, "contracts"), { recursive: true });
+    await writeFile(
+      join(temporaryRoot, "package.json"),
+      `${JSON.stringify({ packageManager: "pnpm@11.17.0" })}\n`,
+    );
+    for (const path of sourceFiles) {
+      await writeFile(join(temporaryRoot, path), `${path} at release\n`);
+    }
+    await runFile("git", ["add", "."], { cwd: temporaryRoot });
+    await runFile(
+      "git",
+      [
+        "-c",
+        "user.name=Agent Relay Test",
+        "-c",
+        "user.email=agent-relay@example.test",
+        "commit",
+        "-m",
+        "release source",
+      ],
+      { cwd: temporaryRoot },
+    );
+    const { stdout } = await runFile("git", ["rev-parse", "HEAD"], {
+      cwd: temporaryRoot,
+    });
+    const releaseCommit = stdout.trim();
+    const records = await readGitSourceInputRecords(
+      temporaryRoot,
+      releaseCommit,
+    );
+
+    await writeFile(
+      join(temporaryRoot, "package.json"),
+      `${JSON.stringify({ packageManager: "pnpm@99.0.0" })}\n`,
+    );
+    await writeFile(
+      join(temporaryRoot, sourceFiles[0]),
+      "changed after release\n",
+    );
+
+    assert.equal(records.packageManager, "pnpm@11.17.0");
+    assert.deepEqual(
+      await readGitSourceInputRecords(temporaryRoot, releaseCommit),
+      records,
+    );
+    assert.equal(records.files.length, sourceFiles.length);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }

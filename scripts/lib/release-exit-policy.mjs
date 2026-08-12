@@ -1,3 +1,5 @@
+import { stagedPackageIsPrivate } from "./release-policy.mjs";
+
 const exactVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const checksumPattern = /^[a-f0-9]{64}$/;
 
@@ -93,6 +95,29 @@ export function assertNativeRuntimeObservation(exit, observation) {
     observation?.version === `v${exit.target.node.version}`,
     `Node reported ${String(observation?.version)} instead of the pinned version`,
   );
+}
+
+export function assertInstalledPackageIdentity(release, installedManifest) {
+  assert(
+    installedManifest?.name === release.name &&
+      installedManifest.version === release.version &&
+      installedManifest.private === stagedPackageIsPrivate(release),
+    "installed package identity differs from the release policy",
+  );
+}
+
+export function releaseExitSourceCommit(release, git) {
+  const state = git?.intendedTagState;
+  assert(
+    state?.status === "verified-at-head" ||
+      state?.status === "exists-elsewhere",
+    `${release.gitTag} must exist before post-publication release exit`,
+  );
+  assert(
+    typeof state.commit === "string" && /^[a-f0-9]{40}$/.test(state.commit),
+    `${release.gitTag} does not resolve to one full commit`,
+  );
+  return state.commit;
 }
 
 export function summarizeDoctorEvidence(exit, doctor) {

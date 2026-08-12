@@ -296,15 +296,7 @@ function bundledComponentId(component) {
 }
 
 async function sourceInputRecords(root, rootPackage) {
-  const paths = [
-    "pnpm-lock.yaml",
-    "packaging/release.json",
-    "packaging/package-files.json",
-    "packaging/actions-lock.json",
-    "packaging/release-notes.md",
-    "contracts/contract-lock.json",
-    "packaging/v1-release-boundary.json",
-  ];
+  const paths = releaseSourceInputPaths;
   return {
     packageManager: rootPackage.packageManager,
     files: await Promise.all(
@@ -312,6 +304,45 @@ async function sourceInputRecords(root, rootPackage) {
         path,
         sha256: await fileSha("sha256", resolve(root, path)),
       })),
+    ),
+  };
+}
+
+const releaseSourceInputPaths = [
+  "pnpm-lock.yaml",
+  "packaging/release.json",
+  "packaging/package-files.json",
+  "packaging/actions-lock.json",
+  "packaging/release-notes.md",
+  "contracts/contract-lock.json",
+  "packaging/v1-release-boundary.json",
+];
+
+export async function readGitSourceInputRecords(root, commit) {
+  assert(
+    typeof commit === "string" && /^[a-f0-9]{40}$/.test(commit),
+    "source commit must be one full SHA-1",
+  );
+  const packageSource = (
+    await run("git", ["show", `${commit}:package.json`], { cwd: root })
+  ).stdout;
+  const packageManifest = JSON.parse(packageSource);
+  assert(
+    typeof packageManifest.packageManager === "string",
+    "source package manager is missing",
+  );
+  return {
+    packageManager: packageManifest.packageManager,
+    files: await Promise.all(
+      releaseSourceInputPaths.map(async (path) => {
+        const source = (
+          await run("git", ["show", `${commit}:${path}`], { cwd: root })
+        ).stdout;
+        return {
+          path,
+          sha256: sha("sha256", source),
+        };
+      }),
     ),
   };
 }
