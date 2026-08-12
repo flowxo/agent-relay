@@ -559,6 +559,44 @@ try {
     { mode: 0o600 },
   );
 
+  const unrelatedConfigurations = [
+    {
+      path: resolve(isolatedHome, ".codex/hooks.json"),
+      value: {
+        userSetting: "preserve-codex",
+        hooks: {
+          Stop: [
+            {
+              hooks: [{ type: "command", command: "synthetic-user-hook" }],
+            },
+          ],
+        },
+      },
+    },
+    {
+      path: resolve(isolatedHome, ".claude/settings.json"),
+      value: { permissions: { allow: ["Read"] } },
+    },
+    {
+      path: resolve(isolatedHome, ".cursor/hooks.json"),
+      value: {
+        version: 1,
+        hooks: { stop: [{ command: "synthetic-user-hook" }] },
+      },
+    },
+  ];
+  for (const configuration of unrelatedConfigurations) {
+    await mkdir(dirname(configuration.path), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await writeFile(
+      configuration.path,
+      `${JSON.stringify(configuration.value, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  }
+
   const harnessExecutables = {
     codex: "codex",
     claude: "claude",
@@ -892,17 +930,16 @@ try {
       (await exists(databasePath)),
     "native uninstall did not remove ownership while retaining SQLite",
   );
-  for (const path of [
-    resolve(isolatedHome, ".codex/hooks.json"),
-    resolve(isolatedHome, ".claude/settings.json"),
-    resolve(isolatedHome, ".cursor/hooks.json"),
-  ]) {
-    if (await exists(path)) {
-      assert(
-        !(await readFile(path, "utf8")).includes("AGENT_RELAY_HOOK_OWNER"),
-        "native uninstall left an owned harness entry",
-      );
-    }
+  for (const configuration of unrelatedConfigurations) {
+    const finalValue = parseJson(
+      await readFile(configuration.path, "utf8"),
+      "preserved unrelated harness configuration",
+    );
+    assert(
+      JSON.stringify(finalValue) === JSON.stringify(configuration.value) &&
+        !JSON.stringify(finalValue).includes("AGENT_RELAY_HOOK_OWNER"),
+      "native uninstall did not preserve unrelated harness configuration",
+    );
   }
 
   await run(
@@ -993,6 +1030,7 @@ try {
       retainedSQLite: true,
       packageRemoval: "removed",
       ownedHooksAfterRemoval: 0,
+      unrelatedConfigurationPreserved: true,
     },
     limitations: [
       "Intel macOS is unclaimed.",
