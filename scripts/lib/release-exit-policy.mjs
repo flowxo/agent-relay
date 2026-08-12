@@ -1,3 +1,9 @@
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import { URL } from "node:url";
+
+import { stagedPackageIsPrivate } from "./release-policy.mjs";
+
 const exactVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const checksumPattern = /^[a-f0-9]{64}$/;
 
@@ -9,6 +15,10 @@ function assert(condition, message) {
 
 function sorted(value) {
   return [...value].sort();
+}
+
+function digest(algorithm, value, encoding) {
+  return createHash(algorithm).update(value).digest(encoding);
 }
 
 export function assertReleaseExitConfiguration(exit, release) {
@@ -95,6 +105,77 @@ export function assertNativeRuntimeObservation(exit, observation) {
   );
 }
 
+export function assertInstalledPackageIdentity(release, installedManifest) {
+  assert(
+    installedManifest?.name === release.name &&
+      installedManifest.version === release.version &&
+      installedManifest.private === stagedPackageIsPrivate(release),
+    "installed package identity differs from the release policy",
+  );
+}
+
+export function releaseExitSourceCommit(release, git) {
+  const state = git?.intendedTagState;
+  assert(
+    state?.status === "verified-at-head" ||
+      state?.status === "exists-elsewhere",
+    `${release.gitTag} must exist before post-publication release exit`,
+  );
+  assert(
+    typeof state.commit === "string" && /^[a-f0-9]{40}$/.test(state.commit),
+    `${release.gitTag} does not resolve to one full commit`,
+  );
+  return state.commit;
+}
+
+export function summarizePublicRegistryArtifact(
+  release,
+  bundle,
+  metadata,
+  contents,
+  authorizedContents,
+) {
+  assert(
+    metadata?.name === release.name && metadata.version === release.version,
+    "public registry package identity differs",
+  );
+  const tarballUrl = new URL(metadata.dist?.tarball ?? "invalid:");
+  assert(
+    tarballUrl.protocol === "https:" &&
+      tarballUrl.hostname === "registry.npmjs.org" &&
+      tarballUrl.username === "" &&
+      tarballUrl.password === "" &&
+      tarballUrl.search === "" &&
+      tarballUrl.hash === "",
+    "public registry tarball URL is not the canonical HTTPS endpoint",
+  );
+  const publicContents = Buffer.from(contents);
+  const authorized = Buffer.from(authorizedContents);
+  const sha1 = digest("sha1", publicContents, "hex");
+  const sha256 = digest("sha256", publicContents, "hex");
+  const integrity = `sha512-${digest("sha512", publicContents, "base64")}`;
+  assert(
+    metadata.dist.shasum === sha1 && metadata.dist.integrity === integrity,
+    "public registry digest metadata differs from the downloaded tarball",
+  );
+  assert(
+    publicContents.length === bundle.artifactBytes &&
+      sha256 === bundle.artifactSha256 &&
+      publicContents.equals(authorized),
+    "public registry tarball differs from the authorized artifact",
+  );
+  return {
+    registry: "https://registry.npmjs.org/",
+    packageSpec: `${release.name}@${release.version}`,
+    tarball: tarballUrl.href,
+    bytes: publicContents.length,
+    sha1,
+    sha256,
+    integrity,
+    authorizedArtifactByteMatch: true,
+  };
+}
+
 export function summarizeDoctorEvidence(exit, doctor) {
   assert(doctor?.healthy === true, "installed doctor report is unhealthy");
   assert(Array.isArray(doctor.checks), "doctor checks are missing");
@@ -127,4 +208,52 @@ export function summarizeDoctorEvidence(exit, doctor) {
     "the target has too few exact verified harnesses",
   );
   return harnessChecks;
+}
+
+export function summarizeCapabilitiesEvidence(exit, capabilities) {
+  assert(
+    capabilities?.schema === "agent-relay-compatibility.v1",
+    "installed capabilities have an unknown schema",
+  );
+  assert(
+    capabilities.runtimeTarget?.platform === exit.target.platform &&
+      capabilities.runtimeTarget?.architecture === exit.target.architecture &&
+      capabilities.runtimeTarget?.minimumNodeMajor ===
+        Number(exit.target.node.version.split(".", 1)[0]),
+    "installed capabilities differ from the release target",
+  );
+  assert(
+    Array.isArray(capabilities.records) && capabilities.records.length > 0,
+    "installed capabilities contain no harness records",
+  );
+  const cliRecords = exit.requiredHarnesses.map((harness) => {
+    const record = capabilities.records.find(
+      (candidate) =>
+        candidate?.harness === harness && candidate?.surface === "cli",
+    );
+    assert(record !== undefined, `capabilities are missing the ${harness} CLI`);
+    assert(
+      typeof record.verifiedVersion === "string" &&
+        typeof record.classification === "string" &&
+        typeof record.evidenceId === "string",
+      `${harness} capabilities lack safe version and evidence metadata`,
+    );
+    return {
+      harness,
+      surface: record.surface,
+      verifiedVersion: record.verifiedVersion,
+      classification: record.classification,
+      evidenceId: record.evidenceId,
+    };
+  });
+  assert(
+    cliRecords.filter((record) => record.classification === "verified")
+      .length >= exit.minimumVerifiedHarnesses,
+    "capabilities contain too few exact verified CLI harnesses",
+  );
+  return {
+    schema: capabilities.schema,
+    recordCount: capabilities.records.length,
+    cliRecords,
+  };
 }

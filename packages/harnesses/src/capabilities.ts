@@ -590,7 +590,7 @@ export function renderSupportSummaryBlock(): string {
     "<!-- BEGIN GENERATED HARNESS SUPPORT -->",
     ...table(headers, rows),
     "",
-    `Supported runtime: ${HARNESS_COMPATIBILITY.runtimeTarget.operatingSystem} on Apple silicon with native arm64 Node or x64 Node through Rosetta, Node.js ${String(HARNESS_COMPATIBILITY.runtimeTarget.minimumNodeMajor)} or newer; the release-exit target is native Node.js 22.23.1 and the current gate is not green.`,
+    `Supported runtime: ${HARNESS_COMPATIBILITY.runtimeTarget.operatingSystem} on Apple silicon with native arm64 Node or x64 Node through Rosetta, Node.js ${String(HARNESS_COMPATIBILITY.runtimeTarget.minimumNodeMajor)} or newer; native release-exit is green on exact Node.js 22.23.1 with Codex CLI 0.145.0.`,
     `Not claimed: ${HARNESS_COMPATIBILITY.unsupportedRuntimeClaims.join(", ")}.`,
     "<!-- END GENERATED HARNESS SUPPORT -->",
   ].join("\n");

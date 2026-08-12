@@ -25,17 +25,23 @@ import {
 } from "node:path";
 import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
+import { URL } from "node:url";
 
 import {
   assertCleanGit,
+  readGitSourceInputRecords,
   readGitBuildInfo,
   releaseArtifactNames,
   verifyReleaseBundle,
 } from "./lib/release-bundle.mjs";
 import {
+  assertInstalledPackageIdentity,
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
+  releaseExitSourceCommit,
+  summarizeCapabilitiesEvidence,
   summarizeDoctorEvidence,
+  summarizePublicRegistryArtifact,
 } from "./lib/release-exit-policy.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -49,6 +55,13 @@ const exit = JSON.parse(
   await readFile(resolve(root, "packaging/release-exit.json"), "utf8"),
 );
 assertReleaseExitConfiguration(exit, release);
+const arguments_ = process.argv.slice(2);
+assert(
+  arguments_.length === 0 ||
+    (arguments_.length === 1 && arguments_[0] === "--public-registry"),
+  "usage: check-release-exit.mjs [--public-registry]",
+);
+const publicRegistry = arguments_[0] === "--public-registry";
 
 function assert(condition, message) {
   if (!condition) {
@@ -381,18 +394,77 @@ function assertSafeEvidence(source, privateValues) {
   }
 }
 
+async function obtainPublicRegistryArtifact(bundle, authorizedTarball) {
+  const metadataUrl = new URL(
+    `${encodeURIComponent(release.name)}/${encodeURIComponent(release.version)}`,
+    "https://registry.npmjs.org/",
+  );
+  const metadataResponse = await globalThis.fetch(metadataUrl, {
+    redirect: "error",
+    signal: globalThis.AbortSignal.timeout(30_000),
+  });
+  assert(
+    metadataResponse.ok,
+    `public registry metadata returned ${String(metadataResponse.status)}`,
+  );
+  const metadata = await metadataResponse.json();
+  const tarballUrl = new URL(metadata.dist?.tarball ?? "invalid:");
+  const tarballResponse = await globalThis.fetch(tarballUrl, {
+    redirect: "error",
+    signal: globalThis.AbortSignal.timeout(120_000),
+  });
+  assert(
+    tarballResponse.ok,
+    `public registry tarball returned ${String(tarballResponse.status)}`,
+  );
+  const declaredLength = Number(tarballResponse.headers.get("content-length"));
+  assert(
+    Number.isSafeInteger(declaredLength) &&
+      declaredLength > 0 &&
+      declaredLength === bundle.artifactBytes,
+    "public registry tarball declared an unexpected size",
+  );
+  const contents = Buffer.from(await tarballResponse.arrayBuffer());
+  assert(
+    contents.length === declaredLength,
+    "public registry tarball size differs from its response metadata",
+  );
+  return summarizePublicRegistryArtifact(
+    release,
+    bundle,
+    metadata,
+    contents,
+    await readFile(authorizedTarball),
+  );
+}
+
 await assertCleanGit(root);
-const git = await readGitBuildInfo(root);
+const git = await readGitBuildInfo(root, release.gitTag);
+const sourceCommit = releaseExitSourceCommit(release, git);
 const releaseDirectory = resolve(root, ".artifacts/release");
 const bundle = await verifyReleaseBundle({
-  root,
   release,
   rootPackage,
   directory: releaseDirectory,
-  expectedCommit: git.commit,
+  expectedCommit: sourceCommit,
 });
+const releaseManifest = parseJson(
+  await readFile(
+    resolve(releaseDirectory, releaseArtifactNames(release).manifest),
+    "utf8",
+  ),
+  "release manifest",
+);
+assert(
+  JSON.stringify(releaseManifest.sourceInputs) ===
+    JSON.stringify(await readGitSourceInputRecords(root, sourceCommit)),
+  "release bundle source inputs differ from the immutable tag",
+);
 const names = releaseArtifactNames(release);
 const tarball = resolve(releaseDirectory, names.tarball);
+const publicArtifact = publicRegistry
+  ? await obtainPublicRegistryArtifact(bundle, tarball)
+  : undefined;
 
 const appleSiliconCapability = (
   await run("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], {
@@ -487,6 +559,44 @@ try {
     { mode: 0o600 },
   );
 
+  const unrelatedConfigurations = [
+    {
+      path: resolve(isolatedHome, ".codex/hooks.json"),
+      value: {
+        userSetting: "preserve-codex",
+        hooks: {
+          Stop: [
+            {
+              hooks: [{ type: "command", command: "synthetic-user-hook" }],
+            },
+          ],
+        },
+      },
+    },
+    {
+      path: resolve(isolatedHome, ".claude/settings.json"),
+      value: { permissions: { allow: ["Read"] } },
+    },
+    {
+      path: resolve(isolatedHome, ".cursor/hooks.json"),
+      value: {
+        version: 1,
+        hooks: { stop: [{ command: "synthetic-user-hook" }] },
+      },
+    },
+  ];
+  for (const configuration of unrelatedConfigurations) {
+    await mkdir(dirname(configuration.path), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await writeFile(
+      configuration.path,
+      `${JSON.stringify(configuration.value, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  }
+
   const harnessExecutables = {
     codex: "codex",
     claude: "claude",
@@ -524,16 +634,20 @@ try {
     });
   }
 
+  const installSource = publicRegistry
+    ? `${release.name}@${release.version}`
+    : tarball;
   await run(
     nativeNode,
     [
       npmCli,
       "install",
+      ...(publicRegistry ? ["--save-exact"] : []),
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
       "--package-lock=false",
-      tarball,
+      installSource,
     ],
     {
       cwd: consumer,
@@ -585,20 +699,20 @@ try {
     await readFile(resolve(installedPackage, "package.json"), "utf8"),
     "installed package manifest",
   );
-  assert(
-    installedManifest.name === release.name &&
-      installedManifest.version === release.version &&
-      installedManifest.private === true,
-    "installed package identity differs from the blocked candidate",
-  );
+  assertInstalledPackageIdentity(release, installedManifest);
   const consumerManifest = parseJson(
     await readFile(resolve(consumer, "package.json"), "utf8"),
     "isolated consumer manifest",
   );
   assert(
-    typeof consumerManifest.dependencies?.[release.name] === "string" &&
-      consumerManifest.dependencies[release.name].endsWith(names.tarball),
-    "npm did not record the exact Agent Relay tarball",
+    consumerManifest.dependencies?.[release.name] ===
+      (publicRegistry ? release.version : `file:${tarball}`) ||
+      (!publicRegistry &&
+        typeof consumerManifest.dependencies?.[release.name] === "string" &&
+        consumerManifest.dependencies[release.name].endsWith(names.tarball)),
+    publicRegistry
+      ? "npm did not record the exact public package version"
+      : "npm did not record the exact Agent Relay tarball",
   );
 
   const nativeAddon = resolve(
@@ -646,6 +760,19 @@ try {
       /^\s+canary\s+Prove the local fake-transport/m.test(help) &&
       /^\s+uninstall\s+Remove only Agent Relay-owned/m.test(help),
     "installed CLI help is incomplete",
+  );
+  const capabilities = summarizeCapabilitiesEvidence(
+    exit,
+    parseJson(
+      (
+        await run(nativeNode, [cli, "capabilities"], {
+          cwd: isolatedHome,
+          env: environment,
+          privateValues,
+        })
+      ).stdout,
+      "native capabilities",
+    ),
   );
 
   const installArguments = [
@@ -803,17 +930,16 @@ try {
       (await exists(databasePath)),
     "native uninstall did not remove ownership while retaining SQLite",
   );
-  for (const path of [
-    resolve(isolatedHome, ".codex/hooks.json"),
-    resolve(isolatedHome, ".claude/settings.json"),
-    resolve(isolatedHome, ".cursor/hooks.json"),
-  ]) {
-    if (await exists(path)) {
-      assert(
-        !(await readFile(path, "utf8")).includes("AGENT_RELAY_HOOK_OWNER"),
-        "native uninstall left an owned harness entry",
-      );
-    }
+  for (const configuration of unrelatedConfigurations) {
+    const finalValue = parseJson(
+      await readFile(configuration.path, "utf8"),
+      "preserved unrelated harness configuration",
+    );
+    assert(
+      JSON.stringify(finalValue) === JSON.stringify(configuration.value) &&
+        !JSON.stringify(finalValue).includes("AGENT_RELAY_HOOK_OWNER"),
+      "native uninstall did not preserve unrelated harness configuration",
+    );
   }
 
   await run(
@@ -841,10 +967,13 @@ try {
   );
 
   const evidence = {
-    schema: "agent-relay-release-exit-evidence.v1",
+    schema: publicRegistry
+      ? "agent-relay-public-release-validation-evidence.v1"
+      : "agent-relay-release-exit-evidence.v1",
     generatedAt: new Date().toISOString(),
     release: {
       commit: bundle.commit,
+      tag: release.gitTag,
       name: release.name,
       version: bundle.version,
       artifact: bundle.artifact,
@@ -853,6 +982,13 @@ try {
       sbom: bundle.sbom,
       sbomPackages: bundle.sbomPackages,
       sbomFiles: bundle.sbomFiles,
+      ...(publicArtifact === undefined
+        ? {}
+        : { publicRegistry: publicArtifact }),
+    },
+    qualification: {
+      runnerCommit: git.commit,
+      sourceCommit,
     },
     target: {
       operatingSystem: "macOS",
@@ -877,9 +1013,11 @@ try {
     },
     lifecycle: {
       scriptsDisabledInstall: true,
+      installSource: publicRegistry ? "public-registry" : "authorized-bundle",
       reviewedNativeRebuild: true,
       packageIdentityVerified: true,
       packageSymlinks: 0,
+      capabilities,
       installDryRun: "changed",
       install: "changed",
       repeatedInstall: "unchanged",
@@ -892,17 +1030,28 @@ try {
       retainedSQLite: true,
       packageRemoval: "removed",
       ownedHooksAfterRemoval: 0,
+      unrelatedConfigurationPreserved: true,
     },
     limitations: [
       "Intel macOS is unclaimed.",
       "Windows and Linux end-user runtimes are unclaimed.",
       "This local proof does not create signed GitHub provenance.",
-      "npm scope control and publication remain unapproved.",
+      ...(publicRegistry
+        ? [
+            "Public documentation, GitHub release assets, and signed attestations are verified separately from this native lifecycle proof.",
+          ]
+        : [
+            "This bundle proof does not install from the public npm registry; public artifact validation is recorded separately.",
+          ]),
+      "This proof performs no registry, GitHub release, production, or live-provider mutation.",
     ],
   };
   const evidenceSource = `${JSON.stringify(evidence, null, 2)}\n`;
   assertSafeEvidence(evidenceSource, privateValues);
-  const evidencePath = resolve(root, exit.evidenceOutput);
+  const evidenceOutput = publicRegistry
+    ? ".artifacts/public-release-validation/agent-relay-public-release-validation.json"
+    : exit.evidenceOutput;
+  const evidencePath = resolve(root, evidenceOutput);
   await rm(dirname(evidencePath), { recursive: true, force: true });
   await mkdir(dirname(evidencePath), { recursive: true, mode: 0o700 });
   await writeFile(evidencePath, evidenceSource, {
@@ -912,11 +1061,11 @@ try {
 
   process.stdout.write(
     [
-      `Native release exit verified (${runtimeObservation.version} ${runtimeObservation.platform}/${runtimeObservation.architecture},`,
+      `${publicRegistry ? "Public release validation" : "Native release exit"} verified (${runtimeObservation.version} ${runtimeObservation.platform}/${runtimeObservation.architecture},`,
       `${release.name}@${release.version},`,
       `${String(harnessEvidence.filter((item) => item.classification === "verified").length)} exact harnesses,`,
       "one clean fake delivery, owned uninstall and package removal).",
-      ` Evidence: ${exit.evidenceOutput}\n`,
+      ` Evidence: ${evidenceOutput}\n`,
     ].join(" "),
   );
 } finally {

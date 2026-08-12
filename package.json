@@ -58,6 +58,7 @@
     "release:bootstrap-publish": "node scripts/bootstrap-publish-release.mjs",
     "release:evidence": "node scripts/check-package.mjs --release-bundle .artifacts/release --evidence-output .artifacts/release-evidence/agent-relay-public-candidate-evidence.json",
     "release:exit": "node scripts/check-release-exit.mjs",
+    "release:validate:public": "node scripts/check-release-exit.mjs --public-registry",
     "release:policy:check": "node --test scripts/test/release-bundle.node-test.mjs scripts/test/release-exit-policy.node-test.mjs scripts/test/release-policy.node-test.mjs scripts/test/repository-secrets.node-test.mjs scripts/test/safe-packed-environment.node-test.mjs scripts/test/v1-release-boundary.node-test.mjs && node scripts/check-release-workflow.mjs",
     "relay": "pnpm --filter @agent-relay/relay dev",
     "secrets:check": "node scripts/check-repository-secrets.mjs",

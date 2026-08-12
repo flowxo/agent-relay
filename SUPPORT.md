@@ -1,16 +1,17 @@
 # Support
 
-Agent Relay is preparing its first public prerelease. There is no stable release
-or commercial support commitment yet.
+Agent Relay has a public alpha prerelease. There is no stable release or
+commercial support commitment yet.
 
 ## Supported surface
 
 The V1 support range is macOS on Apple silicon with Node.js 22 or newer; the
-native release-exit target is exact Node.js 22.23.1 and the current gate is not
-green because no installed harness matched an exact frozen verified snapshot.
-Linux CI provides development evidence, not an end-user runtime support claim.
-Windows, Linux runtime operation, Intel macOS, native application packaging, and
-automatic background-service installation are not currently supported claims.
+native release-exit target is exact Node.js 22.23.1 and the gate is green with
+an isolated exact Codex CLI `0.145.0` harness. The proof was credential-free,
+hook-denied, and fake-transport only. Linux CI provides development evidence,
+not an end-user runtime support claim. Windows, Linux runtime operation, Intel
+macOS, native application packaging, and automatic background-service
+installation are not currently supported claims.
 
 Harness support is exact and evidence-based. The generated
 [capability matrix](docs/capability-matrix.md) is authoritative for enabled
@@ -37,8 +38,8 @@ currently observed executables.
 | Cursor IDE        | —                       | `compatible-unverified` | Stop hooks are contract-backed; an IDE session cannot be safely resumed as a new CLI process.                                    |
 
 Supported runtime: macOS on Apple silicon with native arm64 Node or x64 Node
-through Rosetta, Node.js 22 or newer; the release-exit target is native Node.js
-22.23.1 and the current gate is not green. Not claimed: Windows, Linux end-user
+through Rosetta, Node.js 22 or newer; native release-exit is green on exact
+Node.js 22.23.1 with Codex CLI 0.145.0. Not claimed: Windows, Linux end-user
 runtime, Intel macOS, Cursor IDE late resume, native-hook crash proof, Cursor
 permission automation.
 <!-- END GENERATED HARNESS SUPPORT -->

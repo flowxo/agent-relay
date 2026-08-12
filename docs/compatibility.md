@@ -47,8 +47,9 @@ pnpm 11 is used for source development. Linux CI proves that repository checks
 can run in that CI environment; it does not establish Linux end-user harness
 operation. Node.js 24 CI does not replace the native Node.js 22 release target.
 The isolated Node.js 22.23.1 package/install/doctor/fake-canary/uninstall proof
-is complete on that target; exact harness support remains tied to the separate
-versioned evidence records.
+is complete on that target, including one exact isolated Codex CLI `0.145.0`
+harness. Exact harness support remains tied to the separate versioned evidence
+records; no live-provider traffic was part of release-exit.
 
 There is no current Windows, Linux runtime, Intel macOS, native app,
 auto-service, Safari, or Firefox support claim.

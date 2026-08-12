@@ -71,8 +71,8 @@ The non-implementer repeated the walkthrough against the corrected candidate:
   five actions while retaining SQLite/transport state; exact temporary erasure
   then succeeded.
 - Vulnerability, support, contribution, issue chooser, rollback,
-  deprecation/yank, no-tag, native non-green, and bundled WhooshBang
-  license/notice gates all resolved to their documented paths.
+  deprecation/yank, then-current no-tag/native-non-green status, and bundled
+  WhooshBang license/notice gates all resolved to their documented paths.
 
 All temporary roots were erased and loopback ports released. No real-home change
 remained after byte-for-byte restoration, and the follow-up changed no real-home

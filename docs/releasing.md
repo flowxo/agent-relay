@@ -7,15 +7,19 @@ environment, and created the immutable alpha.1 tag. The tagged Linux archive
 then differed from the authorized macOS archive by one gzip operating-system
 header byte, so publication stopped before npm or GitHub release mutation.
 FXO-1574 approved one bounded alpha.2 publication with the named non-blocking
-residuals. FXO-1164 may execute only after the exact final merge commit and
-regenerated digests are recorded.
+residuals. FXO-1164 completed that operation from exact source commit
+`5649087a5789785737011fab49151287761fb276`: npm package
+`@flowxo/agent-relay@0.1.0-alpha.2`, immutable tag `v0.1.0-alpha.2`, and the
+GitHub prerelease are public. That publication authorization is consumed.
 
 The current `packaging/release.json` has `publication.approved: true` and
 `registryAction: publish`. The staged package is registry-eligible while the
 monorepo root remains `private: true` to prevent accidental publication. The
 public alpha.1 tag and its signed attestations remain immutable
-failed-publication evidence; no npm package, GitHub release, or alpha.2 tag
-exists. Generated manifests record observed alpha.2 tag state.
+failed-publication evidence. The alpha.2 tag, package, release, checksums, SBOM,
+manifest, package inventory, notes, and attestations are immutable public
+evidence. Every later npm publication must use the configured OIDC trusted
+publisher and requires separate release authorization.
 
 ## Release inputs
 
@@ -57,10 +61,10 @@ workflow uploads or attests release artifacts.
 
 On the supported Apple-silicon target, the separate native Node 22
 installed-artifact matrix uses `pnpm release:exit`; see the
-[release-readiness evaluation](release-readiness.md). The current attempt is
-**not green**: it reached exact arm64 Node.js 22.23.1, then failed closed
-because no installed harness matched an exact frozen verified snapshot. Do not
-widen support or run live traffic merely to remove that limitation. The command
+[release-readiness evaluation](release-readiness.md). Native release-exit is
+**green** on exact arm64 Node.js 22.23.1 with an isolated exact Codex CLI
+`0.145.0` harness. It proved the complete credential-free, hook-denied package
+lifecycle and one fake delivery; no live-provider traffic was run. The command
 publishes nothing.
 
 The builder rebuilds and packs twice with the commit timestamp as
@@ -99,6 +103,9 @@ Signed provenance comes from the GitHub attestation job described below.
 
 ## Tagged GitHub build
 
+The following commands describe a newly authorized future version. Never run
+them for `v0.1.0-alpha.2`, which already exists and must not move or be reused.
+
 Push an exact tag only after its commit is green:
 
 ```sh
@@ -106,10 +113,11 @@ git tag --annotate v0.1.0-alpha.2 --message "Agent Relay 0.1.0-alpha.2"
 git push origin v0.1.0-alpha.2
 ```
 
-Do not run these commands until FXO-1574 records the exact final alpha.2 merge
-commit and regenerated digests. The `Prerelease` workflow also supports a manual
-dispatch, but the selected ref must be the exact tag or the build fails. The
-immutable alpha.1 tag must never be deleted, moved, or reused.
+Replace the example with the newly approved version and exact candidate only
+after its authorization records the final commit and regenerated digests. The
+`Prerelease` workflow also supports a manual dispatch, but the selected ref must
+be the exact tag or the build fails. The immutable alpha.1 and alpha.2 tags must
+never be deleted, moved, or reused.
 
 The workflow:
 
@@ -176,13 +184,10 @@ requires the protected environment and
 `AGENT_RELAY_TRUSTED_PUBLISHER_CONFIGURED=true`; it cannot bootstrap a new npm
 package.
 
-The owner has approved the exact `@flowxo/agent-relay` name and scope and MIT
-for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts and
-their notices. FXO-1574 also approves the exact alpha.2 identity and one bounded
-future FXO-1164 publication with the named non-blocking residuals. npm requires
-the package to already exist before its trusted publisher can be configured, so
-the package-first constraint uses one bounded interactive 2FA bootstrap, with no
-long-lived or retained token:
+The alpha.2 package-first bootstrap completed, the exact `flowxo/agent-relay` /
+`.github/workflows/prerelease.yml` / `npm-prerelease` trusted publisher is
+configured, npm was logged out, and no registry credential was retained or
+attached to CI. The historical bootstrap sequence was:
 
 1. verify the repository remains public with GitHub private vulnerability
    reporting and the available security controls enabled; protect the
@@ -214,11 +219,19 @@ fresh interactive 2FA session and rerun the same command with
 `--resume-after-publish`. Recovery proceeds only when the registry's SHA-512
 integrity matches the exact local tarball. A different artifact fails closed.
 
-The initial version cannot be republished through OIDC after bootstrap. The
-tagged workflow provides its GitHub build and SBOM attestations; OIDC is the
-exclusive registry path for later versions. Staged publishing, including a
-stage-only publisher, is a later explicit policy change and is not inferred for
-this alpha.
+The initial version cannot be republished through OIDC after bootstrap. Its
+tagged workflow provides the verified GitHub build and SBOM attestations; OIDC
+is the exclusive registry path for later versions. Staged publishing, including
+a stage-only publisher, is a later explicit policy change and is not inferred
+for this alpha.
+
+The registry currently exposes both `alpha` and `latest`, each resolving to the
+same verified alpha.2 bytes. The publish command explicitly selected `alpha`.
+npm's registry metadata requires every package to have a `latest` tag, so an
+attempt to remove the only `latest` value returned HTTP 400. This is a naming
+residual, not an artifact-integrity failure. Do not mutate either tag without
+renewed owner authorization; a later stable release can move `latest` through
+its own authorized publication.
 
 ## Rollback, deprecation, and compromise
 

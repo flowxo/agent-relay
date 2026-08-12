@@ -3,7 +3,7 @@
 This is the shortest complete review path for a developer who did not implement
 Agent Relay. It answers what runs, what leaves the machine, what installation
 changes, how to diagnose the result, and how to remove it before asking anyone
-to trust or publish the prerelease.
+to trust or operate the public prerelease.
 
 The supported V1 runtime is macOS on Apple silicon with Node.js 22 or newer; the
 native arm64 release-exit target is exactly Node.js 22.23.1. Intel macOS,
@@ -69,7 +69,7 @@ without running Agent Relay's uninstall first makes doctor report a mismatch.
 The current SQLite schema is `9`; migrations are forward-only and a newer schema
 fails closed as an unsafe downgrade.
 
-## Verify the exact candidate
+## Verify the exact release
 
 From a clean checkout with the frozen dependencies already installed:
 
@@ -80,15 +80,15 @@ pnpm audit --prod
 pnpm release:bundle
 pnpm release:bundle:verify
 pnpm release:evidence
-# Separate native gate; currently expected to fail closed without an exact
-# installed frozen harness snapshot:
 pnpm release:exit
+pnpm release:validate:public
 ```
 
 `pnpm release:exit` does not publish, tag, edit the real user home, or forward
 credential environment variables. It:
 
-1. requires a clean git tree and a six-file bundle bound to `HEAD`;
+1. requires a clean git tree and verifies the six-file bundle from the immutable
+   release tag, while recording the current runner commit separately;
 2. verifies the artifact, checksums, exact commit, SPDX file inventory, and
    runtime dependency records;
 3. downloads or reuses the exact hash-verified Node.js 22.23.1 native arm64
@@ -100,8 +100,8 @@ credential environment variables. It:
 7. exposes the three locally installed harness executables through temporary
    aliases and requires doctor to tie each observation to its recorded evidence
    ID, with at least one exact verified version;
-8. runs install dry-run, install, unchanged reinstall, healthy doctor, and one
-   clean fake delivery;
+8. runs version, help, capabilities, install dry-run, install, unchanged
+   reinstall, healthy doctor, and one clean fake delivery;
 9. runs uninstall dry-run and owned uninstall, retaining SQLite while removing
    every owned hook and launcher; and
 10. removes the package from the isolated prefix.
@@ -123,11 +123,16 @@ before a release claims GitHub build/SBOM attestations.
 
 ## Recorded release evidence
 
-Native release-exit is **not green**. It reached official Node.js 22.23.1
-`darwin/arm64`, then failed closed because the machine did not have any harness
-installed at an exact frozen verified snapshot. Do not credit it as a completed
-lifecycle matrix, widen support, or run live traffic merely to remove this
-limitation.
+Native release-exit is **green**. On macOS Apple silicon it used official native
+Node.js `22.23.1` and an isolated exact arm64 Codex CLI `0.145.0` harness. It
+proved artifact identity, help, version, capabilities, dry-run, install,
+idempotent reinstall, healthy doctor, one clean fake delivery, owned uninstall,
+retained SQLite, and package removal with credentials omitted and hooks denied.
+The public-registry mode independently downloaded and byte-matched the npm
+tarball to SHA-256
+`d3f5e6dbf33755d7630bd1884ed1ee8286055c0c129e23ddd139e1617875a0c7`, then
+repeated the same native lifecycle. No live-provider traffic was run or
+credited.
 
 AR3 approved hosted dogfood and reliability exit evidence as
 `go with named residuals`; required repository checks and browser E2E passed on
@@ -233,14 +238,14 @@ fail closed. No live-card authorization carries forward.
 The immutable `v0.1.0-alpha.1` tag records the stopped cross-platform digest
 attempt and must not move. FXO-1568 still approves MIT and the shipped notices
 for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts.
-FXO-1574 advances the corrected source to `0.1.0-alpha.2`, canonicalizes the
-gzip operating-system byte, and records a renewed go with the named non-blocking
-residuals for one bounded FXO-1164 publication. The exact final merge commit and
-regenerated digests must be recorded before the alpha.2 tag, interactive 2FA
-first publish, OIDC trusted-publisher configuration, or GitHub prerelease is
-executed.
+FXO-1574 advanced the corrected source to `0.1.0-alpha.2`, canonicalized the
+gzip operating-system byte, and recorded a renewed go for one bounded FXO-1164
+publication. FXO-1164 completed from exact source commit
+`5649087a5789785737011fab49151287761fb276`; the tag, npm artifact, GitHub
+prerelease, checksums, SBOM, and attestations are public and immutable. The npm
+trusted publisher is configured and every later publication must use OIDC.
 
-The accepted non-green native release-exit and Low hook-isolation residuals are
-explicitly non-blocking for this alpha and remain accurately described. No
-production change, central workspace release, live-provider traffic, credential
-retention, live card, or broader publication is authorized.
+Native release-exit is green. The accepted Low ambient hook-isolation residual
+remains explicit and uncredited. No production change, central workspace
+release, live-provider traffic, credential retention, live card, registry
+mutation, or broader publication is authorized.

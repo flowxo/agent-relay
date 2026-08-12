@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
+  assertInstalledPackageIdentity,
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
+  releaseExitSourceCommit,
+  summarizeCapabilitiesEvidence,
   summarizeDoctorEvidence,
+  summarizePublicRegistryArtifact,
 } from "../lib/release-exit-policy.mjs";
 
 function configuration() {
@@ -70,6 +76,126 @@ test("rejects mutable or mismatched runtime targets", () => {
   );
 });
 
+test("accepts the policy-derived privacy of an approved public package", () => {
+  const release = {
+    name: "@flowxo/agent-relay",
+    version: "0.1.0-alpha.2",
+    publication: { approved: true },
+  };
+  assert.doesNotThrow(() =>
+    assertInstalledPackageIdentity(release, {
+      name: release.name,
+      version: release.version,
+      private: false,
+    }),
+  );
+  assert.throws(
+    () =>
+      assertInstalledPackageIdentity(release, {
+        name: release.name,
+        version: release.version,
+        private: true,
+      }),
+    /release policy/,
+  );
+
+  const blockedRelease = {
+    ...release,
+    publication: { approved: false },
+  };
+  assert.doesNotThrow(() =>
+    assertInstalledPackageIdentity(blockedRelease, {
+      name: release.name,
+      version: release.version,
+      private: true,
+    }),
+  );
+  assert.throws(
+    () =>
+      assertInstalledPackageIdentity(blockedRelease, {
+        name: release.name,
+        version: release.version,
+        private: false,
+      }),
+    /release policy/,
+  );
+});
+
+test("anchors post-publication release exit to the immutable source tag", () => {
+  const release = { gitTag: "v0.1.0-alpha.2" };
+  const commit = "a".repeat(40);
+  assert.equal(
+    releaseExitSourceCommit(release, {
+      intendedTagState: { status: "verified-at-head", commit },
+    }),
+    commit,
+  );
+  assert.equal(
+    releaseExitSourceCommit(release, {
+      intendedTagState: { status: "exists-elsewhere", commit },
+    }),
+    commit,
+  );
+  assert.throws(
+    () =>
+      releaseExitSourceCommit(release, {
+        intendedTagState: { status: "not-created", commit: null },
+      }),
+    /must exist before post-publication release exit/,
+  );
+});
+
+test("binds the public registry tarball bytes and integrity to the authorized artifact", () => {
+  const contents = Buffer.from("authorized public artifact");
+  const sha1 = createHash("sha1").update(contents).digest("hex");
+  const sha256 = createHash("sha256").update(contents).digest("hex");
+  const integrity = `sha512-${createHash("sha512").update(contents).digest("base64")}`;
+  const release = {
+    name: "@flowxo/agent-relay",
+    version: "0.1.0-alpha.2",
+  };
+  const metadata = {
+    ...release,
+    dist: {
+      tarball:
+        "https://registry.npmjs.org/@flowxo/agent-relay/-/agent-relay-0.1.0-alpha.2.tgz",
+      shasum: sha1,
+      integrity,
+    },
+  };
+  const bundle = { artifactBytes: contents.length, artifactSha256: sha256 };
+  assert.deepEqual(
+    summarizePublicRegistryArtifact(
+      release,
+      bundle,
+      metadata,
+      contents,
+      contents,
+    ),
+    {
+      registry: "https://registry.npmjs.org/",
+      packageSpec: "@flowxo/agent-relay@0.1.0-alpha.2",
+      tarball: metadata.dist.tarball,
+      bytes: contents.length,
+      sha1,
+      sha256,
+      integrity,
+      authorizedArtifactByteMatch: true,
+    },
+  );
+  assert.throws(
+    () =>
+      summarizePublicRegistryArtifact(
+        release,
+        bundle,
+        metadata,
+        Buffer.from("different public artifact"),
+        contents,
+      ),
+    /digest metadata|authorized artifact/,
+  );
+});
+
 test("requires all harness observations and one exact verified record", () => {
   const checks = [
     {
@@ -123,5 +249,48 @@ test("requires all harness observations and one exact verified record", () => {
         checks: checks.slice(0, 2),
       }),
     /missing the cursor/,
+  );
+});
+
+test("records the installed public capability registry", () => {
+  const records = [
+    ["codex", "codex-cli 0.145.0"],
+    ["claude", "2.1.219 (Claude Code)"],
+    ["cursor", "2026.07.23-e383d2b"],
+  ].map(([harness, verifiedVersion]) => ({
+    harness,
+    surface: "cli",
+    verifiedVersion,
+    classification: "verified",
+    evidenceId: `${harness}-evidence`,
+  }));
+  assert.deepEqual(
+    summarizeCapabilitiesEvidence(configuration(), {
+      schema: "agent-relay-compatibility.v1",
+      runtimeTarget: {
+        platform: "darwin",
+        architecture: "arm64",
+        minimumNodeMajor: 22,
+      },
+      records,
+    }),
+    {
+      schema: "agent-relay-compatibility.v1",
+      recordCount: 3,
+      cliRecords: records,
+    },
+  );
+  assert.throws(
+    () =>
+      summarizeCapabilitiesEvidence(configuration(), {
+        schema: "agent-relay-compatibility.v1",
+        runtimeTarget: {
+          platform: "darwin",
+          architecture: "arm64",
+          minimumNodeMajor: 22,
+        },
+        records: records.filter(({ harness }) => harness !== "cursor"),
+      }),
+    /missing the cursor CLI/,
   );
 });
