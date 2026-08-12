@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -7,6 +9,7 @@ import {
   assertReleaseExitConfiguration,
   releaseExitSourceCommit,
   summarizeDoctorEvidence,
+  summarizePublicRegistryArtifact,
 } from "../lib/release-exit-policy.mjs";
 
 function configuration() {
@@ -138,6 +141,57 @@ test("anchors post-publication release exit to the immutable source tag", () => 
         intendedTagState: { status: "not-created", commit: null },
       }),
     /must exist before post-publication release exit/,
+  );
+});
+
+test("binds the public registry tarball bytes and integrity to the authorized artifact", () => {
+  const contents = Buffer.from("authorized public artifact");
+  const sha1 = createHash("sha1").update(contents).digest("hex");
+  const sha256 = createHash("sha256").update(contents).digest("hex");
+  const integrity = `sha512-${createHash("sha512").update(contents).digest("base64")}`;
+  const release = {
+    name: "@flowxo/agent-relay",
+    version: "0.1.0-alpha.2",
+  };
+  const metadata = {
+    ...release,
+    dist: {
+      tarball:
+        "https://registry.npmjs.org/@flowxo/agent-relay/-/agent-relay-0.1.0-alpha.2.tgz",
+      shasum: sha1,
+      integrity,
+    },
+  };
+  const bundle = { artifactBytes: contents.length, artifactSha256: sha256 };
+  assert.deepEqual(
+    summarizePublicRegistryArtifact(
+      release,
+      bundle,
+      metadata,
+      contents,
+      contents,
+    ),
+    {
+      registry: "https://registry.npmjs.org/",
+      packageSpec: "@flowxo/agent-relay@0.1.0-alpha.2",
+      tarball: metadata.dist.tarball,
+      bytes: contents.length,
+      sha1,
+      sha256,
+      integrity,
+      authorizedArtifactByteMatch: true,
+    },
+  );
+  assert.throws(
+    () =>
+      summarizePublicRegistryArtifact(
+        release,
+        bundle,
+        metadata,
+        Buffer.from("different public artifact"),
+        contents,
+      ),
+    /digest metadata|authorized artifact/,
   );
 });
 

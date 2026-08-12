@@ -25,6 +25,7 @@ import {
 } from "node:path";
 import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
+import { URL } from "node:url";
 
 import {
   assertCleanGit,
@@ -39,6 +40,7 @@ import {
   assertReleaseExitConfiguration,
   releaseExitSourceCommit,
   summarizeDoctorEvidence,
+  summarizePublicRegistryArtifact,
 } from "./lib/release-exit-policy.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -52,6 +54,13 @@ const exit = JSON.parse(
   await readFile(resolve(root, "packaging/release-exit.json"), "utf8"),
 );
 assertReleaseExitConfiguration(exit, release);
+const arguments_ = process.argv.slice(2);
+assert(
+  arguments_.length === 0 ||
+    (arguments_.length === 1 && arguments_[0] === "--public-registry"),
+  "usage: check-release-exit.mjs [--public-registry]",
+);
+const publicRegistry = arguments_[0] === "--public-registry";
 
 function assert(condition, message) {
   if (!condition) {
@@ -384,6 +393,50 @@ function assertSafeEvidence(source, privateValues) {
   }
 }
 
+async function obtainPublicRegistryArtifact(bundle, authorizedTarball) {
+  const metadataUrl = new URL(
+    `${encodeURIComponent(release.name)}/${encodeURIComponent(release.version)}`,
+    "https://registry.npmjs.org/",
+  );
+  const metadataResponse = await globalThis.fetch(metadataUrl, {
+    redirect: "error",
+    signal: globalThis.AbortSignal.timeout(30_000),
+  });
+  assert(
+    metadataResponse.ok,
+    `public registry metadata returned ${String(metadataResponse.status)}`,
+  );
+  const metadata = await metadataResponse.json();
+  const tarballUrl = new URL(metadata.dist?.tarball ?? "invalid:");
+  const tarballResponse = await globalThis.fetch(tarballUrl, {
+    redirect: "error",
+    signal: globalThis.AbortSignal.timeout(120_000),
+  });
+  assert(
+    tarballResponse.ok,
+    `public registry tarball returned ${String(tarballResponse.status)}`,
+  );
+  const declaredLength = Number(tarballResponse.headers.get("content-length"));
+  assert(
+    Number.isSafeInteger(declaredLength) &&
+      declaredLength > 0 &&
+      declaredLength === bundle.artifactBytes,
+    "public registry tarball declared an unexpected size",
+  );
+  const contents = Buffer.from(await tarballResponse.arrayBuffer());
+  assert(
+    contents.length === declaredLength,
+    "public registry tarball size differs from its response metadata",
+  );
+  return summarizePublicRegistryArtifact(
+    release,
+    bundle,
+    metadata,
+    contents,
+    await readFile(authorizedTarball),
+  );
+}
+
 await assertCleanGit(root);
 const git = await readGitBuildInfo(root, release.gitTag);
 const sourceCommit = releaseExitSourceCommit(release, git);
@@ -408,6 +461,9 @@ assert(
 );
 const names = releaseArtifactNames(release);
 const tarball = resolve(releaseDirectory, names.tarball);
+const publicArtifact = publicRegistry
+  ? await obtainPublicRegistryArtifact(bundle, tarball)
+  : undefined;
 
 const appleSiliconCapability = (
   await run("/usr/sbin/sysctl", ["-n", "hw.optional.arm64"], {
@@ -539,16 +595,20 @@ try {
     });
   }
 
+  const installSource = publicRegistry
+    ? `${release.name}@${release.version}`
+    : tarball;
   await run(
     nativeNode,
     [
       npmCli,
       "install",
+      ...(publicRegistry ? ["--save-exact"] : []),
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
       "--package-lock=false",
-      tarball,
+      installSource,
     ],
     {
       cwd: consumer,
@@ -606,9 +666,14 @@ try {
     "isolated consumer manifest",
   );
   assert(
-    typeof consumerManifest.dependencies?.[release.name] === "string" &&
-      consumerManifest.dependencies[release.name].endsWith(names.tarball),
-    "npm did not record the exact Agent Relay tarball",
+    consumerManifest.dependencies?.[release.name] ===
+      (publicRegistry ? release.version : `file:${tarball}`) ||
+      (!publicRegistry &&
+        typeof consumerManifest.dependencies?.[release.name] === "string" &&
+        consumerManifest.dependencies[release.name].endsWith(names.tarball)),
+    publicRegistry
+      ? "npm did not record the exact public package version"
+      : "npm did not record the exact Agent Relay tarball",
   );
 
   const nativeAddon = resolve(
@@ -851,7 +916,9 @@ try {
   );
 
   const evidence = {
-    schema: "agent-relay-release-exit-evidence.v1",
+    schema: publicRegistry
+      ? "agent-relay-public-release-validation-evidence.v1"
+      : "agent-relay-release-exit-evidence.v1",
     generatedAt: new Date().toISOString(),
     release: {
       commit: bundle.commit,
@@ -864,6 +931,9 @@ try {
       sbom: bundle.sbom,
       sbomPackages: bundle.sbomPackages,
       sbomFiles: bundle.sbomFiles,
+      ...(publicArtifact === undefined
+        ? {}
+        : { publicRegistry: publicArtifact }),
     },
     qualification: {
       runnerCommit: git.commit,
@@ -892,6 +962,7 @@ try {
     },
     lifecycle: {
       scriptsDisabledInstall: true,
+      installSource: publicRegistry ? "public-registry" : "authorized-bundle",
       reviewedNativeRebuild: true,
       packageIdentityVerified: true,
       packageSymlinks: 0,
@@ -912,13 +983,22 @@ try {
       "Intel macOS is unclaimed.",
       "Windows and Linux end-user runtimes are unclaimed.",
       "This local proof does not create signed GitHub provenance.",
-      "This bundle proof does not install from the public npm registry; public artifact validation is recorded separately.",
+      ...(publicRegistry
+        ? [
+            "Public documentation, GitHub release assets, and signed attestations are verified separately from this native lifecycle proof.",
+          ]
+        : [
+            "This bundle proof does not install from the public npm registry; public artifact validation is recorded separately.",
+          ]),
       "This proof performs no registry, GitHub release, production, or live-provider mutation.",
     ],
   };
   const evidenceSource = `${JSON.stringify(evidence, null, 2)}\n`;
   assertSafeEvidence(evidenceSource, privateValues);
-  const evidencePath = resolve(root, exit.evidenceOutput);
+  const evidenceOutput = publicRegistry
+    ? ".artifacts/public-release-validation/agent-relay-public-release-validation.json"
+    : exit.evidenceOutput;
+  const evidencePath = resolve(root, evidenceOutput);
   await rm(dirname(evidencePath), { recursive: true, force: true });
   await mkdir(dirname(evidencePath), { recursive: true, mode: 0o700 });
   await writeFile(evidencePath, evidenceSource, {
@@ -928,11 +1008,11 @@ try {
 
   process.stdout.write(
     [
-      `Native release exit verified (${runtimeObservation.version} ${runtimeObservation.platform}/${runtimeObservation.architecture},`,
+      `${publicRegistry ? "Public release validation" : "Native release exit"} verified (${runtimeObservation.version} ${runtimeObservation.platform}/${runtimeObservation.architecture},`,
       `${release.name}@${release.version},`,
       `${String(harnessEvidence.filter((item) => item.classification === "verified").length)} exact harnesses,`,
       "one clean fake delivery, owned uninstall and package removal).",
-      ` Evidence: ${exit.evidenceOutput}\n`,
+      ` Evidence: ${evidenceOutput}\n`,
     ].join(" "),
   );
 } finally {

@@ -1,3 +1,7 @@
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import { URL } from "node:url";
+
 import { stagedPackageIsPrivate } from "./release-policy.mjs";
 
 const exactVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -11,6 +15,10 @@ function assert(condition, message) {
 
 function sorted(value) {
   return [...value].sort();
+}
+
+function digest(algorithm, value, encoding) {
+  return createHash(algorithm).update(value).digest(encoding);
 }
 
 export function assertReleaseExitConfiguration(exit, release) {
@@ -118,6 +126,54 @@ export function releaseExitSourceCommit(release, git) {
     `${release.gitTag} does not resolve to one full commit`,
   );
   return state.commit;
+}
+
+export function summarizePublicRegistryArtifact(
+  release,
+  bundle,
+  metadata,
+  contents,
+  authorizedContents,
+) {
+  assert(
+    metadata?.name === release.name && metadata.version === release.version,
+    "public registry package identity differs",
+  );
+  const tarballUrl = new URL(metadata.dist?.tarball ?? "invalid:");
+  assert(
+    tarballUrl.protocol === "https:" &&
+      tarballUrl.hostname === "registry.npmjs.org" &&
+      tarballUrl.username === "" &&
+      tarballUrl.password === "" &&
+      tarballUrl.search === "" &&
+      tarballUrl.hash === "",
+    "public registry tarball URL is not the canonical HTTPS endpoint",
+  );
+  const publicContents = Buffer.from(contents);
+  const authorized = Buffer.from(authorizedContents);
+  const sha1 = digest("sha1", publicContents, "hex");
+  const sha256 = digest("sha256", publicContents, "hex");
+  const integrity = `sha512-${digest("sha512", publicContents, "base64")}`;
+  assert(
+    metadata.dist.shasum === sha1 && metadata.dist.integrity === integrity,
+    "public registry digest metadata differs from the downloaded tarball",
+  );
+  assert(
+    publicContents.length === bundle.artifactBytes &&
+      sha256 === bundle.artifactSha256 &&
+      publicContents.equals(authorized),
+    "public registry tarball differs from the authorized artifact",
+  );
+  return {
+    registry: "https://registry.npmjs.org/",
+    packageSpec: `${release.name}@${release.version}`,
+    tarball: tarballUrl.href,
+    bytes: publicContents.length,
+    sha1,
+    sha256,
+    integrity,
+    authorizedArtifactByteMatch: true,
+  };
 }
 
 export function summarizeDoctorEvidence(exit, doctor) {
