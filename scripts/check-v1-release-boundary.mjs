@@ -84,18 +84,18 @@ assert(
 );
 assert(boundary.package.intendedTag === release.gitTag, "intended tag differs");
 assert(
-  boundary.package.tagStatus === "not-created-renewed-approval-required",
+  boundary.package.tagStatus === "not-created-publication-authorized",
   "tag authorization boundary differs",
 );
 assert(
-  boundary.package.publicationApproved === false &&
-    release.publication.approved === false &&
-    release.publication.registryAction === "blocked",
-  "renewed publication approval gate differs",
+  boundary.package.publicationApproved === true &&
+    release.publication.approved === true &&
+    release.publication.registryAction === "publish",
+  "bounded publication approval differs",
 );
 assert(
   boundary.releaseAuthorization.decision ===
-    "renewed-exact-candidate-approval-required" &&
+    "go-with-named-nonblocking-residuals" &&
     boundary.releaseAuthorization.decisionReference ===
       release.publication.decisionReference &&
     boundary.releaseAuthorization.executionIssue ===
@@ -104,7 +104,17 @@ assert(
 );
 assert(
   JSON.stringify(boundary.releaseAuthorization.authorizedOperations) ===
-    JSON.stringify([]),
+    JSON.stringify([
+      "verify-the-agent-relay-repository-remains-public",
+      "verify-github-private-vulnerability-reporting-and-available-security-controls-remain-enabled",
+      "protect-the-npm-prerelease-environment-for-the-exact-alpha2-tag",
+      "create-the-immutable-v0.1.0-alpha.2-tag-on-the-recorded-exact-candidate",
+      "run-the-protected-tagged-build-upload-and-build-and-sbom-attestations",
+      "publish-flowxo-agent-relay-0.1.0-alpha.2-to-the-npm-alpha-channel-with-the-interactive-2fa-bootstrap",
+      "configure-and-verify-the-exact-npm-trusted-publisher-immediately-after-first-publish",
+      "require-oidc-for-every-later-publish",
+      "create-the-github-prerelease-and-attach-verified-artifacts-checksums-sbom-notes-and-attestations",
+    ]),
   "authorized operation list differs",
 );
 assert(
@@ -115,10 +125,14 @@ assert(
       "live-provider-traffic",
       "credential-disclosure-or-retention",
       "live-card-authorization",
-      "publication-before-renewed-exact-candidate-approval",
       "publication-beyond-the-exact-agent-relay-alpha-candidate",
     ]),
   "excluded operation list differs",
+);
+assert(
+  boundary.releaseAuthorization.candidateBinding ===
+    "Record the exact green post-merge alpha.2 source commit and regenerated artifact digests in FXO-1574 before any tag or FXO-1164 publication execution; substantive drift requires renewed owner approval.",
+  "final candidate binding differs",
 );
 assert(
   JSON.stringify(boundary.preservedFailedPublicationEvidence) ===

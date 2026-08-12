@@ -310,7 +310,7 @@ async function writeSyntheticBundle(directory, { duplicateFile = false } = {}) {
   const releaseNotesPath = join(bundle, names.releaseNotes);
   await writeFile(
     releaseNotesPath,
-    `# Agent Relay ${release.version} release candidate\n\nFXO-1574 requires renewed exact-candidate approval before FXO-1164 publication. Consult the manifest's build-time \`tagStatus\`.\n`,
+    `# Agent Relay ${release.version} release candidate\n\nFXO-1574 approved one bounded future FXO-1164 publication. Consult the manifest's build-time \`tagStatus\`.\n`,
   );
   const manifest = {
     schema: "agent-relay-release-bundle.v1",

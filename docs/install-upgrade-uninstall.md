@@ -26,8 +26,8 @@ Telegram credential is needed.
 
 No public npm package exists yet. Do not install the unrelated unscoped
 `agent-relay` package from npm. The release candidate identity is
-`@flowxo/agent-relay`, but registry scope control and prerelease promotion
-remain explicit owner gates.
+`@flowxo/agent-relay`; FXO-1574 approved one bounded future alpha.2 publication,
+but this source-build procedure performs no registry operation.
 
 ## Build and inspect the local package candidate
 
@@ -46,9 +46,9 @@ tar -tzf .artifacts/agent-relay-0.1.0-alpha.2.tgz
 ```
 
 Packing runs only the repository's deterministic staging build. It does not
-publish or change harness configuration. The staged artifact and workspace root
-remain `private`; FXO-1574 requires renewed exact-candidate approval before
-FXO-1164 may publish alpha.2.
+publish or change harness configuration. FXO-1574 makes the staged artifact
+registry-eligible while the workspace root remains `private`; only the bounded
+FXO-1164 sequence may publish alpha.2 after the final candidate binding.
 
 The automated proof installs the tarball with dependency lifecycle scripts
 disabled, explicitly rebuilds the reviewed SQLite native dependency, and runs

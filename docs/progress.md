@@ -1320,11 +1320,35 @@ requires renewed approval. Production deployment, the central workspace release,
 live-provider traffic, credential retention, live cards, and unrelated
 publication remain excluded.
 
+## AR4.4a corrected alpha.2 and renewed decision — 2026-08-11
+
+The first FXO-1164 attempt made the repository public, enabled the reviewed
+GitHub security path, protected the prerelease environment, created immutable
+`v0.1.0-alpha.1`, and completed the protected build and attestations. It stopped
+before npm and GitHub release publication when Linux and macOS produced archives
+whose only difference was the gzip operating-system header byte. The alpha.1
+tag, run, and attestations remain immutable failed-publication evidence.
+
+FXO-1574 advances the correction to `0.1.0-alpha.2`, normalizes the gzip header,
+closes the newly enabled CodeQL findings, and pins patched development-only
+dependencies without changing the shipped runtime graph. macOS and Linux now
+produce identical final compressed bytes, the complete repository and browser
+gates are green, full and production audits are clean, and GitHub reports no
+open dependency, code-scanning, or secret-scanning alerts.
+
+The owner records a renewed go with the same named non-blocking residuals for
+one bounded alpha.2 publication. The approval implementation performs no
+publication itself. Its exact final merge commit and regenerated digests are
+recorded before creating the alpha.2 tag; substantive candidate, artifact,
+license, security-path, channel, or operation drift requires renewed approval.
+Production deployment, the central workspace release, live-provider traffic,
+credential retention, live cards, and unrelated publication remain excluded.
+
 ## Release sequence
 
-After FXO-1568 is complete and its exact candidate record is green, refresh AR4,
-the Agent Relay initiative, Release Control, and owner decisions. FXO-1164 is
-the expected next release-gate issue, subject to revalidation, and remains
-unstarted until its own execution session. The former hosted fleet, Mini App,
-multi-operator, and inbound webhook response explorations remain post-V1 backlog
-unless the owner changes the release horizon.
+After the FXO-1574 approval implementation is merge-green and its exact final
+candidate record is complete, FXO-1164 resumes the protected tag, build,
+attestation, one-time interactive npm bootstrap, immediate trusted-publisher
+configuration, and GitHub prerelease sequence. The former hosted fleet, Mini
+App, multi-operator, and inbound webhook response explorations remain post-V1
+backlog unless the owner changes the release horizon.

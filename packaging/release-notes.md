@@ -1,10 +1,11 @@
 # Agent Relay 0.1.0-alpha.2 release candidate
 
-> **Candidate status:** FXO-1574 requires renewed exact-candidate approval
-> before FXO-1164 publication can resume. Consult the generated manifest's
-> build-time `tagStatus`; these notes do not claim that the alpha.2 tag, npm
-> package, or GitHub prerelease exists. The repository is public, while the
-> immutable alpha.1 tag and attestations remain stopped-publication evidence.
+> **Candidate status:** FXO-1574 approved one bounded future FXO-1164
+> publication after the exact final merge commit and regenerated digests are
+> recorded. Consult the generated manifest's build-time `tagStatus`; these notes
+> do not claim that the alpha.2 tag, npm package, or GitHub prerelease exists.
+> The immutable alpha.1 tag and attestations remain stopped-publication
+> evidence.
 
 Agent Relay is a local-first attention and control layer for concurrent Codex,
 Claude Code, and Cursor sessions. It keeps SQLite authoritative on the
@@ -111,8 +112,8 @@ the private vulnerability-reporting path.
 - FXO-1568 approves MIT and `Copyright (c) 2026 Flow XO, LLC` for the exact
   bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts. Different
   versions, source commits, or archive digests require a new review.
-- Alpha.2 publication is blocked pending renewed exact-candidate approval. If
-  approved, the first npm publish remains an interactive 2FA bootstrap because
+- Alpha.2 has one bounded publication approval with the named non-blocking
+  residuals. The first npm publish remains an interactive 2FA bootstrap because
   the package must already exist before trusted-publisher setup. The exact OIDC
   publisher is installed immediately afterward; no token is retained and every
   later publish uses OIDC.
@@ -153,5 +154,4 @@ bytes, 11 packed files, and six SPDX packages; it was not live-tested. No
 live-card authorization carries forward. The completed onboarding predecessor is
 PR #42, reviewed head `52f04958bc6f3b838ff080eb8bc9111ac7e6f338`, merge
 `c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`. FXO-1574 records the corrected
-alpha.2 source and regenerated digests before requesting renewed approval and
-resuming FXO-1164.
+alpha.2 source and regenerated digests before the approved FXO-1164 execution.

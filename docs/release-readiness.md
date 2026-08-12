@@ -234,10 +234,11 @@ The immutable `v0.1.0-alpha.1` tag records the stopped cross-platform digest
 attempt and must not move. FXO-1568 still approves MIT and the shipped notices
 for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts.
 FXO-1574 advances the corrected source to `0.1.0-alpha.2`, canonicalizes the
-gzip operating-system byte, and requires renewed approval for its exact source
-and regenerated digests. Until that decision is recorded, no alpha.2 tag,
-interactive 2FA first publish, OIDC trusted-publisher configuration, or GitHub
-prerelease is authorized.
+gzip operating-system byte, and records a renewed go with the named non-blocking
+residuals for one bounded FXO-1164 publication. The exact final merge commit and
+regenerated digests must be recorded before the alpha.2 tag, interactive 2FA
+first publish, OIDC trusted-publisher configuration, or GitHub prerelease is
+executed.
 
 The accepted non-green native release-exit and Low hook-isolation residuals are
 explicitly non-blocking for this alpha and remain accurately described. No

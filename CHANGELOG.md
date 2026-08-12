@@ -22,8 +22,9 @@ breaking changes and required operator action.
 
 - Preserve `v0.1.0-alpha.1`, its tagged workflow, and its build/SBOM
   attestations as immutable stopped-publication evidence. The corrected
-  candidate advances to `0.1.0-alpha.2`; publication remains blocked until
-  FXO-1574 records renewed exact-candidate approval.
+  candidate advances to `0.1.0-alpha.2`; FXO-1574 approves one bounded future
+  FXO-1164 publication after the exact final merge commit and regenerated
+  digests are recorded.
 - The packed lifecycle proof now upgrades from an alpha.1 fixture to alpha.2.
 
 Native release-exit remains **not green**, and the accepted Low ambient-hook

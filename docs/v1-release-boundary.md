@@ -4,16 +4,17 @@ The machine-readable source of truth is
 [`packaging/v1-release-boundary.json`](../packaging/v1-release-boundary.json).
 This summary freezes the support, privacy, compatibility, and provenance
 boundary for the corrected `@flowxo/agent-relay@0.1.0-alpha.2` candidate.
-FXO-1574 requires renewed exact-candidate approval before FXO-1164 publication
-may resume; this source record does not claim that alpha.2 publication has
+FXO-1574 approved one bounded future FXO-1164 publication with the named
+non-blocking residuals after the exact final merge commit and regenerated
+digests are recorded; this source record does not claim that publication has
 occurred.
 
 ## Package and source
 
 - Package version: `0.1.0-alpha.2`.
-- Intended tag: `v0.1.0-alpha.2`. It does not exist and is not authorized until
-  renewed approval names the exact corrected candidate; generated manifests
-  record observed build-time tag state.
+- Intended tag: `v0.1.0-alpha.2`. It does not exist; FXO-1574 authorizes its
+  future creation only on the recorded exact corrected candidate. Generated
+  manifests record observed build-time tag state.
 - The source candidate entering this freeze is PR #40, reviewed head
   `9a5e6a68609e3764ba5198c350528254bd37da62`, merged as
   `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`.
@@ -142,14 +143,16 @@ authorization carries forward.
 
 FXO-1568's MIT and `Copyright (c) 2026 Flow XO, LLC` decision remains valid for
 the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts. Its
-alpha.1 source/version/archive authorization does not carry to alpha.2.
-`packaging/release.json` therefore keeps publication false and registry action
-blocked. FXO-1574 must record the exact corrected commit and regenerated
-artifact, SBOM, checksum, notes, manifest, clean-home, and signed-attestation
-digests, then obtain renewed owner approval before FXO-1164 resumes.
+alpha.1 source/version/archive authorization did not carry to alpha.2, so
+FXO-1574 records a renewed go with the named non-blocking residuals.
+`packaging/release.json` therefore sets publication true and registry action to
+`publish`. The exact final merge commit and regenerated artifact, SBOM,
+checksum, notes, manifest, and clean-home digests must be recorded before
+FXO-1164 creates the tag; tagged build and attestation digests are recorded
+before registry publication.
 
-If approved, the first npm publish uses the reviewed interactive 2FA bootstrap
-and immediately configures the exact `flowxo/agent-relay` / `prerelease.yml` /
+The first npm publish uses the reviewed interactive 2FA bootstrap and
+immediately configures the exact `flowxo/agent-relay` / `prerelease.yml` /
 `npm-prerelease` publisher. No token is retained; every later publish uses OIDC.
 
 The authorization excludes production deployment or mutation, the central
