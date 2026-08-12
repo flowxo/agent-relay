@@ -18,17 +18,18 @@ where Agent Relay keeps its source of truth.
 
 > **Alpha release status:** Agent Relay has not yet been published to npm. The
 > immutable alpha.1 tag exposed a cross-platform gzip-header digest mismatch
-> before registry publication. FXO-1574 prepares alpha.2, and renewed
-> exact-candidate approval is required before FXO-1164 can resume. The tested
+> before registry publication. FXO-1574 approved one bounded alpha.2 publication
+> with the named non-blocking residuals; FXO-1164 may execute it only after the
+> exact final merge commit and regenerated digests are recorded. The tested
 > setup is macOS on Apple silicon with Node.js 22 or newer and pnpm 11.
 
 The [frozen V1 release boundary](docs/v1-release-boundary.md) records exact
 package/source provenance, lockfile, support, transport/privacy fields, and
 known limitations. The repository and security-reporting path are public. The
 failed alpha.1 tag and attestations remain immutable evidence; the generated
-manifest records alpha.2 build-time tag state. No alpha.2 tag, npm package,
-GitHub release, production change, or live-provider work is authorized before
-the renewed decision.
+manifest records alpha.2 build-time tag state. No alpha.2 tag, npm package, or
+GitHub release exists yet. The authorization excludes production change,
+live-provider work, credential retention, and broader publication.
 
 ## What you get
 

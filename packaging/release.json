@@ -39,11 +39,11 @@
     "decisionReference": "https://linear.app/flowxo/issue/FXO-1568/ar43a-complete-one-owner-interview-implement-the-decisions-and-unblock"
   },
   "publication": {
-    "approved": false,
-    "decision": "renewed-exact-candidate-approval-required",
+    "approved": true,
+    "decision": "go-with-named-nonblocking-residuals",
     "decisionReference": "https://linear.app/flowxo/issue/FXO-1574/ar44a-normalize-agent-relay-archive-bytes-and-authorize-a-corrected",
     "executionIssue": "https://linear.app/flowxo/issue/FXO-1164/ar44-publish-and-verify-the-agent-relay-package-repository-and-release",
-    "registryAction": "blocked",
+    "registryAction": "publish",
     "registry": "https://registry.npmjs.org/",
     "workflow": "prerelease.yml",
     "environment": "npm-prerelease",

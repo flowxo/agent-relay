@@ -5,17 +5,18 @@ Claude Code, and Cursor sessions. This package contains the supported
 `agent-relay` command-line application; it does not expose a public JavaScript
 library API.
 
-> This is the unpublished `0.1.0-alpha.2` correction candidate. FXO-1568 still
-> approves the package scope and exact bundled WhooshBang MIT licenses/notices,
-> but FXO-1574 requires renewed exact-candidate approval before FXO-1164 may
-> resume publication. The staged artifact remains private and registry-blocked;
-> the workspace root is also private to prevent accidental publication.
+> This is the unpublished `0.1.0-alpha.2` correction candidate. FXO-1574
+> approved one bounded future FXO-1164 publication with the exact bundled
+> WhooshBang MIT licenses/notices and named non-blocking residuals. The staged
+> artifact is registry-eligible; the workspace root remains private to prevent
+> accidental publication.
 
 The immutable `v0.1.0-alpha.1` tag exposed a one-byte cross-platform gzip-header
 digest mismatch before npm or GitHub release publication. It and its
 attestations remain preserved failed-publication evidence. Consult the release
 manifest for the alpha.2 build-time tag state. No alpha.2 tag or publication is
-authorized until the renewed decision is recorded.
+claimed by this source text. FXO-1164 may create and publish only the exact
+post-merge candidate and regenerated digests recorded in FXO-1574.
 
 ## Supported target
 

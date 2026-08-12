@@ -1112,11 +1112,11 @@ export async function verifyReleaseBundle({
   const releaseNotes = await readFile(releaseNotesPath, "utf8");
   assert(
     releaseNotes.includes(`${release.version} release candidate`) &&
-      /FXO-1574 requires renewed exact-candidate[\s\S]*before FXO-1164 publication/.test(
+      /FXO-1574[\s\S]*approved one bounded[\s\S]*FXO-1164[\s\S]*publication/.test(
         releaseNotes,
       ) &&
       /manifest's[\s\S]*build-time[\s\S]*`tagStatus`/.test(releaseNotes),
-    "release notes do not preserve the renewed candidate publication boundary",
+    "release notes do not preserve the approved candidate publication boundary",
   );
   if (root !== undefined) {
     assert(

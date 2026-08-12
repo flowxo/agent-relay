@@ -6,14 +6,16 @@ repository public, enabled the security path, protected the prerelease
 environment, and created the immutable alpha.1 tag. The tagged Linux archive
 then differed from the authorized macOS archive by one gzip operating-system
 header byte, so publication stopped before npm or GitHub release mutation.
-FXO-1574 prepares alpha.2 and requires renewed exact-candidate approval before
-FXO-1164 may resume.
+FXO-1574 approved one bounded alpha.2 publication with the named non-blocking
+residuals. FXO-1164 may execute only after the exact final merge commit and
+regenerated digests are recorded.
 
-The current `packaging/release.json` has `publication.approved: false` and
-`registryAction: blocked`. The staged package and monorepo root therefore remain
-`private: true`. The public alpha.1 tag and its signed attestations remain
-immutable failed-publication evidence; no npm package, GitHub release, or
-alpha.2 tag exists. Generated manifests record observed alpha.2 tag state.
+The current `packaging/release.json` has `publication.approved: true` and
+`registryAction: publish`. The staged package is registry-eligible while the
+monorepo root remains `private: true` to prevent accidental publication. The
+public alpha.1 tag and its signed attestations remain immutable
+failed-publication evidence; no npm package, GitHub release, or alpha.2 tag
+exists. Generated manifests record observed alpha.2 tag state.
 
 ## Release inputs
 
@@ -104,10 +106,10 @@ git tag --annotate v0.1.0-alpha.2 --message "Agent Relay 0.1.0-alpha.2"
 git push origin v0.1.0-alpha.2
 ```
 
-Do not run these commands until FXO-1574 records renewed approval for the exact
-alpha.2 source and regenerated digests. The `Prerelease` workflow also supports
-a manual dispatch, but the selected ref must be the exact tag or the build
-fails. The immutable alpha.1 tag must never be deleted, moved, or reused.
+Do not run these commands until FXO-1574 records the exact final alpha.2 merge
+commit and regenerated digests. The `Prerelease` workflow also supports a manual
+dispatch, but the selected ref must be the exact tag or the build fails. The
+immutable alpha.1 tag must never be deleted, moved, or reused.
 
 The workflow:
 
@@ -176,14 +178,16 @@ package.
 
 The owner has approved the exact `@flowxo/agent-relay` name and scope and MIT
 for the exact bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts and
-their notices. Alpha.2 source/version/archive publication is not approved yet.
-After renewed approval, npm requires the package to already exist before its
-trusted publisher can be configured, so the package-first constraint uses one
-bounded interactive 2FA bootstrap, with no long-lived or retained token:
+their notices. FXO-1574 also approves the exact alpha.2 identity and one bounded
+future FXO-1164 publication with the named non-blocking residuals. npm requires
+the package to already exist before its trusted publisher can be configured, so
+the package-first constraint uses one bounded interactive 2FA bootstrap, with no
+long-lived or retained token:
 
-1. make the repository public; enable and verify GitHub private vulnerability
-   reporting and the available security controls; protect the `npm-prerelease`
-   environment; and create the approved exact tag;
+1. verify the repository remains public with GitHub private vulnerability
+   reporting and the available security controls enabled; protect the
+   `npm-prerelease` environment for the exact alpha.2 tag; and create that
+   approved exact tag;
 2. let the tagged workflow build, test, attest, and upload the exact bundle with
    `publish: false`;
 3. download and verify that workflow bundle from a clean exact Node.js `22.23.1`
