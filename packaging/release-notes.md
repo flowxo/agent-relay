@@ -119,9 +119,10 @@ the private vulnerability-reporting path.
 
 `pnpm release:bundle` creates the npm tarball, SPDX SBOM, package-content
 snapshot, these release notes, source manifest, and `SHA256SUMS` from one clean
-commit. The manifest records whether the intended tag actually points at that
-commit. A local build is unsigned evidence; only the separately authorized
-tagged GitHub workflow can create signed build and SBOM attestations.
+commit. The generated manifest's build-time `tagStatus` records whether the
+intended tag actually points at that commit. A local build is unsigned evidence;
+only the separately authorized tagged GitHub workflow can create signed build
+and SBOM attestations.
 
 `pnpm release:evidence` can verify an exact clean bundle and record a sanitized
 clean-home fake-canary result. It never forwards provider credentials or
