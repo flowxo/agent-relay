@@ -9,6 +9,7 @@ import {
   readFile,
   readdir,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -410,6 +411,16 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     const codexConfig = resolve(isolatedHome, ".codex/hooks.json");
     const claudeConfig = resolve(isolatedHome, ".claude/settings.json");
     const cursorConfig = resolve(isolatedHome, ".cursor/hooks.json");
+    const officialSkills = [
+      resolve(isolatedHome, ".agents/skills/agent-relay/SKILL.md"),
+      resolve(isolatedHome, ".claude/skills/agent-relay/SKILL.md"),
+      resolve(isolatedHome, ".cursor/skills/agent-relay/SKILL.md"),
+    ];
+    const unrelatedSkills = [
+      resolve(isolatedHome, ".agents/skills/user-owned/SKILL.md"),
+      resolve(isolatedHome, ".claude/skills/user-owned/SKILL.md"),
+      resolve(isolatedHome, ".cursor/skills/user-owned/SKILL.md"),
+    ];
     await writeJson(codexConfig, {
       userSetting: "preserve-codex",
       hooks: {
@@ -429,6 +440,13 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
         stop: [{ command: "user-cursor-hook" }],
       },
     });
+    for (const skillPath of unrelatedSkills) {
+      await mkdir(dirname(skillPath), { recursive: true, mode: 0o700 });
+      await writeFile(skillPath, "synthetic user-owned skill\n", {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
 
     await installTarball(prefix, priorTarball, temporaryRoot);
     const binary = resolve(prefix, "node_modules/.bin/agent-relay");
@@ -479,6 +497,23 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       priorInstallManifest.packageVersion === release.priorFixtureVersion,
       "prior install manifest version is wrong",
     );
+    assert(
+      priorInstallManifest.skills?.length === 3,
+      "prior install manifest does not own exactly three official skills",
+    );
+    const reviewedSkillContents = new Map();
+    for (const skillPath of officialSkills) {
+      const content = await readFile(skillPath, "utf8");
+      assert(
+        content.includes(
+          "<!-- agent-relay-owner: agent-relay-skill-contract.v1 -->",
+        ) &&
+          content.includes("agent-relay-mcp.v1") &&
+          ((await stat(skillPath)).mode & 0o777) === 0o600,
+        "initial install did not render one reviewed private skill artifact",
+      );
+      reviewedSkillContents.set(skillPath, content);
+    }
 
     const backupPaths = [];
     for (const configPath of [codexConfig, claudeConfig, cursorConfig]) {
@@ -642,6 +677,12 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       "upgraded executable reports the wrong version",
     );
 
+    await writeFile(
+      officialSkills[0],
+      `${reviewedSkillContents.get(officialSkills[0])}\nPRIVATE-PROMPT-DRIFT`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+
     const mismatchDoctor = parseJson(
       (
         await run(
@@ -667,6 +708,23 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
         (check) => check.name === "runtime-entry" && check.level === "fail",
       ),
       "doctor did not identify the stale launcher runtime entry",
+    );
+    assert(
+      mismatchDoctor.checks.some(
+        (check) =>
+          check.name === "codex-skill-version" && check.level === "fail",
+      ),
+      "doctor did not identify stale skill compatibility metadata",
+    );
+    assert(
+      mismatchDoctor.checks.some(
+        (check) => check.name === "codex-skill-drift" && check.level === "fail",
+      ),
+      "doctor did not identify deterministic skill drift",
+    );
+    assert(
+      !JSON.stringify(mismatchDoctor).includes("PRIVATE-PROMPT-DRIFT"),
+      "doctor dumped drifted skill contents",
     );
 
     const upgradeDryRun = parseJson(
@@ -702,6 +760,17 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       "idempotent reinstall",
     );
     assert(repeated.changed === false, "repeated install is not idempotent");
+    for (const skillPath of officialSkills) {
+      const repairedContent = await readFile(skillPath, "utf8");
+      assert(
+        repairedContent.includes(
+          "<!-- agent-relay-owner: agent-relay-skill-contract.v1 -->",
+        ) &&
+          repairedContent.includes(`>=${release.version} <0.2.0-0`) &&
+          !repairedContent.includes("PRIVATE-PROMPT-DRIFT"),
+        "upgrade did not deterministically repair an official skill",
+      );
+    }
 
     const currentDoctor = parseJson(
       (
@@ -884,6 +953,18 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
         !(await exists(resolve(stateDir, "install.json"))),
       "owned launcher or install manifest survived uninstall",
     );
+    for (const skillPath of officialSkills) {
+      assert(
+        !(await exists(skillPath)),
+        "official Agent Relay skill survived owned uninstall",
+      );
+    }
+    for (const skillPath of unrelatedSkills) {
+      assert(
+        (await readFile(skillPath, "utf8")) === "synthetic user-owned skill\n",
+        "uninstall changed an unrelated harness skill",
+      );
+    }
     assert(
       (await exists(databasePath)) &&
         (await exists(webCredentialPath)) &&
@@ -912,6 +993,9 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
         "package removal left an Agent Relay-owned hook",
       );
     }
+    for (const skillPath of unrelatedSkills) {
+      assert(await exists(skillPath), "package removal deleted a user skill");
+    }
 
     const retainedDatabase = new Database(databasePath, { readonly: true });
     const retainedAnswer = retainedDatabase
@@ -928,7 +1012,7 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     );
 
     process.stdout.write(
-      `Packed lifecycle verified (${release.priorFixtureVersion} -> ${release.version}): dry-run, install, doctor mismatch, schema migration/refusal, answer/state preservation, idempotent reconciliation, owned uninstall, and package removal passed.\n`,
+      `Packed lifecycle verified (${release.priorFixtureVersion} -> ${release.version}): dry-run, install, official-skill drift repair, doctor mismatch, schema migration/refusal, answer/state preservation, idempotent reconciliation, owned uninstall, and package removal passed.\n`,
     );
   } finally {
     if (activeDaemon !== undefined && activeDaemon.exitCode === null) {

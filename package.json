@@ -33,7 +33,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm fixtures:check && pnpm secrets:check && pnpm release:policy:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:whooshbang && pnpm contracts:runner && pnpm dist:check && pnpm package:check && pnpm package:hosted:check && pnpm package:lifecycle:check",
+    "check": "pnpm format:check && pnpm governance:check && pnpm docs:check && pnpm fixtures:check && pnpm skills:check && pnpm secrets:check && pnpm release:policy:check && pnpm lint && pnpm typecheck && pnpm test && pnpm capabilities:check && pnpm contracts:whooshbang && pnpm contracts:runner && pnpm dist:check && pnpm package:check && pnpm package:hosted:check && pnpm package:lifecycle:check",
     "capabilities:generate": "pnpm --filter @agent-relay/harnesses capabilities:generate",
     "capabilities:check": "pnpm --filter @agent-relay/harnesses capabilities:check",
     "contracts:preinstall": "node contracts/scripts/verify-whooshbang.mjs && node contracts/scripts/verify-runner-protocol.mjs",
@@ -62,6 +62,8 @@
     "release:policy:check": "node --test scripts/test/release-bundle.node-test.mjs scripts/test/release-exit-policy.node-test.mjs scripts/test/release-policy.node-test.mjs scripts/test/repository-secrets.node-test.mjs scripts/test/safe-packed-environment.node-test.mjs scripts/test/v1-release-boundary.node-test.mjs && node scripts/check-release-workflow.mjs",
     "relay": "pnpm --filter @agent-relay/relay dev",
     "secrets:check": "node scripts/check-repository-secrets.mjs",
+    "skills:check": "tsx --conditions=development scripts/render-agent-relay-skills.ts --check",
+    "skills:generate": "tsx --conditions=development scripts/render-agent-relay-skills.ts",
     "test": "vitest run",
     "test:e2e": "pnpm build && playwright test",
     "test:watch": "vitest",

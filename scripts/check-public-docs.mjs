@@ -20,6 +20,7 @@ const focusedDocuments = [
   "docs/extending-harnesses.md",
   "docs/hosted-whooshbang.md",
   "docs/runner-bridge.md",
+  "docs/agent-relay-skills.md",
   "docs/v1-release-boundary.md",
   "docs/public-release-walkthrough.md",
   "packaging/release-notes.md",

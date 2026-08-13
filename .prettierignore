@@ -3,3 +3,4 @@ contracts/contract-check-result.schema.json
 contracts/contract-lock.schema.json
 contracts/lib/contract-lock.mjs
 LICENSE
+skills/agent-relay/rendered/

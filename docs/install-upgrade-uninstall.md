@@ -83,7 +83,7 @@ Keep that prefix in place while hooks are installed because the owned launcher
 targets its exact package entry. Prefer the exact public-registry installation
 above unless evaluating a source change.
 
-## Inspect and install hooks
+## Inspect and install hooks and official skills
 
 ```sh
 node apps/relay/dist/cli.js install --dry-run
@@ -97,28 +97,40 @@ write fails.
 
 The owned paths are:
 
-| Path                             | Purpose                                      |
-| -------------------------------- | -------------------------------------------- |
-| `~/.agent-relay/bin/agent-relay` | Exact Node.js/CLI launcher                   |
-| `~/.agent-relay/install.json`    | Ownership and installed-version manifest     |
-| `~/.codex/hooks.json`            | Owned Codex Stop/permission entries          |
-| `~/.claude/settings.json`        | Owned Claude Stop/failure/permission entries |
-| `~/.cursor/hooks.json`           | Owned Cursor Stop entry                      |
+| Path                                    | Purpose                                      |
+| --------------------------------------- | -------------------------------------------- |
+| `~/.agent-relay/bin/agent-relay`        | Exact Node.js/CLI launcher                   |
+| `~/.agent-relay/install.json`           | Ownership and installed-version manifest     |
+| `~/.codex/hooks.json`                   | Owned Codex Stop/permission entries          |
+| `~/.claude/settings.json`               | Owned Claude Stop/failure/permission entries |
+| `~/.cursor/hooks.json`                  | Owned Cursor Stop entry                      |
+| `~/.agents/skills/agent-relay/SKILL.md` | Official Codex skill                         |
+| `~/.claude/skills/agent-relay/SKILL.md` | Official Claude Code skill                   |
+| `~/.cursor/skills/agent-relay/SKILL.md` | Official Cursor skill                        |
 
-Existing hooks and unrelated settings are preserved. A Cursor permission entry
-is intentionally not installed until a current sanitized live payload exists.
+Existing hooks, skills, instruction files, MCP servers, and unrelated settings
+are preserved. A non-owned file at one official skill target is a preflight
+conflict rather than something the installer overwrites. A Cursor permission
+entry is intentionally not installed until a current sanitized live payload
+exists.
 
 Review newly installed hooks through each harness. Codex marks new or changed
 non-managed hooks for review; use `/hooks` to inspect and trust the exact entry.
 Do not disable hook trust globally. Claude Code and Cursor provide their own
 hook/configuration views.
 
-`doctor` checks the launcher, ownership manifest, hook counts, SQLite schema,
+`doctor` checks the launcher, ownership manifest, official skill presence,
+contract/MCP compatibility and deterministic drift, hook counts, SQLite schema,
 installed harness binaries, exact verified versions, and the
 `agent-relay-compatibility.v1` registry. A missing executable or owned hook is a
 failure. An available version mismatch is a `compatible-unverified` warning; a
-version explicitly recorded as incompatible is a failure. Harness checks include
-safe evidence IDs.
+version explicitly recorded as incompatible is a failure. Skill findings name
+only the check and repair action; they never print artifact contents, prompts,
+identifiers, or secrets. Harness checks include safe evidence IDs.
+
+The behavior and compatibility boundary is documented in the
+[official Agent Relay skill guide](agent-relay-skills.md). The installer does
+not add or mutate user MCP server configuration.
 
 Inspect the transcript-free source record directly:
 
@@ -159,26 +171,30 @@ For a new source commit or local packed candidate:
 3. run `agent-relay doctor` and confirm that any package/runtime/manifest
    mismatch is the expected pre-reconciliation state;
 4. run `install --dry-run` and inspect exact changes;
-5. run `install` to update only owned entries and the launcher;
+5. run `install` to update only owned entries, the launcher, and official
+   skills;
 6. run `install` again and require an unchanged result;
 7. start the daemon, allowing forward SQLite migrations; and
 8. run `doctor` and the fake canary before enabling a real transport.
 
 An upgrade preserves local state, credentials, logs, fallback records, config
-backups, and unrelated hooks. The install reconciliation is idempotent.
+backups, unrelated hooks, other skills, MCP servers, and harness instructions.
+The install reconciliation is idempotent and repairs deterministic drift only
+where the Agent Relay ownership marker remains present.
 
-SQLite migrations are forward-only. The current schema is version `10`. Earlier
+SQLite migrations are forward-only. The current schema is version `11`. Earlier
 migrations include the unversioned alpha fixture, version `5` native-hook
 sequence counters, version `7` WhooshBang naming, version `8` durable
 topic-title state, version `9` content-free lifetime counters, and version `10`
-the privacy-bounded durable shared activity model. Stop the daemon and
-supervised processes before crossing a schema boundary, and keep a private
-database backup. Native hooks and the daemon intentionally share the same
-`relay.sqlite` so allocation commits are ordered across processes. If a database
-advertises a newer schema than the running package supports, Agent Relay refuses
-to open it and doctor reports `refusing unsafe downgrade`; use the newer package
-or restore a database backup instead of forcing the older binary. Arbitrary
-downgrade safety is not claimed.
+the privacy-bounded durable shared activity model. Version `11` adds keyed,
+digest-only exact MCP binding records. Stop the daemon and supervised processes
+before crossing a schema boundary, and keep a private database backup. Native
+hooks and the daemon intentionally share the same `relay.sqlite` so allocation
+commits are ordered across processes. If a database advertises a newer schema
+than the running package supports, Agent Relay refuses to open it and doctor
+reports `refusing unsafe downgrade`; use the newer package or restore a database
+backup instead of forcing the older binary. Arbitrary downgrade safety is not
+claimed.
 
 ## Roll back a candidate
 
@@ -225,7 +241,8 @@ node apps/relay/dist/cli.js uninstall
 ```
 
 The command removes only hook handlers carrying Agent Relay's ownership marker,
-the owned launcher, and the manifest. It preserves user hooks, unrelated
+the three marked Agent Relay skill files, the owned launcher, and the manifest.
+It preserves user hooks, unrelated skills and instruction files, MCP servers,
 settings, SQLite, fallback records, logs, web credentials, Telegram
 configuration, WhooshBang configuration/narrow credentials, and installer
 backups.

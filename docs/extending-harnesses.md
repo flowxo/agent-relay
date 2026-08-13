@@ -15,16 +15,18 @@ and support claims can each trigger explicit maintainer review.
 
 ## Source map
 
-| Area                                     | Responsibility                                     |
-| ---------------------------------------- | -------------------------------------------------- |
-| `packages/harnesses/src/parsers.ts`      | Runtime-validate native payload and normalize it   |
-| `packages/harnesses/src/continuation.ts` | Render bounded native inline continuation JSON     |
-| `packages/harnesses/src/resume.ts`       | Build exact late-resume executable + argv          |
-| `packages/harnesses/src/capabilities.ts` | Classify evidence-backed surfaces and capabilities |
-| `packages/harnesses/fixtures/<harness>/` | Sanitized native payload fixtures and provenance   |
-| `apps/relay/src/installer.ts`            | Merge owned user-level hook entries                |
-| `apps/relay/src/hook-runner.ts`          | Bounded stdin, daemon/fallback, stdout discipline  |
-| `apps/relay/src/supervisor.ts`           | Owned child exit and late-resume lifecycle         |
+| Area                                     | Responsibility                                      |
+| ---------------------------------------- | --------------------------------------------------- |
+| `packages/harnesses/src/parsers.ts`      | Runtime-validate native payload and normalize it    |
+| `packages/harnesses/src/continuation.ts` | Render bounded native inline continuation JSON      |
+| `packages/harnesses/src/resume.ts`       | Build exact late-resume executable + argv           |
+| `packages/harnesses/src/capabilities.ts` | Classify evidence-backed surfaces and capabilities  |
+| `packages/harnesses/fixtures/<harness>/` | Sanitized native payload fixtures and provenance    |
+| `apps/relay/src/installer.ts`            | Merge owned hooks and install official skills       |
+| `packages/protocol/src/skill.ts`         | Canonical skill behavior and compatibility contract |
+| `apps/relay/src/agent-skills.ts`         | Deterministic vendor rendering and evaluation       |
+| `apps/relay/src/hook-runner.ts`          | Bounded stdin, daemon/fallback, stdout discipline   |
+| `apps/relay/src/supervisor.ts`           | Owned child exit and late-resume lifecycle          |
 
 Protocol types live in `packages/protocol`. Do not bypass their runtime schemas.
 

@@ -1,0 +1,9 @@
+{
+  "schema": "agent-relay-skill-fixtures.v1",
+  "recordedAt": "2026-08-13T18:30:00.000Z",
+  "contractVersion": "agent-relay-skill-contract.v1@1.0.0",
+  "source": "packages/protocol/src/skill.ts",
+  "evidence": "controlled-synthetic-harness-evaluation",
+  "privacy": "All scenarios and identifiers are synthetic. No provider traffic, transcript, prompt capture, credential, account identifier, private path, or environment value is present.",
+  "fixtures": ["scenarios.v1.json"]
+}

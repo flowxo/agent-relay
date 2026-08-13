@@ -100,8 +100,8 @@ Commands:
   drain              Deliver queued events
   replay-fallback    Replay the hook fallback spool
   maintain           Apply retention policy
-  install            Install or reconcile user-level harness hooks
-  uninstall          Remove only Agent Relay-owned hooks and launcher
+  install            Install or reconcile user-level hooks and official skills
+  uninstall          Remove only Agent Relay-owned hooks, skills, and launcher
   doctor             Diagnose installation; --live checks WhooshBang evidence
   capabilities       Print the generated harness capability registry
   canary             Prove the local fake-transport delivery loop

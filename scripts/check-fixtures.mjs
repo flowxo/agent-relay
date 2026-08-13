@@ -27,6 +27,11 @@ const fixtureSets = [
     root: "packages/webhook-transport/fixtures/webhook",
     manifest: "packages/webhook-transport/fixtures/webhook/manifest.json",
   },
+  {
+    name: "Agent Relay skill",
+    root: "skills/agent-relay/fixtures",
+    manifest: "skills/agent-relay/fixtures/manifest.json",
+  },
 ];
 
 const forbiddenText = [

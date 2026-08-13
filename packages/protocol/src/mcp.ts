@@ -211,7 +211,7 @@ export const RelayMcpStatusResultV1Schema = z
     }
   });
 
-export const RelayMcpErrorCodeSchema = z.enum([
+export const RELAY_MCP_ERROR_CODES = [
   "binding-missing",
   "binding-pending",
   "binding-ambiguous",
@@ -229,7 +229,9 @@ export const RelayMcpErrorCodeSchema = z.enum([
   "request-canceled",
   "request-failed",
   "internal-error",
-]);
+] as const;
+
+export const RelayMcpErrorCodeSchema = z.enum(RELAY_MCP_ERROR_CODES);
 
 export const RelayMcpErrorV1Schema = z
   .object({

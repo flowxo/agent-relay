@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   access,
   chmod,
@@ -24,8 +24,20 @@ import {
 } from "node:path";
 
 import type { Harness } from "@agent-relay/protocol";
+import {
+  AGENT_RELAY_SKILL_CONTRACT_VERSION,
+  AGENT_RELAY_SKILL_VERSION_RANGE,
+  RELAY_MCP_PROTOCOL_VERSION,
+  RELAY_MCP_SURFACE_VERSION,
+} from "@agent-relay/protocol";
 import { z } from "zod";
 
+import {
+  isAgentRelayOwnedSkill,
+  officialAgentRelaySkillArtifacts,
+  officialAgentRelaySkillPath,
+  validateOfficialAgentRelaySkillCompatibility,
+} from "./agent-skills.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
 
 const INSTALL_SCHEMA = "agent-relay-install.v1";
@@ -66,6 +78,22 @@ const InstallManifestSchema = z
         })
         .strict(),
     ),
+    skills: z
+      .array(
+        z
+          .object({
+            harness: z.enum(["codex", "claude", "cursor"]),
+            artifactPath: z.string().min(1),
+            contractVersion: z.string().min(1).max(80),
+            mcpSurfaceVersion: z.string().min(1).max(80),
+            mcpProtocolVersion: z.string().min(1).max(80),
+            agentRelayVersionRange: z.string().min(1).max(120),
+            sha256: z.string().regex(/^[a-f0-9]{64}$/),
+          })
+          .strict(),
+      )
+      .length(3)
+      .optional(),
   })
   .strict();
 
@@ -78,6 +106,7 @@ export interface InstallerPaths {
   launcherPath: string;
   manifestPath: string;
   configs: Record<Harness, string>;
+  skills: Record<Harness, string>;
 }
 
 export interface InstallOptions {
@@ -188,6 +217,11 @@ export function installerPaths(rootInput: string): InstallerPaths {
       claude: join(rootDir, ".claude", "settings.json"),
       cursor: join(rootDir, ".cursor", "hooks.json"),
     },
+    skills: {
+      codex: officialAgentRelaySkillPath(rootDir, "codex"),
+      claude: officialAgentRelaySkillPath(rootDir, "claude"),
+      cursor: officialAgentRelaySkillPath(rootDir, "cursor"),
+    },
   };
 }
 
@@ -204,6 +238,7 @@ async function assertOwnedPathsAreNotSymlinks(
     paths.launcherPath,
     paths.manifestPath,
     ...Object.values(paths.configs),
+    ...Object.values(paths.skills),
   ]) {
     const relativeTarget = relative(paths.rootDir, target);
     if (
@@ -700,6 +735,20 @@ export async function installAgentRelay(
     claude: await snapshot(paths.configs.claude),
     cursor: await snapshot(paths.configs.cursor),
   };
+  const skillArtifacts = officialAgentRelaySkillArtifacts();
+  const skillSnapshots = {
+    codex: await snapshot(paths.skills.codex),
+    claude: await snapshot(paths.skills.claude),
+    cursor: await snapshot(paths.skills.cursor),
+  };
+  for (const harness of ["codex", "claude", "cursor"] as const) {
+    const current = skillSnapshots[harness];
+    if (current.exists && !isAgentRelayOwnedSkill(current.content)) {
+      throw new Error(
+        `${harness} skill target contains non-Agent Relay material; preserve or move it before installing the official Agent Relay skill`,
+      );
+    }
+  }
   const configs = {
     codex: patchNestedConfig(
       parseConfig(paths.configs.codex, configSnapshots.codex),
@@ -735,6 +784,15 @@ export async function installAgentRelay(
         priorManifest?.targets.find((target) => target.harness === harness)
           ?.created ?? !configSnapshots[harness].exists,
     })),
+    skills: skillArtifacts.map((artifact) => ({
+      harness: artifact.harness,
+      artifactPath: paths.skills[artifact.harness],
+      contractVersion: AGENT_RELAY_SKILL_CONTRACT_VERSION,
+      mcpSurfaceVersion: RELAY_MCP_SURFACE_VERSION,
+      mcpProtocolVersion: RELAY_MCP_PROTOCOL_VERSION,
+      agentRelayVersionRange: AGENT_RELAY_SKILL_VERSION_RANGE,
+      sha256: artifact.sha256,
+    })),
   };
   const manifest =
     priorManifest !== undefined &&
@@ -766,6 +824,12 @@ export async function installAgentRelay(
       mode: 0o700,
       backup: false,
     },
+    ...skillArtifacts.map((artifact) => ({
+      path: paths.skills[artifact.harness],
+      desired: artifact.content,
+      mode: 0o600,
+      backup: false,
+    })),
     {
       path: paths.manifestPath,
       desired: `${JSON.stringify(manifest, null, 2)}\n`,
@@ -840,6 +904,18 @@ export async function uninstallAgentRelay(options: {
       backup: true,
     }),
   );
+
+  for (const harness of ["codex", "claude", "cursor"] as const) {
+    const skill = await snapshot(paths.skills[harness]);
+    plans.push({
+      path: paths.skills[harness],
+      ...(skill.exists && !isAgentRelayOwnedSkill(skill.content)
+        ? { desired: skill.content }
+        : {}),
+      mode: skill.mode ?? 0o600,
+      backup: false,
+    });
+  }
 
   const launcher = await snapshot(paths.launcherPath);
   const launcherOwned =
@@ -950,12 +1026,18 @@ export async function inspectAgentRelayInstallation(
     const targetsMatch =
       manifest.launcherPath === paths.launcherPath &&
       manifest.targets.length === 3 &&
+      manifest.skills?.length === 3 &&
       (["codex", "claude", "cursor"] as const).every(
         (harness) =>
           manifest.targets.filter(
             (target) =>
               target.harness === harness &&
               target.configPath === paths.configs[harness],
+          ).length === 1 &&
+          manifest.skills?.filter(
+            (skill) =>
+              skill.harness === harness &&
+              skill.artifactPath === paths.skills[harness],
           ).length === 1,
       );
     checks.push({
@@ -964,7 +1046,7 @@ export async function inspectAgentRelayInstallation(
       level: targetsMatch ? "pass" : "fail",
       detail: targetsMatch
         ? "manifest owns exactly the expected launcher and harness targets"
-        : "manifest ownership paths do not match the selected install root",
+        : "manifest ownership does not match the expected launcher, hook, and skill targets; rerun agent-relay install",
     });
 
     const launcherMatches =
@@ -1022,6 +1104,61 @@ export async function inspectAgentRelayInstallation(
         });
       }
     }
+  }
+
+  const expectedArtifacts = officialAgentRelaySkillArtifacts();
+  for (const artifact of expectedArtifacts) {
+    const file = await snapshot(paths.skills[artifact.harness]);
+    const owned = file.exists && isAgentRelayOwnedSkill(file.content);
+    checks.push({
+      name: `${artifact.harness}-skill-presence`,
+      ok: file.exists,
+      level: file.exists ? "pass" : "fail",
+      detail: file.exists
+        ? `official ${artifact.displayName} skill artifact is present`
+        : `official ${artifact.displayName} skill artifact is absent; rerun agent-relay install`,
+    });
+
+    const installedSkill = manifest?.skills?.find(
+      (skill) => skill.harness === artifact.harness,
+    );
+    const compatible =
+      installedSkill !== undefined &&
+      installedSkill.agentRelayVersionRange ===
+        AGENT_RELAY_SKILL_VERSION_RANGE &&
+      validateOfficialAgentRelaySkillCompatibility({
+        packageVersion: expectation.packageVersion ?? AGENT_RELAY_VERSION,
+        contractVersion: installedSkill.contractVersion,
+        mcpSurfaceVersion: installedSkill.mcpSurfaceVersion,
+        mcpProtocolVersion: installedSkill.mcpProtocolVersion,
+      });
+    checks.push({
+      name: `${artifact.harness}-skill-version`,
+      ok: compatible,
+      level: compatible ? "pass" : "fail",
+      detail: compatible
+        ? `official ${artifact.displayName} skill contract and MCP compatibility match the running CLI`
+        : `official ${artifact.displayName} skill compatibility is absent or incompatible; rerun agent-relay install`,
+    });
+
+    const digest =
+      file.content === undefined
+        ? undefined
+        : createHash("sha256").update(file.content, "utf8").digest("hex");
+    const driftFree =
+      owned &&
+      digest === artifact.sha256 &&
+      installedSkill?.sha256 === artifact.sha256;
+    checks.push({
+      name: `${artifact.harness}-skill-drift`,
+      ok: driftFree,
+      level: driftFree ? "pass" : "fail",
+      detail: driftFree
+        ? `official ${artifact.displayName} skill matches its reviewed deterministic artifact`
+        : file.exists && !owned
+          ? `${artifact.displayName} skill target contains non-Agent Relay material; preserve it and resolve the conflict before reinstalling`
+          : `official ${artifact.displayName} skill drifted; rerun agent-relay install to repair it`,
+    });
   }
 
   for (const harness of ["codex", "claude", "cursor"] as const) {
