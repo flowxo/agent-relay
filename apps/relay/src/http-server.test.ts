@@ -262,6 +262,9 @@ describe("relay HTTP daemon", () => {
     expect(appText).toContain("x-agent-relay-csrf");
     expect(appText).toContain("/v1/web/bootstrap/exchange");
     expect(appText).toContain("history.replaceState");
+    expect(appText).toContain(
+      "browser session is authenticated, but dashboard data could not load",
+    );
     expect(appText).not.toContain("localStorage");
     expect(appText).not.toContain("sessionStorage");
     const version = await fetch(`${runtime.baseUrl}/ui/version.js`);
@@ -274,7 +277,7 @@ describe("relay HTTP daemon", () => {
     await expect(meta.json()).resolves.toEqual({
       schema: "agent-relay-web-meta.v1",
       apiVersion: "3",
-      assetVersion: "4",
+      assetVersion: "5",
       commandSchemas: [
         "agent-relay-web-resolve.v1",
         "agent-relay-web-session-action.v1",

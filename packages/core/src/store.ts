@@ -2365,7 +2365,23 @@ export class RelayStore {
       rename();
     }
     this.database.exec(SESSION_ACTIVITY_SCHEMA_UP_SQL);
-    if (observedSchemaVersion < 10) {
+    const missingSessionActivity = this.database
+      .prepare(
+        `
+        SELECT EXISTS (
+          SELECT 1
+          FROM sessions
+          LEFT JOIN session_activity AS activity
+            ON activity.machine_id = sessions.machine_id
+            AND activity.harness = sessions.harness
+            AND activity.session_id = sessions.session_id
+          WHERE activity.session_id IS NULL
+        )
+      `,
+      )
+      .pluck()
+      .get() as number;
+    if (observedSchemaVersion < 10 || missingSessionActivity === 1) {
       this.database.exec(`
         INSERT OR IGNORE INTO session_activity (
           machine_id, harness, session_id, epoch, foreground, ended,

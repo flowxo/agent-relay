@@ -130,11 +130,12 @@ claims to terminate an unowned harness process. End is unavailable while a
 request remains open.
 
 The UI refuses to connect when `/v1/web/meta` reports a different API or asset
-version. API version 3 / asset version 4 adds the browser-session bootstrap
-without changing the canonical session/request authority. The package check
-separately verifies that all five static files, their version marker, API
-negotiation, and both mutation schemas survived the build. CI runs that check
-from compiled output before the browser suite.
+version. API version 3 provides the browser-session bootstrap without changing
+the canonical session/request authority. Asset version 5 distinguishes a
+post-authentication data-load failure from an invalid or replayed bootstrap
+grant. The package check separately verifies that all five static files, their
+version marker, API negotiation, and both mutation schemas survived the build.
+CI runs that check from compiled output before the browser suite.
 
 ## Timeline, detail, and diagnostics
 

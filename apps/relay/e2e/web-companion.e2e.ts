@@ -186,6 +186,32 @@ test("refreshes, reopens, removes grant history, and rejects replay", async ({
   await replay.close();
 });
 
+test("retains the browser session and reports a post-authentication load failure accurately", async ({
+  page,
+}) => {
+  const active = runtime;
+  if (active === undefined) {
+    throw new Error("browser runtime is unavailable");
+  }
+  await page.route("**/v1/web/sessions?*", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "synthetic-session-load-failure" }),
+    });
+  });
+  await page.goto(await bootstrap(active));
+  await expect(page.locator("[data-connect-panel]")).toBeVisible();
+  await expect(page.locator("[data-connect-error]")).toContainText(
+    "browser session is authenticated, but dashboard data could not load",
+  );
+  expect(page.url()).not.toContain("grant=");
+
+  await page.unroute("**/v1/web/sessions?*");
+  await page.reload();
+  await expect(page.locator("[data-console]")).toBeVisible();
+});
+
 test("shows compact recovery and keeps manual credentials behind Advanced", async ({
   page,
 }) => {

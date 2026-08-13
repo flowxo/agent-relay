@@ -6,6 +6,8 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
+import { makeProjectRef } from "@agent-relay/protocol";
+
 import { RELAY_STORE_SCHEMA_VERSION, RelayStore } from "./store.js";
 import { SESSION_ACTIVITY_SCHEMA_DOWN_SQL } from "./activity-schema.js";
 
@@ -20,6 +22,103 @@ async function digest(path: string): Promise<string> {
 }
 
 describe("SQLite schema compatibility", () => {
+  it("repairs missing activity projections and prevents legacy insert gaps", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    const identity = {
+      machineId: "machine_activity_repair_12345678",
+      harness: "codex" as const,
+      sessionId: "session_activity_repair_12345678",
+    };
+    const store = new RelayStore(databasePath);
+    store.ingestEvent({
+      schema: "agent-attention.v1",
+      eventId: "event_activity_repair_12345678",
+      occurredAt: "2026-08-13T12:00:00.000Z",
+      sequence: 1,
+      ...identity,
+      bridgeSessionId: "bridge_activity_repair_12345678",
+      surface: "cli",
+      harnessVersion: "frozen-test-version",
+      project: makeProjectRef("/synthetic/activity-repair"),
+      type: "input.required",
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+      request: {
+        correlationId: "request_activity_repair_12345678",
+        kind: "input",
+        question: "Synthetic retained question",
+        expiresAt: "2026-08-13T12:10:00.000Z",
+      },
+    });
+    store.close();
+
+    const legacy = new Database(databasePath);
+    legacy.exec(`
+      DROP TRIGGER session_activity_sessions_insert;
+      DELETE FROM session_activity;
+    `);
+    legacy.close();
+
+    const repaired = new RelayStore(databasePath);
+    expect(repaired.listSessions(10, "2026-08-13T12:00:01.000Z")).toEqual([
+      expect.objectContaining({
+        ...identity,
+        activity: expect.objectContaining({
+          state: "needs_input",
+          requestCount: 1,
+        }),
+      }),
+    ]);
+    repaired.close();
+
+    const oldWriter = new Database(databasePath);
+    oldWriter
+      .prepare(
+        `
+        INSERT INTO sessions (
+          machine_id, harness, session_id, bridge_session_id, surface,
+          harness_version, project_json, capabilities_json, state,
+          last_event_type, last_seen_at, last_sequence, updated_at
+        ) VALUES (?, 'claude', ?, ?, 'cli', ?, ?, ?, 'active', NULL, ?, 0, ?)
+      `,
+      )
+      .run(
+        "machine_activity_legacy_12345678",
+        "session_activity_legacy_12345678",
+        "bridge_activity_legacy_12345678",
+        "frozen-test-version",
+        JSON.stringify(makeProjectRef("/synthetic/legacy-writer")),
+        JSON.stringify({
+          inlineContinue: true,
+          lateResume: true,
+          activeSteer: false,
+          permissionDecision: true,
+        }),
+        "2026-08-13T12:00:02.000Z",
+        "2026-08-13T12:00:02.000Z",
+      );
+    expect(
+      oldWriter
+        .prepare(
+          `
+          SELECT COUNT(*)
+          FROM session_activity
+          WHERE machine_id = 'machine_activity_legacy_12345678'
+            AND harness = 'claude'
+            AND session_id = 'session_activity_legacy_12345678'
+        `,
+        )
+        .pluck()
+        .get(),
+    ).toBe(1);
+    oldWriter.close();
+  });
+
   it("migrates schema ten to secret-digest MCP session bindings", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");
