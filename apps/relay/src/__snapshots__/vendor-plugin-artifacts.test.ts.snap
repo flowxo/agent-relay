@@ -1,0 +1,165 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed native inventory snapshot 1`] = `
+[
+  {
+    "artifacts": [
+      {
+        "mode": "600",
+        "path": ".codex-plugin/plugin.json",
+        "sha256": "ac686b1529678bbd74c955ffeee46c30d7efe8a25159359afc86fedf75e08b81",
+      },
+      {
+        "mode": "600",
+        "path": ".mcp.json",
+        "sha256": "2bb0a9353390842a2805321ad83ead322b9b8eca8154ac2092d02fa4c01b3009",
+      },
+      {
+        "mode": "600",
+        "path": "hooks/hooks.json",
+        "sha256": "b8b0c5ff85b3edefee3a59755ad8c2c9b3c02c82eeca04578d53c7dcce549ee7",
+      },
+      {
+        "mode": "600",
+        "path": "skills/agent-relay/SKILL.md",
+        "sha256": "aab9620b5d2fa5b14708e06d07aa54d5f2b2c4c06d536fdbae9b7f98c0c37080",
+      },
+      {
+        "mode": "600",
+        "path": "skills/agent-relay-connect/SKILL.md",
+        "sha256": "1e305a5024cb35d9f0f6bc6e03a8a96ed5a2b842390ed2b5d83e3d0447585303",
+      },
+      {
+        "mode": "600",
+        "path": "skills/agent-relay-doctor/SKILL.md",
+        "sha256": "3bb56d3a241b7bf0a06c0e6ab4bc7ffe01c8f49936d75a6e1a41bd6faf573134",
+      },
+      {
+        "mode": "600",
+        "path": "skills/agent-relay-dashboard/SKILL.md",
+        "sha256": "adab1105c5063379dbb364162e590b03ced8b6abf5576ff3b89acf7266dab9aa",
+      },
+      {
+        "mode": "700",
+        "path": "bin/agent-relay-plugin",
+        "sha256": "ba1be0adf8562811df08fef40563dde626c60e741e50d4bedc569efae3976937",
+      },
+      {
+        "mode": "600",
+        "path": "agent-relay.integration.json",
+        "sha256": "371488a2a1453fb40a8da56b9476448f92124eaeeb31acce61c593eb42244ac3",
+      },
+    ],
+    "harness": "codex",
+    "installLocation": ".agent-relay/vendor/codex-marketplace/plugins/agent-relay",
+    "nativeKind": "Codex plugin in an Agent Relay-owned local marketplace",
+    "verifiedVersion": "codex-cli 0.145.0",
+  },
+  {
+    "artifacts": [
+      {
+        "mode": "600",
+        "path": ".claude-plugin/plugin.json",
+        "sha256": "e1e2a3e0ec9eb55df1c59768b59a5ea048c2c3a3f6e1aa1395a5782f587413dd",
+      },
+      {
+        "mode": "600",
+        "path": ".mcp.json",
+        "sha256": "66e0dd2f3e50285e24e2eb292774f8bc7afc8392f6f6dbc03ae619828753fb78",
+      },
+      {
+        "mode": "600",
+        "path": "hooks/hooks.json",
+        "sha256": "4ae0bac36b230591fc4813d757d60ae50722870ce50fe6bf7c426ced97d4248f",
+      },
+      {
+        "mode": "600",
+        "path": "skills/agent-relay/SKILL.md",
+        "sha256": "4688bec8dc4a8d530ce22ea7b3602eeb176033eb841910cd25382d43bc9e9270",
+      },
+      {
+        "mode": "600",
+        "path": "commands/agent-relay-connect.md",
+        "sha256": "75a7a49d3bb7c6acbe73bab85f92abf35eb3fade79f0079173d4e3f6dc4caf6c",
+      },
+      {
+        "mode": "600",
+        "path": "commands/agent-relay-doctor.md",
+        "sha256": "caff988b649974a1b161bf4d5e11e1f1c96eb0062854fcb67a3e195f0049eb91",
+      },
+      {
+        "mode": "600",
+        "path": "commands/agent-relay-dashboard.md",
+        "sha256": "1089d4462a4ace21696eab41c8921f178be04a89d9bc1f5dbdcf82f392ba0359",
+      },
+      {
+        "mode": "700",
+        "path": "bin/agent-relay-plugin",
+        "sha256": "ba1be0adf8562811df08fef40563dde626c60e741e50d4bedc569efae3976937",
+      },
+      {
+        "mode": "600",
+        "path": "agent-relay.integration.json",
+        "sha256": "949cb618d6c48fe9f645aee73c6c136b7a7c8060fcae9e9d8bf5e7d628ed0be1",
+      },
+    ],
+    "harness": "claude",
+    "installLocation": ".agent-relay/vendor/claude/agent-relay",
+    "nativeKind": "Claude Code local plugin loaded with --plugin-dir",
+    "verifiedVersion": "2.1.219 (Claude Code)",
+  },
+  {
+    "artifacts": [
+      {
+        "mode": "600",
+        "path": ".cursor-plugin/plugin.json",
+        "sha256": "e1e2a3e0ec9eb55df1c59768b59a5ea048c2c3a3f6e1aa1395a5782f587413dd",
+      },
+      {
+        "mode": "600",
+        "path": "mcp.json",
+        "sha256": "c7e9fda4db7a1326eb3c89cd8c79a6194d635bec71743be36b0a0d72c1fd0c24",
+      },
+      {
+        "mode": "600",
+        "path": "hooks/hooks.json",
+        "sha256": "387fc483995e8281b8548323c640c17dd71d0990f8a9d8d4fb8e1dc3e4f9a537",
+      },
+      {
+        "mode": "600",
+        "path": "skills/agent-relay/SKILL.md",
+        "sha256": "52b893c404f29de01e4fdc93e95e167ff664f4c51e5c69cc8bbcb8a534025f48",
+      },
+      {
+        "mode": "600",
+        "path": "commands/agent-relay-connect.md",
+        "sha256": "75a7a49d3bb7c6acbe73bab85f92abf35eb3fade79f0079173d4e3f6dc4caf6c",
+      },
+      {
+        "mode": "600",
+        "path": "commands/agent-relay-doctor.md",
+        "sha256": "caff988b649974a1b161bf4d5e11e1f1c96eb0062854fcb67a3e195f0049eb91",
+      },
+      {
+        "mode": "600",
+        "path": "commands/agent-relay-dashboard.md",
+        "sha256": "1089d4462a4ace21696eab41c8921f178be04a89d9bc1f5dbdcf82f392ba0359",
+      },
+      {
+        "mode": "700",
+        "path": "bin/agent-relay-plugin",
+        "sha256": "ba1be0adf8562811df08fef40563dde626c60e741e50d4bedc569efae3976937",
+      },
+      {
+        "mode": "600",
+        "path": "agent-relay.integration.json",
+        "sha256": "df8e6c61ee7e437456260a486c1ca29dadfe75cf35dd003ac8355710a563d1f2",
+      },
+    ],
+    "harness": "cursor",
+    "installLocation": ".cursor/plugins/local/agent-relay",
+    "nativeKind": "Cursor local development plugin",
+    "verifiedVersion": "2026.07.23-e383d2b",
+  },
+]
+`;

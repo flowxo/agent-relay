@@ -122,7 +122,7 @@ describe("agent relay harness installer", () => {
     expect(JSON.stringify(claude)).toContain("startup|resume|clear|fork");
     expect((await stat(runtime.paths.launcherPath)).mode & 0o777).toBe(0o700);
     expect(await readJson(runtime.paths.manifestPath)).toMatchObject({
-      packageVersion: "0.1.0-alpha.2",
+      packageVersion: "0.1.0-alpha.3",
       skills: expect.arrayContaining([
         expect.objectContaining({
           harness: "codex",

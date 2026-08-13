@@ -1,0 +1,77 @@
+{
+  "schema": "agent-relay-vendor-compatibility.v1",
+  "reviewedAt": "2026-08-13",
+  "integrationVersion": "1.0.0",
+  "agentRelayRange": ">=0.1.0-alpha.2 <0.2.0-0",
+  "mcpSurface": "agent-relay-mcp.v1",
+  "mcpProtocol": "2025-11-25",
+  "skillContract": "agent-relay-skill-contract.v1@1.0.0",
+  "exactBinding": "Relay-supervisor-provided opaque binding only; no correlation heuristic",
+  "networkBoundary": "loopback-only",
+  "currentLocalObservations": [
+    {
+      "harness": "codex",
+      "version": "codex-cli 0.147.0",
+      "classification": "compatible-unverified",
+      "modelOrProviderTraffic": false
+    },
+    {
+      "harness": "claude",
+      "version": "2.1.231 (Claude Code)",
+      "classification": "compatible-unverified",
+      "modelOrProviderTraffic": false
+    },
+    {
+      "harness": "cursor",
+      "version": "2026.08.11-e8db854",
+      "classification": "compatible-unverified",
+      "modelOrProviderTraffic": false
+    }
+  ],
+  "harnesses": [
+    {
+      "harness": "codex",
+      "verifiedVersion": "codex-cli 0.145.0",
+      "exactVersionCommands": [
+        "codex --version",
+        "codex plugin --help",
+        "codex mcp --help"
+      ],
+      "nativeValidation": "exact 0.145.0 local marketplace add, plugin add, enabled list, plugin@marketplace removal, and marketplace removal passed in isolated homes",
+      "frozenActivityEvents": ["SessionStart", "UserPromptSubmit", "Stop"],
+      "localInstall": "Agent Relay-owned local marketplace plus native plugin action",
+      "otherVersionPolicy": "compatible-unverified"
+    },
+    {
+      "harness": "claude",
+      "verifiedVersion": "2.1.219 (Claude Code)",
+      "exactVersionCommands": [
+        "claude --version",
+        "claude plugin --help",
+        "claude mcp --help"
+      ],
+      "nativeValidation": "exact 2.1.219 plugin validate passed in an isolated home",
+      "frozenActivityEvents": [
+        "SessionStart",
+        "UserPromptSubmit",
+        "Stop",
+        "StopFailure"
+      ],
+      "localInstall": "official --plugin-dir local loading",
+      "otherVersionPolicy": "compatible-unverified"
+    },
+    {
+      "harness": "cursor",
+      "verifiedVersion": "2026.07.23-e383d2b",
+      "exactVersionCommands": [
+        "cursor-agent --version",
+        "cursor-agent plugin --help",
+        "cursor-agent --help"
+      ],
+      "nativeValidation": "exact frozen CLI accepted the documented --plugin-dir surface in an isolated home; no provider invocation was attempted",
+      "frozenActivityEvents": ["stop"],
+      "localInstall": "local plugin directory; frozen CLI loads with --plugin-dir",
+      "otherVersionPolicy": "compatible-unverified"
+    }
+  ]
+}

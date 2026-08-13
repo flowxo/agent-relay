@@ -35,12 +35,15 @@ describe("CLI help boundary", () => {
         "web-demo",
         "hook",
         "run",
+        "mcp",
         "status",
+        "dashboard",
         "drain",
         "replay-fallback",
         "maintain",
         "install",
         "uninstall",
+        "integrations",
         "doctor",
         "capabilities",
         "canary",
@@ -65,6 +68,37 @@ describe("CLI help boundary", () => {
         output.mockClear();
         await main([helpFlag]);
         expect(String(output.mock.calls[0]?.[0])).toContain("Usage:");
+        expect(existsSync(stateDirectory)).toBe(false);
+      }
+    } finally {
+      if (originalStateDirectory === undefined) {
+        delete process.env["AGENT_RELAY_STATE_DIR"];
+      } else {
+        process.env["AGENT_RELAY_STATE_DIR"] = originalStateDirectory;
+      }
+    }
+  });
+
+  it("rejects malformed integration lifecycle options before mutation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-relay-options-"));
+    temporaryDirectories.push(root);
+    const stateDirectory = join(root, "state");
+    const originalStateDirectory = process.env["AGENT_RELAY_STATE_DIR"];
+    process.env["AGENT_RELAY_STATE_DIR"] = stateDirectory;
+    try {
+      for (const args of [
+        ["integrations", "install", "--root"],
+        [
+          "integrations",
+          "install",
+          "--harness",
+          "codex",
+          "--harness",
+          "cursor",
+        ],
+        ["integrations", "repair", "--unknown"],
+      ]) {
+        await expect(main(args)).rejects.toThrow();
         expect(existsSync(stateDirectory)).toBe(false);
       }
     } finally {

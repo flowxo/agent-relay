@@ -179,4 +179,148 @@ describe("local MCP to durable Relay integration", () => {
     await once(httpServer, "close");
     store.close();
   });
+
+  it("keeps two concurrent sessions in one project bound to their exact MCP servers", async () => {
+    const store = new RelayStore();
+    const service = new RelayService(store, new FakeNotificationTransport(), {
+      now: () => new Date(now),
+    });
+    const sharedProject = {
+      displayName: "same-synthetic-project",
+      cwdHash: `sha256:${"b".repeat(64)}`,
+    };
+    const sessions = [
+      {
+        token: `mcpbind_${"A".repeat(43)}`,
+        bridgeSessionId: "bridge_concurrent_alpha_12345678",
+        sessionId: "session_concurrent_alpha_12345678",
+        requestId: "request_concurrent_alpha_12345678",
+      },
+      {
+        token: `mcpbind_${"B".repeat(43)}`,
+        bridgeSessionId: "bridge_concurrent_beta_12345678",
+        sessionId: "session_concurrent_beta_12345678",
+        requestId: "request_concurrent_beta_12345678",
+      },
+    ] as const;
+    for (const session of sessions) {
+      store.registerSession({
+        schema: "agent-session.v1",
+        machineId,
+        bridgeSessionId: session.bridgeSessionId,
+        harness: "codex",
+        surface: "cli",
+        harnessVersion: "codex-cli 0.145.0",
+        sessionId: session.sessionId,
+        project: sharedProject,
+        capabilities: {
+          inlineContinue: true,
+          lateResume: true,
+          activeSteer: false,
+          permissionDecision: false,
+        },
+        registeredAt: now,
+      });
+    }
+    const httpServer = createRelayHttpServer(service);
+    httpServer.listen(0, "127.0.0.1");
+    await once(httpServer, "listening");
+    const address = httpServer.address() as AddressInfo;
+    const client = new RelayClient({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+    });
+    for (const session of sessions) {
+      await client.registerMcpBinding(session.token, {
+        machineId,
+        bridgeSessionId: session.bridgeSessionId,
+        harness: "codex",
+      });
+      await client.claimMcpBinding(session.token, {
+        machineId,
+        bridgeSessionId: session.bridgeSessionId,
+        harness: "codex",
+        sessionId: session.sessionId,
+      });
+    }
+    const servers = sessions.map(
+      (session) =>
+        new RelayMcpServer({
+          bindingToken: session.token,
+          machineId,
+          bridgeSessionId: session.bridgeSessionId,
+          harness: "codex",
+          client,
+        }),
+    );
+    const concurrentResults = await Promise.all(
+      sessions.map((session, index) =>
+        servers[index]?.handle({
+          jsonrpc: "2.0",
+          id: index + 1,
+          method: "tools/call",
+          params: {
+            name: "relay_ask",
+            arguments: {
+              schema: "agent-relay-mcp-ask.v1",
+              requestId: session.requestId,
+              title: `Concurrent choice ${String(index + 1)}`,
+              question: {
+                questionId: `question_concurrent_${String(index)}_12345678`,
+                kind: "confirm",
+                prompt: "Confirm this exact synthetic session.",
+                confirm: {
+                  optionId: `option_concurrent_confirm_${String(index)}_12345678`,
+                  label: "Confirm",
+                },
+                decline: {
+                  optionId: `option_concurrent_decline_${String(index)}_12345678`,
+                  label: "Decline",
+                },
+              },
+              expiresInMs: 60_000,
+              waitTimeoutMs: 0,
+            },
+          },
+        }),
+      ),
+    );
+    for (const [index, session] of sessions.entries()) {
+      expect(concurrentResults[index]).toMatchObject({
+        result: {
+          structuredContent: {
+            code: "answer-timeout",
+            requestId: session.requestId,
+          },
+        },
+      });
+      expect(
+        store.getSessionActivity(
+          { machineId, harness: "codex", sessionId: session.sessionId },
+          now,
+        ),
+      ).toMatchObject({ state: "needs_input", requestCount: 1 });
+    }
+    await expect(
+      servers[0]?.handle({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "relay_cancel",
+          arguments: {
+            schema: "agent-relay-mcp-cancel.v1",
+            requestId: sessions[1].requestId,
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      result: { structuredContent: { code: "request-not-owned" } },
+    });
+    expect(store.getPendingRequest(sessions[0].requestId)?.state).toBe("open");
+    expect(store.getPendingRequest(sessions[1].requestId)?.state).toBe("open");
+
+    httpServer.close();
+    await once(httpServer, "close");
+    store.close();
+  });
 });

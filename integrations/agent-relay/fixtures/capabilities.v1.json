@@ -1,0 +1,61 @@
+{
+  "schema": "agent-relay-vendor-capabilities.v1",
+  "reviewedAt": "2026-08-13",
+  "harnesses": [
+    {
+      "harness": "codex",
+      "nativeKind": "Codex plugin",
+      "manifest": ".codex-plugin/plugin.json",
+      "mcpDeclaration": ".mcp.json",
+      "hooks": "hooks/hooks.json",
+      "skillsOrInstructions": "skills/*/SKILL.md",
+      "commands": "auxiliary skills; no separate command file claim",
+      "settings": "native plugin enablement and MCP policy",
+      "updateChannel": "native local marketplace refresh plus Agent Relay lifecycle upgrade",
+      "disable": "native plugin removal or Agent Relay lifecycle disable",
+      "uninstall": "native plugin removal followed by Agent Relay-owned bundle cleanup",
+      "officialSources": [
+        "https://developers.openai.com/codex/plugins",
+        "https://developers.openai.com/codex/mcp",
+        "https://developers.openai.com/codex/hooks",
+        "https://developers.openai.com/codex/skills"
+      ]
+    },
+    {
+      "harness": "claude",
+      "nativeKind": "Claude Code local plugin",
+      "manifest": ".claude-plugin/plugin.json",
+      "mcpDeclaration": ".mcp.json",
+      "hooks": "hooks/hooks.json",
+      "skillsOrInstructions": "skills/*/SKILL.md",
+      "commands": "commands/*.md",
+      "settings": "native hook trust; no settings rewrite",
+      "updateChannel": "Agent Relay lifecycle upgrade; marketplace update when separately published",
+      "disable": "Agent Relay lifecycle disable and omit --plugin-dir",
+      "uninstall": "Agent Relay lifecycle uninstall",
+      "officialSources": [
+        "https://code.claude.com/docs/en/plugins-reference",
+        "https://code.claude.com/docs/en/mcp",
+        "https://code.claude.com/docs/en/hooks",
+        "https://code.claude.com/docs/en/skills"
+      ]
+    },
+    {
+      "harness": "cursor",
+      "nativeKind": "Cursor local plugin",
+      "manifest": ".cursor-plugin/plugin.json",
+      "mcpDeclaration": "mcp.json",
+      "hooks": "hooks/hooks.json",
+      "skillsOrInstructions": "skills/*/SKILL.md",
+      "commands": "commands/*.md",
+      "settings": "native plugin enablement and hook trust",
+      "updateChannel": "Agent Relay lifecycle upgrade; marketplace update when separately published",
+      "disable": "Agent Relay lifecycle disable; marketplace UI for published plugins",
+      "uninstall": "Agent Relay lifecycle uninstall; marketplace UI for published plugins",
+      "officialSources": [
+        "https://cursor.com/docs/plugins",
+        "https://cursor.com/docs/reference/plugins"
+      ]
+    }
+  ]
+}

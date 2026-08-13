@@ -29,6 +29,7 @@ import {
 import { runtimeDependencyGraph } from "./lib/release-bundle.mjs";
 
 const root = resolve(import.meta.dirname, "..");
+const frozenSkillVersionRange = ">=0.1.0-alpha.2 <0.2.0-0";
 const release = JSON.parse(
   await readFile(resolve(root, "packaging/release.json"), "utf8"),
 );
@@ -712,9 +713,9 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     assert(
       mismatchDoctor.checks.some(
         (check) =>
-          check.name === "codex-skill-version" && check.level === "fail",
+          check.name === "codex-skill-version" && check.level === "pass",
       ),
-      "doctor did not identify stale skill compatibility metadata",
+      "doctor did not preserve the frozen skill contract across a compatible Agent Relay upgrade",
     );
     assert(
       mismatchDoctor.checks.some(
@@ -766,7 +767,7 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
         repairedContent.includes(
           "<!-- agent-relay-owner: agent-relay-skill-contract.v1 -->",
         ) &&
-          repairedContent.includes(`>=${release.version} <0.2.0-0`) &&
+          repairedContent.includes(frozenSkillVersionRange) &&
           !repairedContent.includes("PRIVATE-PROMPT-DRIFT"),
         "upgrade did not deterministically repair an official skill",
       );

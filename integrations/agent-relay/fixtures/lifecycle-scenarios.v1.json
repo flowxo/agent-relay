@@ -1,0 +1,89 @@
+{
+  "schema": "agent-relay-vendor-lifecycle-scenarios.v1",
+  "scenarios": [
+    {
+      "id": "fresh-install-repeat",
+      "setup": "empty isolated vendor home",
+      "operations": ["install", "install"],
+      "expected": "second operation is a no-op"
+    },
+    {
+      "id": "drift-repair",
+      "setup": "one owned command artifact changed",
+      "operations": ["status", "repair"],
+      "expected": "drift is reported and only the owned bundle is restored"
+    },
+    {
+      "id": "disable-reenable",
+      "setup": "healthy owned bundles",
+      "operations": ["disable", "enable"],
+      "expected": "native discovery is removed and restored without user configuration mutation"
+    },
+    {
+      "id": "interrupted-update",
+      "setup": "synthetic failure after two owned artifact writes",
+      "operations": ["reinstall"],
+      "expected": "all selected bundle trees and lifecycle metadata roll back"
+    },
+    {
+      "id": "manual-duplicate",
+      "setup": "manual Agent Relay MCP declaration",
+      "operations": ["install"],
+      "expected": "preflight conflict with actionable remediation and no mutation"
+    },
+    {
+      "id": "denied-hook",
+      "setup": "native hook trust denied",
+      "operations": ["doctor"],
+      "expected": "warning preserves the native trust path and does not bypass denial"
+    },
+    {
+      "id": "upgrade-rollback",
+      "setup": "healthy owned bundle with one bounded prior snapshot",
+      "operations": ["upgrade", "rollback", "repair"],
+      "expected": "rollback restores the exact prior owned inventory and incompatible prior contract metadata is reported"
+    },
+    {
+      "id": "disable-repeat-install",
+      "setup": "healthy bundles moved outside native discovery",
+      "operations": ["disable", "disable", "install"],
+      "expected": "disabled state is idempotent and install does not silently re-enable it"
+    },
+    {
+      "id": "missing-capability",
+      "setup": "recognizable harness executable is unavailable",
+      "operations": ["install", "doctor"],
+      "expected": "bundle remains locally installable and capability is explicitly unavailable without fallback authorization"
+    },
+    {
+      "id": "incompatible-version",
+      "setup": "observed harness version is classified unsupported",
+      "operations": ["doctor"],
+      "expected": "compatibility fails with supported-version remediation and no configuration contents"
+    },
+    {
+      "id": "malformed-config",
+      "setup": "vendor-owned configuration cannot be parsed",
+      "operations": ["install"],
+      "expected": "preflight stops before mutation and preserves malformed bytes"
+    },
+    {
+      "id": "duplicate-owned-trees",
+      "setup": "both active and disabled owned trees exist",
+      "operations": ["status", "repair"],
+      "expected": "status reports drift and repair refuses ambiguous ownership"
+    },
+    {
+      "id": "uninstall-preservation",
+      "setup": "owned integrations coexist with unrelated plugins, MCP servers, hooks, skills, settings, and formatting",
+      "operations": ["uninstall"],
+      "expected": "only Agent Relay-owned lifecycle material is removed"
+    },
+    {
+      "id": "same-project-exact-binding",
+      "setup": "two concurrent sessions share one synthetic project identity",
+      "operations": ["relay_ask", "cross-session relay_cancel"],
+      "expected": "each MCP server owns only its supervisor-bound session and cross-session cancellation fails closed"
+    }
+  ]
+}

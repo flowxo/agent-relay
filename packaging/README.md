@@ -5,18 +5,16 @@ Claude Code, and Cursor sessions. This package contains the supported
 `agent-relay` command-line application; it does not expose a public JavaScript
 library API.
 
-> This is the unpublished `0.1.0-alpha.2` correction candidate. FXO-1574
-> approved one bounded future FXO-1164 publication with the exact bundled
-> WhooshBang MIT licenses/notices and named non-blocking residuals. The staged
-> artifact is registry-eligible; the workspace root remains private to prevent
-> accidental publication.
+> This is the unpublished `0.1.0-alpha.3` candidate. Publication is explicitly
+> blocked. The prior alpha.2 authorization was consumed and does not authorize
+> this version, package, tag, release, registry, production, live-provider, or
+> workspace action. The workspace root remains private to prevent accidental
+> publication.
 
-The immutable `v0.1.0-alpha.1` tag exposed a one-byte cross-platform gzip-header
-digest mismatch before npm or GitHub release publication. It and its
-attestations remain preserved failed-publication evidence. Consult the release
-manifest for the alpha.2 build-time tag state. No alpha.2 tag or publication is
-claimed by this source text. FXO-1164 may create and publish only the exact
-post-merge candidate and regenerated digests recorded in FXO-1574.
+The immutable alpha.1 failed-publication evidence and published alpha.2 tag,
+package, release, and attestations remain unchanged. Consult the public release
+boundary for those historical records. No alpha.3 tag or publication is created
+or authorized by this source text.
 
 ## Supported target
 
@@ -174,27 +172,29 @@ current frozen source after FXO-1161 is PR #41 merge
 freezes the exact commits and SHA-256 values. No live authorization carries
 forward.
 
-Before changing user-level harness configuration, inspect the exact plan:
+The recommended vendor-native lifecycle does not rewrite user-level harness
+configuration. Inspect the exact plan:
 
 ```sh
-agent-relay install --dry-run
-agent-relay install
+agent-relay integrations install --dry-run
+agent-relay integrations install
 agent-relay doctor
 ```
 
-Install also renders the reviewed `agent-relay` skill at the standard user skill
-location for Codex, Claude Code, and Cursor. It teaches agents to use only the
-exact `agent-relay-mcp.v1` surface for bounded product or workflow questions and
-to preserve every native permission and authorization path. Doctor reports skill
-presence, compatibility, and deterministic drift without dumping its contents.
-Other skills, instruction files, MCP servers, hooks, and settings are preserved.
+Install renders a Codex plugin, Claude Code plugin, and Cursor local plugin.
+Each contains the reviewed `agent-relay` skill, exact `agent-relay-mcp.v1` local
+stdio declaration, frozen activity hooks, and bounded core-delegating entry
+points. Doctor reports ownership, compatibility, enablement, conflicts, and
+drift without dumping contents. Complete the harness-native activation and trust
+step from the source documentation. Other plugins, skills, instruction files,
+MCP servers, hooks, commands, settings, and formatting are preserved.
 
-Uninstall owned hooks, official skills, and the launcher before removing the
-package:
+Remove any native installed snapshot first, then uninstall owned bundles and the
+launcher before removing the package:
 
 ```sh
-agent-relay uninstall --dry-run
-agent-relay uninstall
+agent-relay integrations uninstall --dry-run
+agent-relay integrations uninstall
 ```
 
 Uninstall preserves local state, logs, credentials, backups, unrelated skills

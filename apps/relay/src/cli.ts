@@ -50,7 +50,7 @@ import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
-import { runRelayMcpServer } from "./mcp-server.js";
+import { assertLocalMcpDaemonUrl, runRelayMcpServer } from "./mcp-server.js";
 import {
   WHOOSHBANG_COMMAND_USAGE,
   runWhooshBangCommand,
@@ -61,6 +61,7 @@ import {
   readWhooshBangConnection,
 } from "./whooshbang-config.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
+import { runVendorIntegrationLifecycle } from "./vendor-integration-lifecycle.js";
 import {
   RUNNER_BRIDGE_COMMAND_USAGE,
   runRunnerBridgeCommand,
@@ -97,11 +98,13 @@ Commands:
   mcp                Serve typed operator interactions over local stdio MCP
   run <harness>      Supervise a harness CLI process
   status             Show daemon and delivery status
+  dashboard          Print the canonical loopback dashboard entry point
   drain              Deliver queued events
   replay-fallback    Replay the hook fallback spool
   maintain           Apply retention policy
   install            Install or reconcile user-level hooks and official skills
   uninstall          Remove only Agent Relay-owned hooks, skills, and launcher
+  integrations       Manage vendor-native plugins; use integrations --help
   doctor             Diagnose installation; --live checks WhooshBang evidence
   capabilities       Print the generated harness capability registry
   canary             Prove the local fake-transport delivery loop
@@ -127,6 +130,50 @@ function environment(name: string): string | undefined {
 function flag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index === -1 ? undefined : args[index + 1];
+}
+
+function integrationFlags(args: string[]): {
+  root?: string;
+  harness?: string;
+  node?: string;
+  entry?: string;
+  dryRun: boolean;
+} {
+  const values: Record<string, string> = {};
+  let dryRun = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--dry-run") {
+      if (dryRun) throw new Error("--dry-run may be provided only once");
+      dryRun = true;
+      continue;
+    }
+    if (
+      !["--root", "--harness", "--node", "--entry"].includes(argument ?? "")
+    ) {
+      throw new Error(`unknown integrations option: ${argument ?? ""}`);
+    }
+    if (values[argument ?? ""] !== undefined) {
+      throw new Error(
+        `${argument ?? "integration option"} may be provided only once`,
+      );
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith("-")) {
+      throw new Error(`${argument ?? "integration option"} requires a value`);
+    }
+    values[argument ?? ""] = value;
+    index += 1;
+  }
+  return {
+    ...(values["--root"] === undefined ? {} : { root: values["--root"] }),
+    ...(values["--harness"] === undefined
+      ? {}
+      : { harness: values["--harness"] }),
+    ...(values["--node"] === undefined ? {} : { node: values["--node"] }),
+    ...(values["--entry"] === undefined ? {} : { entry: values["--entry"] }),
+    dryRun,
+  };
 }
 
 async function readStdin(limit = 256 * 1024): Promise<string> {
@@ -795,6 +842,66 @@ export async function main(
     return;
   }
 
+  if (command === "integrations") {
+    const operation = args[0] ?? "status";
+    if (
+      ![
+        "install",
+        "reinstall",
+        "upgrade",
+        "repair",
+        "disable",
+        "enable",
+        "rollback",
+        "uninstall",
+        "status",
+      ].includes(operation)
+    ) {
+      throw new Error(
+        "integrations operation must be install, reinstall, upgrade, repair, disable, enable, rollback, uninstall, or status",
+      );
+    }
+    const parsed = integrationFlags(args.slice(1));
+    const selectedHarness = parsed.harness;
+    const harnesses =
+      selectedHarness === undefined
+        ? undefined
+        : [HarnessSchema.parse(selectedHarness)];
+    const observations = observeHarnessVersions();
+    const versions = Object.fromEntries(
+      observations
+        .filter((observation) => observation.version !== undefined)
+        .map((observation) => [observation.harness, observation.version]),
+    );
+    const classifications = Object.fromEntries(
+      observations.map((observation) => [
+        observation.harness,
+        observation.classification,
+      ]),
+    );
+    output(
+      await runVendorIntegrationLifecycle(
+        operation as Parameters<typeof runVendorIntegrationLifecycle>[0],
+        {
+          rootDir: resolve(parsed.root ?? homedir()),
+          entryPath:
+            parsed.entry === undefined
+              ? installEntryPath([])
+              : realpathSync(resolve(parsed.entry)),
+          packageVersion: AGENT_RELAY_VERSION,
+          ...(parsed.node === undefined
+            ? {}
+            : { nodePath: resolve(parsed.node) }),
+          ...(harnesses === undefined ? {} : { harnesses }),
+          harnessVersions: versions,
+          harnessClassifications: classifications,
+          dryRun: parsed.dryRun,
+        },
+      ),
+    );
+    return;
+  }
+
   if (command === "install") {
     const cursorSurface = flag(args, "--cursor-surface") ?? "ide";
     if (cursorSurface !== "cli" && cursorSurface !== "ide") {
@@ -918,6 +1025,18 @@ export async function main(
   }
 
   const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+  if (command === "dashboard") {
+    const daemonUrl = assertLocalMcpDaemonUrl(
+      environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
+    );
+    output({
+      schema: "agent-relay-dashboard-entry.v1",
+      url: `${daemonUrl}/ui/`,
+      networking: "loopback-only",
+      instruction: "Start the Agent Relay daemon, then open this local URL.",
+    });
+    return;
+  }
   const client = new RelayClient({
     baseUrl: environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
     ...(daemonToken === undefined ? {} : { token: daemonToken }),

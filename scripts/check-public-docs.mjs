@@ -306,17 +306,15 @@ for (const pattern of [
 
 const releaseNotes = await text("packaging/release-notes.md");
 for (const pattern of [
-  /FXO-1574[\s\S]*approved one bounded[\s\S]*FXO-1164[\s\S]*publication/,
-  /manifest's[\s\S]*build-time[\s\S]*`tagStatus`/,
+  /alpha\.3 publication is blocked/i,
+  /FXO-1574[\s\S]*approved one bounded[\s\S]*FXO-1164[\s\S]*publication[\s\S]*alpha\.2/,
+  /immutable published version cannot be[\s\S]*reused/,
   /Start here/,
   /Configuration, installer, schema, and privacy changes/,
   /Upgrade and rollback/,
   /Known limitations and publication gates/,
   /Exact artifact and provenance boundary/,
-  /native release-exit is \*\*not green\*\*/i,
-  /contains none of PR #40, PR #41, or PR #42/,
-  /interactive 2FA bootstrap/,
-  /no token is retained/,
+  /does not authorize publication/,
 ]) {
   requireText(
     releaseNotes,

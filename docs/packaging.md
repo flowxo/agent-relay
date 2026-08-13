@@ -1,22 +1,22 @@
 # Package identity and artifact boundary
 
-Agent Relay has one published end-user package:
+Agent Relay has one current unpublished package candidate:
 
 - **name:** `@flowxo/agent-relay`
-- **version:** `0.1.0-alpha.2`
+- **version:** `0.1.0-alpha.3`
 - **public surface:** the `agent-relay` executable
 - **supported target:** macOS on Apple silicon, Node.js 22 or newer
-- **publication state:** published and immutable on npm `alpha`; the public
-  GitHub record is a prerelease
+- **publication state:** blocked; published alpha.2 remains immutable on npm and
+  in its GitHub prerelease
 
 The scoped name avoids the unrelated unscoped `agent-relay` package already on
 npm. FXO-1568 confirms owner control of the Flow XO scope and exact package
 name. Building, packing, or testing the repository still does not publish it.
 `packaging/release.json` is the reviewed identity/runtime metadata used by the
-staging and verification scripts. Its publication approval is true and its
-registry action is `publish`, so the staged artifact is registry-eligible; the
-workspace root stays private to prevent accidental publication. FXO-1164's
-bounded alpha.2 authorization is consumed; any later version or registry
+staging and verification scripts. Its publication approval is false and its
+registry action is `blocked`, so the staged artifact remains private; the
+workspace root also stays private to prevent accidental publication. FXO-1164's
+bounded alpha.2 authorization is consumed; alpha.3 or any later registry
 mutation requires renewed approval and must use OIDC.
 
 ## Why one package
@@ -157,17 +157,17 @@ and sibling checkouts are rejected by the existing contract and package gates.
 Unsupported operating systems report a runtime skip, while content and
 exact-contract gates remain mandatory.
 
-The lifecycle check derives a sanitized `0.1.0-alpha.1` prior-package fixture
+The lifecycle check derives a sanitized `0.1.0-alpha.2` prior-package fixture
 from the exact current artifact, installs it with scripts disabled, records a
 durable answered request, and upgrades the same isolated prefix to
-`0.1.0-alpha.2`. It requires doctor to expose the stale package/entry mismatch
+`0.1.0-alpha.3`. It requires doctor to expose the stale package/entry mismatch
 before reconciliation, then proves:
 
 - install dry runs do not mutate configuration;
 - an install followed by a repeat install is idempotent;
 - SQLite migrates the retained prior fixture from schema `5` to the current
-  schema `10`, preserving answers and durable delivery state;
-- a schema newer than `10` (the lifecycle proof uses `11`) is refused without
+  schema `11`, preserving answers and durable delivery state;
+- a schema newer than `11` (the lifecycle proof uses `12`) is refused without
   modification;
 - the answer, web credential, diagnostic log, explicit retained files, and
   installer backups survive;
@@ -179,8 +179,8 @@ before reconciliation, then proves:
 To create a disposable tarball for manual review:
 
 ```sh
-pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.2.tgz
-tar -tzf .artifacts/agent-relay-0.1.0-alpha.2.tgz
+pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.3.tgz
+tar -tzf .artifacts/agent-relay-0.1.0-alpha.3.tgz
 ```
 
 `.artifacts/` is generated and gitignored. Never put credentials, activation

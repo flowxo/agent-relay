@@ -109,24 +109,27 @@ hostnames, raw paths, private identifiers, or live-provider data.
 
 ### 2. Inspect, install, and diagnose
 
-Inspect the complete user-level change before applying it, then diagnose the
+Inspect the complete vendor-native change before applying it, then diagnose the
 result:
 
 ```sh
-node apps/relay/dist/cli.js install --dry-run
-node apps/relay/dist/cli.js install
+node apps/relay/dist/cli.js integrations install --dry-run
+node apps/relay/dist/cli.js integrations install
 node apps/relay/dist/cli.js doctor
 ```
 
-The installer preserves unrelated settings, makes private backups, and owns only
-the entries it adds. It may update `~/.codex/hooks.json`,
-`~/.claude/settings.json`, and `~/.cursor/hooks.json`, and creates the launcher
-at `~/.agent-relay/bin/agent-relay`. It also installs the reviewed Agent Relay
-skill into `~/.agents/skills/agent-relay`, `~/.claude/skills/agent-relay`, and
-`~/.cursor/skills/agent-relay`. Keep this source checkout in place while those
-hooks and skills are installed; the launcher points to the exact build you
-inspected. See the [official skill contract](docs/agent-relay-skills.md) for
-tool-selection, native-permission, privacy, and fallback boundaries.
+The lifecycle installs a Codex plugin, Claude Code plugin, and Cursor local
+plugin without rewriting vendor settings. It preflights manual or legacy Agent
+Relay components, detects duplicates and drift, and owns only its bundle trees
+and launcher. Complete each harness's documented native activation and trust
+step, then start a new session. See the
+[vendor-native integration guide](docs/vendor-integrations.md) and
+[official skill contract](docs/agent-relay-skills.md). The prior direct-hook
+`install` command remains available for an existing legacy installation but must
+not coexist with the plugins. That legacy path may edit `~/.codex/hooks.json`,
+`~/.claude/settings.json`, and `~/.cursor/hooks.json`; inspect
+`install --dry-run` and migrate or uninstall those owned entries before using
+vendor-native bundles.
 
 ### 3. Prove the local loop
 
@@ -184,9 +187,10 @@ need proven process exits or supported late CLI resume.
 ### 6. Reconcile an upgrade
 
 Stop Relay processes, install the newer reviewed source or artifact, run
-`doctor`, inspect `install --dry-run`, apply `install` twice, and require the
-second result to be unchanged. Then run `doctor` and the fake canary before
-reselecting a live transport. SQLite migrations are forward-only; read the
+`doctor`, inspect `integrations upgrade --dry-run`, apply `integrations upgrade`
+and then `integrations install`, and require the latter result to be unchanged.
+Then run `doctor` and the fake canary before reselecting a live transport.
+SQLite migrations are forward-only; read the
 [upgrade and rollback procedure](docs/install-upgrade-uninstall.md#reconcile-an-upgrade)
 and
 [candidate rollback boundary](docs/install-upgrade-uninstall.md#roll-back-a-candidate)
@@ -194,16 +198,17 @@ before crossing a schema boundary.
 
 ### 7. Uninstall owned integration
 
-Remove owned hooks, official skills, and the launcher before removing the
-package or source:
+First remove any harness-native installed snapshot or marketplace reference as
+described in the per-harness guide. Then remove the owned source bundles and
+launcher before removing the package or source:
 
 ```sh
-node apps/relay/dist/cli.js uninstall --dry-run
-node apps/relay/dist/cli.js uninstall
+node apps/relay/dist/cli.js integrations uninstall --dry-run
+node apps/relay/dist/cli.js integrations uninstall
 ```
 
-Uninstall preserves unrelated hooks and skills, adjacent instruction files,
-local state, transport configuration, private backups, and provider-side
+Uninstall preserves unrelated plugins, MCP servers, hooks, commands, skills,
+settings and formatting, local state, transport configuration, and provider-side
 records.
 
 ### 8. Optionally erase retained data
@@ -582,6 +587,7 @@ for the part you are changing:
 - [Experimental runner bridge](docs/runner-bridge.md)
 - [Troubleshooting and doctor](docs/troubleshooting.md)
 - [Official Agent Relay skills](docs/agent-relay-skills.md)
+- [Vendor-native integrations](docs/vendor-integrations.md)
 
 Project history and implementation evidence live in the
 [implementation brief](docs/implementation-brief.md),
