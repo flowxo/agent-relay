@@ -8,6 +8,13 @@ breaking changes and required operator action.
 
 ### Added
 
+- Ship one versioned `agent-relay-skill-contract.v1` and deterministic official
+  Codex, Claude Code, and Cursor skills for the exact `agent-relay-mcp.v1`
+  surface. The owned installer now supports idempotent install/update/repair and
+  preservation-safe removal; doctor reports artifact presence, compatibility,
+  and drift; sanitized synthetic evaluations cover selection, question shape,
+  failure fallback, activity uncertainty, permission boundaries, and adversarial
+  instructions without provider traffic.
 - Add the versioned local `agent-relay-mcp.v1` stdio server with four typed
   operator tools, exact secret-handshake binding to one supervised native
   session, schema-11 digest-only binding persistence, bounded waits and typed

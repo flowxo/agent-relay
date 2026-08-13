@@ -202,10 +202,11 @@ Then remove `@flowxo/agent-relay` with the package manager that owns its
 retained prefix. Package-manager removal alone cannot safely edit harness
 configuration.
 
-Uninstall removes only the marked hook entries, launcher, and install manifest.
-It deliberately retains SQLite, the web credential, diagnostics, and backups.
-Follow [optional erasure](install-upgrade-uninstall.md#optional-erasure) only
-after inspecting those retained files.
+Uninstall removes only the marked hook entries and official skill files,
+launcher, and install manifest. It deliberately retains SQLite, the web
+credential, diagnostics, and backups. Follow
+[optional erasure](install-upgrade-uninstall.md#optional-erasure) only after
+inspecting those retained files.
 
 ## Non-implementer walkthrough
 

@@ -121,8 +121,12 @@ node apps/relay/dist/cli.js doctor
 The installer preserves unrelated settings, makes private backups, and owns only
 the entries it adds. It may update `~/.codex/hooks.json`,
 `~/.claude/settings.json`, and `~/.cursor/hooks.json`, and creates the launcher
-at `~/.agent-relay/bin/agent-relay`. Keep this source checkout in place while
-those hooks are installed; the launcher points to the exact build you inspected.
+at `~/.agent-relay/bin/agent-relay`. It also installs the reviewed Agent Relay
+skill into `~/.agents/skills/agent-relay`, `~/.claude/skills/agent-relay`, and
+`~/.cursor/skills/agent-relay`. Keep this source checkout in place while those
+hooks and skills are installed; the launcher points to the exact build you
+inspected. See the [official skill contract](docs/agent-relay-skills.md) for
+tool-selection, native-permission, privacy, and fallback boundaries.
 
 ### 3. Prove the local loop
 
@@ -171,6 +175,8 @@ WhooshBang or other hosted Agent Relay account to use direct Telegram.
 
 Review newly installed hooks in each harness. In Codex, use `/hooks` and trust
 the exact Agent Relay entry. Claude Code and Cursor have their own hook views.
+The installed official skill teaches all three harnesses when to use the frozen
+Relay MCP surface and when to keep a question on the native permission path.
 Then start Codex, Claude Code, or Cursor normally. Use the optional
 [`agent-relay run`](#supervise-a-cli-when-exits-matter) supervisor only when you
 need proven process exits or supported late CLI resume.
@@ -188,15 +194,17 @@ before crossing a schema boundary.
 
 ### 7. Uninstall owned integration
 
-Remove owned hooks and the launcher before removing the package or source:
+Remove owned hooks, official skills, and the launcher before removing the
+package or source:
 
 ```sh
 node apps/relay/dist/cli.js uninstall --dry-run
 node apps/relay/dist/cli.js uninstall
 ```
 
-Uninstall preserves unrelated hooks, local state, transport configuration,
-private backups, and provider-side records.
+Uninstall preserves unrelated hooks and skills, adjacent instruction files,
+local state, transport configuration, private backups, and provider-side
+records.
 
 ### 8. Optionally erase retained data
 
@@ -521,16 +529,18 @@ Agent Relay sends no product analytics or remote crash reports. Local state,
 outbound fields, retention, and erasure are documented in
 [PRIVACY.md](PRIVACY.md).
 
-To remove the installed hooks and launcher while preserving local data:
+To remove the installed hooks, official skills, and launcher while preserving
+local data:
 
 ```sh
 node apps/relay/dist/cli.js uninstall --dry-run
 node apps/relay/dist/cli.js uninstall
 ```
 
-Uninstall removes only Agent Relay-owned hook entries, its launcher, and its
-manifest. Read the [installation guide](docs/install-upgrade-uninstall.md)
-before erasing the retained state directory or provider data.
+Uninstall removes only Agent Relay-owned hook entries and skill files, its
+launcher, and its manifest. Read the
+[installation guide](docs/install-upgrade-uninstall.md) before erasing the
+retained state directory or provider data.
 
 Never post tokens, transcripts, databases, raw logs, account identifiers, or
 machine-specific paths in an issue. Private vulnerability reporting is
@@ -571,6 +581,7 @@ for the part you are changing:
 - [Hosted WhooshBang boundary](docs/hosted-whooshbang.md)
 - [Experimental runner bridge](docs/runner-bridge.md)
 - [Troubleshooting and doctor](docs/troubleshooting.md)
+- [Official Agent Relay skills](docs/agent-relay-skills.md)
 
 Project history and implementation evidence live in the
 [implementation brief](docs/implementation-brief.md),

@@ -172,7 +172,8 @@ before reconciliation, then proves:
 - the answer, web credential, diagnostic log, explicit retained files, and
   installer backups survive;
 - unrelated Codex, Claude, and Cursor configuration survives;
-- uninstall removes only the owned launcher, manifest, and hook entries; and
+- uninstall removes only the owned launcher, manifest, hook entries, and
+  official skill files; and
 - package-manager removal happens last and leaves no owned hook.
 
 To create a disposable tarball for manual review:

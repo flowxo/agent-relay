@@ -183,7 +183,7 @@ test "$(stat -f '%Lp' .env.activation)" = 600
 git check-ignore -q .env.activation
 ```
 
-## 4. Install the user-level hooks
+## 4. Install the user-level hooks and official skills
 
 Build first, inspect the intended changes, then install:
 
@@ -198,9 +198,17 @@ The installer:
 
 - writes an exact-path launcher under `~/.agent-relay/bin`;
 - minimally patches the Codex, Claude Code, and Cursor user hook files;
+- renders one reviewed Agent Relay skill for Codex, Claude Code, and Cursor;
 - creates private timestamped backups before changing existing configuration;
-- preserves unrelated hooks and settings; and
+- preserves unrelated hooks, skills, instruction files, MCP servers, and
+  settings; and
 - records an ownership manifest for safe upgrades and uninstall.
+
+The skills select Relay only for bounded operator-mediated product or workflow
+questions that benefit from remote or asynchronous response. Native permission,
+authorization, credential, privilege, security, and destructive-action prompts
+remain on each harness's native path. See the
+[official skill contract](agent-relay-skills.md).
 
 Codex and Claude Code installs include `SessionStart` and `UserPromptSubmit` in
 addition to their attention hooks. Agent Relay uses those events only to show a
@@ -214,9 +222,10 @@ exposes `/hooks`; Claude Code and Cursor expose their corresponding hook
 configuration views.
 
 `doctor` must report a healthy launcher, SQLite spool, runtime-validated
-compatibility registry, expected hook counts, and installed harness versions.
-Version drift is a `compatible-unverified` warning to recapture evidence before
-claiming compatibility; a known-incompatible version fails.
+compatibility registry, expected hook counts, installed harness versions, and
+official skill presence, version compatibility, and deterministic drift. Version
+drift is a `compatible-unverified` warning to recapture evidence before claiming
+compatibility; a known-incompatible version fails.
 
 Before startup, inspect the safe selection/readiness projection:
 
@@ -846,9 +855,10 @@ node apps/relay/dist/cli.js uninstall --dry-run
 node apps/relay/dist/cli.js uninstall
 ```
 
-Uninstall removes only Agent Relay-owned hook entries, launcher, and manifest.
-It intentionally preserves SQLite state, logs, credentials, backups, and
-unrelated user configuration.
+Uninstall removes only Agent Relay-owned hook entries, marked skill files,
+launcher, and manifest. It intentionally preserves SQLite state, logs,
+credentials, backups, unrelated skills and instructions, MCP servers, and user
+configuration.
 
 ## Keeping this guide alive
 

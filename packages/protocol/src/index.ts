@@ -5,6 +5,7 @@ import { z } from "zod";
 
 export * from "./interaction.js";
 export * from "./mcp.js";
+export * from "./skill.js";
 import { OperatorInteractionRequestV1Schema } from "./interaction.js";
 
 const boundedId = z

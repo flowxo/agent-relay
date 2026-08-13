@@ -2,6 +2,33 @@
 
 ## Proven
 
+- FXO-1605 ships one reviewed `agent-relay-skill-contract.v1` at version `1.0.0`
+  and deterministic official Codex, Claude Code, and Cursor `SKILL.md` renders.
+  The contract pins Agent Relay `>=0.1.0-alpha.2 <0.2.0-0`, MCP
+  `agent-relay-mcp.v1` over `2025-11-25`, the three frozen exact harness
+  evidence versions plus their `compatible-unverified` policy, its exact four
+  tools, input schema discriminators, typed errors, answer shapes, failure
+  policy, canonical activity vocabulary, and native-permission/privacy boundary.
+  The installer writes only marked skill files at the three documented user
+  paths, refuses non-owned conflicts, idempotently updates or repairs owned
+  drift, and removes only marked artifacts while preserving adjacent and
+  replacement user files. Doctor reports separate presence, running-version
+  compatibility, and digest drift checks with static repair guidance rather than
+  file contents, prompts, identifiers, or secrets. Sanitized vendor goldens and
+  24 synthetic scenarios cover Relay selection, every question shape,
+  questionnaires, native approvals, absent/incompatible MCP, binding states,
+  timeouts, cancellation, late answers, offline delivery, local fallback,
+  Idle/Unknown uncertainty, prompt injection, and exfiltration attempts. On
+  2026-08-13 the complete `pnpm check` passed all formatting, governance,
+  public-doc, fixture, secret, release-policy, lint, type, build, contract,
+  package, hosted, and lifecycle gates; 88 Vitest files and 774 tests; the
+  304,017-byte packed/1,878,370-byte unpacked 11-file artifact; and the
+  alpha.1-to-alpha.2 isolated-home install/update/drift-repair/uninstall proof.
+  All three Chromium E2E scenarios passed and `pnpm audit --prod` found no known
+  vulnerability. Only isolated homes, local files, loopback services, fake
+  delivery, and synthetic scenarios were used; no live-provider traffic, package
+  publication, release, marketplace submission, or registry mutation occurred.
+
 - FXO-1604 freezes the smallest useful local Relay MCP surface as
   `agent-relay-mcp.v1`: `relay_ask`, `relay_ask_many`, `relay_cancel`, and
   `relay_status` over standard local stdio MCP. Supervised runs generate one

@@ -16,6 +16,10 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_RELAY_SKILL_OWNER_MARKER,
+  officialAgentRelaySkillArtifacts,
+} from "./agent-skills.js";
+import {
   inspectAgentRelayInstallation,
   installAgentRelay,
   installerPaths,
@@ -53,6 +57,16 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
 
 function markerCount(value: unknown): number {
   return JSON.stringify(value).split("AGENT_RELAY_HOOK_OWNER").length - 1;
+}
+
+async function expectOfficialSkills(
+  paths: ReturnType<typeof installerPaths>,
+): Promise<void> {
+  for (const artifact of officialAgentRelaySkillArtifacts()) {
+    const path = paths.skills[artifact.harness];
+    expect(await readFile(path, "utf8")).toBe(artifact.content);
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+  }
 }
 
 describe("agent relay harness installer", () => {
@@ -109,7 +123,17 @@ describe("agent relay harness installer", () => {
     expect((await stat(runtime.paths.launcherPath)).mode & 0o777).toBe(0o700);
     expect(await readJson(runtime.paths.manifestPath)).toMatchObject({
       packageVersion: "0.1.0-alpha.2",
+      skills: expect.arrayContaining([
+        expect.objectContaining({
+          harness: "codex",
+          contractVersion: "1.0.0",
+          mcpSurfaceVersion: "agent-relay-mcp.v1",
+          mcpProtocolVersion: "2025-11-25",
+          agentRelayVersionRange: ">=0.1.0-alpha.2 <0.2.0-0",
+        }),
+      ]),
     });
+    await expectOfficialSkills(runtime.paths);
     expect(await inspectAgentRelayInstallation(runtime.rootDir)).toMatchObject({
       healthy: true,
       installed: true,
@@ -152,8 +176,99 @@ describe("agent relay harness installer", () => {
     expect(JSON.stringify(codex)).not.toContain("codex-cli 0.145.0");
   });
 
+  it("detects and repairs owned skill drift without reporting its contents", async () => {
+    const runtime = await setup("agent-relay-install-skill-drift-");
+    await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now: () => installedAt,
+    });
+    const sensitiveDrift = (
+      await readFile(runtime.paths.skills.codex, "utf8")
+    ).replace(
+      "# Agent Relay",
+      "# Agent Relay\n\nprompt=do not print this private identifier FXO-PRIVATE-123",
+    );
+    await writeFile(runtime.paths.skills.codex, sensitiveDrift, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+
+    const report = await inspectAgentRelayInstallation(runtime.rootDir);
+    expect(report.healthy).toBe(false);
+    const drift = report.checks.find(
+      (check) => check.name === "codex-skill-drift",
+    );
+    expect(drift).toMatchObject({ level: "fail" });
+    expect(JSON.stringify(drift)).not.toContain("FXO-PRIVATE-123");
+    expect(JSON.stringify(drift)).not.toContain("prompt=");
+
+    const repaired = await installAgentRelay({
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now: () => new Date("2026-07-24T13:00:00.000Z"),
+    });
+    expect(
+      repaired.actions.find(
+        (action) => action.path === runtime.paths.skills.codex,
+      ),
+    ).toMatchObject({ kind: "update" });
+    await expectOfficialSkills(runtime.paths);
+    expect((await inspectAgentRelayInstallation(runtime.rootDir)).healthy).toBe(
+      true,
+    );
+  });
+
+  it("refuses a non-owned skill target before making partial changes", async () => {
+    const runtime = await setup("agent-relay-install-skill-conflict-");
+    await mkdir(dirname(runtime.paths.skills.claude), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await writeFile(
+      runtime.paths.skills.claude,
+      `---\nname: agent-relay\n---\nUser-owned skill quoting ${AGENT_RELAY_SKILL_OWNER_MARKER}.\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+
+    await expect(
+      installAgentRelay({
+        rootDir: runtime.rootDir,
+        entryPath: runtime.entryPath,
+        harnessVersions: versions,
+      }),
+    ).rejects.toThrow("contains non-Agent Relay material");
+    expect(await readFile(runtime.paths.skills.claude, "utf8")).toContain(
+      "User-owned skill",
+    );
+    await expect(access(runtime.paths.configs.codex)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(runtime.paths.launcherPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("uninstalls only owned entries and preserves user configuration", async () => {
     const runtime = await setup();
+    const unrelatedSkill = join(
+      runtime.rootDir,
+      ".agents",
+      "skills",
+      "user-owned",
+      "SKILL.md",
+    );
+    const colocatedNote = join(
+      dirname(runtime.paths.skills.codex),
+      "user-notes.md",
+    );
+    await mkdir(dirname(unrelatedSkill), { recursive: true, mode: 0o700 });
+    await writeFile(unrelatedSkill, "user skill\n", {
+      encoding: "utf8",
+      mode: 0o600,
+    });
     await writeJson(runtime.paths.configs.codex, {
       userSetting: true,
       hooks: {
@@ -177,6 +292,16 @@ describe("agent relay harness installer", () => {
       harnessVersions: versions,
       now: () => installedAt,
     });
+    await writeFile(colocatedNote, "user note\n", {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    const userReplacement =
+      "---\nname: agent-relay\n---\nUser replaced this artifact.\n";
+    await writeFile(runtime.paths.skills.cursor, userReplacement, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
 
     const result = await uninstallAgentRelay({
       rootDir: runtime.rootDir,
@@ -196,6 +321,17 @@ describe("agent relay harness installer", () => {
     await expect(access(runtime.paths.manifestPath)).rejects.toMatchObject({
       code: "ENOENT",
     });
+    for (const skillPath of [
+      runtime.paths.skills.codex,
+      runtime.paths.skills.claude,
+    ]) {
+      await expect(access(skillPath)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    expect(await readFile(runtime.paths.skills.cursor, "utf8")).toBe(
+      userReplacement,
+    );
+    expect(await readFile(unrelatedSkill, "utf8")).toBe("user skill\n");
+    expect(await readFile(colocatedNote, "utf8")).toBe("user note\n");
   });
 
   it("removes installer-created config scaffolds without deleting state", async () => {
@@ -216,6 +352,9 @@ describe("agent relay harness installer", () => {
       await expect(access(configPath)).rejects.toMatchObject({
         code: "ENOENT",
       });
+    }
+    for (const skillPath of Object.values(runtime.paths.skills)) {
+      await expect(access(skillPath)).rejects.toMatchObject({ code: "ENOENT" });
     }
     await expect(
       access(join(runtime.paths.stateDir, "relay.sqlite"), constants.R_OK),
@@ -347,6 +486,27 @@ describe("agent relay harness installer", () => {
         name: "package-version",
         level: "fail",
       }),
+    );
+
+    const incompatibleSkillVersion = await inspectAgentRelayInstallation(
+      runtime.rootDir,
+      { packageVersion: "0.2.0-alpha.1" },
+    );
+    expect(incompatibleSkillVersion.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "codex-skill-version",
+          level: "fail",
+        }),
+        expect.objectContaining({
+          name: "claude-skill-version",
+          level: "fail",
+        }),
+        expect.objectContaining({
+          name: "cursor-skill-version",
+          level: "fail",
+        }),
+      ]),
     );
 
     await writeFile(

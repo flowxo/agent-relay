@@ -86,9 +86,10 @@ agent-relay mcp
 It uses newline-delimited JSON-RPC on stdin/stdout and opens no listener. The
 supervised runtime supplies `AGENT_RELAY_MCP_BINDING`,
 `AGENT_RELAY_MCP_HARNESS`, the exact machine and bridge IDs, and loopback daemon
-connection values. Do not create or copy these values manually. The ordinary
-installer does not add, replace, or delete any user MCP configuration; adoption
-by individual harnesses is owned by a later integration story.
+connection values. Do not create or copy these values manually. The installer
+adds the official harness skill artifacts but does not add, replace, or delete
+any user MCP configuration. A harness without the exact compatible surface uses
+its native local question mechanism.
 
 Run `agent-relay doctor` to check that the packaged MCP entrypoint exists. In a
 supervised child environment it also safely reports whether correlation is

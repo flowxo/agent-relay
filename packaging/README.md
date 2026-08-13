@@ -182,15 +182,23 @@ agent-relay install
 agent-relay doctor
 ```
 
-Uninstall owned hooks and the launcher before removing the package:
+Install also renders the reviewed `agent-relay` skill at the standard user skill
+location for Codex, Claude Code, and Cursor. It teaches agents to use only the
+exact `agent-relay-mcp.v1` surface for bounded product or workflow questions and
+to preserve every native permission and authorization path. Doctor reports skill
+presence, compatibility, and deterministic drift without dumping its contents.
+Other skills, instruction files, MCP servers, hooks, and settings are preserved.
+
+Uninstall owned hooks, official skills, and the launcher before removing the
+package:
 
 ```sh
 agent-relay uninstall --dry-run
 agent-relay uninstall
 ```
 
-Uninstall preserves local state, logs, credentials, backups, and unrelated
-harness settings by default.
+Uninstall preserves local state, logs, credentials, backups, unrelated skills
+and instructions, MCP servers, and harness settings by default.
 
 Full documentation, support boundaries, security reporting, privacy behavior,
 and source are maintained at

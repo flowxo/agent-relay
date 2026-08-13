@@ -37,6 +37,14 @@ of Telegram. `agent-relay capabilities` prints the safe generated record that
 doctor consumes; its evidence IDs and classifications can be included in a
 sanitized report.
 
+For every official Codex, Claude Code, and Cursor skill, doctor separately
+checks artifact presence, contract/MCP version compatibility, and deterministic
+drift. An absent, incompatible, or drifted owned artifact is repaired with
+`agent-relay install`; inspect `agent-relay install --dry-run` first. If the
+target contains non-Agent Relay material, preserve or move that file before
+installing. Doctor reports the condition without printing the file contents,
+prompt text, identifiers, or secrets.
+
 | Evidence                               | Interpretation                                                         |
 | -------------------------------------- | ---------------------------------------------------------------------- |
 | Doctor check `ok`                      | The exact local invariant passed                                       |
