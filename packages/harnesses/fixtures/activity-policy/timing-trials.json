@@ -1,0 +1,434 @@
+{
+  "schema": "agent-relay-activity-policy-trials.v1",
+  "policy": {
+    "idleToDoneMs": 90000,
+    "workingWithoutTerminalToUnknownMs": 300000,
+    "openForegroundWorkToUnknownMs": 7200000,
+    "backgroundWorkToUnknownMs": 86400000
+  },
+  "decisions": [
+    {
+      "state": "idle",
+      "confidence": "confirmed",
+      "reason": "session_observed",
+      "userFacingReason": "Session observed; no turn is running."
+    },
+    {
+      "state": "working",
+      "confidence": "confirmed",
+      "reason": "foreground_recent",
+      "userFacingReason": "Recent foreground activity was observed."
+    },
+    {
+      "state": "working",
+      "confidence": "confirmed",
+      "reason": "work_open",
+      "userFacingReason": "Correlated work is in progress."
+    },
+    {
+      "state": "needs_input",
+      "confidence": "confirmed",
+      "reason": "request_open",
+      "userFacingReason": "Waiting for your response."
+    },
+    {
+      "state": "idle",
+      "confidence": "confirmed",
+      "reason": "foreground_stopped",
+      "userFacingReason": "Foreground work stopped; the session remains available."
+    },
+    {
+      "state": "background_work",
+      "confidence": "confirmed",
+      "reason": "background_work_open",
+      "userFacingReason": "Background work is still in progress."
+    },
+    {
+      "state": "done",
+      "confidence": "inferred",
+      "reason": "idle_grace_elapsed",
+      "userFacingReason": "No further work was observed after the completed turn."
+    },
+    {
+      "state": "unknown",
+      "confidence": "inferred",
+      "reason": "terminal_missing",
+      "userFacingReason": "Completion evidence did not arrive."
+    },
+    {
+      "state": "unknown",
+      "confidence": "inferred",
+      "reason": "foreground_work_stale",
+      "userFacingReason": "Tracked foreground work has not reported activity recently."
+    },
+    {
+      "state": "unknown",
+      "confidence": "inferred",
+      "reason": "background_work_stale",
+      "userFacingReason": "Tracked background work has not reported activity recently."
+    },
+    {
+      "state": "unknown",
+      "confidence": "confirmed",
+      "reason": "evidence_gap",
+      "userFacingReason": "Recent activity evidence is incomplete or contradictory."
+    },
+    {
+      "state": "failed",
+      "confidence": "confirmed",
+      "reason": "turn_failed",
+      "userFacingReason": "The turn failed."
+    },
+    {
+      "state": "failed",
+      "confidence": "confirmed",
+      "reason": "owned_process_failed",
+      "userFacingReason": "The supervised agent process exited unexpectedly."
+    },
+    {
+      "state": "ended",
+      "confidence": "confirmed",
+      "reason": "session_ended",
+      "userFacingReason": "The session ended."
+    }
+  ],
+  "trials": [
+    {
+      "name": "session-observation-begins-idle-and-does-not-age-into-done",
+      "events": [{ "atMs": 0, "kind": "session_observed" }],
+      "checkpoints": [
+        {
+          "atMs": 0,
+          "state": "idle",
+          "confidence": "confirmed",
+          "reason": "session_observed",
+          "lastActivityAtMs": 0,
+          "inFlightCount": 0,
+          "requestCount": 0
+        },
+        { "atMs": 900000, "state": "idle" }
+      ]
+    },
+    {
+      "name": "normal-stop-reaches-idle-immediately-and-done-at-the-exact-grace-boundary",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        { "atMs": 100, "kind": "foreground_stopped" }
+      ],
+      "checkpoints": [
+        { "atMs": 99, "state": "working" },
+        {
+          "atMs": 100,
+          "state": "idle",
+          "confidence": "confirmed",
+          "reason": "foreground_stopped"
+        },
+        { "atMs": 90099, "state": "idle" },
+        {
+          "atMs": 90100,
+          "state": "done",
+          "confidence": "inferred",
+          "reason": "idle_grace_elapsed"
+        }
+      ]
+    },
+    {
+      "name": "missing-terminal-becomes-unknown-without-passing-through-idle-or-done",
+      "events": [{ "atMs": 0, "kind": "prompt_submitted" }],
+      "checkpoints": [
+        { "atMs": 299999, "state": "working" },
+        {
+          "atMs": 300000,
+          "state": "unknown",
+          "confidence": "inferred",
+          "reason": "terminal_missing"
+        },
+        { "atMs": 390000, "state": "unknown" }
+      ]
+    },
+    {
+      "name": "open-foreground-work-uses-the-long-work-staleness-boundary",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 100,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_foreground_0001"
+        }
+      ],
+      "checkpoints": [
+        {
+          "atMs": 300000,
+          "state": "working",
+          "confidence": "confirmed",
+          "reason": "work_open",
+          "inFlightCount": 1
+        },
+        { "atMs": 7200099, "state": "working" },
+        {
+          "atMs": 7200100,
+          "state": "unknown",
+          "confidence": "inferred",
+          "reason": "foreground_work_stale"
+        }
+      ]
+    },
+    {
+      "name": "known-background-work-blocks-done-and-eventually-becomes-unknown",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 200,
+          "kind": "foreground_stopped",
+          "inFlightCount": 1,
+          "scheduledCount": 1
+        }
+      ],
+      "checkpoints": [
+        {
+          "atMs": 90200,
+          "state": "background_work",
+          "confidence": "confirmed",
+          "reason": "background_work_open",
+          "inFlightCount": 2
+        },
+        { "atMs": 86400199, "state": "background_work" },
+        {
+          "atMs": 86400200,
+          "state": "unknown",
+          "confidence": "inferred",
+          "reason": "background_work_stale"
+        }
+      ]
+    },
+    {
+      "name": "an-exact-open-request-outranks-stop-and-starts-idle-grace-when-resolved",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 100,
+          "kind": "request_opened",
+          "correlationId": "request_synthetic_0001"
+        },
+        { "atMs": 200, "kind": "foreground_stopped" },
+        {
+          "atMs": 100000,
+          "kind": "request_resolved",
+          "correlationId": "request_synthetic_0001"
+        }
+      ],
+      "checkpoints": [
+        {
+          "atMs": 90199,
+          "state": "needs_input",
+          "confidence": "confirmed",
+          "reason": "request_open",
+          "requestCount": 1
+        },
+        { "atMs": 100000, "state": "idle" },
+        { "atMs": 189999, "state": "idle" },
+        { "atMs": 190000, "state": "done" }
+      ]
+    },
+    {
+      "name": "a-proven-gap-becomes-unknown-immediately",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        { "atMs": 100, "kind": "evidence_gap" }
+      ],
+      "checkpoints": [
+        { "atMs": 99, "state": "working" },
+        {
+          "atMs": 100,
+          "state": "unknown",
+          "confidence": "confirmed",
+          "reason": "evidence_gap"
+        }
+      ]
+    },
+    {
+      "name": "duplicate-work-evidence-is-idempotent-and-does-not-delay-idle-or-done",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 100,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_duplicate_0001"
+        },
+        {
+          "atMs": 100,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_duplicate_0001"
+        },
+        {
+          "atMs": 200,
+          "kind": "work_finished",
+          "correlationId": "work_synthetic_duplicate_0001"
+        },
+        {
+          "atMs": 200,
+          "kind": "work_finished",
+          "correlationId": "work_synthetic_duplicate_0001"
+        },
+        { "atMs": 300, "kind": "foreground_stopped" }
+      ],
+      "checkpoints": [
+        { "atMs": 150, "state": "working" },
+        { "atMs": 300, "state": "idle" },
+        { "atMs": 90299, "state": "idle" },
+        { "atMs": 90300, "state": "done" }
+      ]
+    },
+    {
+      "name": "terminal-before-start-installs-a-tombstone-and-does-not-reopen-work",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 100,
+          "kind": "work_finished",
+          "correlationId": "work_synthetic_out_of_order_0001"
+        },
+        {
+          "atMs": 200,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_out_of_order_0001"
+        },
+        { "atMs": 300, "kind": "foreground_stopped" }
+      ],
+      "checkpoints": [
+        {
+          "atMs": 199,
+          "state": "unknown",
+          "confidence": "confirmed",
+          "reason": "evidence_gap"
+        },
+        {
+          "atMs": 200,
+          "state": "working",
+          "confidence": "confirmed",
+          "reason": "foreground_recent"
+        },
+        { "atMs": 250, "state": "working" },
+        { "atMs": 300, "state": "idle" },
+        { "atMs": 90300, "state": "done" }
+      ]
+    },
+    {
+      "name": "restart-preserves-an-open-correlation-until-its-exact-terminal-event",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 100,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_restart_0001"
+        },
+        { "atMs": 200, "kind": "restart" },
+        {
+          "atMs": 300,
+          "kind": "work_finished",
+          "correlationId": "work_synthetic_restart_0001"
+        },
+        { "atMs": 400, "kind": "foreground_stopped" }
+      ],
+      "checkpoints": [
+        { "atMs": 250, "state": "working" },
+        { "atMs": 400, "state": "idle" }
+      ]
+    },
+    {
+      "name": "conflicting-terminal-outcomes-become-unknown-instead-of-guessing",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 50,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_conflict_0001"
+        },
+        {
+          "atMs": 100,
+          "kind": "work_finished",
+          "correlationId": "work_synthetic_conflict_0001"
+        },
+        {
+          "atMs": 200,
+          "kind": "work_failed",
+          "correlationId": "work_synthetic_conflict_0001"
+        }
+      ],
+      "checkpoints": [
+        { "atMs": 199, "state": "working" },
+        { "atMs": 200, "state": "unknown" }
+      ]
+    },
+    {
+      "name": "terminal-turn-failure-is-failed-and-a-new-prompt-recovers-working",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        {
+          "atMs": 50,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_failed_turn_0001"
+        },
+        {
+          "atMs": 75,
+          "kind": "request_opened",
+          "correlationId": "request_synthetic_failed_turn_0001"
+        },
+        { "atMs": 100, "kind": "turn_failed" },
+        { "atMs": 200, "kind": "prompt_submitted" }
+      ],
+      "checkpoints": [
+        {
+          "atMs": 100,
+          "state": "failed",
+          "confidence": "confirmed",
+          "reason": "turn_failed",
+          "inFlightCount": 0,
+          "requestCount": 0
+        },
+        { "atMs": 200, "state": "working" },
+        { "atMs": 300199, "state": "working" },
+        { "atMs": 300200, "state": "unknown" }
+      ]
+    },
+    {
+      "name": "unexpected-owned-process-exit-is-failed-without-claiming-session-end",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        { "atMs": 100, "kind": "owned_process_failed" }
+      ],
+      "checkpoints": [
+        {
+          "atMs": 100,
+          "state": "failed",
+          "confidence": "confirmed",
+          "reason": "owned_process_failed"
+        },
+        { "atMs": 900000, "state": "failed" }
+      ]
+    },
+    {
+      "name": "ended-is-sticky-across-late-or-duplicate-positive-evidence",
+      "events": [
+        { "atMs": 0, "kind": "prompt_submitted" },
+        { "atMs": 100, "kind": "session_ended" },
+        { "atMs": 200, "kind": "prompt_submitted" },
+        {
+          "atMs": 300,
+          "kind": "work_started",
+          "correlationId": "work_synthetic_late_0001"
+        }
+      ],
+      "checkpoints": [
+        {
+          "atMs": 100,
+          "state": "ended",
+          "confidence": "confirmed",
+          "reason": "session_ended"
+        },
+        { "atMs": 300, "state": "ended" },
+        { "atMs": 900000, "state": "ended" }
+      ]
+    }
+  ]
+}

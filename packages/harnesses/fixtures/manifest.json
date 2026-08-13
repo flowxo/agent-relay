@@ -1,7 +1,7 @@
 {
   "schema": "agent-relay-harness-fixtures.v1",
   "recordedAt": "2026-07-29T16:00:00.000Z",
-  "officialContractRecheckedAt": "2026-07-29",
+  "officialContractRecheckedAt": "2026-08-13",
   "privacy": "All payload fixtures are sanitized and contain synthetic identifiers, paths, and text.",
   "payloadEvidence": "official-example-sanitized",
   "localObservations": {
@@ -30,17 +30,27 @@
   },
   "unverifiedVersionObservations": {
     "codex": {
-      "observedAt": "2026-07-29",
-      "version": "codex-cli 0.146.0",
+      "observedAt": "2026-08-13",
+      "version": "codex-cli 0.147.0",
+      "previouslyObservedVersion": "codex-cli 0.146.0",
       "classification": "compatible-unverified",
       "command": "codex --version",
       "modelCanaryRun": false
     },
     "claude": {
-      "observedAt": "2026-07-26",
-      "version": "2.1.220 (Claude Code)",
+      "observedAt": "2026-08-13",
+      "version": "2.1.231 (Claude Code)",
+      "previouslyObservedVersion": "2.1.220 (Claude Code)",
       "classification": "compatible-unverified",
       "command": "claude --version",
+      "modelCanaryRun": false
+    },
+    "cursor": {
+      "observedAt": "2026-08-13",
+      "version": "2026.08.04-aaa8809",
+      "editorVersion": "3.15.6",
+      "classification": "compatible-unverified",
+      "command": "agent --version",
       "modelCanaryRun": false
     }
   },
@@ -61,12 +71,50 @@
     "cursorHooks": "https://cursor.com/docs/hooks",
     "cursorResume": "https://docs.cursor.com/en/cli/using"
   },
+  "researchFixtureEvidence": {
+    "activity-policy/owned-process-exit.json": "synthetic exact normalized owned-process evidence; no argv, output, path, pid, or environment data",
+    "activity-policy/timing-trials.json": "synthetic fake-clock policy trials; not native harness evidence",
+    "codex/permission-request-current-contract.json": "official-current example sanitized on 2026-08-13; lacks the parser-required tool_use_id and is not frozen-version support evidence",
+    "codex/permission-request-with-correlation.json": "synthetic parser-contract fixture; not frozen-version support evidence",
+    "claude/permission-request-current-contract.json": "official-current example sanitized on 2026-08-13; explicitly lacks tool_use_id and is not frozen-version support evidence",
+    "claude/permission-request-with-correlation.json": "synthetic parser-contract fixture; not frozen-version support evidence"
+  },
+  "selectedActivityEvidence": {
+    "codex-cli-0.145.0": {
+      "events": ["SessionStart", "UserPromptSubmit", "Stop"],
+      "fixtures": [
+        "codex/session-start.json",
+        "codex/user-prompt-submit.json",
+        "codex/stop.json"
+      ]
+    },
+    "claude-code-2.1.219": {
+      "events": ["SessionStart", "UserPromptSubmit", "Stop", "StopFailure"],
+      "fixtures": [
+        "claude/session-start.json",
+        "claude/user-prompt-submit.json",
+        "claude/stop.json",
+        "claude/stop-background-work.json",
+        "claude/stop-failure.json"
+      ]
+    },
+    "cursor-cli-2026.07.23-e383d2b": {
+      "events": ["stop"],
+      "fixtures": ["cursor/stop.json"]
+    }
+  },
   "fixtures": [
+    "activity-policy/owned-process-exit.json",
+    "activity-policy/timing-trials.json",
+    "claude/permission-request-current-contract.json",
+    "claude/permission-request-with-correlation.json",
     "claude/stop-background-work.json",
     "claude/stop-failure.json",
     "claude/session-start.json",
     "claude/stop.json",
     "claude/user-prompt-submit.json",
+    "codex/permission-request-current-contract.json",
+    "codex/permission-request-with-correlation.json",
     "codex/session-start.json",
     "codex/stop.json",
     "codex/user-prompt-submit.json",

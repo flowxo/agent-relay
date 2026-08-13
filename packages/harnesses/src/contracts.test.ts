@@ -206,6 +206,60 @@ describe.each([
   },
 );
 
+describe.each([
+  [
+    "codex",
+    "codex/permission-request-with-correlation.json",
+    "codex-tool-permission-correlated-0001",
+  ],
+  [
+    "claude",
+    "claude/permission-request-with-correlation.json",
+    "claude-tool-permission-correlated-0001",
+  ],
+] as const)("%s correlated permission contract", (harness, path, toolUseId) => {
+  it("normalizes an exactly correlated synthetic fixture", () => {
+    const result = parseHarnessJson(harness, fixture(path), context());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event).toMatchObject({
+        harness,
+        type: "permission.required",
+        toolUseId,
+        request: {
+          correlationId: `req_${toolUseId}`,
+          kind: "permission",
+        },
+      });
+      expect(JSON.stringify(result.event)).not.toContain(
+        "synthetic-transcript.jsonl",
+      );
+      expect(result.event.project.cwdHash).toMatch(/^sha256:/);
+    }
+  });
+});
+
+describe.each([
+  ["codex", "codex/permission-request-current-contract.json"],
+  ["claude", "claude/permission-request-current-contract.json"],
+] as const)("%s current permission contract", (harness, path) => {
+  it("fails closed when the current official shape has no exact tool correlation", () => {
+    const result = parseHarnessJson(harness, fixture(path), context());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.diagnostic).toMatchObject({
+        code: "malformed-payload",
+        safeBehavior: "native-prompt",
+      });
+      expect(result.diagnostic.issues).toContainEqual(
+        expect.objectContaining({ path: "tool_use_id" }),
+      );
+    }
+  });
+});
+
 describe("failure and diagnostic contracts", () => {
   it("normalizes Claude StopFailure without claiming a process crash", () => {
     const result = parseHarnessJson(
