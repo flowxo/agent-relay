@@ -150,7 +150,7 @@ test("shows sanitized concurrent fake sessions and reconnects after daemon resta
   await expect(page.locator("[data-session-list]")).toContainText(
     "payments-api",
   );
-  await expect(page.locator("[data-session-list]")).toContainText("crashed");
+  await expect(page.locator("[data-session-list]")).toContainText("Failed");
   await expect(page.locator("body")).not.toContainText("private transcript");
 
   const form = textForm(page, active);
