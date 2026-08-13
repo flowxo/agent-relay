@@ -25,6 +25,18 @@
     {
       "kind": "notification",
       "line": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turn\":{\"id\":\"00000000-0000-7000-8000-000000000002\",\"items\":[],\"itemsView\":{\"type\":\"full\"},\"status\":\"completed\",\"error\":null,\"startedAt\":0,\"completedAt\":1,\"durationMs\":1000}}}"
+    },
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turn\":{\"id\":\"00000000-0000-7000-8000-000000000005\",\"items\":[],\"itemsView\":{\"type\":\"full\"},\"status\":\"inProgress\",\"error\":null,\"startedAt\":2,\"completedAt\":null,\"durationMs\":null}}}"
+    },
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"error\",\"params\":{\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turnId\":\"00000000-0000-7000-8000-000000000005\",\"willRetry\":false,\"error\":{\"message\":\"SYNTHETIC_PRIVATE_NATIVE_ERROR_MUST_NOT_PERSIST\"}}}"
+    },
+    {
+      "kind": "notification",
+      "line": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"00000000-0000-7000-8000-000000000001\",\"turn\":{\"id\":\"00000000-0000-7000-8000-000000000005\",\"items\":[],\"itemsView\":{\"type\":\"full\"},\"status\":\"failed\",\"error\":{\"message\":\"SYNTHETIC_PRIVATE_TURN_ERROR_MUST_NOT_PERSIST\"},\"startedAt\":2,\"completedAt\":3,\"durationMs\":1000}}}"
     }
   ]
 }

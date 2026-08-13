@@ -1,0 +1,14 @@
+{
+  "session_id": "claude-session-permission-correlated-0001",
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl",
+  "cwd": "/workspace/example",
+  "permission_mode": "default",
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Bash",
+  "tool_use_id": "claude-tool-permission-correlated-0001",
+  "tool_input": {
+    "command": "SYNTHETIC_PRIVATE_CLAUDE_COMMAND_MUST_NOT_PERSIST",
+    "description": "Synthetic permission request"
+  },
+  "permission_suggestions": []
+}

@@ -1,0 +1,15 @@
+{
+  "session_id": "codex-session-permission-correlated-0001",
+  "transcript_path": null,
+  "cwd": "/workspace/example",
+  "hook_event_name": "PermissionRequest",
+  "model": "synthetic-codex-model",
+  "permission_mode": "default",
+  "turn_id": "codex-turn-permission-correlated-0001",
+  "tool_name": "Bash",
+  "tool_use_id": "codex-tool-permission-correlated-0001",
+  "tool_input": {
+    "command": "SYNTHETIC_PRIVATE_CODEX_COMMAND_MUST_NOT_PERSIST",
+    "description": "Synthetic permission request"
+  }
+}

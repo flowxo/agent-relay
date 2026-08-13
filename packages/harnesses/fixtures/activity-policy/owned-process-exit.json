@@ -1,0 +1,12 @@
+{
+  "schema": "agent-relay-owned-process-evidence.v1",
+  "evidence": {
+    "source": "owned-child",
+    "supervisorId": "supervisor_synthetic_activity_0001",
+    "startedAt": "2026-08-13T12:00:00.000Z",
+    "exitedAt": "2026-08-13T12:00:10.000Z",
+    "classification": "nonzero-exit",
+    "expected": false,
+    "exitCode": 17
+  }
+}

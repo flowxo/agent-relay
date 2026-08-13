@@ -1,5 +1,9 @@
 # Harness contract evidence
 
+The completed AR5 activity-state policy is tracked separately in
+[AR5.1: Cross-harness activity evidence and timing policy](projects/agent-relay-operator-ux/stories/ar5-1-activity-evidence-and-timing.md).
+It does not widen the verified versions or capability classifications below.
+
 Recorded on 2026-07-24 through 2026-07-29 on macOS arm64. The fixture corpora
 under `packages/harnesses/fixtures` and
 `packages/codex-app-server-driver/fixtures` contain only synthetic identifiers,
