@@ -4,6 +4,10 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import {
   AgentAttentionEventV1Schema,
+  RelayMcpAskV1Schema,
+  RelayMcpCancelV1Schema,
+  RelayMcpQuestionnaireV1Schema,
+  RelayMcpStatusV1Schema,
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
@@ -132,6 +136,27 @@ const resumeFinishedSchema = resumeOwnerSchema
   })
   .strict();
 
+const mcpBindingIdentitySchema = z
+  .object({
+    machineId: opaqueId,
+    bridgeSessionId: opaqueId,
+    harness: z.enum(["codex", "claude", "cursor"]),
+  })
+  .strict();
+
+const mcpBindingClaimSchema = mcpBindingIdentitySchema
+  .extend({ sessionId: opaqueId })
+  .strict();
+
+const mcpBindingEndSchema = mcpBindingIdentitySchema
+  .extend({ sessionId: opaqueId.optional() })
+  .strict();
+
+const mcpInteractionSchema = z.union([
+  RelayMcpAskV1Schema,
+  RelayMcpQuestionnaireV1Schema,
+]);
+
 export interface RelayHttpServerOptions {
   token?: string;
   maxBodyBytes?: number;
@@ -252,6 +277,21 @@ function assertAuthorized(
       "relay daemon authorization failed",
     );
   }
+}
+
+function mcpBindingToken(request: IncomingMessage): string {
+  const token = request.headers["x-agent-relay-mcp-binding"];
+  if (
+    typeof token !== "string" ||
+    !/^mcpbind_[A-Za-z0-9_-]{32,96}$/u.test(token)
+  ) {
+    throw new HttpRequestError(
+      401,
+      "mcp-binding-missing",
+      "a valid local MCP session binding is required",
+    );
+  }
+  return token;
 }
 
 function secretsMatch(actual: string | undefined, expected: string): boolean {
@@ -1072,6 +1112,143 @@ export function createRelayHttpServer(
             ? "cross-origin web requests are not supported"
             : "relay route not found",
         );
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/mcp/bindings/register"
+      ) {
+        const identity = mcpBindingIdentitySchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.registerMcpSessionBinding({
+          token: mcpBindingToken(request),
+          ...identity,
+        });
+        sendJson(response, 200, {
+          outcome: result.outcome,
+          ...(!("binding" in result) || result.binding === undefined
+            ? {}
+            : { bindingState: result.binding.state }),
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/mcp/bindings/claim"
+      ) {
+        const identity = mcpBindingClaimSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.claimMcpSessionBinding({
+          token: mcpBindingToken(request),
+          ...identity,
+        });
+        sendJson(response, 200, {
+          outcome: result.outcome,
+          ...(result.binding === undefined
+            ? {}
+            : { bindingState: result.binding.state }),
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/mcp/bindings/end"
+      ) {
+        const identity = mcpBindingEndSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.endMcpSessionBinding({
+          token: mcpBindingToken(request),
+          machineId: identity.machineId,
+          bridgeSessionId: identity.bridgeSessionId,
+          harness: identity.harness,
+          ...(identity.sessionId === undefined
+            ? {}
+            : { sessionId: identity.sessionId }),
+        });
+        sendJson(response, 200, {
+          outcome: result.outcome,
+          ...(!("binding" in result) || result.binding === undefined
+            ? {}
+            : { bindingState: result.binding.state }),
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/mcp/interactions"
+      ) {
+        const command = mcpInteractionSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.openMcpInteraction(
+          mcpBindingToken(request),
+          command,
+        );
+        sendJson(response, 200, {
+          outcome: result.outcome,
+          ...(!("binding" in result) || result.binding === undefined
+            ? {}
+            : { bindingState: result.binding.state }),
+          ...(result.request === undefined
+            ? {}
+            : {
+                requestId: result.request.correlationId,
+                requestState: result.request.state,
+              }),
+        });
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/v1/mcp/cancel") {
+        const command = RelayMcpCancelV1Schema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.cancelMcpInteraction(
+          mcpBindingToken(request),
+          command.requestId,
+        );
+        sendJson(response, 200, {
+          outcome: result.outcome,
+          ...(result.request === undefined
+            ? {}
+            : {
+                requestId: result.request.correlationId,
+                requestState: result.request.state,
+              }),
+        });
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/v1/mcp/status") {
+        const command = RelayMcpStatusV1Schema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const result = service.mcpInteractionStatus(
+          mcpBindingToken(request),
+          command.requestId,
+        );
+        sendJson(response, 200, {
+          bindingState: result.binding?.state ?? "missing",
+          ...(result.session === undefined
+            ? {}
+            : {
+                harness: result.session.harness,
+                activityState: result.session.activity.state,
+              }),
+          ...(result.openRequestCount === undefined
+            ? {}
+            : { openRequestCount: result.openRequestCount }),
+          delivery: result.delivery,
+          ...(result.request === undefined
+            ? {}
+            : {
+                requestId: result.request.correlationId,
+                requestState: result.request.state,
+              }),
+          ...(result.answer === undefined ? {} : { answer: result.answer }),
+        });
+        return;
       }
 
       if (request.method === "GET" && url.pathname === "/v1/health") {

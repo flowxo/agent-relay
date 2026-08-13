@@ -13,7 +13,7 @@ remote shell, a transcript service, or a hosted control plane.
 
 ```text
 Codex / Claude Code / Cursor
-          │ native hook JSON
+          │ native hook JSON + exactly bound local stdio MCP
           ▼
 runtime-validated harness adapter
           │ normalized attention event
@@ -39,6 +39,7 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 | Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                         |
 | Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling           |
 | Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback                  |
+| Local MCP server          | Expose four versioned typed operator tools for one secret-bound supervised native session         |
 | Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention                |
 | SQLite store              | Persist identity, event order, attempts, requests, answers, topics, cleanup, and resume ownership |
 | Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts           |
@@ -47,6 +48,12 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 | Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume                |
 | Web companion             | Present authenticated projections and submit typed decisions to the same store                    |
 | Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation                 |
+
+The MCP server is a local protocol adapter, not another authority. A supervisor
+creates an ephemeral secret handshake shared only with its owned harness, native
+hooks, and MCP child. SQLite stores its keyed digest and binds only after an
+exact native session is durably known. Ambiguity is terminal. No project,
+timestamp, process-name, or recent-session heuristic participates in binding.
 
 ## Notification dependency direction
 

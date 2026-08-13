@@ -3,6 +3,23 @@
 Start with local evidence. Do not solve a support problem by publishing a
 database, raw log, credential, transcript, identity, or machine path.
 
+## A Relay MCP tool reports a binding error
+
+Run `agent-relay doctor` from the same supervised environment without printing
+its environment. `binding-pending` means the first selected native hook has not
+yet claimed the exact session; wait for native session evidence or use the
+returned local fallback. `binding-ended` means the supervisor lifetime ended.
+`binding-ambiguous` or `binding-revoked` is intentionally terminal: stop that
+supervised run and start a new one so it receives a fresh private handshake. Do
+not copy the binding variable, search by project, choose the newest session, or
+edit SQLite.
+
+`answer-timeout` does not cancel the request. The operator may still answer it,
+and retrying the same tool call and request ID reads the durable result. Use
+`relay_status` for the exact request when diagnosing delivery. Degraded or
+unavailable delivery never authorizes a guessed or synthetic answer. See the
+[local MCP contract](relay-mcp.md) for all typed states.
+
 ## First pass
 
 ```sh

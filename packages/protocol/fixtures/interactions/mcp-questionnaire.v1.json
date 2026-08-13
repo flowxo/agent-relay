@@ -1,0 +1,24 @@
+{
+  "schema": "agent-relay-mcp-questionnaire.v1",
+  "requestId": "request_mcp_fixture_0002",
+  "title": "Review the synthetic plan",
+  "questions": [
+    {
+      "questionId": "question_mcp_fixture_0002",
+      "kind": "confirm",
+      "prompt": "Continue with the synthetic plan?",
+      "confirm": { "optionId": "option_mcp_yes_0002", "label": "Continue" },
+      "decline": { "optionId": "option_mcp_no_0002", "label": "Stop" }
+    },
+    {
+      "questionId": "question_mcp_fixture_0003",
+      "kind": "free-text",
+      "prompt": "What bounded synthetic note should be recorded?",
+      "minLength": 1,
+      "maxLength": 240,
+      "multiline": false
+    }
+  ],
+  "expiresInMs": 600000,
+  "waitTimeoutMs": 120000
+}

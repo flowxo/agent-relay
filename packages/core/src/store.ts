@@ -6,11 +6,13 @@ import { z } from "zod";
 
 import {
   AgentAttentionEventV1Schema,
+  CapabilitySetSchema,
   encodeInteractionAnswer,
   HarnessSchema,
   InteractionPresentationModeSchema,
   InteractionQuestionAnswerSchema,
   ProjectRefSchema,
+  RelayMcpBindingStateSchema,
   RelayDiagnosticV1Schema,
   SessionHeartbeatV1Schema,
   SessionRegistrationV1Schema,
@@ -19,12 +21,14 @@ import {
 } from "@agent-relay/protocol";
 import type {
   AgentAttentionEventV1,
+  CapabilitySet,
   EventType,
   Harness,
   InteractionPresentationMode,
   InteractionQuestion,
   InteractionQuestionAnswer,
   OperatorInteractionRequestV1,
+  RelayMcpBindingState,
   RelayDiagnosticV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
@@ -74,7 +78,15 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 10;
+export const RELAY_STORE_SCHEMA_VERSION = 11;
+
+const MCP_BINDING_TOKEN_PATTERN = /^mcpbind_[A-Za-z0-9_-]{32,96}$/u;
+
+function assertMcpBindingToken(token: string): void {
+  if (!MCP_BINDING_TOKEN_PATTERN.test(token)) {
+    throw new Error("MCP session binding token is malformed");
+  }
+}
 
 // Schema 7 renamed the hosted transport identity from `notifications` to
 // `whooshbang`. These columns retain that value, so an existing database is
@@ -181,12 +193,35 @@ export interface SessionRecord {
   harnessVersion: string;
   sessionId: string;
   project: AgentAttentionEventV1["project"];
+  capabilities: CapabilitySet;
   state: "active" | "waiting" | "stopped" | "suspected_stalled" | "exited";
   lastEventType?: EventType;
   lastSeenAt: string;
   lastSequence: number;
   activity: SessionActivityRecord;
 }
+
+export interface McpSessionBindingRecord {
+  state: RelayMcpBindingState;
+  machineId: string;
+  bridgeSessionId: string;
+  harness: Harness;
+  sessionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  claimedAt?: string;
+  endedAt?: string;
+}
+
+export type McpSessionBindingMutationResult =
+  | {
+      outcome: "created" | "bound" | "ended" | "duplicate";
+      binding: McpSessionBindingRecord;
+    }
+  | {
+      outcome: "missing" | "ambiguous" | "terminal";
+      binding?: McpSessionBindingRecord;
+    };
 
 export interface SessionAdoptionCandidateCheckpoint {
   readonly machineId: string;
@@ -986,10 +1021,24 @@ interface SessionRow {
   harness_version: string;
   session_id: string;
   project_json: string;
+  capabilities_json: string;
   state: SessionRecord["state"];
   last_event_type: EventType | null;
   last_seen_at: string;
   last_sequence: number;
+}
+
+interface McpSessionBindingRow {
+  token_digest: string;
+  machine_id: string;
+  bridge_session_id: string;
+  harness: Harness;
+  session_id: string | null;
+  state: RelayMcpBindingState;
+  created_at: string;
+  updated_at: string;
+  claimed_at: string | null;
+  ended_at: string | null;
 }
 
 interface SessionActivityRow {
@@ -1470,6 +1519,27 @@ export class RelayStore {
         ),
         UNIQUE(event_id)
       );
+
+      CREATE TABLE IF NOT EXISTS mcp_session_bindings (
+        token_digest TEXT PRIMARY KEY,
+        machine_id TEXT NOT NULL,
+        bridge_session_id TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        session_id TEXT,
+        state TEXT NOT NULL CHECK (
+          state IN ('pending', 'bound', 'ambiguous', 'ended', 'revoked')
+        ),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        claimed_at TEXT,
+        ended_at TEXT,
+        FOREIGN KEY (machine_id, harness, session_id)
+          REFERENCES sessions(machine_id, harness, session_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS mcp_session_bindings_session_idx
+        ON mcp_session_bindings(machine_id, harness, session_id, state);
 
       CREATE INDEX IF NOT EXISTS native_hook_sequence_allocations_retention_idx
         ON native_hook_sequence_allocations(allocated_at, event_id);
@@ -2593,6 +2663,295 @@ export class RelayStore {
       .update(`agent-relay-activity:${domain}:v1\u001f`)
       .update(JSON.stringify(values))
       .digest("hex");
+  }
+
+  private mcpBindingDigest(token: string): string {
+    assertMcpBindingToken(token);
+    return this.activityDigest("mcp-session-binding", [token]);
+  }
+
+  private mcpBindingFromRow(
+    row: McpSessionBindingRow,
+  ): McpSessionBindingRecord {
+    return {
+      state: RelayMcpBindingStateSchema.parse(row.state),
+      machineId: row.machine_id,
+      bridgeSessionId: row.bridge_session_id,
+      harness: row.harness,
+      ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      ...(row.claimed_at === null ? {} : { claimedAt: row.claimed_at }),
+      ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
+    };
+  }
+
+  private getMcpSessionBindingRow(
+    token: string,
+  ): McpSessionBindingRow | undefined {
+    const tokenDigest = this.mcpBindingDigest(token);
+    return this.database
+      .prepare("SELECT * FROM mcp_session_bindings WHERE token_digest = ?")
+      .get(tokenDigest) as McpSessionBindingRow | undefined;
+  }
+
+  public getMcpSessionBinding(
+    token: string,
+  ): McpSessionBindingRecord | undefined {
+    const row = this.getMcpSessionBindingRow(token);
+    return row === undefined ? undefined : this.mcpBindingFromRow(row);
+  }
+
+  public verifyMcpSessionBinding(
+    token: string,
+    now: string,
+  ): McpSessionBindingRecord | undefined {
+    assertIsoCutoff(now, "MCP binding verification time");
+    const tokenDigest = this.mcpBindingDigest(token);
+    return this.database.transaction(() => {
+      const row = this.getMcpSessionBindingRow(token);
+      if (
+        row === undefined ||
+        row.state !== "bound" ||
+        row.session_id === null
+      ) {
+        return row === undefined ? undefined : this.mcpBindingFromRow(row);
+      }
+      const session = this.getSession({
+        machineId: row.machine_id,
+        harness: row.harness,
+        sessionId: row.session_id,
+      });
+      if (
+        session !== undefined &&
+        session.bridgeSessionId === row.bridge_session_id
+      ) {
+        return this.mcpBindingFromRow(row);
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE mcp_session_bindings
+          SET state = 'ambiguous', updated_at = ?
+          WHERE token_digest = ? AND state = 'bound'
+        `,
+        )
+        .run(now, tokenDigest);
+      return this.mcpBindingFromRow(this.getMcpSessionBindingRow(token)!);
+    })();
+  }
+
+  public registerMcpSessionBinding(input: {
+    token: string;
+    machineId: string;
+    bridgeSessionId: string;
+    harness: Harness;
+    now: string;
+  }): McpSessionBindingMutationResult {
+    assertIsoCutoff(input.now, "MCP binding registration time");
+    const tokenDigest = this.mcpBindingDigest(input.token);
+    return this.database.transaction((): McpSessionBindingMutationResult => {
+      const existing = this.getMcpSessionBindingRow(input.token);
+      if (existing !== undefined) {
+        if (["ambiguous", "ended", "revoked"].includes(existing.state)) {
+          return {
+            outcome: existing.state === "ambiguous" ? "ambiguous" : "terminal",
+            binding: this.mcpBindingFromRow(existing),
+          };
+        }
+        const exact =
+          existing.machine_id === input.machineId &&
+          existing.bridge_session_id === input.bridgeSessionId &&
+          existing.harness === input.harness;
+        if (!exact) {
+          this.database
+            .prepare(
+              `
+              UPDATE mcp_session_bindings
+              SET state = 'ambiguous', updated_at = ?
+              WHERE token_digest = ?
+            `,
+            )
+            .run(input.now, tokenDigest);
+          return {
+            outcome: "ambiguous",
+            binding: this.mcpBindingFromRow(
+              this.getMcpSessionBindingRow(input.token)!,
+            ),
+          };
+        }
+        return {
+          outcome: "duplicate",
+          binding: this.mcpBindingFromRow(existing),
+        };
+      }
+      this.database
+        .prepare(
+          `
+          INSERT INTO mcp_session_bindings (
+            token_digest, machine_id, bridge_session_id, harness, session_id,
+            state, created_at, updated_at, claimed_at, ended_at
+          ) VALUES (
+            @tokenDigest, @machineId, @bridgeSessionId, @harness, NULL,
+            'pending', @now, @now, NULL, NULL
+          )
+        `,
+        )
+        .run({ ...input, tokenDigest });
+      return {
+        outcome: "created",
+        binding: this.mcpBindingFromRow(
+          this.getMcpSessionBindingRow(input.token)!,
+        ),
+      };
+    })();
+  }
+
+  public claimMcpSessionBinding(input: {
+    token: string;
+    machineId: string;
+    bridgeSessionId: string;
+    harness: Harness;
+    sessionId: string;
+    now: string;
+  }): McpSessionBindingMutationResult {
+    assertIsoCutoff(input.now, "MCP binding claim time");
+    const tokenDigest = this.mcpBindingDigest(input.token);
+    return this.database.transaction((): McpSessionBindingMutationResult => {
+      const existing = this.getMcpSessionBindingRow(input.token);
+      if (existing === undefined) {
+        return { outcome: "missing" };
+      }
+      if (["ambiguous", "ended", "revoked"].includes(existing.state)) {
+        return {
+          outcome: existing.state === "ambiguous" ? "ambiguous" : "terminal",
+          binding: this.mcpBindingFromRow(existing),
+        };
+      }
+      const expected =
+        existing.machine_id === input.machineId &&
+        existing.bridge_session_id === input.bridgeSessionId &&
+        existing.harness === input.harness;
+      const alreadyBoundElsewhere =
+        existing.session_id !== null && existing.session_id !== input.sessionId;
+      if (!expected || alreadyBoundElsewhere) {
+        this.database
+          .prepare(
+            `
+            UPDATE mcp_session_bindings
+            SET state = 'ambiguous', updated_at = ?
+            WHERE token_digest = ?
+          `,
+          )
+          .run(input.now, tokenDigest);
+        return {
+          outcome: "ambiguous",
+          binding: this.mcpBindingFromRow(
+            this.getMcpSessionBindingRow(input.token)!,
+          ),
+        };
+      }
+      const session = this.getSession({
+        machineId: input.machineId,
+        harness: input.harness,
+        sessionId: input.sessionId,
+      });
+      if (
+        session === undefined ||
+        session.bridgeSessionId !== input.bridgeSessionId
+      ) {
+        return {
+          outcome: "missing",
+          binding: this.mcpBindingFromRow(existing),
+        };
+      }
+      if (existing.state === "bound") {
+        return {
+          outcome: "duplicate",
+          binding: this.mcpBindingFromRow(existing),
+        };
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE mcp_session_bindings
+          SET session_id = @sessionId, state = 'bound', claimed_at = @now,
+              updated_at = @now
+          WHERE token_digest = @tokenDigest AND state = 'pending'
+        `,
+        )
+        .run({ ...input, tokenDigest });
+      return {
+        outcome: "bound",
+        binding: this.mcpBindingFromRow(
+          this.getMcpSessionBindingRow(input.token)!,
+        ),
+      };
+    })();
+  }
+
+  public endMcpSessionBinding(input: {
+    token: string;
+    machineId: string;
+    bridgeSessionId: string;
+    harness: Harness;
+    sessionId?: string;
+    now: string;
+  }): McpSessionBindingMutationResult {
+    assertIsoCutoff(input.now, "MCP binding end time");
+    const tokenDigest = this.mcpBindingDigest(input.token);
+    return this.database.transaction((): McpSessionBindingMutationResult => {
+      const existing = this.getMcpSessionBindingRow(input.token);
+      if (existing === undefined) {
+        return { outcome: "missing" };
+      }
+      if (["ended", "revoked", "ambiguous"].includes(existing.state)) {
+        return {
+          outcome: existing.state === "ambiguous" ? "ambiguous" : "duplicate",
+          binding: this.mcpBindingFromRow(existing),
+        };
+      }
+      const exact =
+        existing.machine_id === input.machineId &&
+        existing.bridge_session_id === input.bridgeSessionId &&
+        existing.harness === input.harness &&
+        (input.sessionId === undefined ||
+          existing.session_id === null ||
+          existing.session_id === input.sessionId);
+      if (!exact) {
+        this.database
+          .prepare(
+            `
+            UPDATE mcp_session_bindings
+            SET state = 'ambiguous', updated_at = ?
+            WHERE token_digest = ?
+          `,
+          )
+          .run(input.now, tokenDigest);
+        return {
+          outcome: "ambiguous",
+          binding: this.mcpBindingFromRow(
+            this.getMcpSessionBindingRow(input.token)!,
+          ),
+        };
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE mcp_session_bindings
+          SET state = 'ended', ended_at = @now, updated_at = @now
+          WHERE token_digest = @tokenDigest
+            AND state IN ('pending', 'bound')
+        `,
+        )
+        .run({ tokenDigest, now: input.now });
+      return {
+        outcome: "ended",
+        binding: this.mcpBindingFromRow(
+          this.getMcpSessionBindingRow(input.token)!,
+        ),
+      };
+    })();
   }
 
   private activityCorrelationDigest(
@@ -9557,7 +9916,7 @@ export class RelayStore {
         `
         SELECT
           machine_id, bridge_session_id, harness, surface, harness_version,
-          session_id, project_json, state, last_event_type, last_seen_at,
+          session_id, project_json, capabilities_json, state, last_event_type, last_seen_at,
           last_sequence
         FROM sessions
         ORDER BY last_seen_at DESC, machine_id, harness, session_id
@@ -9578,6 +9937,9 @@ export class RelayStore {
         harnessVersion: row.harness_version,
         project: ProjectRefSchema.parse(
           JSON.parse(row.project_json) as unknown,
+        ),
+        capabilities: CapabilitySetSchema.parse(
+          JSON.parse(row.capabilities_json) as unknown,
         ),
         state: row.state,
         ...(row.last_event_type === null
@@ -9603,7 +9965,7 @@ export class RelayStore {
         `
         SELECT
           machine_id, bridge_session_id, harness, surface, harness_version,
-          session_id, project_json, state, last_event_type, last_seen_at,
+          session_id, project_json, capabilities_json, state, last_event_type, last_seen_at,
           last_sequence
         FROM sessions
         WHERE machine_id = @machineId
@@ -9623,6 +9985,9 @@ export class RelayStore {
       harnessVersion: row.harness_version,
       sessionId: row.session_id,
       project: ProjectRefSchema.parse(JSON.parse(row.project_json) as unknown),
+      capabilities: CapabilitySetSchema.parse(
+        JSON.parse(row.capabilities_json) as unknown,
+      ),
       state: row.state,
       ...(row.last_event_type === null
         ? {}

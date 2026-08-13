@@ -48,6 +48,58 @@ async function verifiedHarnessExecutables() {
 }
 
 describe("doctor version and installation checks", () => {
+  it("reports local MCP availability and fails closed correlation", async () => {
+    const executables = await verifiedHarnessExecutables();
+    const bound = await runDoctor({
+      executables,
+      mcp: {
+        serverAvailable: true,
+        daemonAvailable: true,
+        correlationState: "bound",
+      },
+    });
+    expect(bound.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "relay-mcp-server", level: "pass" }),
+        expect.objectContaining({
+          name: "relay-mcp-correlation",
+          level: "pass",
+        }),
+      ]),
+    );
+
+    const pending = await runDoctor({
+      executables,
+      mcp: {
+        serverAvailable: true,
+        daemonAvailable: true,
+        correlationState: "pending",
+      },
+    });
+    expect(pending.checks).toContainEqual(
+      expect.objectContaining({
+        name: "relay-mcp-correlation",
+        level: "warn",
+      }),
+    );
+
+    const ambiguous = await runDoctor({
+      executables,
+      mcp: {
+        serverAvailable: true,
+        daemonAvailable: true,
+        correlationState: "ambiguous",
+      },
+    });
+    expect(ambiguous.healthy).toBe(false);
+    expect(ambiguous.checks).toContainEqual(
+      expect.objectContaining({
+        name: "relay-mcp-correlation",
+        level: "fail",
+      }),
+    );
+  });
+
   it("distinguishes compatible versions, drift, and missing harnesses", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-doctor-"));
     const codex = await executable(

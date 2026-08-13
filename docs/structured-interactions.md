@@ -5,6 +5,11 @@ Agent Relay's provider-neutral structured interaction boundary is
 callback data, harness commands, provider credentials, transcripts, or machine
 paths.
 
+The [local Relay MCP server](relay-mcp.md) is one producer and consumer of this
+same contract. It wraps single questions and ordered questionnaires in the
+existing durable question-set path, so MCP does not introduce a second request,
+draft, answer, cancellation, expiry, or activity authority.
+
 ## Version 1 shapes
 
 `agent-interaction-request.v1` contains one stable request ID, creation and

@@ -6,6 +6,14 @@ breaking changes and required operator action.
 
 ## 0.1.0-alpha.2 — Unreleased
 
+### Added
+
+- Add the versioned local `agent-relay-mcp.v1` stdio server with four typed
+  operator tools, exact secret-handshake binding to one supervised native
+  session, schema-11 digest-only binding persistence, bounded waits and typed
+  fallback, shared durable interaction/activity authority, synthetic fixtures,
+  safe doctor checks, and fail-closed concurrent-session correlation.
+
 ### Fixed
 
 - Normalize the npm archive's platform-specific gzip operating-system byte

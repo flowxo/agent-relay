@@ -7,6 +7,8 @@
   "fixtures": [
     "request-question-set.v1.json",
     "answer-question-set.v1.json",
+    "mcp-ask.v1.json",
+    "mcp-questionnaire.v1.json",
     "provider-capabilities.v1.json",
     "provider-observation-telegram.v1.json"
   ]

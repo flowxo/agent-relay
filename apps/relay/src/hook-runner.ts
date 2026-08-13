@@ -33,6 +33,7 @@ export interface HookRunOptions {
   pollIntervalMs?: number;
   lateResume?: boolean;
   lateResumeTtlMs?: number;
+  mcpBindingToken?: string;
 }
 
 export interface HookRunDiagnostic {
@@ -261,6 +262,44 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
     });
   try {
     await client.ingest(event);
+    if (options.mcpBindingToken !== undefined) {
+      const identity = {
+        machineId: event.machineId,
+        bridgeSessionId: event.bridgeSessionId,
+        harness: event.harness,
+      };
+      let bindingReady = false;
+      try {
+        const registration = await client.registerMcpBinding(
+          options.mcpBindingToken,
+          identity,
+        );
+        const claim = await client.claimMcpBinding(options.mcpBindingToken, {
+          ...identity,
+          sessionId: event.sessionId,
+        });
+        bindingReady =
+          registration.bindingState !== "ambiguous" &&
+          (claim.outcome === "bound" || claim.outcome === "duplicate");
+      } catch {
+        bindingReady = false;
+      }
+      if (!bindingReady) {
+        const message =
+          "native session could not establish an exact local MCP binding";
+        const fallbackRecorded = await recordFallback(
+          fallbackPath,
+          "diagnostic",
+          { code: "mcp-binding-failed", message },
+          occurredAt,
+        );
+        sequenceDiagnostic = {
+          code: "mcp-binding-failed",
+          message,
+          fallbackRecorded,
+        };
+      }
+    }
     if (event.request !== undefined && shouldWait) {
       const request = await client.waitForAnswer(
         event.request.correlationId,

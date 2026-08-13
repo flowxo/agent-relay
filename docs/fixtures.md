@@ -4,6 +4,16 @@ Fixtures make native harness and transport contracts reviewable without
 retaining private operator data. They are test inputs, not archives of a real
 session.
 
+## Local MCP interaction fixtures
+
+`packages/protocol/fixtures/interactions/mcp-ask.v1.json` and
+`mcp-questionnaire.v1.json` freeze the smallest useful local MCP request
+surface. They contain only synthetic IDs, prompts, choices, and times. Protocol,
+core, daemon, hook, fake-delivery, persistence, concurrency, and redaction tests
+consume equivalent validated shapes; no live provider or user configuration is
+involved. See [Local Relay MCP server](relay-mcp.md) for the binding and failure
+contract.
+
 ## Create a fixture safely
 
 Construct the sanitized fixture outside the repository. Never commit a raw hook

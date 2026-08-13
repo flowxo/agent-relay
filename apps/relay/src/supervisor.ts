@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { constants, homedir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -63,6 +63,7 @@ export interface SupervisorOptions {
   pollIntervalMs?: number;
   maxResumes?: number;
   env?: NodeJS.ProcessEnv;
+  mcpBindingToken?: string;
 }
 
 export interface SupervisorRunResult {
@@ -248,6 +249,8 @@ function supervisedEnvironment(
     harnessVersion: string;
     daemonUrl: string;
     daemonToken?: string;
+    harness: Harness;
+    mcpBindingToken: string;
   },
 ): NodeJS.ProcessEnv {
   const env = { ...base };
@@ -266,6 +269,8 @@ function supervisedEnvironment(
     AGENT_RELAY_BRIDGE_SESSION_ID: options.bridgeSessionId,
     AGENT_RELAY_HARNESS_VERSION: options.harnessVersion,
     AGENT_RELAY_DAEMON_URL: options.daemonUrl,
+    AGENT_RELAY_MCP_BINDING: options.mcpBindingToken,
+    AGENT_RELAY_MCP_HARNESS: options.harness,
     ...(options.daemonToken === undefined
       ? {}
       : { AGENT_RELAY_DAEMON_TOKEN: options.daemonToken }),
@@ -376,6 +381,9 @@ export async function runSupervisor(
 ): Promise<SupervisorRunResult> {
   const bridgeSessionId = options.bridgeSessionId ?? `bridge_${randomUUID()}`;
   const supervisorId = options.supervisorId ?? `supervisor_${randomUUID()}`;
+  const mcpBindingToken =
+    options.mcpBindingToken ??
+    `mcpbind_${randomBytes(32).toString("base64url")}`;
   const daemonUrl = options.daemonUrl ?? "http://127.0.0.1:4317";
   const fallbackPath =
     options.fallbackPath ??
@@ -400,6 +408,8 @@ export async function runSupervisor(
     bridgeSessionId,
     harnessVersion: options.harnessVersion,
     daemonUrl,
+    harness: options.harness,
+    mcpBindingToken,
     ...(options.daemonToken === undefined
       ? {}
       : { daemonToken: options.daemonToken }),
@@ -433,327 +443,42 @@ export async function runSupervisor(
   let resumed = 0;
   let lastSessionId: string | undefined;
 
-  for (;;) {
-    if (resumeCorrelationId !== undefined) {
-      try {
-        await client.markResumeStarted(resumeCorrelationId, supervisorId);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "could not audit late resume start";
-        const fallbackRecorded = await recordFallback(
-          fallbackPath,
-          "diagnostic",
-          {
-            code: "resume-start-audit-failed",
-            message,
-            correlationId: resumeCorrelationId,
-          },
-          new Date().toISOString(),
-        );
-        return {
-          bridgeSessionId,
-          supervisorId,
-          exitCode: 1,
-          resumed,
-          classification: "unknown",
-          diagnostic: {
-            code: "resume-start-audit-failed",
-            message,
-            fallbackRecorded,
-          },
-        };
-      }
-    }
-
+  try {
+    await client.registerMcpBinding(mcpBindingToken, {
+      machineId: options.machineId,
+      bridgeSessionId,
+      harness: options.harness,
+    });
+  } catch {
     logger.log({
-      level: "info",
-      code: "supervisor.child-starting",
-      message: "starting owned harness child",
+      level: "warn",
+      code: "supervisor.mcp-binding-deferred",
+      message: "local MCP binding registration is deferred until hook intake",
       at: new Date().toISOString(),
-      details: {
-        supervisorId,
-        bridgeSessionId,
-        harness: options.harness,
-        executable: basename(invocation.executable),
-        resume: resumeCorrelationId !== undefined,
-      },
+      details: { supervisorId, harness: options.harness },
     });
-    const childResult = await runner({
-      ...invocation,
-      cwd: options.cwd,
-      env: {
-        ...env,
-        AGENT_RELAY_SUPERVISED: resumed < maxResumes ? "1" : "0",
-      },
-    });
-    const classified = classifyOwnedExit(childResult, supervisorId);
-    logger.log({
-      level: classified.unexpected ? "error" : "info",
-      code: classified.unexpected
-        ? "supervisor.child-exited-unexpectedly"
-        : "supervisor.child-exited",
-      message: classified.summary,
-      at: childResult.exitedAt,
-      details: {
-        supervisorId,
-        bridgeSessionId,
-        harness: options.harness,
-        classification: classified.evidence.classification,
-        ...(classified.evidence.pid === undefined
-          ? {}
-          : { pid: classified.evidence.pid }),
-        ...(classified.evidence.exitCode === undefined
-          ? {}
-          : { exitCode: classified.evidence.exitCode }),
-        ...(classified.evidence.signal === undefined
-          ? {}
-          : { signal: classified.evidence.signal }),
-      },
-    });
+  }
 
-    if (resumeCorrelationId !== undefined) {
-      const resumeSucceeded =
-        classified.evidence.classification === "clean-exit" &&
-        !classified.unexpected;
-      try {
-        await client.markResumeFinished({
-          correlationId: resumeCorrelationId,
-          ownerId: supervisorId,
-          succeeded: resumeSucceeded,
-          ...(classified.evidence.exitCode === undefined
-            ? {}
-            : { exitCode: classified.evidence.exitCode }),
-          ...(classified.evidence.signal === undefined
-            ? {}
-            : { signal: classified.evidence.signal }),
-          ...(resumeSucceeded
-            ? {}
-            : {
-                errorCode: classified.unexpected
-                  ? `resume-${classified.evidence.classification}`
-                  : "resume-interrupted",
-                errorMessage: classified.summary,
-              }),
-        });
-      } catch (error) {
-        logger.log({
-          level: "error",
-          code: "resume-finish-audit-failed",
-          message:
+  try {
+    for (;;) {
+      if (resumeCorrelationId !== undefined) {
+        try {
+          await client.markResumeStarted(resumeCorrelationId, supervisorId);
+        } catch (error) {
+          const message =
             error instanceof Error
               ? error.message
-              : "could not audit late resume completion",
-          at: new Date().toISOString(),
-          details: { correlationId: resumeCorrelationId, supervisorId },
-        });
-      }
-    }
-
-    let knownSession: SessionRecord | undefined;
-    try {
-      knownSession = await latestSession(client, {
-        machineId: options.machineId,
-        bridgeSessionId,
-        harness: options.harness,
-      });
-      lastSessionId = knownSession?.sessionId ?? lastSessionId;
-    } catch (error) {
-      logger.log({
-        level: "warn",
-        code: "supervisor.session-lookup-failed",
-        message:
-          error instanceof Error
-            ? error.message
-            : "could not look up the supervised harness session",
-        at: new Date().toISOString(),
-        details: { supervisorId, bridgeSessionId, harness: options.harness },
-      });
-      // A failed crash-event ingest below is durably recorded in the fallback
-      // spool. Clean exits retain their terminal status and emit a diagnostic.
-    }
-
-    if (classified.unexpected) {
-      const event = exitEvent(
-        {
-          harness: options.harness,
-          harnessVersion: options.harnessVersion,
-          machineId: options.machineId,
-          bridgeSessionId,
-          supervisorId,
-          cwd: options.cwd,
-        },
-        classified,
-        lastSessionId ?? syntheticSessionId(bridgeSessionId),
-      );
-      try {
-        await client.ingest(event);
-        return {
-          bridgeSessionId,
-          supervisorId,
-          exitCode: classified.terminalExitCode,
-          resumed,
-          classification: classified.evidence.classification,
-          unexpectedExitEventId: event.eventId,
-        };
-      } catch (error) {
-        const fallbackRecorded = await recordFallback(
-          fallbackPath,
-          "event",
-          event,
-          event.occurredAt,
-        );
-        const message =
-          error instanceof Error
-            ? error.message
-            : "could not persist supervised process exit";
-        return {
-          bridgeSessionId,
-          supervisorId,
-          exitCode: classified.terminalExitCode,
-          resumed,
-          classification: classified.evidence.classification,
-          unexpectedExitEventId: event.eventId,
-          diagnostic: {
-            code: "process-exit-ingest-failed",
-            message,
-            fallbackRecorded,
-          },
-        };
-      }
-    }
-
-    if (resumed >= maxResumes) {
-      return {
-        bridgeSessionId,
-        supervisorId,
-        exitCode: classified.terminalExitCode,
-        resumed,
-        classification: classified.evidence.classification,
-      };
-    }
-
-    const waitDeadline = Date.now() + resumeWaitMs;
-    let claimFailure:
-      | {
-          firstAt: string;
-          message: string;
-          attempts: number;
-          fallbackRecorded: boolean;
-        }
-      | undefined;
-    for (;;) {
-      let claim;
-      try {
-        claim = await client.claimNextResume({
-          machineId: options.machineId,
-          bridgeSessionId,
-          harness: options.harness,
-          ownerId: supervisorId,
-        });
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "could not query late resume commands";
-        if (claimFailure === undefined) {
-          const firstAt = new Date().toISOString();
+              : "could not audit late resume start";
           const fallbackRecorded = await recordFallback(
             fallbackPath,
             "diagnostic",
             {
-              code: "resume-claim-retrying",
+              code: "resume-start-audit-failed",
               message,
-              bridgeSessionId,
+              correlationId: resumeCorrelationId,
             },
-            firstAt,
+            new Date().toISOString(),
           );
-          claimFailure = {
-            firstAt,
-            message,
-            attempts: 1,
-            fallbackRecorded,
-          };
-          logger.log({
-            level: "warn",
-            code: "supervisor.resume-claim-retrying",
-            message,
-            at: firstAt,
-            details: { supervisorId, bridgeSessionId, attempts: 1 },
-          });
-        } else {
-          claimFailure.attempts += 1;
-          claimFailure.message = message;
-        }
-
-        const remaining = waitDeadline - Date.now();
-        if (remaining <= 0) {
-          return {
-            bridgeSessionId,
-            supervisorId,
-            exitCode: classified.terminalExitCode,
-            resumed,
-            classification: classified.evidence.classification,
-            diagnostic: {
-              code: "resume-claim-timeout",
-              message: `could not query late resume commands after ${String(
-                claimFailure.attempts,
-              )} attempts: ${claimFailure.message}`,
-              fallbackRecorded: claimFailure.fallbackRecorded,
-            },
-          };
-        }
-        const retryDelay = Math.min(
-          5_000,
-          pollIntervalMs *
-            2 ** Math.min(Math.max(claimFailure.attempts - 1, 0), 6),
-        );
-        await pause(Math.min(retryDelay, remaining));
-        continue;
-      }
-
-      if (claimFailure !== undefined) {
-        logger.log({
-          level: "info",
-          code: "supervisor.resume-claim-recovered",
-          message: "late resume polling recovered after a daemon outage",
-          at: new Date().toISOString(),
-          details: {
-            supervisorId,
-            bridgeSessionId,
-            attempts: claimFailure.attempts,
-            firstFailureAt: claimFailure.firstAt,
-          },
-        });
-        claimFailure = undefined;
-      }
-
-      if (claim.outcome === "claimed") {
-        lastSessionId = claim.command.sessionId;
-        try {
-          invocation = buildLateResumeInvocation(
-            claim.command.harness,
-            claim.command.surface,
-            claim.command.sessionId,
-            claim.command.answer,
-            lateResumePolicy,
-          );
-        } catch (error) {
-          await client.markResumeStarted(
-            claim.command.correlationId,
-            supervisorId,
-          );
-          await client.markResumeFinished({
-            correlationId: claim.command.correlationId,
-            ownerId: supervisorId,
-            succeeded: false,
-            errorCode: "resume-invocation-invalid",
-            errorMessage:
-              error instanceof Error
-                ? error.message
-                : "could not build late resume invocation",
-          });
           return {
             bridgeSessionId,
             supervisorId,
@@ -761,67 +486,172 @@ export async function runSupervisor(
             resumed,
             classification: "unknown",
             diagnostic: {
-              code: "resume-invocation-invalid",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "could not build late resume invocation",
-              fallbackRecorded: false,
+              code: "resume-start-audit-failed",
+              message,
+              fallbackRecorded,
             },
           };
         }
-        resumeCorrelationId = claim.command.correlationId;
-        resumed += 1;
-        break;
       }
-      if (claim.outcome === "unsupported") {
-        return {
-          bridgeSessionId,
+
+      logger.log({
+        level: "info",
+        code: "supervisor.child-starting",
+        message: "starting owned harness child",
+        at: new Date().toISOString(),
+        details: {
           supervisorId,
-          exitCode: classified.terminalExitCode,
-          resumed,
+          bridgeSessionId,
+          harness: options.harness,
+          executable: basename(invocation.executable),
+          resume: resumeCorrelationId !== undefined,
+        },
+      });
+      const childResult = await runner({
+        ...invocation,
+        cwd: options.cwd,
+        env: {
+          ...env,
+          AGENT_RELAY_SUPERVISED: resumed < maxResumes ? "1" : "0",
+        },
+      });
+      const classified = classifyOwnedExit(childResult, supervisorId);
+      logger.log({
+        level: classified.unexpected ? "error" : "info",
+        code: classified.unexpected
+          ? "supervisor.child-exited-unexpectedly"
+          : "supervisor.child-exited",
+        message: classified.summary,
+        at: childResult.exitedAt,
+        details: {
+          supervisorId,
+          bridgeSessionId,
+          harness: options.harness,
           classification: classified.evidence.classification,
-          diagnostic: {
-            code: "late-resume-unsupported",
-            message: `late resume is unsupported for ${claim.harness}/${claim.surface}`,
-            fallbackRecorded: false,
-          },
-        };
-      }
-      if (claim.outcome === "none") {
-        if (knownSession !== undefined) {
-          try {
-            await client.heartbeat({
-              schema: "agent-heartbeat.v1",
-              machineId: knownSession.machineId,
-              harness: knownSession.harness,
-              sessionId: knownSession.sessionId,
-              observedAt: childResult.exitedAt,
-              state: "exited",
-              sequence: Math.max(
-                knownSession.lastSequence + 1,
-                Date.parse(childResult.exitedAt),
-              ),
-            });
-          } catch (error) {
-            logger.log({
-              level: "warn",
-              code: "supervisor.clean-exit-heartbeat-failed",
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "could not record clean child exit state",
-              at: new Date().toISOString(),
-              details: {
-                supervisorId,
-                bridgeSessionId,
-                sessionId: knownSession.sessionId,
-              },
-            });
-            // The clean child status remains authoritative. Daemon diagnostics
-            // are returned only when an actionable resume command was at risk.
-          }
+          ...(classified.evidence.pid === undefined
+            ? {}
+            : { pid: classified.evidence.pid }),
+          ...(classified.evidence.exitCode === undefined
+            ? {}
+            : { exitCode: classified.evidence.exitCode }),
+          ...(classified.evidence.signal === undefined
+            ? {}
+            : { signal: classified.evidence.signal }),
+        },
+      });
+
+      if (resumeCorrelationId !== undefined) {
+        const resumeSucceeded =
+          classified.evidence.classification === "clean-exit" &&
+          !classified.unexpected;
+        try {
+          await client.markResumeFinished({
+            correlationId: resumeCorrelationId,
+            ownerId: supervisorId,
+            succeeded: resumeSucceeded,
+            ...(classified.evidence.exitCode === undefined
+              ? {}
+              : { exitCode: classified.evidence.exitCode }),
+            ...(classified.evidence.signal === undefined
+              ? {}
+              : { signal: classified.evidence.signal }),
+            ...(resumeSucceeded
+              ? {}
+              : {
+                  errorCode: classified.unexpected
+                    ? `resume-${classified.evidence.classification}`
+                    : "resume-interrupted",
+                  errorMessage: classified.summary,
+                }),
+          });
+        } catch (error) {
+          logger.log({
+            level: "error",
+            code: "resume-finish-audit-failed",
+            message:
+              error instanceof Error
+                ? error.message
+                : "could not audit late resume completion",
+            at: new Date().toISOString(),
+            details: { correlationId: resumeCorrelationId, supervisorId },
+          });
         }
+      }
+
+      let knownSession: SessionRecord | undefined;
+      try {
+        knownSession = await latestSession(client, {
+          machineId: options.machineId,
+          bridgeSessionId,
+          harness: options.harness,
+        });
+        lastSessionId = knownSession?.sessionId ?? lastSessionId;
+      } catch (error) {
+        logger.log({
+          level: "warn",
+          code: "supervisor.session-lookup-failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "could not look up the supervised harness session",
+          at: new Date().toISOString(),
+          details: { supervisorId, bridgeSessionId, harness: options.harness },
+        });
+        // A failed crash-event ingest below is durably recorded in the fallback
+        // spool. Clean exits retain their terminal status and emit a diagnostic.
+      }
+
+      if (classified.unexpected) {
+        const event = exitEvent(
+          {
+            harness: options.harness,
+            harnessVersion: options.harnessVersion,
+            machineId: options.machineId,
+            bridgeSessionId,
+            supervisorId,
+            cwd: options.cwd,
+          },
+          classified,
+          lastSessionId ?? syntheticSessionId(bridgeSessionId),
+        );
+        try {
+          await client.ingest(event);
+          return {
+            bridgeSessionId,
+            supervisorId,
+            exitCode: classified.terminalExitCode,
+            resumed,
+            classification: classified.evidence.classification,
+            unexpectedExitEventId: event.eventId,
+          };
+        } catch (error) {
+          const fallbackRecorded = await recordFallback(
+            fallbackPath,
+            "event",
+            event,
+            event.occurredAt,
+          );
+          const message =
+            error instanceof Error
+              ? error.message
+              : "could not persist supervised process exit";
+          return {
+            bridgeSessionId,
+            supervisorId,
+            exitCode: classified.terminalExitCode,
+            resumed,
+            classification: classified.evidence.classification,
+            unexpectedExitEventId: event.eventId,
+            diagnostic: {
+              code: "process-exit-ingest-failed",
+              message,
+              fallbackRecorded,
+            },
+          };
+        }
+      }
+
+      if (resumed >= maxResumes) {
         return {
           bridgeSessionId,
           supervisorId,
@@ -831,20 +661,229 @@ export async function runSupervisor(
         };
       }
 
-      const remaining = Math.min(
-        waitDeadline - Date.now(),
-        Date.parse(claim.expiresAt) - Date.now(),
-      );
-      if (remaining <= 0) {
-        return {
-          bridgeSessionId,
-          supervisorId,
-          exitCode: classified.terminalExitCode,
-          resumed,
-          classification: classified.evidence.classification,
-        };
+      const waitDeadline = Date.now() + resumeWaitMs;
+      let claimFailure:
+        | {
+            firstAt: string;
+            message: string;
+            attempts: number;
+            fallbackRecorded: boolean;
+          }
+        | undefined;
+      for (;;) {
+        let claim;
+        try {
+          claim = await client.claimNextResume({
+            machineId: options.machineId,
+            bridgeSessionId,
+            harness: options.harness,
+            ownerId: supervisorId,
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "could not query late resume commands";
+          if (claimFailure === undefined) {
+            const firstAt = new Date().toISOString();
+            const fallbackRecorded = await recordFallback(
+              fallbackPath,
+              "diagnostic",
+              {
+                code: "resume-claim-retrying",
+                message,
+                bridgeSessionId,
+              },
+              firstAt,
+            );
+            claimFailure = {
+              firstAt,
+              message,
+              attempts: 1,
+              fallbackRecorded,
+            };
+            logger.log({
+              level: "warn",
+              code: "supervisor.resume-claim-retrying",
+              message,
+              at: firstAt,
+              details: { supervisorId, bridgeSessionId, attempts: 1 },
+            });
+          } else {
+            claimFailure.attempts += 1;
+            claimFailure.message = message;
+          }
+
+          const remaining = waitDeadline - Date.now();
+          if (remaining <= 0) {
+            return {
+              bridgeSessionId,
+              supervisorId,
+              exitCode: classified.terminalExitCode,
+              resumed,
+              classification: classified.evidence.classification,
+              diagnostic: {
+                code: "resume-claim-timeout",
+                message: `could not query late resume commands after ${String(
+                  claimFailure.attempts,
+                )} attempts: ${claimFailure.message}`,
+                fallbackRecorded: claimFailure.fallbackRecorded,
+              },
+            };
+          }
+          const retryDelay = Math.min(
+            5_000,
+            pollIntervalMs *
+              2 ** Math.min(Math.max(claimFailure.attempts - 1, 0), 6),
+          );
+          await pause(Math.min(retryDelay, remaining));
+          continue;
+        }
+
+        if (claimFailure !== undefined) {
+          logger.log({
+            level: "info",
+            code: "supervisor.resume-claim-recovered",
+            message: "late resume polling recovered after a daemon outage",
+            at: new Date().toISOString(),
+            details: {
+              supervisorId,
+              bridgeSessionId,
+              attempts: claimFailure.attempts,
+              firstFailureAt: claimFailure.firstAt,
+            },
+          });
+          claimFailure = undefined;
+        }
+
+        if (claim.outcome === "claimed") {
+          lastSessionId = claim.command.sessionId;
+          try {
+            invocation = buildLateResumeInvocation(
+              claim.command.harness,
+              claim.command.surface,
+              claim.command.sessionId,
+              claim.command.answer,
+              lateResumePolicy,
+            );
+          } catch (error) {
+            await client.markResumeStarted(
+              claim.command.correlationId,
+              supervisorId,
+            );
+            await client.markResumeFinished({
+              correlationId: claim.command.correlationId,
+              ownerId: supervisorId,
+              succeeded: false,
+              errorCode: "resume-invocation-invalid",
+              errorMessage:
+                error instanceof Error
+                  ? error.message
+                  : "could not build late resume invocation",
+            });
+            return {
+              bridgeSessionId,
+              supervisorId,
+              exitCode: 1,
+              resumed,
+              classification: "unknown",
+              diagnostic: {
+                code: "resume-invocation-invalid",
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "could not build late resume invocation",
+                fallbackRecorded: false,
+              },
+            };
+          }
+          resumeCorrelationId = claim.command.correlationId;
+          resumed += 1;
+          break;
+        }
+        if (claim.outcome === "unsupported") {
+          return {
+            bridgeSessionId,
+            supervisorId,
+            exitCode: classified.terminalExitCode,
+            resumed,
+            classification: classified.evidence.classification,
+            diagnostic: {
+              code: "late-resume-unsupported",
+              message: `late resume is unsupported for ${claim.harness}/${claim.surface}`,
+              fallbackRecorded: false,
+            },
+          };
+        }
+        if (claim.outcome === "none") {
+          if (knownSession !== undefined) {
+            try {
+              await client.heartbeat({
+                schema: "agent-heartbeat.v1",
+                machineId: knownSession.machineId,
+                harness: knownSession.harness,
+                sessionId: knownSession.sessionId,
+                observedAt: childResult.exitedAt,
+                state: "exited",
+                sequence: Math.max(
+                  knownSession.lastSequence + 1,
+                  Date.parse(childResult.exitedAt),
+                ),
+              });
+            } catch (error) {
+              logger.log({
+                level: "warn",
+                code: "supervisor.clean-exit-heartbeat-failed",
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "could not record clean child exit state",
+                at: new Date().toISOString(),
+                details: {
+                  supervisorId,
+                  bridgeSessionId,
+                  sessionId: knownSession.sessionId,
+                },
+              });
+              // The clean child status remains authoritative. Daemon diagnostics
+              // are returned only when an actionable resume command was at risk.
+            }
+          }
+          return {
+            bridgeSessionId,
+            supervisorId,
+            exitCode: classified.terminalExitCode,
+            resumed,
+            classification: classified.evidence.classification,
+          };
+        }
+
+        const remaining = Math.min(
+          waitDeadline - Date.now(),
+          Date.parse(claim.expiresAt) - Date.now(),
+        );
+        if (remaining <= 0) {
+          return {
+            bridgeSessionId,
+            supervisorId,
+            exitCode: classified.terminalExitCode,
+            resumed,
+            classification: classified.evidence.classification,
+          };
+        }
+        await pause(Math.min(pollIntervalMs, remaining));
       }
-      await pause(Math.min(pollIntervalMs, remaining));
+    }
+  } finally {
+    try {
+      await client.endMcpBinding(mcpBindingToken, {
+        machineId: options.machineId,
+        bridgeSessionId,
+        harness: options.harness,
+      });
+    } catch {
+      // The durable request remains authoritative if the daemon is unavailable
+      // during shutdown. No unproven session is selected as a fallback.
     }
   }
 }

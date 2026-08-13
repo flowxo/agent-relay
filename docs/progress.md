@@ -2,6 +2,27 @@
 
 ## Proven
 
+- FXO-1604 freezes the smallest useful local Relay MCP surface as
+  `agent-relay-mcp.v1`: `relay_ask`, `relay_ask_many`, `relay_cancel`, and
+  `relay_status` over standard local stdio MCP. Supervised runs generate one
+  high-entropy authority that native hooks claim only after durably observing
+  the exact native session; SQLite schema 11 retains only its keyed digest.
+  Concurrent same-project sessions remain isolated, a second identity or bridge
+  owner makes correlation terminally ambiguous, and no path, timestamp,
+  process-name, or recent-session heuristic participates. All questions use the
+  existing `agent-interaction.v1` request, draft, answer, delivery, expiry,
+  cancellation, late-resume, and canonical Needs input transitions. Tool waits
+  are bounded and leave late answers durable; errors are typed, content-free,
+  and direct the harness to its native local question mechanism. The installer
+  and unrelated MCP/user configuration remain unchanged. On 2026-08-13 the
+  complete `pnpm check` passed formatting, governance, public-doc, fixture,
+  secret, release-policy, lint, all typechecks, 87 Vitest files/768 tests, both
+  pinned contract suites, all builds, isolated package/hosted proofs, and the
+  schema migration/refusal/install/uninstall lifecycle. All three Chromium E2E
+  scenarios passed and `pnpm audit --prod` found no known vulnerability. Tests
+  used only loopback HTTP, local SQLite, fake delivery, and synthetic fixtures;
+  no live-provider traffic or registry mutation occurred.
+
 - Telegram now projects the durable SQLite session lane as both a contextual
   `/status` response and an emoji-prefixed private-topic title. In a known
   coding topic, `/status` renders that exact session's state, project, branch,

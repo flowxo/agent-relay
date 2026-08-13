@@ -2,12 +2,22 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AgentAttentionEventV1,
+  InteractionQuestion,
+  OperatorInteractionAnswerV1,
   RelayDiagnosticV1,
+  RelayMcpAskV1,
+  RelayMcpQuestionnaireV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
 } from "@agent-relay/protocol";
 import {
+  AgentAttentionEventV1Schema,
+  InteractionQuestionSchema,
   InteractionProviderObservationV1Schema,
+  OperatorInteractionAnswerV1Schema,
+  OperatorInteractionRequestV1Schema,
+  RelayMcpAskV1Schema,
+  RelayMcpQuestionnaireV1Schema,
   sha256,
 } from "@agent-relay/protocol";
 import type {
@@ -49,6 +59,8 @@ import type {
   BrowserResolutionResult,
   BrowserSessionActionResult,
   IngestResult,
+  McpSessionBindingMutationResult,
+  McpSessionBindingRecord,
   PendingRequestRecord,
   RelayStore,
   RetentionResult,
@@ -101,6 +113,48 @@ export interface StaleBacklogQuarantineResult {
   quarantined: number;
   requestsExpired: number;
   cutoff?: string;
+}
+
+export type McpInteractionOpenResult =
+  | {
+      outcome: "opened" | "duplicate";
+      request: PendingRequestRecord;
+    }
+  | {
+      outcome:
+        | "binding-missing"
+        | "binding-pending"
+        | "binding-ambiguous"
+        | "binding-ended"
+        | "binding-revoked"
+        | "session-unavailable"
+        | "request-conflict";
+      binding?: McpSessionBindingRecord;
+      request?: PendingRequestRecord;
+    };
+
+export type McpInteractionCancelResult =
+  | ResolutionResult
+  | {
+      outcome:
+        | "binding-missing"
+        | "binding-pending"
+        | "binding-ambiguous"
+        | "binding-ended"
+        | "binding-revoked"
+        | "session-unavailable"
+        | "request-not-owned";
+      binding?: McpSessionBindingRecord;
+      request?: PendingRequestRecord;
+    };
+
+export interface McpInteractionStatus {
+  binding?: McpSessionBindingRecord;
+  session?: SessionRecord;
+  openRequestCount?: number;
+  request?: PendingRequestRecord;
+  answer?: OperatorInteractionAnswerV1;
+  delivery: "available" | "degraded" | "unavailable";
 }
 
 export interface TopicCleanupDrainResult {
@@ -1142,6 +1196,306 @@ export class RelayService {
       },
     });
     return result;
+  }
+
+  public registerMcpSessionBinding(input: {
+    token: string;
+    machineId: string;
+    bridgeSessionId: string;
+    harness: AgentAttentionEventV1["harness"];
+  }): McpSessionBindingMutationResult {
+    return this.store.registerMcpSessionBinding({
+      ...input,
+      now: this.now().toISOString(),
+    });
+  }
+
+  public claimMcpSessionBinding(input: {
+    token: string;
+    machineId: string;
+    bridgeSessionId: string;
+    harness: AgentAttentionEventV1["harness"];
+    sessionId: string;
+  }): McpSessionBindingMutationResult {
+    return this.store.claimMcpSessionBinding({
+      ...input,
+      now: this.now().toISOString(),
+    });
+  }
+
+  public endMcpSessionBinding(input: {
+    token: string;
+    machineId: string;
+    bridgeSessionId: string;
+    harness: AgentAttentionEventV1["harness"];
+    sessionId?: string;
+  }): McpSessionBindingMutationResult {
+    return this.store.endMcpSessionBinding({
+      ...input,
+      now: this.now().toISOString(),
+    });
+  }
+
+  public mcpInteractionStatus(
+    token: string,
+    requestId?: string,
+  ): McpInteractionStatus {
+    const checkedAt = this.now().toISOString();
+    this.store.expireRequests(checkedAt);
+    const binding = this.store.verifyMcpSessionBinding(token, checkedAt);
+    if (binding?.state !== "bound" || binding.sessionId === undefined) {
+      return {
+        ...(binding === undefined ? {} : { binding }),
+        delivery: binding === undefined ? "unavailable" : "degraded",
+      };
+    }
+    const session = this.store.getSession({
+      machineId: binding.machineId,
+      harness: binding.harness,
+      sessionId: binding.sessionId,
+    });
+    if (session === undefined) {
+      return { binding, delivery: "unavailable" };
+    }
+    const request =
+      requestId === undefined
+        ? undefined
+        : this.store.getPendingRequest(requestId);
+    const ownedRequest =
+      request !== undefined &&
+      request.machineId === binding.machineId &&
+      request.harness === binding.harness &&
+      request.sessionId === binding.sessionId
+        ? request
+        : undefined;
+    const storedEvent =
+      ownedRequest === undefined
+        ? undefined
+        : this.store.getEvent(ownedRequest.eventId);
+    const delivery =
+      storedEvent === undefined
+        ? requestId === undefined
+          ? "available"
+          : "degraded"
+        : storedEvent.status === "delivered"
+          ? "available"
+          : storedEvent.status === "dead_letter"
+            ? "unavailable"
+            : "degraded";
+    let answer: OperatorInteractionAnswerV1 | undefined;
+    if (
+      ownedRequest?.state === "answered" &&
+      ownedRequest.answer !== undefined
+    ) {
+      try {
+        answer = OperatorInteractionAnswerV1Schema.parse(
+          JSON.parse(ownedRequest.answer) as unknown,
+        );
+      } catch {
+        // A malformed retained answer is reported as an explicit MCP failure by
+        // the adapter. It is never logged or echoed as untrusted text here.
+      }
+    }
+    return {
+      binding,
+      session,
+      openRequestCount: this.store.countOpenRequests(session),
+      ...(ownedRequest === undefined ? {} : { request: ownedRequest }),
+      ...(answer === undefined ? {} : { answer }),
+      delivery,
+    };
+  }
+
+  public openMcpInteraction(
+    token: string,
+    input: RelayMcpAskV1 | RelayMcpQuestionnaireV1,
+  ): McpInteractionOpenResult {
+    input =
+      input.schema === "agent-relay-mcp-ask.v1"
+        ? RelayMcpAskV1Schema.parse(input)
+        : RelayMcpQuestionnaireV1Schema.parse(input);
+    const status = this.mcpInteractionStatus(token);
+    const binding = status.binding;
+    if (binding === undefined) {
+      return { outcome: "binding-missing" };
+    }
+    if (binding.state !== "bound") {
+      return {
+        outcome: `binding-${binding.state}` as Exclude<
+          McpInteractionOpenResult["outcome"],
+          "opened" | "duplicate" | "session-unavailable" | "request-conflict"
+        >,
+        binding,
+      };
+    }
+    const session = status.session;
+    if (session === undefined || binding.sessionId === undefined) {
+      return { outcome: "session-unavailable", binding };
+    }
+    const questions: InteractionQuestion[] =
+      input.schema === "agent-relay-mcp-ask.v1"
+        ? [InteractionQuestionSchema.parse(input.question)]
+        : input.questions.map((question) =>
+            InteractionQuestionSchema.parse(question),
+          );
+    const existing = this.store.getPendingRequest(input.requestId);
+    if (existing !== undefined) {
+      const stored = this.store.getEvent(existing.eventId)?.event.request
+        ?.interaction;
+      const sameOwner =
+        existing.machineId === binding.machineId &&
+        existing.harness === binding.harness &&
+        existing.sessionId === binding.sessionId;
+      const samePayload =
+        stored !== undefined &&
+        stored.title === input.title &&
+        JSON.stringify(stored.questions) === JSON.stringify(questions) &&
+        Date.parse(stored.expiresAt) - Date.parse(stored.createdAt) ===
+          input.expiresInMs;
+      return sameOwner && samePayload
+        ? { outcome: "duplicate", request: existing }
+        : {
+            outcome: "request-conflict",
+            binding,
+            ...(sameOwner ? { request: existing } : {}),
+          };
+    }
+
+    const now = this.now().toISOString();
+    const expiresAt = new Date(
+      Date.parse(now) + input.expiresInMs,
+    ).toISOString();
+    const interaction = OperatorInteractionRequestV1Schema.parse({
+      schema: "agent-interaction-request.v1",
+      requestId: input.requestId,
+      createdAt: now,
+      expiresAt,
+      title: input.title,
+      lifecycle: "pending",
+      questions,
+      fallback: {
+        preferredMode: "buttons",
+        alternativeModes: ["numbered-text", "web-handoff"],
+        whenUnavailable: "use-alternative",
+      },
+    });
+    const eventId = `event_mcp_${sha256(input.requestId).slice(0, 32)}`;
+    let sequence: number;
+    try {
+      sequence = this.store.allocateNativeHookSequence({
+        machineId: binding.machineId,
+        harness: binding.harness,
+        sessionId: binding.sessionId,
+        eventId,
+        sourceFingerprint: sha256(
+          `agent-relay-mcp-request:v1:${input.requestId}`,
+        ),
+        allocatedAt: now,
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("native hook event identity")
+      ) {
+        return { outcome: "request-conflict", binding };
+      }
+      throw error;
+    }
+    const latest = this.store.getLatestEventForSession(session)?.event;
+    const event = AgentAttentionEventV1Schema.parse({
+      schema: "agent-attention.v1",
+      eventId,
+      occurredAt: now,
+      sequence,
+      machineId: session.machineId,
+      bridgeSessionId: session.bridgeSessionId,
+      harness: session.harness,
+      surface: session.surface,
+      harnessVersion: session.harnessVersion,
+      sessionId: session.sessionId,
+      ...(latest?.turnId === undefined ? {} : { turnId: latest.turnId }),
+      project: session.project,
+      type: "input.required",
+      request: {
+        correlationId: input.requestId,
+        kind: "question-set",
+        question: input.title,
+        interaction,
+        expiresAt,
+      },
+      capabilities: session.capabilities,
+    });
+    let ingested: IngestResult;
+    try {
+      ingested = this.store.ingestEvent(event, now);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("event id collision:")
+      ) {
+        const racedRequest = this.store.getPendingRequest(input.requestId);
+        return {
+          outcome: "request-conflict",
+          binding,
+          ...(racedRequest === undefined ? {} : { request: racedRequest }),
+        };
+      }
+      throw error;
+    }
+    const request = this.store.getPendingRequest(input.requestId);
+    if (request === undefined) {
+      throw new Error("MCP interaction disappeared after durable ingestion");
+    }
+    this.logger.log({
+      level: "info",
+      code: ingested.inserted
+        ? "mcp.interaction-opened"
+        : "mcp.interaction-duplicate",
+      message: ingested.inserted
+        ? "typed MCP interaction queued"
+        : "duplicate typed MCP interaction retained",
+      at: now,
+      details: {
+        harness: session.harness,
+        questionCount: questions.length,
+      },
+    });
+    return {
+      outcome: ingested.inserted ? "opened" : "duplicate",
+      request,
+    };
+  }
+
+  public cancelMcpInteraction(
+    token: string,
+    requestId: string,
+  ): McpInteractionCancelResult {
+    const status = this.mcpInteractionStatus(token, requestId);
+    const binding = status.binding;
+    if (binding === undefined) {
+      return { outcome: "binding-missing" };
+    }
+    if (binding.state !== "bound") {
+      return {
+        outcome: `binding-${binding.state}` as Exclude<
+          McpInteractionCancelResult["outcome"],
+          | ResolutionResult["outcome"]
+          | "session-unavailable"
+          | "request-not-owned"
+        >,
+        binding,
+      };
+    }
+    if (status.session === undefined) {
+      return { outcome: "session-unavailable", binding };
+    }
+    if (status.request === undefined) {
+      const existing = this.store.getPendingRequest(requestId);
+      return existing === undefined
+        ? { outcome: "not_found" }
+        : { outcome: "request-not-owned", binding };
+    }
+    return this.store.cancelRequest(requestId, this.now().toISOString());
   }
 
   public reportDiagnostic(

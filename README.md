@@ -48,6 +48,8 @@ credential retention, live-provider work, or any later release.
   letters.
 - Native hooks for ordinary use, plus an opt-in supervisor when you need proven
   process exits or late CLI resume.
+- A versioned [local stdio MCP server](docs/relay-mcp.md) for typed operator
+  questions from an exactly bound supervised native session.
 - Replaceable notification transports. Direct Telegram works without a hosted
   Agent Relay account, and a signed outbound webhook can feed your own tools.
 

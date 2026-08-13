@@ -437,6 +437,10 @@ describe("opt-in harness supervisor", () => {
     expect(invocations[0]?.env["AGENT_RELAY_DAEMON_TOKEN"]).toBe(
       "synthetic-daemon-token",
     );
+    expect(invocations[0]?.env["AGENT_RELAY_MCP_BINDING"]).toMatch(
+      /^mcpbind_[A-Za-z0-9_-]{32,96}$/u,
+    );
+    expect(invocations[0]?.env["AGENT_RELAY_MCP_HARNESS"]).toBe("codex");
     expect(runtime.store.listResumeCommands()).toEqual([
       expect.objectContaining({
         state: "succeeded",

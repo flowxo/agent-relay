@@ -78,6 +78,16 @@ The repository labels evidence rather than blending it:
 A live result for one version does not validate a future version. A fixture
 proves our behavior for that input, not the provider's production availability.
 
+## Local MCP compatibility
+
+The local server freezes `agent-relay-mcp.v1` on MCP protocol `2025-11-25` and
+uses standard stdio newline framing, initialization, ping, `tools/list`, and
+`tools/call`. Compatibility is tested with protocol-shaped synthetic messages;
+it is not a claim that every harness automatically installs or discovers the
+server. User-level MCP configuration is deliberately unchanged. The supported
+runtime path is the supervised exact-session handshake documented in
+[Local Relay MCP server](relay-mcp.md).
+
 ## Changing a compatibility claim
 
 A contribution that changes parsing, continuation output, resume argv, install
