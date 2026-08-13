@@ -17,7 +17,7 @@ import {
   TelegramPollingLeaseError,
 } from "./telegram-polling-lease.js";
 import { whooshbangStreamKey } from "./whooshbang-poller.js";
-import { WebCredentialSchema } from "./web-credential.js";
+import { readWebCredential, WebCredentialSchema } from "./web-credential.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -146,6 +146,54 @@ describe("startDaemon Telegram update mode", () => {
     });
     expect(await daemon.service.drain()).toMatchObject({ delivered: 1 });
     expect(daemon.service.transport.name).toBe("fake-telegram");
+    await daemon.close();
+  });
+
+  it("invalidates unconsumed dashboard grants and browser sessions on restart", async () => {
+    const databasePath = await temporaryDatabase();
+    const port = await availablePort();
+    const start = async () =>
+      await startDaemon({
+        databasePath,
+        port,
+        drainIntervalMs: 60_000,
+        retentionIntervalMs: 60_000,
+      });
+    let daemon = await start();
+    const baseUrl = `http://127.0.0.1:${String(port)}`;
+    const credential = await readWebCredential(
+      join(dirname(databasePath), "web-credential.json"),
+    );
+    const created = await fetch(`${baseUrl}/v1/web/bootstrap-grants`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${credential.token}`,
+        origin: baseUrl,
+        "x-agent-relay-csrf": credential.csrfToken,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        schema: "agent-relay-web-bootstrap-create.v1",
+      }),
+    });
+    const { grant } = (await created.json()) as { grant: string };
+    await daemon.close();
+    daemon = await start();
+    const stale = await fetch(`${baseUrl}/v1/web/bootstrap/exchange`, {
+      method: "POST",
+      headers: {
+        origin: baseUrl,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        schema: "agent-relay-web-bootstrap-exchange.v1",
+        grant,
+      }),
+    });
+    expect(stale.status).toBe(401);
+    await expect(stale.json()).resolves.toMatchObject({
+      code: "web-bootstrap-invalid",
+    });
     await daemon.close();
   });
 

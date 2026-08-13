@@ -7,7 +7,7 @@
       name="description"
       content="Local operator console for concurrent Agent Relay sessions"
     />
-    <meta name="agent-relay-web-asset-version" content="3" />
+    <meta name="agent-relay-web-asset-version" content="4" />
     <title>Agent Relay Console</title>
     <link rel="stylesheet" href="/ui/styles.css" />
   </head>
@@ -30,45 +30,62 @@
 
       <main>
         <section class="connect-panel" data-connect-panel>
-          <div>
-            <p class="eyebrow">Private local connection</p>
-            <h1>Bring every agent lane into focus.</h1>
+          <div class="recovery-card">
+            <p class="eyebrow">Authenticated local dashboard</p>
+            <h1>Open the dashboard safely.</h1>
             <p>
-              Paste both fields from
-              <code>~/.agent-relay/web-credential.json</code>. They stay in this
-              page's memory and are never written to browser storage.
+              Run the canonical launcher. It checks the daemon and protected
+              app, creates a 60-second single-use grant, and opens an
+              authenticated loopback browser session.
             </p>
-          </div>
-          <form class="connect-form" data-connect-form>
-            <div class="credential-row">
-              <div class="credential-fields">
-                <label for="credential">Local bearer token</label>
-                <input
-                  id="credential"
-                  name="credential"
-                  type="password"
-                  autocomplete="off"
-                  spellcheck="false"
-                  required
-                  minlength="32"
-                  placeholder="Paste token"
-                />
-                <label for="csrf-credential">Local CSRF token</label>
-                <input
-                  id="csrf-credential"
-                  name="csrfCredential"
-                  type="password"
-                  autocomplete="off"
-                  spellcheck="false"
-                  required
-                  minlength="32"
-                  placeholder="Paste csrfToken"
-                />
-              </div>
-              <button type="submit">Connect</button>
-            </div>
+            <pre
+              class="dashboard-command"
+              data-dashboard-command
+              tabindex="-1"
+            ><code>agent-relay dashboard --web</code></pre>
+            <p class="recovery-note">
+              Refresh and additional loopback tabs reuse the session while it
+              remains active. A daemon restart, browser-session loss, 30 minutes
+              idle, or the 8-hour absolute limit requires this command again.
+            </p>
             <p class="form-error" data-connect-error role="alert"></p>
-          </form>
+
+            <details class="advanced-connect">
+              <summary>Advanced recovery: connect manually</summary>
+              <p>
+                If the launcher cannot open a browser, paste both current fields
+                from <code>~/.agent-relay/web-credential.json</code>. They stay
+                only in this page's memory.
+              </p>
+              <form class="connect-form" data-connect-form>
+                <div class="credential-fields">
+                  <label for="credential">Local bearer token</label>
+                  <input
+                    id="credential"
+                    name="credential"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                    minlength="32"
+                    placeholder="Paste token"
+                  />
+                  <label for="csrf-credential">Local CSRF token</label>
+                  <input
+                    id="csrf-credential"
+                    name="csrfCredential"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                    minlength="32"
+                    placeholder="Paste csrfToken"
+                  />
+                </div>
+                <button type="submit">Connect manually</button>
+              </form>
+            </details>
+          </div>
         </section>
 
         <section class="console" data-console hidden>

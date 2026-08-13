@@ -18,6 +18,7 @@ import { makeProjectRef, sha256 } from "@agent-relay/protocol";
 import { RelayClient } from "./client.js";
 import { createRelayHttpServer } from "./http-server.js";
 import type { WebCredential } from "./web-credential.js";
+import { WebSessionAuthority } from "./web-session.js";
 
 const webCredential: WebCredential = {
   schema: "agent-relay-web-credential.v1",
@@ -113,6 +114,7 @@ async function setup(
   telegramWebhookSecret?: string,
   credential?: WebCredential,
   telegramCanaryReady?: () => boolean,
+  webSessionAuthority?: WebSessionAuthority,
 ) {
   const store = new RelayStore();
   const transport = new FakeNotificationTransport();
@@ -132,6 +134,7 @@ async function setup(
     replyRouter,
     ...(telegramWebhookSecret === undefined ? {} : { telegramWebhookSecret }),
     ...(credential === undefined ? {} : { webCredential: credential }),
+    ...(webSessionAuthority === undefined ? {} : { webSessionAuthority }),
     ...(telegramCanaryReady === undefined ? {} : { telegramCanaryReady }),
     webStreamPollMs: 10,
   });
@@ -167,6 +170,25 @@ function webHeaders(
     origin: runtime.baseUrl,
     ...(options.csrf ? { "x-agent-relay-csrf": webCredential.csrfToken } : {}),
   };
+}
+
+async function createBootstrapGrant(
+  runtime: Awaited<ReturnType<typeof setup>>,
+): Promise<string> {
+  const response = await fetch(`${runtime.baseUrl}/v1/web/bootstrap-grants`, {
+    method: "POST",
+    headers: {
+      ...webHeaders(runtime, { csrf: true }),
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      schema: "agent-relay-web-bootstrap-create.v1",
+    }),
+  });
+  const body = (await response.json()) as { grant?: string };
+  expect(response.status, JSON.stringify(body)).toBe(201);
+  if (body.grant === undefined) throw new Error("synthetic grant is missing");
+  return body.grant;
 }
 
 describe("relay HTTP daemon", () => {
@@ -221,6 +243,8 @@ describe("relay HTTP daemon", () => {
     expect(html).toContain("data-timeline-list");
     expect(html).toContain("data-export-diagnostics");
     expect(html).toContain("data-session-controls");
+    expect(html).toContain("agent-relay dashboard --web");
+    expect(html).toContain("Advanced recovery: connect manually");
     expect(html).toContain('name="csrfCredential"');
     expect(html).not.toContain(webCredential.token);
     expect(html).not.toContain(webCredential.csrfToken);
@@ -236,17 +260,21 @@ describe("relay HTTP daemon", () => {
     expect(appText).toContain("agent-relay-web-resolve.v1");
     expect(appText).toContain("agent-relay-web-session-action.v1");
     expect(appText).toContain("x-agent-relay-csrf");
+    expect(appText).toContain("/v1/web/bootstrap/exchange");
+    expect(appText).toContain("history.replaceState");
+    expect(appText).not.toContain("localStorage");
+    expect(appText).not.toContain("sessionStorage");
     const version = await fetch(`${runtime.baseUrl}/ui/version.js`);
     expect(version.status).toBe(200);
-    expect(await version.text()).toContain('WEB_API_VERSION = "2"');
+    expect(await version.text()).toContain('WEB_API_VERSION = "3"');
     const meta = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
       headers: webHeaders(runtime),
     });
     expect(meta.status).toBe(200);
     await expect(meta.json()).resolves.toEqual({
       schema: "agent-relay-web-meta.v1",
-      apiVersion: "2",
-      assetVersion: "3",
+      apiVersion: "3",
+      assetVersion: "4",
       commandSchemas: [
         "agent-relay-web-resolve.v1",
         "agent-relay-web-session-action.v1",
@@ -670,6 +698,354 @@ describe("relay HTTP daemon", () => {
     expect(crossOrigin.status).toBe(403);
     expect(crossOrigin.headers.get("access-control-allow-origin")).toBeNull();
     expect(await crossOrigin.text()).not.toContain(webCredential.token);
+    await runtime.close();
+  });
+
+  it("exchanges one scoped grant for an HttpOnly session without browser persistence", async () => {
+    const runtime = await setup(
+      "synthetic-daemon-secret",
+      undefined,
+      webCredential,
+    );
+    const grant = await createBootstrapGrant(runtime);
+    const exchange = await fetch(
+      `${runtime.baseUrl}/v1/web/bootstrap/exchange`,
+      {
+        method: "POST",
+        headers: {
+          origin: runtime.baseUrl,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant,
+        }),
+      },
+    );
+    const session = (await exchange.json()) as {
+      csrfToken: string;
+      schema: string;
+    };
+    expect(exchange.status).toBe(200);
+    expect(session).toMatchObject({
+      schema: "agent-relay-web-browser-session.v1",
+    });
+    const setCookie = exchange.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=Strict");
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).not.toContain("Max-Age");
+    expect(JSON.stringify(session)).not.toContain(webCredential.token);
+    expect(JSON.stringify(session)).not.toContain(webCredential.csrfToken);
+    const cookie = setCookie.split(";", 1)[0] ?? "";
+
+    const meta = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
+      headers: { cookie },
+    });
+    expect(meta.status).toBe(200);
+    const restored = await fetch(`${runtime.baseUrl}/v1/web/session`, {
+      headers: { cookie },
+    });
+    await expect(restored.json()).resolves.toMatchObject({
+      schema: "agent-relay-web-browser-session.v1",
+      csrfToken: session.csrfToken,
+    });
+
+    const actionUrl = `${runtime.baseUrl}/v1/web/sessions/${"a".repeat(24)}/actions`;
+    const actionBody = JSON.stringify({
+      schema: "agent-relay-web-session-action.v1",
+      operationId: "operation_session_csrf_12345678",
+      eventId: "event_session_csrf_12345678",
+      action: "mute",
+    });
+    const missingCsrf = await fetch(actionUrl, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: runtime.baseUrl,
+        "content-type": "application/json",
+      },
+      body: actionBody,
+    });
+    expect(missingCsrf.status).toBe(403);
+    const validCsrf = await fetch(actionUrl, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: runtime.baseUrl,
+        "content-type": "application/json",
+        "x-agent-relay-csrf": session.csrfToken,
+      },
+      body: actionBody,
+    });
+    expect(validCsrf.status).toBe(404);
+
+    const replay = await fetch(`${runtime.baseUrl}/v1/web/bootstrap/exchange`, {
+      method: "POST",
+      headers: {
+        origin: runtime.baseUrl,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        schema: "agent-relay-web-bootstrap-exchange.v1",
+        grant,
+      }),
+    });
+    expect(replay.status).toBe(409);
+    expect(await replay.text()).not.toContain(grant);
+    expect(JSON.stringify(runtime.logger.records)).not.toContain(grant);
+
+    const malformedJson = await fetch(
+      `${runtime.baseUrl}/v1/web/bootstrap/exchange`,
+      {
+        method: "POST",
+        headers: {
+          origin: runtime.baseUrl,
+          "content-type": "application/json",
+        },
+        body: `{"schema":"agent-relay-web-bootstrap-exchange.v1","grant":"${grant}",`,
+      },
+    );
+    expect(malformedJson.status).toBe(400);
+    expect(await malformedJson.text()).not.toContain(grant);
+    expect(JSON.stringify(runtime.logger.records)).not.toContain(grant);
+    await runtime.close();
+  });
+
+  it("rejects stale, expired, malformed, wrong-origin, and wrong-host grants", async () => {
+    let now = new Date("2026-08-13T21:00:00.000Z");
+    const authority = new WebSessionAuthority({
+      now: () => now,
+      bootstrapTtlMs: 100,
+    });
+    const runtime = await setup(
+      undefined,
+      undefined,
+      webCredential,
+      undefined,
+      authority,
+    );
+
+    const wrongOriginGrant = await createBootstrapGrant(runtime);
+    const wrongOrigin = await fetch(
+      `${runtime.baseUrl}/v1/web/bootstrap/exchange`,
+      {
+        method: "POST",
+        headers: {
+          origin: "https://attacker.invalid",
+          "sec-fetch-site": "cross-site",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant: wrongOriginGrant,
+        }),
+      },
+    );
+    expect(wrongOrigin.status).toBe(403);
+    expect(await wrongOrigin.text()).not.toContain(wrongOriginGrant);
+
+    const wrongHostGrant = await createBootstrapGrant(runtime);
+    const address = new URL(runtime.baseUrl);
+    const wrongHostResponse = await new Promise<{
+      status: number;
+      body: string;
+    }>((resolve, reject) => {
+      const request = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: Number(address.port),
+          path: "/v1/web/bootstrap/exchange",
+          method: "POST",
+          headers: {
+            host: `localhost:${address.port}`,
+            origin: `http://localhost:${address.port}`,
+            "content-type": "application/json",
+          },
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () =>
+            resolve({
+              status: response.statusCode ?? 0,
+              body: Buffer.concat(chunks).toString("utf8"),
+            }),
+          );
+        },
+      );
+      request.once("error", reject);
+      request.end(
+        JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant: wrongHostGrant,
+        }),
+      );
+    });
+    expect(wrongHostResponse.status).toBe(403);
+    expect(wrongHostResponse.body).not.toContain(wrongHostGrant);
+
+    const expiredGrant = await createBootstrapGrant(runtime);
+    now = new Date(now.getTime() + 101);
+    const expired = await fetch(
+      `${runtime.baseUrl}/v1/web/bootstrap/exchange`,
+      {
+        method: "POST",
+        headers: {
+          origin: runtime.baseUrl,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant: expiredGrant,
+        }),
+      },
+    );
+    expect(expired.status).toBe(410);
+    await expect(expired.json()).resolves.toMatchObject({
+      code: "web-bootstrap-expired",
+    });
+
+    const stale = await fetch(`${runtime.baseUrl}/v1/web/bootstrap/exchange`, {
+      method: "POST",
+      headers: {
+        origin: runtime.baseUrl,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        schema: "agent-relay-web-bootstrap-exchange.v1",
+        grant: `webboot_${"A".repeat(43)}`,
+      }),
+    });
+    expect(stale.status).toBe(401);
+    const malformed = await fetch(
+      `${runtime.baseUrl}/v1/web/bootstrap/exchange`,
+      {
+        method: "POST",
+        headers: {
+          origin: runtime.baseUrl,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant: "malformed",
+        }),
+      },
+    );
+    expect(malformed.status).toBe(400);
+    await runtime.close();
+  });
+
+  it("supports concurrent launches while allowing only one exchange per grant", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    const grants = await Promise.all(
+      Array.from({ length: 8 }, () => createBootstrapGrant(runtime)),
+    );
+    expect(new Set(grants).size).toBe(grants.length);
+    const selected = grants[0] ?? "";
+    const exchange = () =>
+      fetch(`${runtime.baseUrl}/v1/web/bootstrap/exchange`, {
+        method: "POST",
+        headers: {
+          origin: runtime.baseUrl,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant: selected,
+        }),
+      });
+    const responses = await Promise.all([exchange(), exchange(), exchange()]);
+    expect(responses.map(({ status }) => status).sort()).toEqual([
+      200, 409, 409,
+    ]);
+    await runtime.close();
+  });
+
+  it("expires browser sessions without weakening the persistent recovery path", async () => {
+    let now = new Date("2026-08-13T21:00:00.000Z");
+    const authority = new WebSessionAuthority({
+      now: () => now,
+      sessionIdleTtlMs: 100,
+    });
+    const runtime = await setup(
+      undefined,
+      undefined,
+      webCredential,
+      undefined,
+      authority,
+    );
+    const grant = await createBootstrapGrant(runtime);
+    const exchange = await fetch(
+      `${runtime.baseUrl}/v1/web/bootstrap/exchange`,
+      {
+        method: "POST",
+        headers: {
+          origin: runtime.baseUrl,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant,
+        }),
+      },
+    );
+    const cookie = (exchange.headers.get("set-cookie") ?? "").split(";", 1)[0];
+    now = new Date(now.getTime() + 101);
+    const expired = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
+      headers: { cookie },
+    });
+    expect(expired.status).toBe(401);
+    await expect(expired.json()).resolves.toMatchObject({
+      code: "web-session-expired",
+    });
+    expect(
+      (
+        await fetch(`${runtime.baseUrl}/v1/web/meta`, {
+          headers: webHeaders(runtime),
+        })
+      ).status,
+    ).toBe(200);
+    await runtime.close();
+  });
+
+  it("closes an open browser-session stream at its authenticated expiry", async () => {
+    const authority = new WebSessionAuthority({ sessionIdleTtlMs: 150 });
+    const runtime = await setup(
+      undefined,
+      undefined,
+      webCredential,
+      undefined,
+      authority,
+    );
+    const grant = await createBootstrapGrant(runtime);
+    const exchange = await fetch(
+      `${runtime.baseUrl}/v1/web/bootstrap/exchange`,
+      {
+        method: "POST",
+        headers: {
+          origin: runtime.baseUrl,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schema: "agent-relay-web-bootstrap-exchange.v1",
+          grant,
+        }),
+      },
+    );
+    const cookie = (exchange.headers.get("set-cookie") ?? "").split(";", 1)[0];
+    const stream = await fetch(`${runtime.baseUrl}/v1/web/stream`, {
+      headers: { cookie },
+    });
+    const reader = stream.body?.getReader();
+    expect(reader).toBeDefined();
+    expect((await reader?.read())?.done).toBe(false);
+    await expect(reader?.read()).resolves.toMatchObject({ done: true });
+
+    const expired = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
+      headers: { cookie },
+    });
+    expect(expired.status).toBe(401);
     await runtime.close();
   });
 

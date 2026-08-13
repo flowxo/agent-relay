@@ -394,14 +394,31 @@ retention.
 
 ### Use the local web board
 
-Open `http://127.0.0.1:4317/ui/` while the daemon is running. The board shows
-the canonical eight session-activity states, last activity, and independent mute
-status, along with open requests and a bounded event timeline. The authenticated
-API also exposes confidence and bounded reason/source fields.
+With the loopback daemon running, use the normal authenticated entry point:
+
+```sh
+agent-relay dashboard --web
+```
+
+The command verifies daemon health, web enablement, protected API/asset
+compatibility, and the private local authority before opening the default
+browser. It creates a 60-second, single-use grant bound to the exact loopback
+Origin and Host. The page exchanges that grant for an HttpOnly, browser-session
+cookie and a session CSRF value held only in page memory, then removes the grant
+from the visible URL and browser history. The persistent bearer and CSRF values
+never enter a URL, command argument, browser store, log, or rendered diagnostic.
+
+Refresh and direct reopening reuse the browser session for up to 30 minutes of
+idle time and eight hours total. Closing the browser session, expiry, or daemon
+restart requires `agent-relay dashboard --web` again. The board shows the
+canonical eight session-activity states, last activity, independent mute status,
+open requests, and a bounded event timeline.
 
 The daemon creates a private credential file at
-`~/.agent-relay/web-credential.json`. Copy its bearer and CSRF values into the
-connection form. The page keeps them in memory rather than browser storage.
+`~/.agent-relay/web-credential.json`. Direct `/ui/` access shows the launcher
+command first and keeps manual bearer/CSRF entry inside a compact **Advanced
+recovery** disclosure. Manual entry remains a local recovery mechanism and keeps
+both values in page memory only.
 
 To explore the UI with synthetic data and no Telegram account:
 
@@ -411,6 +428,9 @@ node apps/relay/dist/cli.js web-demo
 
 The demo runs separately at `http://127.0.0.1:4318/ui/`. Read the
 [web companion guide](docs/web-companion.md) for its security model and API.
+Keep the listener on loopback. A tunnel or public listener adds reachability but
+does not add remote authentication, TLS, proxy validation, or a safe public
+trust boundary; both remain unsupported.
 
 ### Supervise a CLI when exits matter
 

@@ -8,6 +8,14 @@ breaking changes and required operator action.
 
 ### Added
 
+- Add `agent-relay dashboard --web` as the safe one-command local dashboard
+  path. It verifies the loopback daemon and protected app, opens a 60-second
+  single-use Origin/Host-scoped grant, exchanges it for an HttpOnly
+  browser-session cookie with page-memory CSRF, and immediately removes the
+  grant from the visible URL and browser history. Refresh/reopen, expiry,
+  replay, concurrency, restart, recovery, and lifecycle-preservation paths have
+  isolated security and browser coverage; manual bearer/CSRF entry remains only
+  behind the compact Advanced recovery disclosure.
 - Add versioned vendor-native Agent Relay bundles for Codex, Claude Code, and
   Cursor with frozen activity hooks, the exact local MCP binding contract,
   canonical official skills, and core-delegating connect, doctor, and dashboard

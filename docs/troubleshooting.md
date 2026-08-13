@@ -304,16 +304,40 @@ separate safety review.
 
 ## The local web board will not connect
 
-Confirm the daemon binds to `127.0.0.1`, the web companion is enabled, and
-`web-credential.json` beside the active database is a regular mode-`0600` file.
-Paste both current values into the board after every reload.
+Run the normal recovery first:
+
+```sh
+agent-relay dashboard --web
+```
+
+Its secret-free error distinguishes an unavailable daemon, disabled companion,
+protected-app/API/asset readiness failure, unsafe or mismatched private
+credential, and desktop browser-open failure. Start `agent-relay daemon` when it
+is absent; restart without `--no-web` and with `AGENT_RELAY_WEB_ENABLED=1` when
+disabled; rebuild/reinstall and restart for an API/asset mismatch; and repair
+the default-browser association before retrying a browser-open failure. An
+unused grant is revoked when possible and otherwise expires within 60 seconds.
+
+The browser removes a consumed grant from its visible URL/history. A stale,
+malformed, expired, replayed, wrong-Origin, or wrong-Host grant is never
+repaired in place: rerun the launcher. Refresh and direct reopening work while
+the host-bound browser session is active. Browser-session loss, 30 minutes idle,
+the eight-hour absolute limit, or daemon restart requires the launcher again.
+
+If only desktop browser opening is unavailable, open
+`http://127.0.0.1:4317/ui/`, expand **Advanced recovery: connect manually**, and
+paste both current values from the regular mode-`0600` `web-credential.json`
+beside the active database. Do not put either value in a URL, shell command,
+process argument, log, screenshot, issue, or browser store.
 
 The UI refuses incompatible API/asset versions. Rebuild the exact source and
 restart the daemon rather than bypassing the version check. A stale form after a
 Telegram answer is expected to become read-only.
 
 If web operation is unnecessary, use `daemon --no-web`. Do not expose the
-listener beyond loopback as a troubleshooting shortcut.
+listener beyond loopback as a troubleshooting shortcut. Tunnels and public
+listeners add reachability without a reviewed remote-authentication boundary and
+remain unsupported.
 
 ## Installation or uninstall differs from the dry run
 

@@ -1,4 +1,4 @@
-/* global AbortController, Blob, CSS, FormData, Option, TextDecoder, URL, clearTimeout, crypto, document, fetch, location, setInterval, setTimeout */
+/* global AbortController, Blob, CSS, FormData, Option, TextDecoder, URL, clearTimeout, crypto, document, fetch, history, location, setInterval, setTimeout */
 
 import {
   buildResponse,
@@ -17,6 +17,7 @@ const elements = {
   connectPanel: select("[data-connect-panel]"),
   connectForm: select("[data-connect-form]"),
   connectError: select("[data-connect-error]"),
+  dashboardCommand: select("[data-dashboard-command]"),
   console: select("[data-console]"),
   connectionDot: select("[data-connection-dot]"),
   connectionLabel: select("[data-connection-label]"),
@@ -58,6 +59,7 @@ const elements = {
 };
 
 const model = {
+  authMode: "none",
   token: "",
   csrfToken: "",
   sessions: [],
@@ -143,6 +145,7 @@ function setConnection(connection, detail) {
 
 function requireCredential(message) {
   model.streamAbort?.abort();
+  model.authMode = "none";
   model.token = "";
   model.csrfToken = "";
   model.responseDrafts.clear();
@@ -151,7 +154,7 @@ function requireCredential(message) {
   elements.connectPanel.hidden = false;
   elements.connectError.textContent = message;
   setConnection("disconnected");
-  select("#credential")?.focus();
+  elements.dashboardCommand?.focus();
 }
 
 function updateOptions(selectElement, values, label) {
@@ -591,7 +594,9 @@ async function mutationApi(path, body) {
   const response = await fetch(path, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${model.token}`,
+      ...(model.authMode === "manual"
+        ? { authorization: `Bearer ${model.token}` }
+        : {}),
       "content-type": "application/json",
       "x-agent-relay-csrf": model.csrfToken,
     },
@@ -721,7 +726,10 @@ async function revealEventDetail(eventId) {
 
 async function api(path) {
   const response = await fetch(path, {
-    headers: { authorization: `Bearer ${model.token}` },
+    headers:
+      model.authMode === "manual"
+        ? { authorization: `Bearer ${model.token}` }
+        : {},
     cache: "no-store",
   });
   if (!response.ok) {
@@ -776,7 +784,7 @@ function scheduleRefresh() {
     refresh().catch((error) => {
       if (error.status === 401) {
         requireCredential(
-          "The local credential changed. Paste the current token to reconnect.",
+          "This browser session ended. Run agent-relay dashboard --web to reconnect safely.",
         );
       } else {
         setConnection("degraded");
@@ -839,7 +847,10 @@ async function openStream() {
   model.streamAbort?.abort();
   model.streamAbort = new AbortController();
   const response = await fetch(`/v1/web/stream?after=${model.cursor}`, {
-    headers: { authorization: `Bearer ${model.token}` },
+    headers:
+      model.authMode === "manual"
+        ? { authorization: `Bearer ${model.token}` }
+        : {},
     cache: "no-store",
     signal: model.streamAbort.signal,
   });
@@ -878,7 +889,7 @@ function reconnectStream() {
     }
     if (error.status === 401) {
       requireCredential(
-        "The local credential changed. Paste the current token to reconnect.",
+        "This browser session ended. Run agent-relay dashboard --web to reconnect safely.",
       );
       return;
     }
@@ -889,25 +900,117 @@ function reconnectStream() {
   });
 }
 
+async function showAuthenticatedConsole() {
+  await refresh();
+  elements.connectForm.reset();
+  elements.connectPanel.hidden = true;
+  elements.console.hidden = false;
+  setTimeout(focusRequestedAttention, 0);
+  reconnectStream();
+}
+
+function removeBootstrapGrantFromHistory() {
+  const clean = new URL(location.href);
+  clean.searchParams.delete("grant");
+  history.replaceState(
+    null,
+    "",
+    `${clean.pathname}${clean.search}${clean.hash}`,
+  );
+}
+
+async function exchangeBootstrapGrant(grant) {
+  const responsePromise = fetch("/v1/web/bootstrap/exchange", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({
+      schema: "agent-relay-web-bootstrap-exchange.v1",
+      grant,
+    }),
+  });
+  removeBootstrapGrantFromHistory();
+  const response = await responsePromise;
+  let session;
+  try {
+    session = await response.json();
+  } catch {
+    session = undefined;
+  }
+  if (
+    !response.ok ||
+    session?.schema !== "agent-relay-web-browser-session.v1" ||
+    typeof session.csrfToken !== "string"
+  ) {
+    const error = new Error("Dashboard bootstrap failed");
+    error.status = response.status;
+    error.code = session?.code;
+    throw error;
+  }
+  model.authMode = "session";
+  model.token = "";
+  model.csrfToken = session.csrfToken;
+}
+
+async function restoreBrowserSession() {
+  const response = await fetch("/v1/web/session", { cache: "no-store" });
+  let session;
+  try {
+    session = await response.json();
+  } catch {
+    session = undefined;
+  }
+  if (
+    !response.ok ||
+    session?.schema !== "agent-relay-web-browser-session.v1" ||
+    typeof session.csrfToken !== "string"
+  ) {
+    const error = new Error("Browser session unavailable");
+    error.status = response.status;
+    throw error;
+  }
+  model.authMode = "session";
+  model.token = "";
+  model.csrfToken = session.csrfToken;
+}
+
+async function initializeAuthentication() {
+  const grant = new URL(location.href).searchParams.get("grant");
+  try {
+    if (grant === null) {
+      await restoreBrowserSession();
+    } else {
+      await exchangeBootstrapGrant(grant);
+    }
+    await showAuthenticatedConsole();
+  } catch (error) {
+    if (grant !== null) removeBootstrapGrantFromHistory();
+    requireCredential(
+      grant === null
+        ? "No active browser session was found. Run agent-relay dashboard --web to open one."
+        : error.code === "web-bootstrap-expired" || error.status === 410
+          ? "This launch link expired. Run agent-relay dashboard --web again."
+          : "This launch link is stale or already used. Run agent-relay dashboard --web again.",
+    );
+  }
+}
+
 elements.connectForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(elements.connectForm);
   model.token = String(form.get("credential") ?? "").trim();
   model.csrfToken = String(form.get("csrfCredential") ?? "").trim();
+  model.authMode = "manual";
   elements.connectError.textContent = "";
   try {
-    await refresh();
-    elements.connectForm.reset();
-    elements.connectPanel.hidden = true;
-    elements.console.hidden = false;
-    setTimeout(focusRequestedAttention, 0);
-    reconnectStream();
+    await showAuthenticatedConsole();
   } catch (error) {
+    model.authMode = "none";
     model.token = "";
     model.csrfToken = "";
     elements.connectError.textContent =
       error.status === 401
-        ? "Credential rejected. Copy the token field from the current local credential."
+        ? "Manual credentials were rejected. Confirm both current fields, or run agent-relay dashboard --web."
         : error.status === 426
           ? "The console assets and daemon API are incompatible. Rebuild or reinstall Agent Relay."
           : "The local daemon could not be reached.";
@@ -1014,7 +1117,10 @@ elements.exportDiagnostics.addEventListener("click", async () => {
   elements.exportDiagnostics.disabled = true;
   try {
     const response = await fetch("/v1/web/diagnostics/export?limit=500", {
-      headers: { authorization: `Bearer ${model.token}` },
+      headers:
+        model.authMode === "manual"
+          ? { authorization: `Bearer ${model.token}` }
+          : {},
       cache: "no-store",
     });
     if (!response.ok) throw new Error("diagnostic export failed");
@@ -1113,9 +1219,11 @@ setInterval(() => {
   }
   if (
     model.connection === "connected" &&
-    model.token.length > 0 &&
+    model.authMode !== "none" &&
     Date.now() - model.lastSync >= 5_000
   ) {
     scheduleRefresh();
   }
 }, 5_000);
+
+void initializeAuthentication();

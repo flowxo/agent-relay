@@ -138,9 +138,25 @@ by its operator.
 
 The local web companion binds to loopback by default. Its browser receives
 sanitized session/timeline data, bounded event details, and request forms from
-the local daemon. The bearer and CSRF secrets stay in the local credential file
-unless the user copies them elsewhere. Binding the server beyond loopback is not
-a supported security boundary.
+the local daemon. `agent-relay dashboard --web` reads the persistent bearer and
+CSRF only from the private local credential file and sends them only as headers
+to exact-loopback readiness/grant routes. It never puts them in URLs, shell or
+browser-launch arguments, browser storage, logs, analytics, errors, or rendered
+diagnostics.
+
+The normal browser sees only a random 60-second single-use bootstrap grant in
+its initial loopback URL. The page sends that grant in a same-origin exchange
+body, immediately removes it from visible/history state, and receives a
+host-only HttpOnly session cookie plus an ephemeral session CSRF held in page
+memory. Grants, session records, and session CSRF values are bounded daemon
+memory, not SQLite or credential-file additions. Browser sessions expire after
+30 minutes idle, eight hours total, browser-session loss, or daemon restart.
+Manual Advanced recovery can place the persistent bearer/CSRF in page memory
+only when the operator explicitly pastes them.
+
+Binding the server beyond loopback is not a supported security boundary. A
+tunnel or public listener adds reachability without remote identity, TLS/proxy
+policy, authorization, rate limits, or safe revocation; both remain unsupported.
 
 ## Credentials
 

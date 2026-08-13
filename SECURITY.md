@@ -81,6 +81,29 @@ General bugs and support questions belong in the
 once the repository is public. Follow [SUPPORT.md](SUPPORT.md) when preparing a
 sanitized report.
 
+## Local web bootstrap boundary
+
+The supported browser entry is `agent-relay dashboard --web` against the exact
+loopback daemon. The CLI verifies daemon/web readiness and current protected
+API/asset compatibility before using the private persistent bearer/CSRF to
+create one 60-second, single-use grant. Grants are bound to the intended
+loopback Origin and Host, consumed atomically, replay-protected, bounded in
+memory, and invalidated by daemon restart.
+
+Exchange establishes only a host-bound HttpOnly, SameSite-Strict browser-session
+cookie and an ephemeral session CSRF held in page memory. Browser sessions have
+a 30-minute idle and eight-hour absolute limit. Mutations retain explicit
+same-origin and CSRF checks. The persistent bearer and CSRF never enter the
+normal URL, argv, browser store, log, analytics, error, or diagnostic path.
+Direct `/ui/` access exposes no Relay data and keeps the persistent manual path
+behind **Advanced recovery**.
+
+This is a local-process trust boundary, not remote access. Tunnels, reverse
+proxies, public listeners, and repurposing these credentials/sessions for an
+internet origin are unsupported. They do not add a reviewed public identity,
+TLS/forwarded-host policy, operator authorization, rate limiting, or revocation
+model.
+
 ## Custom webhook boundary
 
 The V1 custom webhook is outbound-only. Agent Relay authenticates each attempt

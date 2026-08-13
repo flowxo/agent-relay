@@ -14,8 +14,8 @@ import {
   SessionActivityStateSchema,
 } from "@agent-relay/core";
 
-export const WEB_API_VERSION = "2";
-export const WEB_ASSET_VERSION = "3";
+export const WEB_API_VERSION = "3";
+export const WEB_ASSET_VERSION = "4";
 
 const opaqueId = z
   .string()
