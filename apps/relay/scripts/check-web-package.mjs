@@ -54,6 +54,25 @@ if (
 if (!app.includes('api("/v1/web/meta")')) {
   throw new Error("packaged app.js does not negotiate API compatibility");
 }
+if (
+  !html.includes("agent-relay dashboard --web") ||
+  !html.includes("Advanced recovery: connect manually")
+) {
+  throw new Error(
+    "packaged HTML is missing the primary and recovery launch paths",
+  );
+}
+if (
+  !app.includes('fetch("/v1/web/bootstrap/exchange"') ||
+  !app.includes("history.replaceState")
+) {
+  throw new Error(
+    "packaged app.js is missing bootstrap exchange/history cleanup",
+  );
+}
+if (app.includes("localStorage") || app.includes("sessionStorage")) {
+  throw new Error("packaged app.js must not use persistent browser storage");
+}
 
 process.stdout.write(
   `${JSON.stringify({

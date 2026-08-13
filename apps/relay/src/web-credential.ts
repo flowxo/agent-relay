@@ -24,7 +24,7 @@ function createCredential(now: Date): WebCredential {
   });
 }
 
-async function readCredential(path: string): Promise<WebCredential> {
+export async function readWebCredential(path: string): Promise<WebCredential> {
   const metadata = await lstat(path);
   if (!metadata.isFile()) {
     throw new Error("web credential path is not a regular file");
@@ -45,7 +45,7 @@ export async function loadOrCreateWebCredential(
 ): Promise<WebCredential> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   try {
-    return await readCredential(path);
+    return await readWebCredential(path);
   } catch (error) {
     if (
       !(error instanceof Error) ||
@@ -64,11 +64,11 @@ export async function loadOrCreateWebCredential(
     await handle.sync();
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "EEXIST") {
-      return await readCredential(path);
+      return await readWebCredential(path);
     }
     throw error;
   } finally {
     await handle?.close();
   }
-  return await readCredential(path);
+  return await readWebCredential(path);
 }

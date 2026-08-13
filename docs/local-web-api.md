@@ -14,10 +14,13 @@ For operator setup and the shorter privacy/threat summary, start with the
 HTTP and browser-behavior reference.
 
 The built-in session board is served at `http://127.0.0.1:4317/ui/`. Its static
-shell is public on loopback and contains no relay data or credential. Paste the
-generated bearer and CSRF token into its connection form; the page retains both
-only in JavaScript memory, never browser storage. Authenticated API responses
-remain the only source of session and attention data.
+shell is public on loopback and contains no relay data or credential. The normal
+entry is `agent-relay dashboard --web`: the CLI verifies the protected app,
+creates a 60-second single-use grant, and opens an authenticated browser
+session. Direct `/ui/` access shows that command first; persistent manual bearer
+and CSRF fields are behind **Advanced recovery** and remain page-memory-only.
+Authenticated API responses remain the only source of session and attention
+data.
 
 The companion is enabled by default for loopback development. Set
 `AGENT_RELAY_WEB_ENABLED=0` or pass `agent-relay daemon --no-web` to disable the
@@ -37,7 +40,9 @@ The credential is intentionally separate from `AGENT_RELAY_DAEMON_TOKEN`.
 Existing hook and supervisor clients therefore keep their current authentication
 contract, while web routes always require the generated web credential.
 
-Every `/v1/web/*` request requires:
+The normal flow never returns the persistent credential to the browser. The CLI
+uses these headers only on loopback to verify readiness and create/revoke a
+bootstrap grant:
 
 ```http
 Authorization: Bearer <credential.token>
@@ -48,6 +53,21 @@ Browser mutations additionally require an exact same-origin `Origin` header and:
 ```http
 X-Agent-Relay-CSRF: <credential.csrfToken>
 ```
+
+`POST /v1/web/bootstrap-grants` accepts only that persistent authority and
+returns a random grant valid for 60 seconds. `POST /v1/web/bootstrap/exchange`
+requires exact loopback Origin/Host scope and atomically consumes the grant. A
+successful exchange sets a host-only `HttpOnly; SameSite=Strict; Path=/` session
+cookie with no persistent expiry and returns only a session-specific CSRF value
+for JavaScript memory. It never returns the persistent bearer or CSRF.
+
+Browser-session reads authenticate with the cookie. Browser-session mutations
+also send the ephemeral session CSRF in `X-Agent-Relay-CSRF`. Sessions slide for
+up to 30 minutes idle but never beyond eight hours total. Refresh and reopening
+on the same exact loopback Host recover the ephemeral CSRF from
+`GET /v1/web/session`; browser-session loss, expiry, Host change, or daemon
+restart fails closed. Grants and sessions are daemon-memory-only, bounded, and
+invalidated by restart.
 
 The daemon rejects cross-site fetch metadata, non-loopback origins, mismatched
 Host/Origin pairs, credential reuse across operation payloads, CORS preflights,
@@ -60,6 +80,10 @@ All list limits default to 100 and are bounded from 1 through 500.
 
 | Method and route                           | Result                                                                               |
 | ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `POST /v1/web/bootstrap-grants`            | Persistent-authority creation of one scoped, 60-second single-use grant              |
+| `POST /v1/web/bootstrap/exchange`          | Same-origin grant consumption and browser-session establishment                      |
+| `POST /v1/web/bootstrap/revoke`            | Best-effort revocation after a browser-open failure                                  |
+| `GET /v1/web/session`                      | Active browser-session metadata and ephemeral page-memory CSRF                       |
 | `GET /v1/web/meta`                         | Static-asset/API and mutation-contract compatibility                                 |
 | `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, canonical activity, attention count |
 | `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions                       |
@@ -80,8 +104,8 @@ operator can correlate the same lane across surfaces. Event detail omits
 option callback tokens, stored answers, and structured draft content. Prompt,
 label, summary, and failure previews are secret-redacted and bounded.
 
-The API-2 session summary is `agent-relay-web-session.v2`. Its `activity` field
-is the canonical `agent-relay-session-activity.v1` record. Its state is
+The v2 session summary schema is `agent-relay-web-session.v2`. Its `activity`
+field is the canonical `agent-relay-session-activity.v1` record. Its state is
 `working`, `needs_input`, `background_work`, `idle`, `done`, `failed`,
 `unknown`, or `ended`; `stateLabel` contains the exact operator-facing label.
 Confidence, bounded reason and source, server-clock last activity, open counts,
@@ -106,9 +130,11 @@ claims to terminate an unowned harness process. End is unavailable while a
 request remains open.
 
 The UI refuses to connect when `/v1/web/meta` reports a different API or asset
-version. The package check separately verifies that all five static files, their
-version marker, API negotiation, and both mutation schemas survived the build.
-CI runs that check from compiled output before the browser suite.
+version. API version 3 / asset version 4 adds the browser-session bootstrap
+without changing the canonical session/request authority. The package check
+separately verifies that all five static files, their version marker, API
+negotiation, and both mutation schemas survived the build. CI runs that check
+from compiled output before the browser suite.
 
 ## Timeline, detail, and diagnostics
 
@@ -205,12 +231,12 @@ current bounds. The client must refetch sessions and attention, then reconnect
 from the reported last cursor. Change rows and idempotency commands use the same
 bounded retention windows as delivered events and resolved requests.
 
-The built-in UI keeps unfinished form values only in page memory while live
-snapshots re-render. It never writes private drafts to browser storage. Terminal
-request change events identify the winning surface and remove stale controls;
-reconnecting then refreshes the authoritative request list. Server identity,
-expiry, compatibility, and operation-ledger checks remain authoritative even if
-the page was open across a race.
+The built-in UI keeps its session CSRF and unfinished form values only in page
+memory while live snapshots re-render. It never writes private drafts to browser
+storage. Terminal request change events identify the winning surface and remove
+stale controls; reconnecting then refreshes the authoritative request list.
+Server identity, expiry, compatibility, and operation-ledger checks remain
+authoritative even if the page was open across a race.
 
 Timeline rows are projections of their source records, not a second unbounded
 history. Event and delivery rows disappear with event retention; resolved
@@ -251,49 +277,39 @@ pnpm audit --prod
 ```
 
 The Chromium suite starts real loopback daemons with fake Telegram and synthetic
-data. It covers reconnect plus page-memory draft recovery, a complete daemon
-close/reopen on the same SQLite database, a stale browser form after a
-Telegram-first answer, and a synchronized Telegram/browser race with one durable
-winner. CI follows
+data. It covers bootstrap exchange and history cleanup, refresh and direct-tab
+reopening, replay rejection, compact/manual recovery, browser-session loss and
+page-memory draft clearance across a complete daemon restart, a stale browser
+form after a Telegram-first answer, and a synchronized Telegram/browser race
+with one durable winner. CI follows
 [Playwright's documented browser installation](https://playwright.dev/docs/ci)
 and runs one worker for reproducibility.
 
-Keep token values out of shell tracing and terminal output:
-
-```sh
-set +x
-relay_web_token="$(jq -r .token "$HOME/.agent-relay/web-credential.json")"
-relay_web_csrf="$(jq -r .csrfToken "$HOME/.agent-relay/web-credential.json")"
-
-curl --silent --show-error --fail \
-  -H "Authorization: Bearer ${relay_web_token}" \
-  -H "Origin: http://127.0.0.1:4317" \
-  "http://127.0.0.1:4317/v1/web/sessions?limit=20"
-
-curl --no-buffer --silent --show-error \
-  -H "Authorization: Bearer ${relay_web_token}" \
-  -H "Origin: http://127.0.0.1:4317" \
-  -H "Last-Event-ID: 0" \
-  "http://127.0.0.1:4317/v1/web/stream"
-```
-
-Unset the temporary shell variables after verification. Do not place either
-token in `.env.activation`, browser storage, screenshots, fixtures, issues, or
-git.
+Do not reproduce protected API calls with bearer or CSRF values in `curl`
+arguments: command arguments can enter process listings, shell history, error
+capture, and terminal logs. Use `agent-relay dashboard --web` for normal
+operation. Repository tests call the API in-process with isolated synthetic
+credentials and bounded loopback servers. If manual recovery is necessary, use
+the built-in Advanced form, which keeps both persistent values in page memory.
+Do not put either value in `.env.activation`, browser storage, screenshots,
+fixtures, issues, or git.
 
 ## Security and privacy defaults
 
 - The listener defaults to `127.0.0.1`; exposing it on another interface is an
   explicit operator decision and is not a hosted/deployment mode.
-- The static shell is credential-free, but every data/API route requires the
-  independent local bearer. Mutations additionally require the independent CSRF
-  token and an exact loopback same-origin request.
+- The static shell is credential-free. Normal data/API requests require the
+  host-bound HttpOnly browser session; manual recovery uses the independent
+  persistent local bearer. Mutations additionally require the matching
+  ephemeral/manual CSRF and an exact loopback same-origin request.
 - Static responses use no-store, a same-origin-only Content Security Policy,
   frame denial, no-referrer, MIME sniffing protection, and cross-origin opener
   isolation. There is no CORS opt-in.
-- Tokens and unfinished drafts exist only in page memory. Reloading requires
-  authentication again. The credential file is regular, private, non-symlinked,
-  and mode `0600`.
+- Persistent credentials remain file-only in the normal flow. The ephemeral
+  session CSRF, manually entered credentials, and unfinished drafts exist only
+  in page memory. Refresh/reopen recover an unexpired browser session; expiry,
+  browser-session loss, or daemon restart requires a fresh launcher grant. The
+  credential file is regular, private, non-symlinked, and mode `0600`.
 - Default projections exclude machine/session identifiers, working paths,
   process arguments, stored answers, callback tokens, draft content, and
   assistant transcript text. Explicit reveal and diagnostic export remain
@@ -301,3 +317,6 @@ git.
 - The console does not contact a CDN, analytics service, hosted backend, or
   Telegram directly. Disabling it removes its static and API attack surface
   without disabling relay operation.
+- Tunnels, reverse proxies, and public listeners are unsupported. Reachability
+  does not add a reviewed remote identity, TLS/proxy, rate-limit, or revocation
+  boundary, and the loopback credential/session design must not be repurposed.

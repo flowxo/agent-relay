@@ -66,6 +66,19 @@ Telegram credential is required. The capability record is safe to inspect and
 contains classifications, exact verified versions, and evidence IDs without
 transcripts or machine paths.
 
+For a normal daemon started with the default web companion, open its protected
+local dashboard with:
+
+```sh
+agent-relay dashboard --web
+```
+
+The command opens a 60-second single-use loopback bootstrap, not the persistent
+web bearer or CSRF. Refresh/reopen uses a 30-minute-idle, eight-hour-absolute
+browser session; expiry, browser-session loss, or daemon restart requires the
+command again. Manual credentials remain an Advanced recovery path at `/ui/`.
+Tunnels and public listeners are unsupported.
+
 ## Choose one transport explicitly
 
 Agent Relay supports four exclusive transport choices: `fake`, direct

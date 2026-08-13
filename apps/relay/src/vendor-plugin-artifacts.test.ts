@@ -51,6 +51,11 @@ describe("vendor-native Agent Relay plugin artifacts", () => {
       );
       expect(wrapper?.content).toContain('exec "$relay_bin" doctor');
       expect(wrapper?.content).toContain('exec "$relay_bin" dashboard');
+      const dashboardEntry = bundle.artifacts.find((artifact) =>
+        artifact.relativePath.includes("agent-relay-dashboard"),
+      );
+      expect(dashboardEntry?.content).toContain("dashboard --web");
+      expect(dashboardEntry?.content).not.toMatch(/bearer|csrf|webboot_/iu);
       expect(wrapper?.content).not.toMatch(
         /bearer|csrf|oauth_url|session.?correlat|127\.0\.0\.1:\d+/i,
       );

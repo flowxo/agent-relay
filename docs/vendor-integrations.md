@@ -117,6 +117,13 @@ grant trust, authenticate, elevate privilege, or bypass a denied native hook.
 The lifecycle performs no provider call, registry mutation, package publish,
 marketplace submission, release, or deployment.
 
+Every generated dashboard auxiliary skill/command invokes
+`agent-relay dashboard --web`; each executable wrapper delegates `dashboard` and
+its arguments directly to Relay core. Vendor artifacts contain no grant, bearer,
+CSRF, session cookie, or alternate dashboard authority. Install, reinstall,
+upgrade, repair, disable, rollback, and uninstall retain the existing
+ownership-preservation rules while keeping this canonical entry point.
+
 ## Doctor and evidence
 
 When vendor integrations are installed, `agent-relay doctor` reports only

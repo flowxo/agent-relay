@@ -48,6 +48,7 @@ import type {
 import { buildDaemonTransportStatus } from "./transport-status.js";
 import type { TelegramIntakeRuntimeStatus } from "./transport-status.js";
 import { loadOrCreateWebCredential } from "./web-credential.js";
+import type { WebSessionAuthority } from "./web-session.js";
 import {
   whooshbangStreamKey,
   WhooshBangInteractionPoller,
@@ -73,6 +74,7 @@ export interface DaemonOptions {
   databasePath: string;
   webEnabled?: boolean;
   webCredentialPath?: string;
+  webSessionAuthority?: WebSessionAuthority;
   host?: string;
   port?: number;
   token?: string;
@@ -353,6 +355,9 @@ export async function startDaemon(
       : { telegramWebhookSecret: options.telegramWebhookSecret }),
     webEnabled,
     ...(webCredential === undefined ? {} : { webCredential }),
+    ...(options.webSessionAuthority === undefined
+      ? {}
+      : { webSessionAuthority: options.webSessionAuthority }),
     statusDetails: () => ({
       ...buildDaemonTransportStatus({
         service,

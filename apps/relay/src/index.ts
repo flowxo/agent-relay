@@ -1,6 +1,7 @@
 export * from "./canary.js";
 export * from "./agent-skills.js";
 export * from "./client.js";
+export * from "./dashboard.js";
 export * from "./daemon.js";
 export * from "./doctor.js";
 export * from "./fallback-spool.js";
@@ -21,4 +22,5 @@ export * from "./transport-config.js";
 export * from "./transport-status.js";
 export * from "./web-assets.js";
 export * from "./web-credential.js";
+export * from "./web-session.js";
 export * from "./web-contract.js";

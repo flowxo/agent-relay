@@ -74,11 +74,31 @@ async function createRuntime(): Promise<BrowserRuntime> {
 }
 
 async function connect(page: Page, active: BrowserRuntime): Promise<void> {
-  await page.goto(`${active.baseUrl}/ui/`);
-  await page.getByLabel("Local bearer token").fill(active.credential.token);
-  await page.getByLabel("Local CSRF token").fill(active.credential.csrfToken);
-  await page.getByRole("button", { name: "Connect" }).click();
+  const bootstrapUrl = await bootstrap(active);
+  await page.goto(bootstrapUrl);
   await expect(page.locator("[data-console]")).toBeVisible();
+  await expect(page).toHaveURL(`${active.baseUrl}/ui/`);
+  expect(page.url()).not.toContain("grant=");
+}
+
+async function bootstrap(active: BrowserRuntime): Promise<string> {
+  const response = await fetch(`${active.baseUrl}/v1/web/bootstrap-grants`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${active.credential.token}`,
+      origin: active.baseUrl,
+      "x-agent-relay-csrf": active.credential.csrfToken,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      schema: "agent-relay-web-bootstrap-create.v1",
+    }),
+  });
+  expect(response.status).toBe(201);
+  const body = (await response.json()) as { grant: string };
+  const url = new URL("/ui/", active.baseUrl);
+  url.searchParams.set("grant", body.grant);
+  return url.toString();
 }
 
 function textForm(page: Page, active: BrowserRuntime) {
@@ -134,7 +154,68 @@ test.afterEach(async () => {
   }
 });
 
-test("shows sanitized concurrent fake sessions and reconnects after daemon restart", async ({
+test("refreshes, reopens, removes grant history, and rejects replay", async ({
+  page,
+}) => {
+  const active = runtime;
+  if (active === undefined) {
+    throw new Error("browser runtime is unavailable");
+  }
+  const bootstrapUrl = await bootstrap(active);
+  await page.goto(bootstrapUrl);
+  await expect(page.locator("[data-console]")).toBeVisible();
+  await expect(page).toHaveURL(`${active.baseUrl}/ui/`);
+  await page.reload();
+  await expect(page.locator("[data-console]")).toBeVisible();
+
+  const context = page.context();
+  await page.close();
+  const reopened = await context.newPage();
+  await reopened.goto(`${active.baseUrl}/ui/`);
+  await expect(reopened.locator("[data-console]")).toBeVisible();
+  const replay = await context.newPage();
+  await replay.goto(bootstrapUrl);
+  await expect(replay.locator("[data-connect-panel]")).toBeVisible();
+  await expect(replay.locator("[data-connect-error]")).toContainText(
+    "stale or already used",
+  );
+  expect(replay.url()).not.toContain("grant=");
+  await replay.goBack();
+  expect(replay.url()).not.toContain("grant=");
+  await reopened.close();
+  await replay.close();
+});
+
+test("shows compact recovery and keeps manual credentials behind Advanced", async ({
+  page,
+}) => {
+  const active = runtime;
+  if (active === undefined) {
+    throw new Error("browser runtime is unavailable");
+  }
+  await page.goto(`${active.baseUrl}/ui/`);
+  const command = page.locator("[data-dashboard-command]");
+  await expect(command).toBeVisible();
+  await expect(command).toContainText("agent-relay dashboard --web");
+  const bounds = await command.boundingBox();
+  expect((bounds?.y ?? 1_000) + (bounds?.height ?? 1_000)).toBeLessThan(720);
+  await expect(page.getByLabel("Local bearer token")).toBeHidden();
+  await page
+    .getByText("Advanced recovery: connect manually", { exact: true })
+    .click();
+  await page.getByLabel("Local bearer token").fill(active.credential.token);
+  await page.getByLabel("Local CSRF token").fill(active.credential.csrfToken);
+  await page.getByRole("button", { name: "Connect manually" }).click();
+  await expect(page.locator("[data-console]")).toBeVisible();
+  expect(
+    await page.evaluate(() => ({
+      local: Object.keys(localStorage),
+      session: Object.keys(sessionStorage),
+    })),
+  ).toEqual({ local: [], session: [] });
+});
+
+test("shows sanitized concurrent fake sessions and requires a new launch after daemon restart", async ({
   page,
 }) => {
   const active = runtime;
@@ -166,11 +247,16 @@ test("shows sanitized concurrent fake sessions and reconnects after daemon resta
     active.credentialPath,
     active.port,
   );
-  await expect(page.locator("[data-connection-label]")).toHaveText("Live", {
+  await expect(page.locator("[data-connect-panel]")).toBeVisible({
     timeout: 15_000,
   });
+  await expect(page.locator("[data-connect-error]")).toContainText(
+    "browser session ended",
+  );
+  await page.goto(await bootstrap(active));
+  await expect(page.locator("[data-connection-label]")).toHaveText("Live");
   await expect(textForm(page, active).locator('[name="response"]')).toHaveValue(
-    "Synthetic page-memory draft",
+    "",
   );
   expect(
     active.daemon.service.getRequest(active.seed.textRequestId),

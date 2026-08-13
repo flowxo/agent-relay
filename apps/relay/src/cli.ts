@@ -41,6 +41,8 @@ import {
   resolveWebEnabled,
 } from "./cli-options.js";
 import { startDaemon } from "./daemon.js";
+import { launchWebDashboard } from "./dashboard.js";
+import type { DashboardBrowserOpener } from "./dashboard.js";
 import {
   observeAppleSiliconHardware,
   observeHarnessVersions,
@@ -98,7 +100,7 @@ Commands:
   mcp                Serve typed operator interactions over local stdio MCP
   run <harness>      Supervise a harness CLI process
   status             Show daemon and delivery status
-  dashboard          Print the canonical loopback dashboard entry point
+  dashboard          Inspect or open the canonical loopback dashboard; use --web
   drain              Deliver queued events
   replay-fallback    Replay the hook fallback spool
   maintain           Apply retention policy
@@ -262,8 +264,14 @@ function installEntryPath(args: string[]): string {
   return currentEntry;
 }
 
+export interface CliDependencies {
+  fetch?: typeof fetch;
+  openBrowser?: DashboardBrowserOpener;
+}
+
 export async function main(
   commandArguments = process.argv.slice(2),
+  dependencies: CliDependencies = {},
 ): Promise<void> {
   const [command, ...args] = commandArguments;
   if (
@@ -1029,12 +1037,32 @@ export async function main(
     const daemonUrl = assertLocalMcpDaemonUrl(
       environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
     );
-    output({
-      schema: "agent-relay-dashboard-entry.v1",
-      url: `${daemonUrl}/ui/`,
-      networking: "loopback-only",
-      instruction: "Start the Agent Relay daemon, then open this local URL.",
-    });
+    if (args.length === 0) {
+      output({
+        schema: "agent-relay-dashboard-entry.v1",
+        url: `${daemonUrl}/ui/`,
+        networking: "loopback-only",
+        instruction:
+          "Run agent-relay dashboard --web for an authenticated browser session.",
+      });
+      return;
+    }
+    if (args.length !== 1 || args[0] !== "--web") {
+      throw new Error("dashboard accepts only --web");
+    }
+    output(
+      await launchWebDashboard({
+        daemonUrl,
+        stateDirectory: stateDir,
+        ...(daemonToken === undefined ? {} : { daemonToken }),
+        ...(dependencies.fetch === undefined
+          ? {}
+          : { fetch: dependencies.fetch }),
+        ...(dependencies.openBrowser === undefined
+          ? {}
+          : { openBrowser: dependencies.openBrowser }),
+      }),
+    );
     return;
   }
   const client = new RelayClient({

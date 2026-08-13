@@ -109,4 +109,41 @@ describe("CLI help boundary", () => {
       }
     }
   });
+
+  it("keeps version, dashboard inspection, and dashboard help credential-free", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-relay-inert-info-"));
+    temporaryDirectories.push(root);
+    const stateDirectory = join(root, "state");
+    const originalStateDirectory = process.env["AGENT_RELAY_STATE_DIR"];
+    const originalDaemonUrl = process.env["AGENT_RELAY_DAEMON_URL"];
+    process.env["AGENT_RELAY_STATE_DIR"] = stateDirectory;
+    process.env["AGENT_RELAY_DAEMON_URL"] = "http://127.0.0.1:4317";
+    const output = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const openBrowser = vi.fn(async () => {
+      throw new Error("informational command attempted browser launch");
+    });
+    try {
+      await main(["--version"], { openBrowser });
+      await main(["dashboard"], { openBrowser });
+      await main(["dashboard", "--web", "--help"], { openBrowser });
+      expect(
+        output.mock.calls.map(([value]) => String(value)).join("\n"),
+      ).toContain("agent-relay dashboard --web");
+      expect(openBrowser).not.toHaveBeenCalled();
+      expect(existsSync(stateDirectory)).toBe(false);
+    } finally {
+      if (originalStateDirectory === undefined) {
+        delete process.env["AGENT_RELAY_STATE_DIR"];
+      } else {
+        process.env["AGENT_RELAY_STATE_DIR"] = originalStateDirectory;
+      }
+      if (originalDaemonUrl === undefined) {
+        delete process.env["AGENT_RELAY_DAEMON_URL"];
+      } else {
+        process.env["AGENT_RELAY_DAEMON_URL"] = originalDaemonUrl;
+      }
+    }
+  });
 });

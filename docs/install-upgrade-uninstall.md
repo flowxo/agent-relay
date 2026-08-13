@@ -84,6 +84,32 @@ Keep that prefix in place while hooks are installed because the owned launcher
 targets its exact package entry. Prefer the exact public-registry installation
 above unless evaluating a source change.
 
+## Open the installed local dashboard
+
+After starting the loopback daemon, use the installed canonical command:
+
+```sh
+agent-relay dashboard --web
+```
+
+The command verifies daemon and protected-app readiness before it creates a
+60-second, single-use exact-loopback browser grant. Refresh/reopen uses a
+host-bound browser session for 30 minutes idle and at most eight hours; session
+loss, expiry, or daemon restart requires the command again. Direct `/ui/` access
+shows the same recovery command above a collapsed **Advanced recovery** manual
+credential form. See the [web companion guide](web-companion.md) for failure
+remediation and the unsupported tunnel/public-listener boundary.
+
+Install, repeat install, upgrade, vendor-integration repair/disable/rollback,
+and owned uninstall must not rewrite the canonical launcher behavior or inject
+credentials into vendor artifacts. The Codex, Claude Code, and Cursor dashboard
+entry points delegate to `agent-relay dashboard --web`. Existing local web
+credentials, browser-independent state, unrelated plugins, MCP servers, hooks,
+commands, skills, settings, formatting, backups, logs, and user data remain
+under their existing ownership/preservation rules. Browser grants and sessions
+are daemon-memory-only and deliberately do not survive a daemon restart or
+package lifecycle operation that restarts it.
+
 ## Install the vendor-native integrations
 
 The recommended AR5 path composes native plugin or local-integration bundles

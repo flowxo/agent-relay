@@ -15,30 +15,62 @@ Open `http://127.0.0.1:4318/ui/`. The demo uses a separate local database, fake
 Telegram, and bounded synthetic sessions. It ignores real Telegram and daemon
 credentials.
 
-The command creates `web-credential.json` beside the demo database. Copy its
-bearer and CSRF values into the connection form. Do not paste them into a
-screenshot, issue, fixture, shell history, or browser storage. The built-in page
-keeps credentials and unfinished drafts in JavaScript memory only; reload
-requires authentication again.
+The command creates a synthetic `web-credential.json` beside the demo database.
+Open **Advanced recovery: connect manually** to use its bearer and CSRF fields.
+Do not paste them into a screenshot, issue, fixture, shell history, or browser
+storage. This manual demo path keeps credentials and unfinished drafts in
+JavaScript memory only.
 
 ## Use the board with the normal daemon
 
-The companion is enabled by default and served at `http://127.0.0.1:4317/ui/`.
+The companion is enabled by default. With the daemon running, the normal entry
+is one command:
+
+```sh
+agent-relay dashboard --web
+```
+
+The launcher verifies the loopback daemon, web enablement, protected API/asset
+compatibility, and current private credential before creating any browser
+authority. It creates a 60-second single-use grant scoped to the exact loopback
+Origin and Host, opens the default browser, and lets that page exchange the
+grant for a host-bound HttpOnly session cookie plus an ephemeral session CSRF
+value. The page removes the grant from the address bar and current history entry
+as soon as exchange starts. Grant replay, malformed or stale material, expiry,
+cross-site requests, and Host/Origin mismatch fail closed.
+
 Startup creates `~/.agent-relay/web-credential.json` beside the default SQLite
 database. The file must be a regular mode-`0600` file and contains independent
-bearer and CSRF secrets.
+persistent bearer and CSRF secrets. The launcher reads them only from that
+private file and sends them only as protected loopback request headers. It never
+prints or puts them in a URL, shell argument, browser store, log, analytics
+event, error, or diagnostic.
+
+Refresh and another direct `http://127.0.0.1:4317/ui/` tab reuse the browser
+session while it is valid. The idle lifetime is 30 minutes and the absolute
+lifetime is eight hours; the cookie has no persistent expiry and ends with the
+browser session. A daemon restart invalidates every grant and browser session.
+Expiry, missing cookie, or restart returns the compact recovery screen and the
+exact launcher command. Rerunning the command creates a fresh independent
+session.
 
 The static shell contains no relay data and can load without a credential. Every
-`/v1/web/*` data request requires the bearer. Mutations additionally require the
-CSRF token, exact loopback Origin/Host agreement, and a typed operation body.
-There is no CORS opt-in.
+`/v1/web/*` data request requires either the browser session or the persistent
+manual bearer. Mutations additionally require the matching session/manual CSRF,
+exact loopback Origin/Host agreement, and a typed operation body. There is no
+CORS opt-in. Direct `/ui/` access puts `agent-relay dashboard --web` above the
+fold; manual bearer/CSRF fields remain behind the clearly labeled **Advanced
+recovery** disclosure.
 
 Set `AGENT_RELAY_WEB_ENABLED=0` or pass `agent-relay daemon --no-web` to disable
 the UI and all web routes. Disabled startup does not create or read a web
 credential. Hooks, SQLite, Telegram, supervision, health, and fake delivery
 continue.
 
-Binding beyond loopback is not a supported security boundary.
+Binding beyond loopback is not a supported security boundary. Tunnels and
+reverse proxies provide reachability, not the missing remote authentication, TLS
+termination policy, forwarded-host validation, rate limiting, or operator
+authorization. Public exposure and tunnels remain unsupported.
 
 Outbound whooshbang can link to `/ui/?request=<opaque-request-id>`. After the
 operator enters the normal web credential, the board scrolls to and focuses that
@@ -88,10 +120,13 @@ refetches authoritative state.
 ## Security and privacy defaults
 
 - loopback listener only;
-- independent bearer and CSRF credentials;
+- 60-second single-use, Origin/Host-scoped bootstrap grants;
+- 30-minute-idle/eight-hour-absolute, HttpOnly browser sessions;
+- independent persistent bearer/CSRF manual recovery credentials that never
+  enter the normal browser flow;
 - exact same-origin mutations and no CORS;
 - no CDN, analytics, hosted backend, or direct Telegram connection;
-- credentials and drafts only in page memory;
+- ephemeral session/manual CSRF and drafts only in page memory;
 - no-store and restrictive browser security headers;
 - bounded projections and explicit private reveal; and
 - retention inherited from source SQLite records rather than a second history.
@@ -99,3 +134,21 @@ refetches authoritative state.
 For the versioned API, schemas, curl examples, and automated browser evidence,
 read [the local web API reference](local-web-api.md). For local files and
 erasure, read [PRIVACY.md](../PRIVACY.md).
+
+## Launcher failures and recovery
+
+The launcher emits actionable, secret-free failures:
+
+- unavailable daemon: start `agent-relay daemon` and rerun the command;
+- disabled companion: restart without `--no-web` and with
+  `AGENT_RELAY_WEB_ENABLED=1`;
+- protected-app or asset mismatch: rebuild/reinstall the exact package and
+  restart the daemon;
+- browser-open failure: repair the desktop default-browser association and rerun
+  the command (the unused grant is revoked or expires within 60 seconds);
+- stale, expired, or replayed link: rerun the command; and
+- missing/expired session or daemon restart: rerun the command.
+
+If the desktop launcher alone is unavailable, open `/ui/`, expand **Advanced
+recovery: connect manually**, and paste both current private-file fields. Never
+put either persistent value in a URL, command line, screenshot, issue, or log.

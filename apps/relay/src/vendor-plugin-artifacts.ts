@@ -261,8 +261,8 @@ function codexArtifacts(): VendorPluginArtifact[] {
       "skills/agent-relay-dashboard/SKILL.md",
       auxiliarySkill(
         "agent-relay-dashboard",
-        "Inspect canonical Agent Relay daemon and dashboard readiness.",
-        '"$HOME/.agent-relay/bin/agent-relay" dashboard',
+        "Open the authenticated canonical Agent Relay loopback dashboard.",
+        '"$HOME/.agent-relay/bin/agent-relay" dashboard --web',
       ),
     ),
     artifact("bin/agent-relay-plugin", wrapper(), 0o700),
@@ -346,8 +346,8 @@ function claudeArtifacts(): VendorPluginArtifact[] {
       "commands/agent-relay-dashboard.md",
       command(
         "Agent Relay Dashboard",
-        `${coreCommand} dashboard`,
-        "Inspect canonical Agent Relay daemon and dashboard readiness.",
+        `${coreCommand} dashboard --web`,
+        "Open the authenticated canonical Agent Relay loopback dashboard.",
       ),
     ),
     artifact("bin/agent-relay-plugin", wrapper(), 0o700),
@@ -422,8 +422,8 @@ function cursorArtifacts(): VendorPluginArtifact[] {
       "commands/agent-relay-dashboard.md",
       command(
         "Agent Relay Dashboard",
-        `${coreCommand} dashboard`,
-        "Inspect canonical Agent Relay daemon and dashboard readiness.",
+        `${coreCommand} dashboard --web`,
+        "Open the authenticated canonical Agent Relay loopback dashboard.",
       ),
     ),
     artifact("bin/agent-relay-plugin", wrapper(), 0o700),

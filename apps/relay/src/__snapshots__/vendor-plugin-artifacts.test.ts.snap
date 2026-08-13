@@ -37,7 +37,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "skills/agent-relay-dashboard/SKILL.md",
-        "sha256": "adab1105c5063379dbb364162e590b03ced8b6abf5576ff3b89acf7266dab9aa",
+        "sha256": "924cd466857c7e3cff088e61279109dca93563ac26ddef75ca93cab8889ef9d6",
       },
       {
         "mode": "700",
@@ -90,7 +90,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "commands/agent-relay-dashboard.md",
-        "sha256": "1089d4462a4ace21696eab41c8921f178be04a89d9bc1f5dbdcf82f392ba0359",
+        "sha256": "50c5a13e4b6ed00e88fd898ccc4e6a52b40a97126c43f26a1dd2a4cf249a73f2",
       },
       {
         "mode": "700",
@@ -143,7 +143,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "commands/agent-relay-dashboard.md",
-        "sha256": "1089d4462a4ace21696eab41c8921f178be04a89d9bc1f5dbdcf82f392ba0359",
+        "sha256": "50c5a13e4b6ed00e88fd898ccc4e6a52b40a97126c43f26a1dd2a4cf249a73f2",
       },
       {
         "mode": "700",

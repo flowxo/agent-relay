@@ -302,13 +302,28 @@ The local browser API is documented in [`local-web-api.md`](./local-web-api.md).
 Its authenticated read models and resumable stream can also be exercised with
 `curl` without a real bot token.
 
-Open `http://127.0.0.1:4317/ui/` for the compact session board. Copy the `token`
-and `csrfToken` fields from the private web credential into the connection form.
-The board keeps both in page memory, shows stable session identities, filters
-real running/waiting/crashed/stale/muted/ended lane states, and maintains a
-global expiry-ordered attention queue. Reloading deliberately requires the
-credential again. A disconnected, degraded, or stale board keeps those states
-visually distinct instead of presenting cached data as live.
+Open the authenticated compact session board with:
+
+```sh
+agent-relay dashboard --web
+```
+
+The command checks daemon/web readiness and protected asset/API compatibility,
+reads the private local authority without printing it, creates a 60-second
+single-use exact-loopback grant, and opens the default browser. The page
+exchanges the grant for a host-bound HttpOnly browser session, keeps only an
+ephemeral session CSRF in page memory, and removes the grant from
+visible/history state. Persistent bearer and CSRF values never enter the normal
+browser flow, URL, shell arguments, logs, diagnostics, analytics, or browser
+storage.
+
+The board shows stable session identities, filters real
+running/waiting/crashed/stale/muted/ended lane states, and maintains a global
+expiry-ordered attention queue. Refresh and direct reopening work for 30 minutes
+idle and at most eight hours. Browser-session loss, expiry, or daemon restart
+shows the primary launcher command again. Direct `/ui/` access keeps manual
+bearer/CSRF input behind **Advanced recovery: connect manually**; use it only
+when the desktop browser opener is unavailable.
 
 Select any session row to open its bounded evidence timeline. Event, delivery,
 request, operator-action, and continuation entries share their retained event
@@ -357,8 +372,10 @@ Telegram, and supervisor paths remain active. The listener remains necessary for
 those local daemon APIs.
 
 Keep the default loopback host. Binding to another interface expands the trust
-boundary and is not part of the supported local-only deployment. The console
-uses no CDN, telemetry, browser storage, or hosted backend; see
+boundary and is not part of the supported local-only deployment. A tunnel does
+not supply the missing remote authentication, TLS/proxy validation, or operator
+authorization, so tunnels and public exposure remain unsupported. The console
+uses no CDN, telemetry, persistent browser storage, or hosted backend; see
 [`local-web-api.md`](./local-web-api.md) for the complete security and privacy
 defaults.
 

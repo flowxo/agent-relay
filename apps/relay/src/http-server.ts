@@ -63,6 +63,14 @@ import type {
   WebTimelineEntryV1,
 } from "./web-contract.js";
 import type { WebCredential } from "./web-credential.js";
+import {
+  WebBootstrapCreateSchema,
+  WebBootstrapExchangeSchema,
+  WebBootstrapRevokeSchema,
+  WebSessionAuthority,
+  WebSessionAuthorityError,
+} from "./web-session.js";
+import type { WebBrowserScope } from "./web-session.js";
 
 const drainSchema = z
   .object({
@@ -167,6 +175,7 @@ export interface RelayHttpServerOptions {
   telegramWebhookSecret?: string;
   webEnabled?: boolean;
   webCredential?: WebCredential;
+  webSessionAuthority?: WebSessionAuthority;
   webStreamPollMs?: number;
 }
 
@@ -204,11 +213,11 @@ async function readJson(
   }
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
-  } catch (error) {
+  } catch {
     throw new HttpRequestError(
       400,
       "invalid-json",
-      error instanceof Error ? error.message : "request body is not valid JSON",
+      "request body is not valid JSON",
     );
   }
 }
@@ -227,6 +236,14 @@ function sendJson(
     ...headers,
   });
   response.end(payload);
+}
+
+function safeRequestPath(value: string | undefined): string {
+  try {
+    return new URL(value ?? "/", "http://relay.local").pathname;
+  } catch {
+    return "/";
+  }
 }
 
 const WEB_CONTENT_SECURITY_POLICY = [
@@ -316,30 +333,151 @@ function isLoopbackHostname(hostname: string): boolean {
   );
 }
 
+const WEB_SESSION_COOKIE = "agent_relay_web_session";
+
+function requestHost(request: IncomingMessage): string {
+  const rawHost = request.headers.host;
+  if (rawHost === undefined || rawHost.includes(",")) {
+    throw new HttpRequestError(
+      403,
+      "web-host-rejected",
+      "web control requests require one exact loopback Host",
+    );
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(`http://${rawHost}`);
+  } catch {
+    throw new HttpRequestError(
+      403,
+      "web-host-rejected",
+      "web control Host is malformed",
+    );
+  }
+  if (
+    !isLoopbackHostname(parsed.hostname) ||
+    parsed.username.length > 0 ||
+    parsed.password.length > 0 ||
+    parsed.pathname !== "/" ||
+    parsed.search.length > 0 ||
+    parsed.hash.length > 0
+  ) {
+    throw new HttpRequestError(
+      403,
+      "web-host-rejected",
+      "web control Host must remain on exact loopback",
+    );
+  }
+  return parsed.host;
+}
+
+function browserScope(request: IncomingMessage): WebBrowserScope {
+  if (
+    request.headers["sec-fetch-site"] === "cross-site" ||
+    !isLoopbackHostname(request.socket.localAddress ?? "")
+  ) {
+    throw new HttpRequestError(
+      403,
+      "web-origin-rejected",
+      "web control requests must remain on the loopback interface",
+    );
+  }
+  const host = requestHost(request);
+  const rawOrigin = request.headers.origin;
+  if (rawOrigin === undefined) {
+    throw new HttpRequestError(
+      403,
+      "web-origin-required",
+      "local dashboard bootstrap requires an explicit same-origin Origin header",
+    );
+  }
+  let origin: URL;
+  try {
+    origin = new URL(rawOrigin);
+  } catch {
+    throw new HttpRequestError(
+      403,
+      "web-origin-rejected",
+      "web control origin is malformed",
+    );
+  }
+  if (
+    origin.protocol !== "http:" ||
+    !isLoopbackHostname(origin.hostname) ||
+    origin.host !== host ||
+    origin.pathname !== "/" ||
+    origin.search.length > 0 ||
+    origin.hash.length > 0
+  ) {
+    throw new HttpRequestError(
+      403,
+      "web-origin-rejected",
+      "web control origin does not match the local daemon",
+    );
+  }
+  return { host, origin: origin.origin };
+}
+
+function sessionCookie(request: IncomingMessage): string | undefined {
+  const raw = request.headers.cookie;
+  if (raw === undefined) return undefined;
+  const matches = raw
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith(`${WEB_SESSION_COOKIE}=`));
+  if (matches.length !== 1) return undefined;
+  return matches[0]?.slice(`${WEB_SESSION_COOKIE}=`.length);
+}
+
+interface WebAuthorization {
+  kind: "persistent" | "session";
+  csrfToken: string;
+  session?: {
+    schema: "agent-relay-web-browser-session.v1";
+    csrfToken: string;
+    expiresAt: string;
+  };
+}
+
 function assertWebAuthorized(
   request: IncomingMessage,
   credential: WebCredential | undefined,
-): WebCredential {
+  sessionAuthority: WebSessionAuthority,
+): WebAuthorization {
   if (credential === undefined) {
     throw new HttpRequestError(404, "not-found", "relay route not found");
   }
   const authorization = request.headers.authorization;
-  const token = authorization?.startsWith("Bearer ")
-    ? authorization.slice("Bearer ".length)
-    : undefined;
-  if (!secretsMatch(token, credential.token)) {
+  if (authorization !== undefined) {
+    const token = authorization.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : undefined;
+    if (!secretsMatch(token, credential.token)) {
+      throw new HttpRequestError(
+        401,
+        "web-unauthorized",
+        "web control authorization failed",
+      );
+    }
+    return { kind: "persistent", csrfToken: credential.csrfToken };
+  }
+  const session = sessionAuthority.authorizeSession(
+    sessionCookie(request),
+    requestHost(request),
+  );
+  if (session.csrfToken.length === 0) {
     throw new HttpRequestError(
       401,
       "web-unauthorized",
       "web control authorization failed",
     );
   }
-  return credential;
+  return { kind: "session", csrfToken: session.csrfToken, session };
 }
 
 function assertWebOrigin(
   request: IncomingMessage,
-  credential: WebCredential,
+  authorization: WebAuthorization,
   requireCsrf: boolean,
 ): void {
   if (
@@ -352,6 +490,7 @@ function assertWebOrigin(
       "web control requests must remain on the loopback interface",
     );
   }
+  const host = requestHost(request);
   const rawOrigin = request.headers.origin;
   if (rawOrigin !== undefined) {
     let origin: URL;
@@ -364,11 +503,9 @@ function assertWebOrigin(
         "web control origin is malformed",
       );
     }
-    const host = request.headers.host;
     if (
       origin.protocol !== "http:" ||
       !isLoopbackHostname(origin.hostname) ||
-      host === undefined ||
       origin.host !== host
     ) {
       throw new HttpRequestError(
@@ -387,7 +524,10 @@ function assertWebOrigin(
       );
     }
     const csrf = request.headers["x-agent-relay-csrf"];
-    if (typeof csrf !== "string" || !secretsMatch(csrf, credential.csrfToken)) {
+    if (
+      typeof csrf !== "string" ||
+      !secretsMatch(csrf, authorization.csrfToken)
+    ) {
       throw new HttpRequestError(
         403,
         "web-csrf-rejected",
@@ -657,6 +797,8 @@ export function createRelayHttpServer(
   const logger = options.logger ?? NOOP_LOGGER;
   const maxBodyBytes = options.maxBodyBytes ?? 128 * 1024;
   const webEnabled = options.webEnabled ?? true;
+  const webSessionAuthority =
+    options.webSessionAuthority ?? new WebSessionAuthority();
 
   return createServer(async (request, response) => {
     const at = new Date().toISOString();
@@ -670,6 +812,9 @@ export function createRelayHttpServer(
         url.pathname.startsWith("/ui/");
       const isTelegramWebhook =
         request.method === "POST" && url.pathname === "/v1/telegram/updates";
+      const isBootstrapExchange =
+        request.method === "POST" &&
+        url.pathname === "/v1/web/bootstrap/exchange";
       if (!webEnabled && (isWebRoute || isWebUiRoute)) {
         throw new HttpRequestError(
           404,
@@ -677,10 +822,16 @@ export function createRelayHttpServer(
           "local web companion is disabled",
         );
       }
-      if (isWebRoute) {
-        const credential = assertWebAuthorized(request, options.webCredential);
-        assertWebOrigin(request, credential, request.method === "POST");
+      let webAuthorization: WebAuthorization | undefined;
+      if (isWebRoute && !isBootstrapExchange) {
+        webAuthorization = assertWebAuthorized(
+          request,
+          options.webCredential,
+          webSessionAuthority,
+        );
+        assertWebOrigin(request, webAuthorization, request.method === "POST");
       } else if (
+        !isBootstrapExchange &&
         !isWebUiRoute &&
         (!isTelegramWebhook || options.telegramWebhookSecret === undefined)
       ) {
@@ -730,6 +881,72 @@ export function createRelayHttpServer(
           webAsset.name,
           webAsset.contentType,
         );
+        return;
+      }
+
+      if (isBootstrapExchange) {
+        if (options.webCredential === undefined) {
+          throw new HttpRequestError(404, "not-found", "relay route not found");
+        }
+        const scope = browserScope(request);
+        const input = WebBootstrapExchangeSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        const exchanged = webSessionAuthority.exchangeGrant(input.grant, scope);
+        sendJson(response, 200, exchanged.session, {
+          "set-cookie": `${WEB_SESSION_COOKIE}=${exchanged.sessionToken}; HttpOnly; SameSite=Strict; Path=/`,
+        });
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/web/bootstrap-grants"
+      ) {
+        if (webAuthorization?.kind !== "persistent") {
+          throw new HttpRequestError(
+            403,
+            "web-bootstrap-authority-required",
+            "local dashboard launch requires the protected Relay authority",
+          );
+        }
+        WebBootstrapCreateSchema.parse(await readJson(request, maxBodyBytes));
+        sendJson(
+          response,
+          201,
+          webSessionAuthority.issueGrant(browserScope(request)),
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/web/bootstrap/revoke"
+      ) {
+        if (webAuthorization?.kind !== "persistent") {
+          throw new HttpRequestError(
+            403,
+            "web-bootstrap-authority-required",
+            "local dashboard launch requires the protected Relay authority",
+          );
+        }
+        const input = WebBootstrapRevokeSchema.parse(
+          await readJson(request, maxBodyBytes),
+        );
+        webSessionAuthority.revokeGrant(input.grant);
+        sendJson(response, 200, { revoked: true });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/web/session") {
+        if (webAuthorization?.kind !== "session") {
+          throw new HttpRequestError(
+            401,
+            "web-session-missing",
+            "the local browser session is missing; run agent-relay dashboard --web",
+          );
+        }
+        sendJson(response, 200, webAuthorization.session);
         return;
       }
 
@@ -1046,9 +1263,21 @@ export function createRelayHttpServer(
             response.write(": heartbeat\n\n");
           }
         }, 15_000);
+        const sessionExpiry =
+          webAuthorization?.kind === "session"
+            ? setTimeout(
+                () => response.end(),
+                Math.max(
+                  0,
+                  Date.parse(webAuthorization.session?.expiresAt ?? "") -
+                    Date.now(),
+                ),
+              )
+            : undefined;
         const cleanUp = (): void => {
           clearInterval(poll);
           clearInterval(heartbeat);
+          if (sessionExpiry !== undefined) clearTimeout(sessionExpiry);
         };
         response.once("close", cleanUp);
         return;
@@ -1518,15 +1747,21 @@ export function createRelayHttpServer(
       throw new HttpRequestError(404, "not-found", "relay route not found");
     } catch (error) {
       const zodError = error instanceof z.ZodError ? error : undefined;
+      const webSessionError =
+        error instanceof WebSessionAuthorityError ? error : undefined;
       const requestError =
         error instanceof HttpRequestError ? error : undefined;
       const status =
-        requestError?.status ?? (zodError === undefined ? 500 : 400);
+        requestError?.status ??
+        webSessionError?.status ??
+        (zodError === undefined ? 500 : 400);
       const code =
         requestError?.code ??
+        webSessionError?.code ??
         (zodError === undefined ? "internal-error" : "invalid-payload");
       const message =
         requestError?.message ??
+        webSessionError?.message ??
         (zodError === undefined
           ? "relay request failed"
           : "request payload failed validation");
@@ -1542,7 +1777,7 @@ export function createRelayHttpServer(
         at,
         details: {
           method: request.method,
-          path: request.url,
+          path: safeRequestPath(request.url),
           status,
           errorCode: code,
           ...(issues === undefined ? {} : { issues }),
