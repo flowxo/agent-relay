@@ -51,7 +51,9 @@ case.
 
 The board projects retained SQLite state into:
 
-- running, waiting, crashed, stale, muted, and ended session lanes;
+- Working, Needs input, Background work, Idle, Done, Failed, Unknown, and Ended
+  session lanes from the [durable activity model](session-activity.md), with
+  mute shown independently;
 - open attention requests with only currently valid controls;
 - a bounded correlated timeline of events, delivery attempts, answers, card
   actions, and continuation attempts;

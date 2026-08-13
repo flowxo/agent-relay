@@ -4,9 +4,18 @@ import {
   InteractionQuestionAnswerSchema,
   InteractionQuestionSchema,
 } from "@agent-relay/protocol";
+import {
+  SESSION_ACTIVITY_FIXTURE_SET_VERSION,
+  SESSION_ACTIVITY_POLICY_VERSION,
+  SESSION_ACTIVITY_SCHEMA,
+  SessionActivityConfidenceSchema,
+  SessionActivityReasonSchema,
+  SessionActivitySourceSchema,
+  SessionActivityStateSchema,
+} from "@agent-relay/core";
 
-export const WEB_API_VERSION = "1";
-export const WEB_ASSET_VERSION = "2";
+export const WEB_API_VERSION = "2";
+export const WEB_ASSET_VERSION = "3";
 
 const opaqueId = z
   .string()
@@ -53,16 +62,44 @@ export const WebOptionV1Schema = z
   })
   .strict();
 
-export const WebSessionSummaryV1Schema = z
+export const WebSessionSummaryV2Schema = z
   .object({
-    schema: z.literal("agent-relay-web-session.v1"),
+    schema: z.literal("agent-relay-web-session.v2"),
     sessionKey: z.string().length(24),
     displayId: z.string().regex(/^[A-Za-z0-9_]{8}-[a-f0-9]{6}$/),
     harness: z.enum(["codex", "claude", "cursor"]),
     surface: z.enum(["cli", "ide", "sdk", "app-server"]),
     repository: z.string().min(1).max(120),
     branch: z.string().min(1).max(240).optional(),
-    state: z.enum(["running", "waiting", "muted", "crashed", "ended", "stale"]),
+    activity: z
+      .object({
+        schema: z.literal(SESSION_ACTIVITY_SCHEMA),
+        policyVersion: z.literal(SESSION_ACTIVITY_POLICY_VERSION),
+        fixtureSetVersion: z.literal(SESSION_ACTIVITY_FIXTURE_SET_VERSION),
+        state: SessionActivityStateSchema,
+        stateLabel: z.enum([
+          "Working",
+          "Needs input",
+          "Background work",
+          "Idle",
+          "Done",
+          "Failed",
+          "Unknown",
+          "Ended",
+        ]),
+        confidence: SessionActivityConfidenceSchema,
+        reason: SessionActivityReasonSchema,
+        reasonText: z.string().min(1).max(120),
+        source: SessionActivitySourceSchema,
+        lastObservedAt: timestamp,
+        idleSince: timestamp.optional(),
+        inFlightCount: z.number().int().nonnegative().max(1_000),
+        requestCount: z.number().int().nonnegative().max(1_000),
+        muted: z.boolean(),
+        epoch: z.number().int().nonnegative(),
+        lastAppliedSequence: z.number().int().nonnegative(),
+      })
+      .strict(),
     lifecycleState: z.enum([
       "active",
       "waiting",
@@ -312,7 +349,7 @@ export type WebSupportedAction = z.infer<typeof WebSupportedActionSchema>;
 export type WebSessionAction = z.infer<typeof WebSessionActionSchema>;
 export type WebMetaV1 = z.infer<typeof WebMetaV1Schema>;
 export type WebOptionV1 = z.infer<typeof WebOptionV1Schema>;
-export type WebSessionSummaryV1 = z.infer<typeof WebSessionSummaryV1Schema>;
+export type WebSessionSummaryV2 = z.infer<typeof WebSessionSummaryV2Schema>;
 export type WebAttentionItemV1 = z.infer<typeof WebAttentionItemV1Schema>;
 export type WebEventDetailV1 = z.infer<typeof WebEventDetailV1Schema>;
 export type WebResolveRequestV1 = z.infer<typeof WebResolveRequestV1Schema>;

@@ -10,6 +10,7 @@ import {
 } from "@agent-relay/core";
 import type {
   RelayLogger,
+  SessionActivityPolicy,
   StaleBacklogQuarantineResult,
 } from "@agent-relay/core";
 import type { NotificationTransport } from "@agent-relay/notification-contracts";
@@ -97,6 +98,7 @@ export interface DaemonOptions {
   startupBacklogMaxAgeMs?: number;
   retention?: RetentionOptions;
   retentionIntervalMs?: number;
+  activityPolicy?: SessionActivityPolicy;
   logger?: RelayLogger;
 }
 
@@ -254,7 +256,11 @@ export async function startDaemon(
       "Telegram webhook mode requires AGENT_RELAY_TELEGRAM_WEBHOOK_SECRET",
     );
   }
-  const store = new RelayStore(options.databasePath);
+  const store = new RelayStore(options.databasePath, {
+    ...(options.activityPolicy === undefined
+      ? {}
+      : { activityPolicy: options.activityPolicy }),
+  });
   const service = new RelayService(store, transport, {
     logger,
     ...(options.coalescingWindowMs === undefined

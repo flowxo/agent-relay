@@ -20,6 +20,11 @@ breaking changes and required operator action.
 
 ### Changed
 
+- SQLite schema 10 adds the privacy-bounded durable session-activity ledger.
+  Telegram and the web board now consume the same Working, Needs input,
+  Background work, Idle, Done, Failed, Unknown, and Ended projection; mute and
+  transport delivery remain independent. Existing schema-9 sessions migrate
+  conservatively without manufacturing Working or Done.
 - Preserve `v0.1.0-alpha.1`, its tagged workflow, and its build/SBOM
   attestations as immutable stopped-publication evidence. The corrected
   candidate advances to `0.1.0-alpha.2`; FXO-1574 approves one bounded future

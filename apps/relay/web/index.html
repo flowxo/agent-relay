@@ -7,7 +7,7 @@
       name="description"
       content="Local operator console for concurrent Agent Relay sessions"
     />
-    <meta name="agent-relay-web-asset-version" content="2" />
+    <meta name="agent-relay-web-asset-version" content="3" />
     <title>Agent Relay Console</title>
     <link rel="stylesheet" href="/ui/styles.css" />
   </head>
@@ -91,7 +91,7 @@
                 <dd data-metric-attention>0</dd>
               </div>
               <div>
-                <dt>Running</dt>
+                <dt>Working</dt>
                 <dd data-metric-running>0</dd>
               </div>
               <div>
@@ -119,20 +119,34 @@
               >
                 All
               </button>
-              <button class="filter-chip" data-state="waiting" type="button">
-                Waiting
+              <button
+                class="filter-chip"
+                data-state="needs_input"
+                type="button"
+              >
+                Needs input
               </button>
-              <button class="filter-chip" data-state="running" type="button">
-                Running
+              <button class="filter-chip" data-state="working" type="button">
+                Working
               </button>
-              <button class="filter-chip" data-state="crashed" type="button">
-                Crashed
+              <button
+                class="filter-chip"
+                data-state="background_work"
+                type="button"
+              >
+                Background work
               </button>
-              <button class="filter-chip" data-state="stale" type="button">
-                Stale
+              <button class="filter-chip" data-state="idle" type="button">
+                Idle
               </button>
-              <button class="filter-chip" data-state="muted" type="button">
-                Muted
+              <button class="filter-chip" data-state="done" type="button">
+                Done
+              </button>
+              <button class="filter-chip" data-state="failed" type="button">
+                Failed
+              </button>
+              <button class="filter-chip" data-state="unknown" type="button">
+                Unknown
               </button>
               <button class="filter-chip" data-state="ended" type="button">
                 Ended

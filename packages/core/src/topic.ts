@@ -2,6 +2,7 @@ import type { AgentAttentionEventV1, Harness } from "@agent-relay/protocol";
 import { sha256 } from "@agent-relay/protocol";
 
 import { redactText } from "./redaction.js";
+import type { SessionActivityState } from "./activity.js";
 
 export type SessionLifecycleState =
   "active" | "waiting" | "stopped" | "suspected_stalled" | "exited";
@@ -14,6 +15,8 @@ export interface SessionLanePresentation {
   label: string;
   shortLabel: string;
 }
+
+export type SessionActivityPresentation = SessionLanePresentation;
 
 export interface SessionTopicMetadata {
   provider: Harness;
@@ -39,6 +42,24 @@ const SESSION_LANE_PRESENTATIONS: Record<
   muted: { emoji: "🔕", label: "Muted", shortLabel: "MUTE" },
   crashed: { emoji: "🔴", label: "Crashed", shortLabel: "CRASH" },
   stale: { emoji: "🟠", label: "Possibly stalled", shortLabel: "STALE" },
+  ended: { emoji: "⚫", label: "Ended", shortLabel: "END" },
+};
+
+const SESSION_ACTIVITY_PRESENTATIONS: Record<
+  SessionActivityState,
+  SessionActivityPresentation
+> = {
+  working: { emoji: "🟢", label: "Working", shortLabel: "WORK" },
+  needs_input: { emoji: "🟡", label: "Needs input", shortLabel: "INPUT" },
+  background_work: {
+    emoji: "🔵",
+    label: "Background work",
+    shortLabel: "BG",
+  },
+  idle: { emoji: "⚪", label: "Idle", shortLabel: "IDLE" },
+  done: { emoji: "✅", label: "Done", shortLabel: "DONE" },
+  failed: { emoji: "🔴", label: "Failed", shortLabel: "FAIL" },
+  unknown: { emoji: "🟠", label: "Unknown", shortLabel: "UNK" },
   ended: { emoji: "⚫", label: "Ended", shortLabel: "END" },
 };
 
@@ -166,16 +187,22 @@ export function sessionLanePresentation(
   return SESSION_LANE_PRESENTATIONS[state];
 }
 
+export function sessionActivityPresentation(
+  state: SessionActivityState,
+): SessionActivityPresentation {
+  return SESSION_ACTIVITY_PRESENTATIONS[state];
+}
+
 /**
  * Adds a visual state prefix while preserving the stable session suffix.
  * `stableTopicName` remains the durable identity stored by the registry.
  */
 export function sessionTopicDisplayName(
   stableTopicName: string,
-  state: SessionLanePresentationState,
+  state: SessionActivityState,
 ): string {
   return boundDisplayedTopicName(
-    sessionLanePresentation(state).emoji,
+    sessionActivityPresentation(state).emoji,
     stableTopicName,
   );
 }

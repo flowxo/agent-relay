@@ -45,10 +45,10 @@ describe("credential-free local web demo data", () => {
     expect(
       new Set(
         store
-          .listSessions()
-          .map((session) => store.getSessionLaneState(session)),
+          .listSessions(undefined, "2026-07-25T12:00:00.000Z")
+          .map((session) => session.activity.state),
       ),
-    ).toEqual(new Set(["running", "waiting", "crashed"]));
+    ).toEqual(new Set(["working", "needs_input", "idle", "failed"]));
     const serializedDemo = JSON.stringify(
       makeWebDemoEvents({ runId: "synthetic123" }),
     );

@@ -1,10 +1,12 @@
 const laneOrder = new Map([
-  ["crashed", 0],
-  ["stale", 1],
-  ["waiting", 2],
-  ["running", 3],
-  ["muted", 4],
-  ["ended", 5],
+  ["needs_input", 0],
+  ["failed", 1],
+  ["unknown", 2],
+  ["working", 3],
+  ["background_work", 4],
+  ["idle", 5],
+  ["done", 6],
+  ["ended", 7],
 ]);
 
 export function escapeHtml(value) {
@@ -66,12 +68,14 @@ export function reconcileSessions(sessions) {
   }
   return [...byKey.values()].sort((left, right) => {
     const laneDifference =
-      (laneOrder.get(left.state) ?? 99) - (laneOrder.get(right.state) ?? 99);
+      (laneOrder.get(left.activity.state) ?? 99) -
+      (laneOrder.get(right.activity.state) ?? 99);
     if (laneDifference !== 0) {
       return laneDifference;
     }
     const activityDifference =
-      Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt);
+      Date.parse(right.activity.lastObservedAt) -
+      Date.parse(left.activity.lastObservedAt);
     return (
       activityDifference ||
       left.repository.localeCompare(right.repository) ||
@@ -96,7 +100,7 @@ export function sortAttention(attention) {
 export function filterSessions(sessions, filters) {
   const query = filters.query.trim().toLocaleLowerCase();
   return sessions.filter((session) => {
-    if (filters.state !== "all" && session.state !== filters.state) {
+    if (filters.state !== "all" && session.activity.state !== filters.state) {
       return false;
     }
     if (filters.harness !== "all" && session.harness !== filters.harness) {
@@ -115,7 +119,9 @@ export function filterSessions(sessions, filters) {
       session.repository,
       session.branch ?? "",
       session.harness,
-      session.state,
+      session.activity.state,
+      session.activity.stateLabel,
+      session.activity.reason,
       session.sessionKey,
     ].some((value) => value.toLocaleLowerCase().includes(query));
   });
@@ -124,9 +130,12 @@ export function filterSessions(sessions, filters) {
 export function summarizeSessions(sessions, attention) {
   return {
     attention: attention.length,
-    running: sessions.filter((session) => session.state === "running").length,
+    running: sessions.filter((session) => session.activity.state === "working")
+      .length,
     risk: sessions.filter(
-      (session) => session.state === "crashed" || session.state === "stale",
+      (session) =>
+        session.activity.state === "failed" ||
+        session.activity.state === "unknown",
     ).length,
   };
 }

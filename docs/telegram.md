@@ -161,9 +161,11 @@ name containing:
 The absolute working path, transcript, bot identity, and full session ID are not
 used in the topic name. SQLite retains the provider topic mapping across
 restarts. The displayed title adds one state prefix without changing that
-identity: 🟢 running, 🟡 waiting, 🔕 muted, 🔴 crashed, 🟠 possibly stalled, or
-⚫ ended. Title edits are leased and retried from SQLite, recovered after a
-daemon restart, and diagnosed if Telegram rejects them.
+identity using the shared activity projection: 🟢 Working, 🟡 Needs input, 🔵
+Background work, ⚪ Idle, ✅ Done, 🔴 Failed, 🟠 Unknown, or ⚫ Ended. Muting is
+shown independently in `/status`. Title edits are leased and retried from
+SQLite, recovered after a daemon restart, and diagnosed if Telegram rejects
+them.
 
 Cards are literal text bounded below Telegram's message limit. Trusted headings,
 labels, state, and the final event footer use explicit Bot API message entities;
@@ -185,13 +187,13 @@ delete the Telegram topic or its message history.
 ### Inspect current status
 
 Send `/status` inside an Agent Relay session topic to read that session's
-current SQLite state. The response includes its lane state, project, branch,
-harness/surface, short identity, last event, last-seen age, and open-request
-count.
+current SQLite state. The response includes its canonical activity state,
+confidence, safe reason/source, last activity, in-flight/request counts,
+project, branch, harness/surface, short identity, and last event.
 
 Send `/status` from **New Chat** or a topic that is not mapped to a coding
 session to receive an aligned preformatted table of open topics. Ended topics
-are omitted; waiting and failure states sort ahead of routine running or muted
+are omitted; input, failure, and unknown states sort ahead of routine working
 lanes. Telegram does not implement GitHub-flavored Markdown tables, so Agent
 Relay sends the table as a literal `pre` entity rather than fragile MarkdownV2.
 The daemon handles `/status` before ordinary text correlation, so it cannot be

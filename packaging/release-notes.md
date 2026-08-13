@@ -38,6 +38,9 @@ hostname, repository identity, or machine-specific path.
 - Per-session Telegram topics, bounded cards, structured interactions, exact
   reply correlation, and supervised CLI continuation on supported surfaces.
 - A loopback-only authenticated web board for concurrent session triage.
+- One durable eight-state session-activity record shared by Telegram and the web
+  board, with confidence, bounded reasons, server-clock timing, and mute kept
+  independent.
 - Explicit fake, direct Telegram, signed outbound webhook, or WhooshBang
   transport selection, with no automatic dual-send or failover.
 - Transactional hook installation, reconciliation, diagnosis, ownership-aware
@@ -73,7 +76,7 @@ traffic.
   changes to contracts rc.12 / SDK rc.13 / mock rc.15.
 - Install manifests record the package version and launcher target. Re-running
   install reconciles only owned entries and preserves unrelated harness config.
-- SQLite migrates forward automatically through schema 9. An older binary
+- SQLite migrates forward automatically through schema 10. An older binary
   refuses a newer schema; do not edit `user_version` to force a downgrade.
 - Agent Relay has no product analytics, usage telemetry, or remote crash-report
   service. Transport-specific bounded fields, local retention, and provider-side

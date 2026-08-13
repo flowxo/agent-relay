@@ -1091,12 +1091,13 @@ export class RelayService {
   }
 
   public registerSession(session: SessionRegistrationV1): void {
-    this.store.registerSession(session);
+    const receivedAt = this.now().toISOString();
+    this.store.registerSession({ ...session, registeredAt: receivedAt });
     this.logger.log({
       level: "info",
       code: "session.registered",
       message: "session registered",
-      at: this.now().toISOString(),
+      at: receivedAt,
       details: {
         machineId: session.machineId,
         harness: session.harness,
@@ -1124,14 +1125,15 @@ export class RelayService {
   }
 
   public ingest(event: AgentAttentionEventV1): IngestResult {
-    const result = this.store.ingestEvent(event);
+    const receivedAt = this.now().toISOString();
+    const result = this.store.ingestEvent(event, receivedAt);
     this.logger.log({
       level: "info",
       code: result.inserted ? "event.ingested" : "event.duplicate",
       message: result.inserted
         ? "attention event queued"
         : "duplicate attention event ignored",
-      at: this.now().toISOString(),
+      at: receivedAt,
       details: {
         eventId: event.eventId,
         harness: event.harness,
@@ -1221,10 +1223,12 @@ export class RelayService {
   }
 
   public listSessionsWithAttention(limit = 100) {
-    this.store.expireRequests(this.now().toISOString());
-    return this.store.listSessions(limit).map((session) => ({
+    const now = this.now().toISOString();
+    this.store.expireRequests(now);
+    return this.store.listSessions(limit, now).map((session) => ({
       session,
       laneState: this.store.getSessionLaneState(session),
+      activity: session.activity,
       attentionCount: this.store.countOpenRequests(session),
     }));
   }
@@ -1234,7 +1238,7 @@ export class RelayService {
       return undefined;
     }
     return this.store
-      .listSessions()
+      .listSessions(undefined, this.now().toISOString())
       .find((session) => sessionPublicKey(session) === key);
   }
 

@@ -34,8 +34,9 @@ credential retention, live-provider work, or any later release.
 ## What you get
 
 - One private Telegram topic for each agent session.
-- State at a glance in each topic title: 🟢 running, 🟡 waiting, 🔕 muted, 🔴
-  crashed, 🟠 possibly stalled, or ⚫ ended.
+- One [durable shared activity model](docs/session-activity.md) in topic titles,
+  Telegram status, and the web board: Working, Needs input, Background work,
+  Idle, Done, Failed, Unknown, or Ended. Muting remains independent.
 - Clear alerts when an agent stops, asks a question, or has a proven crash.
 - Quiet lifecycle updates when a session starts or the operator sends more work,
   so an unattended topic does not look falsely paused.
@@ -379,8 +380,9 @@ retention.
 ### Use the local web board
 
 Open `http://127.0.0.1:4317/ui/` while the daemon is running. The board shows
-running, waiting, crashed, stale, muted, and ended sessions, along with their
-open requests and a bounded event timeline.
+the canonical eight session-activity states, last activity, and independent mute
+status, along with open requests and a bounded event timeline. The authenticated
+API also exposes confidence and bounded reason/source fields.
 
 The daemon creates a private credential file at
 `~/.agent-relay/web-credential.json`. Copy its bearer and CSRF values into the

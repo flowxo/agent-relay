@@ -67,6 +67,30 @@ describe.each([
   });
 });
 
+describe("Cursor selected stop outcomes", () => {
+  it.each([
+    ["completed", "turn.stopped"],
+    ["error", "turn.failed"],
+    ["aborted", "process.stale"],
+  ] as const)("maps %s conservatively to %s", (status, type) => {
+    const payload = JSON.parse(fixture("cursor/stop.json")) as Record<
+      string,
+      unknown
+    >;
+    payload["status"] = status;
+    const result = parseHarnessJson(
+      "cursor",
+      JSON.stringify(payload),
+      context(),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event.type).toBe(type);
+      expect(result.event).not.toHaveProperty("lastAssistantMessage");
+    }
+  });
+});
+
 describe("Claude structured background-work Stop contract", () => {
   it("keeps the lane active and retains only bounded counts", () => {
     const raw = fixture("claude/stop-background-work.json");

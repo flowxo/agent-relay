@@ -93,7 +93,7 @@ same lifecycle after an independent registry download and byte match. No live
 traffic was run or credited.
 
 The installer manifest is `agent-relay-install.v1` version `1`. The current
-SQLite schema is `9`; migrations are forward-only and a newer schema fails
+SQLite schema is `10`; migrations are forward-only and a newer schema fails
 closed as an unsafe downgrade. Doctor checks the runtime target, current harness
 observations, installed hook version stamps, package/launcher state, SQLite, and
 selected transport readiness. At least one supported harness is required; an

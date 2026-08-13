@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
 import { z } from "zod";
@@ -36,6 +36,27 @@ import {
   type CardActionKind,
 } from "@agent-relay/notification-contracts";
 
+import {
+  DEFAULT_SESSION_ACTIVITY_POLICY,
+  SESSION_ACTIVITY_FIXTURE_SET_VERSION,
+  SESSION_ACTIVITY_POLICY_VERSION,
+  SessionActivityInputSchema,
+  initialSessionActivityEvidence,
+  projectSessionActivity,
+  reduceSessionActivity,
+  sessionActivityInputsForAttentionEvent,
+  sessionActivityInputsForStructuredObservation,
+  validateSessionActivityPolicy,
+} from "./activity.js";
+import type {
+  SessionActivityEvidence,
+  SessionActivityInput,
+  SessionActivityPolicy,
+  SessionActivityRecord,
+  SessionActivitySource,
+  StructuredActivityObservation,
+} from "./activity.js";
+import { SESSION_ACTIVITY_SCHEMA_UP_SQL } from "./activity-schema.js";
 import { sessionTopicDisplayName } from "./topic.js";
 
 export type DeliveryStatus =
@@ -53,7 +74,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 9;
+export const RELAY_STORE_SCHEMA_VERSION = 10;
 
 // Schema 7 renamed the hosted transport identity from `notifications` to
 // `whooshbang`. These columns retain that value, so an existing database is
@@ -164,6 +185,7 @@ export interface SessionRecord {
   lastEventType?: EventType;
   lastSeenAt: string;
   lastSequence: number;
+  activity: SessionActivityRecord;
 }
 
 export interface SessionAdoptionCandidateCheckpoint {
@@ -203,6 +225,7 @@ export interface SessionTopicRecord {
   shortSessionId: string;
   lifecycleState: SessionRecord["state"];
   laneState: SessionLaneState;
+  activity: SessionActivityRecord;
   topicName: string;
   displayTopicName?: string;
   desiredTopicName: string;
@@ -969,6 +992,35 @@ interface SessionRow {
   last_sequence: number;
 }
 
+interface SessionActivityRow {
+  machine_id: string;
+  harness: Harness;
+  session_id: string;
+  epoch: number;
+  foreground: SessionActivityEvidence["foreground"];
+  ended: 0 | 1;
+  evidence_gap: 0 | 1;
+  failure_reason: SessionActivityEvidence["failure"];
+  last_observed_at: string;
+  idle_since: string | null;
+  last_source: SessionActivitySource;
+  background_snapshot_count: number;
+  last_applied_sequence: number;
+}
+
+interface SessionActivityCorrelationRow {
+  correlation_kind: "work" | "request";
+  correlation_digest: string;
+  correlation_state:
+    | "open"
+    | "finished"
+    | "failed"
+    | "resolved"
+    | "unmatched_finished"
+    | "unmatched_failed"
+    | "unmatched_resolved";
+}
+
 interface SessionAdoptionCandidateRow {
   machine_id: string;
   bridge_session_id: string;
@@ -1228,6 +1280,16 @@ function stateForEvent(
   }
 }
 
+function legacyLaneStateForActivity(
+  activity: SessionActivityRecord,
+): SessionLaneState {
+  if (activity.state === "ended") return "ended";
+  if (activity.state === "failed") return "crashed";
+  if (activity.state === "unknown") return "stale";
+  if (activity.muted) return "muted";
+  return activity.state === "needs_input" ? "waiting" : "running";
+}
+
 function retryDelay(policy: RetryPolicy, attemptNumber: number): number {
   const exponential = policy.baseDelayMs * 2 ** Math.max(0, attemptNumber - 1);
   return Math.min(policy.maxDelayMs, exponential);
@@ -1335,8 +1397,15 @@ function defaultOptions(
 
 export class RelayStore {
   private readonly database: Database.Database;
+  private readonly activityPolicy: SessionActivityPolicy;
 
-  public constructor(path = ":memory:") {
+  public constructor(
+    path = ":memory:",
+    options: { activityPolicy?: SessionActivityPolicy } = {},
+  ) {
+    this.activityPolicy = validateSessionActivityPolicy(
+      options.activityPolicy ?? DEFAULT_SESSION_ACTIVITY_POLICY,
+    );
     this.database = new Database(path);
     try {
       const observedSchemaVersion = this.database.pragma("user_version", {
@@ -2225,6 +2294,221 @@ export class RelayStore {
       });
       rename();
     }
+    this.database.exec(SESSION_ACTIVITY_SCHEMA_UP_SQL);
+    if (observedSchemaVersion < 10) {
+      this.database.exec(`
+        INSERT OR IGNORE INTO session_activity (
+          machine_id, harness, session_id, epoch, foreground, ended,
+          evidence_gap, failure_reason, last_observed_at, idle_since,
+          last_source, background_snapshot_count, state, confidence, reason,
+          in_flight_count, request_count, last_applied_sequence,
+          policy_version, fixture_set_version, created_at, updated_at
+        )
+        SELECT
+          sessions.machine_id,
+          sessions.harness,
+          sessions.session_id,
+          0,
+          CASE
+            WHEN controls.ended_at IS NOT NULL
+              OR sessions.last_event_type = 'session.ended'
+              OR sessions.last_event_type = 'turn.failed'
+              THEN 'stopped'
+            ELSE 'not_started'
+          END,
+          CASE
+            WHEN controls.ended_at IS NOT NULL
+              OR sessions.last_event_type = 'session.ended'
+              THEN 1
+            ELSE 0
+          END,
+          CASE
+            WHEN controls.ended_at IS NULL
+              AND COALESCE(sessions.last_event_type, '') <> 'session.ended'
+              AND COALESCE(sessions.last_event_type, '')
+                <> 'turn.failed'
+              AND NOT EXISTS (
+                SELECT 1 FROM pending_requests AS pending
+                JOIN events AS pending_event
+                  ON pending_event.event_id = pending.event_id
+                WHERE pending.machine_id = sessions.machine_id
+                  AND pending.harness = sessions.harness
+                  AND pending.session_id = sessions.session_id
+                  AND pending.state = 'open'
+                  AND NOT (
+                    pending_event.type = 'permission.required'
+                    AND json_extract(
+                      pending_event.payload_json, '$.surface'
+                    ) = 'cli'
+                  )
+                  AND NOT (
+                    pending_event.type = 'input.required'
+                    AND pending_event.harness = 'claude'
+                    AND json_extract(
+                      pending_event.payload_json, '$.surface'
+                    ) = 'cli'
+                  )
+              )
+              THEN 1
+            ELSE 0
+          END,
+          CASE
+            WHEN sessions.last_event_type = 'turn.failed' THEN 'turn_failed'
+            ELSE NULL
+          END,
+          sessions.last_seen_at,
+          NULL,
+          'recovery',
+          0,
+          CASE
+            WHEN controls.ended_at IS NOT NULL
+              OR sessions.last_event_type = 'session.ended'
+              THEN 'ended'
+            WHEN EXISTS (
+              SELECT 1 FROM pending_requests AS pending
+              JOIN events AS pending_event
+                ON pending_event.event_id = pending.event_id
+              WHERE pending.machine_id = sessions.machine_id
+                AND pending.harness = sessions.harness
+                AND pending.session_id = sessions.session_id
+                AND pending.state = 'open'
+                AND NOT (
+                  pending_event.type = 'permission.required'
+                  AND json_extract(
+                    pending_event.payload_json, '$.surface'
+                  ) = 'cli'
+                )
+                AND NOT (
+                  pending_event.type = 'input.required'
+                  AND pending_event.harness = 'claude'
+                  AND json_extract(
+                    pending_event.payload_json, '$.surface'
+                  ) = 'cli'
+                )
+            ) THEN 'needs_input'
+            WHEN sessions.last_event_type = 'turn.failed'
+              THEN 'failed'
+            ELSE 'unknown'
+          END,
+          'confirmed',
+          CASE
+            WHEN controls.ended_at IS NOT NULL
+              OR sessions.last_event_type = 'session.ended'
+              THEN 'session_ended'
+            WHEN EXISTS (
+              SELECT 1 FROM pending_requests AS pending
+              JOIN events AS pending_event
+                ON pending_event.event_id = pending.event_id
+              WHERE pending.machine_id = sessions.machine_id
+                AND pending.harness = sessions.harness
+                AND pending.session_id = sessions.session_id
+                AND pending.state = 'open'
+                AND NOT (
+                  pending_event.type = 'permission.required'
+                  AND json_extract(
+                    pending_event.payload_json, '$.surface'
+                  ) = 'cli'
+                )
+                AND NOT (
+                  pending_event.type = 'input.required'
+                  AND pending_event.harness = 'claude'
+                  AND json_extract(
+                    pending_event.payload_json, '$.surface'
+                  ) = 'cli'
+                )
+            ) THEN 'request_open'
+            WHEN sessions.last_event_type = 'turn.failed' THEN 'turn_failed'
+            ELSE 'evidence_gap'
+          END,
+          0,
+          (
+            SELECT COUNT(*) FROM pending_requests AS pending
+            JOIN events AS pending_event
+              ON pending_event.event_id = pending.event_id
+            WHERE pending.machine_id = sessions.machine_id
+              AND pending.harness = sessions.harness
+              AND pending.session_id = sessions.session_id
+              AND pending.state = 'open'
+              AND NOT (
+                pending_event.type = 'permission.required'
+                AND json_extract(
+                  pending_event.payload_json, '$.surface'
+                ) = 'cli'
+              )
+              AND NOT (
+                pending_event.type = 'input.required'
+                AND pending_event.harness = 'claude'
+                AND json_extract(
+                  pending_event.payload_json, '$.surface'
+                ) = 'cli'
+              )
+          ),
+          0,
+          '${SESSION_ACTIVITY_POLICY_VERSION}',
+          '${SESSION_ACTIVITY_FIXTURE_SET_VERSION}',
+          sessions.last_seen_at,
+          sessions.updated_at
+        FROM sessions
+        LEFT JOIN session_controls AS controls
+          ON controls.machine_id = sessions.machine_id
+          AND controls.harness = sessions.harness
+          AND controls.session_id = sessions.session_id
+      `);
+      const retainedRequests = this.database
+        .prepare(
+          `
+          SELECT pending.machine_id, pending.harness, pending.session_id,
+                 pending.correlation_id, pending.state,
+                 COALESCE(pending.resolved_at, pending.created_at) AS observed_at
+          FROM pending_requests AS pending
+          JOIN events AS pending_event
+            ON pending_event.event_id = pending.event_id
+          WHERE NOT (
+            pending_event.type = 'permission.required'
+            AND json_extract(pending_event.payload_json, '$.surface') = 'cli'
+          )
+          AND NOT (
+            pending_event.type = 'input.required'
+            AND pending_event.harness = 'claude'
+            AND json_extract(pending_event.payload_json, '$.surface') = 'cli'
+          )
+        `,
+        )
+        .all() as Array<{
+        machine_id: string;
+        harness: Harness;
+        session_id: string;
+        correlation_id: string;
+        state: string;
+        observed_at: string;
+      }>;
+      const insertRetainedRequest = this.database.prepare(
+        `
+        INSERT OR IGNORE INTO session_activity_correlations (
+          machine_id, harness, session_id, correlation_kind,
+          correlation_digest, correlation_state, updated_at
+        ) VALUES (?, ?, ?, 'request', ?, ?, ?)
+      `,
+      );
+      for (const request of retainedRequests) {
+        insertRetainedRequest.run(
+          request.machine_id,
+          request.harness,
+          request.session_id,
+          this.activityCorrelationDigest(
+            {
+              machineId: request.machine_id,
+              harness: request.harness,
+              sessionId: request.session_id,
+            },
+            "request",
+            request.correlation_id,
+          ),
+          request.state === "open" ? "open" : "resolved",
+          request.observed_at,
+        );
+      }
+    }
     this.database.pragma(
       `user_version = ${String(RELAY_STORE_SCHEMA_VERSION)}`,
     );
@@ -2236,9 +2520,10 @@ export class RelayStore {
 
   public registerSession(sessionInput: SessionRegistrationV1): void {
     const session = SessionRegistrationV1Schema.parse(sessionInput);
-    this.database
-      .prepare(
-        `
+    this.database.transaction(() => {
+      this.database
+        .prepare(
+          `
         INSERT INTO sessions (
           machine_id, harness, session_id, bridge_session_id, surface,
           harness_version, project_json, capabilities_json, state,
@@ -2261,12 +2546,516 @@ export class RelayStore {
           END,
           updated_at = excluded.updated_at
       `,
+        )
+        .run({
+          ...session,
+          projectJson: JSON.stringify(session.project),
+          capabilitiesJson: JSON.stringify(session.capabilities),
+        });
+      this.database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO session_activity (
+            machine_id, harness, session_id, epoch, foreground, ended,
+            evidence_gap, failure_reason, last_observed_at, idle_since,
+            last_source, background_snapshot_count, state, confidence, reason,
+            in_flight_count, request_count, last_applied_sequence,
+            policy_version, fixture_set_version, created_at, updated_at
+          ) VALUES (
+            @machineId, @harness, @sessionId, 0, 'not_started', 0, 0, NULL,
+            @registeredAt, NULL, 'recovery', 0, 'idle', 'confirmed',
+            'session_observed', 0, 0, 0, @policyVersion, @fixtureSetVersion,
+            @registeredAt, @registeredAt
+          )
+        `,
+        )
+        .run({
+          ...session,
+          policyVersion: SESSION_ACTIVITY_POLICY_VERSION,
+          fixtureSetVersion: SESSION_ACTIVITY_FIXTURE_SET_VERSION,
+        });
+    })();
+  }
+
+  private activitySecret(): Buffer {
+    const secret = this.database
+      .prepare("SELECT secret FROM activity_identity_secrets WHERE id = 1")
+      .pluck()
+      .get() as Buffer | undefined;
+    if (secret === undefined || secret.byteLength !== 32) {
+      throw new Error("activity identity secret is unavailable");
+    }
+    return secret;
+  }
+
+  private activityDigest(domain: string, values: readonly unknown[]): string {
+    return createHmac("sha256", this.activitySecret())
+      .update(`agent-relay-activity:${domain}:v1\u001f`)
+      .update(JSON.stringify(values))
+      .digest("hex");
+  }
+
+  private activityCorrelationDigest(
+    input: { machineId: string; harness: Harness; sessionId: string },
+    kind: "work" | "request",
+    correlation: string,
+  ): string {
+    if (
+      correlation.length < 1 ||
+      correlation.length > 512 ||
+      correlation.includes("\r") ||
+      correlation.includes("\n") ||
+      correlation.includes(String.fromCharCode(0))
+    ) {
+      throw new Error("activity correlation is outside safe bounds");
+    }
+    return this.activityDigest("correlation", [
+      input.machineId,
+      input.harness,
+      input.sessionId,
+      kind,
+      correlation,
+    ]);
+  }
+
+  private loadSessionActivityEvidence(input: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  }): SessionActivityEvidence {
+    const row = this.database
+      .prepare(
+        `
+        SELECT
+          machine_id, harness, session_id, epoch, foreground, ended,
+          evidence_gap, failure_reason, last_observed_at, idle_since,
+          last_source, background_snapshot_count, last_applied_sequence
+        FROM session_activity
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
+      )
+      .get(input) as SessionActivityRow | undefined;
+    if (row === undefined) {
+      throw new Error("session activity references an unknown session");
+    }
+    const evidence = initialSessionActivityEvidence(row.last_source);
+    evidence.epoch = row.epoch;
+    evidence.foreground = row.foreground;
+    evidence.ended = row.ended === 1;
+    evidence.gap = row.evidence_gap === 1;
+    evidence.failure = row.failure_reason;
+    evidence.lastObservedAt = row.last_observed_at;
+    evidence.idleSince = row.idle_since;
+    evidence.backgroundSnapshotCount = row.background_snapshot_count;
+    evidence.lastAppliedSequence = row.last_applied_sequence;
+
+    const correlations = this.database
+      .prepare(
+        `
+        SELECT correlation_kind, correlation_digest, correlation_state
+        FROM session_activity_correlations
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
+      )
+      .all(input) as SessionActivityCorrelationRow[];
+    for (const correlation of correlations) {
+      if (correlation.correlation_kind === "work") {
+        if (correlation.correlation_state === "open") {
+          evidence.openWork.add(correlation.correlation_digest);
+        } else if (
+          correlation.correlation_state === "finished" ||
+          correlation.correlation_state === "unmatched_finished"
+        ) {
+          evidence.terminalWork.set(correlation.correlation_digest, "finished");
+          if (correlation.correlation_state === "unmatched_finished") {
+            evidence.unmatchedTerminalWork.add(correlation.correlation_digest);
+          }
+        } else if (
+          correlation.correlation_state === "failed" ||
+          correlation.correlation_state === "unmatched_failed"
+        ) {
+          evidence.terminalWork.set(correlation.correlation_digest, "failed");
+          if (correlation.correlation_state === "unmatched_failed") {
+            evidence.unmatchedTerminalWork.add(correlation.correlation_digest);
+          }
+        }
+      } else if (correlation.correlation_state === "open") {
+        evidence.openRequests.add(correlation.correlation_digest);
+      } else {
+        evidence.resolvedRequests.add(correlation.correlation_digest);
+        if (correlation.correlation_state === "unmatched_resolved") {
+          evidence.unmatchedResolvedRequests.add(
+            correlation.correlation_digest,
+          );
+        }
+      }
+    }
+
+    const pendingRows = this.database
+      .prepare(
+        `
+        SELECT correlation_id, state, created_at, resolved_at
+        FROM pending_requests
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
+      )
+      .all(input) as Array<{
+      correlation_id: string;
+      state: "open" | "answered" | "expired" | "cancelled" | "failed";
+      created_at: string;
+      resolved_at: string | null;
+    }>;
+    const requestsByDigest = new Map(
+      pendingRows.map((pending) => [
+        this.activityCorrelationDigest(
+          input,
+          "request",
+          pending.correlation_id,
+        ),
+        pending,
+      ]),
+    );
+    let latestSelectedRequestAt: string | null = null;
+    let latestSelectedResolutionAt: string | null = null;
+    for (const correlation of correlations) {
+      if (correlation.correlation_kind !== "request") {
+        continue;
+      }
+      const pending = requestsByDigest.get(correlation.correlation_digest);
+      evidence.openRequests.delete(correlation.correlation_digest);
+      evidence.resolvedRequests.delete(correlation.correlation_digest);
+      if (pending === undefined) {
+        evidence.unmatchedResolvedRequests.add(correlation.correlation_digest);
+        continue;
+      }
+      const observedAt = pending.resolved_at ?? pending.created_at;
+      if (
+        latestSelectedRequestAt === null ||
+        observedAt > latestSelectedRequestAt
+      ) {
+        latestSelectedRequestAt = observedAt;
+      }
+      if (pending.state === "open") {
+        evidence.openRequests.add(correlation.correlation_digest);
+      } else {
+        evidence.resolvedRequests.add(correlation.correlation_digest);
+        evidence.unmatchedResolvedRequests.delete(
+          correlation.correlation_digest,
+        );
+        if (
+          pending.resolved_at !== null &&
+          (latestSelectedResolutionAt === null ||
+            pending.resolved_at > latestSelectedResolutionAt)
+        ) {
+          latestSelectedResolutionAt = pending.resolved_at;
+        }
+      }
+    }
+    if (
+      latestSelectedRequestAt !== null &&
+      latestSelectedRequestAt > row.last_observed_at
+    ) {
+      evidence.lastObservedAt = latestSelectedRequestAt;
+      evidence.lastSource = "relay_interaction";
+    }
+    if (
+      latestSelectedResolutionAt !== null &&
+      evidence.foreground === "stopped" &&
+      evidence.openWork.size + evidence.backgroundSnapshotCount === 0 &&
+      evidence.openRequests.size === 0 &&
+      (evidence.idleSince === null ||
+        latestSelectedResolutionAt > evidence.idleSince)
+    ) {
+      evidence.idleSince = latestSelectedResolutionAt;
+    }
+    return evidence;
+  }
+
+  private persistSessionActivityEvidence(
+    input: { machineId: string; harness: Harness; sessionId: string },
+    evidence: SessionActivityEvidence,
+    now: string,
+  ): SessionActivityRecord {
+    const control = this.getSessionControl(input);
+    const activity = projectSessionActivity(
+      evidence,
+      now,
+      control?.mutedAt !== undefined,
+      this.activityPolicy,
+    );
+    this.database
+      .prepare(
+        `
+        UPDATE session_activity SET
+          epoch = @epoch,
+          foreground = @foreground,
+          ended = @ended,
+          evidence_gap = @evidenceGap,
+          failure_reason = @failureReason,
+          last_observed_at = @lastObservedAt,
+          idle_since = @idleSince,
+          last_source = @source,
+          background_snapshot_count = @backgroundSnapshotCount,
+          state = @state,
+          confidence = @confidence,
+          reason = @reason,
+          in_flight_count = @inFlightCount,
+          request_count = @requestCount,
+          last_applied_sequence = @lastAppliedSequence,
+          policy_version = @policyVersion,
+          fixture_set_version = @fixtureSetVersion,
+          updated_at = @now
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
       )
       .run({
-        ...session,
-        projectJson: JSON.stringify(session.project),
-        capabilitiesJson: JSON.stringify(session.capabilities),
+        ...input,
+        ...activity,
+        foreground: evidence.foreground,
+        ended: evidence.ended ? 1 : 0,
+        evidenceGap: evidence.gap ? 1 : 0,
+        failureReason: evidence.failure,
+        idleSince: evidence.idleSince,
+        backgroundSnapshotCount: evidence.backgroundSnapshotCount,
+        now,
       });
+
+    this.database
+      .prepare(
+        `
+        DELETE FROM session_activity_correlations
+        WHERE machine_id = @machineId
+          AND harness = @harness
+          AND session_id = @sessionId
+      `,
+      )
+      .run(input);
+    const insert = this.database.prepare(
+      `
+      INSERT INTO session_activity_correlations (
+        machine_id, harness, session_id, correlation_kind,
+        correlation_digest, correlation_state, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    );
+    for (const digest of evidence.openWork) {
+      insert.run(
+        input.machineId,
+        input.harness,
+        input.sessionId,
+        "work",
+        digest,
+        "open",
+        now,
+      );
+    }
+    for (const [digest, outcome] of evidence.terminalWork) {
+      insert.run(
+        input.machineId,
+        input.harness,
+        input.sessionId,
+        "work",
+        digest,
+        evidence.unmatchedTerminalWork.has(digest)
+          ? `unmatched_${outcome}`
+          : outcome,
+        now,
+      );
+    }
+    for (const digest of evidence.openRequests) {
+      insert.run(
+        input.machineId,
+        input.harness,
+        input.sessionId,
+        "request",
+        digest,
+        "open",
+        now,
+      );
+    }
+    for (const digest of evidence.resolvedRequests) {
+      insert.run(
+        input.machineId,
+        input.harness,
+        input.sessionId,
+        "request",
+        digest,
+        evidence.unmatchedResolvedRequests.has(digest)
+          ? "unmatched_resolved"
+          : "resolved",
+        now,
+      );
+    }
+    return activity;
+  }
+
+  public getSessionActivity(
+    input: { machineId: string; harness: Harness; sessionId: string },
+    now = new Date().toISOString(),
+  ): SessionActivityRecord {
+    assertIsoCutoff(now, "session activity projection time");
+    const evidence = this.loadSessionActivityEvidence(input);
+    return projectSessionActivity(
+      evidence,
+      now,
+      this.getSessionControl(input)?.mutedAt !== undefined,
+      this.activityPolicy,
+    );
+  }
+
+  public applySessionActivityInput(
+    identity: { machineId: string; harness: Harness; sessionId: string },
+    inputValue: SessionActivityInput,
+  ): { inserted: boolean; activity: SessionActivityRecord } {
+    const parsedInput = SessionActivityInputSchema.parse(inputValue);
+    assertIsoCutoff(
+      parsedInput.observedAt,
+      "session activity observation time",
+    );
+    return this.database.transaction(() => {
+      const evidence = this.loadSessionActivityEvidence(identity);
+      const correlationKind = parsedInput.kind.startsWith("request_")
+        ? "request"
+        : "work";
+      const correlationKey =
+        parsedInput.correlationKey === undefined
+          ? undefined
+          : this.activityCorrelationDigest(
+              identity,
+              correlationKind,
+              parsedInput.correlationKey,
+            );
+      const input: SessionActivityInput = {
+        ...parsedInput,
+        ...(correlationKey === undefined ? {} : { correlationKey }),
+      };
+      const safeIdentity = this.activityDigest("event", [
+        input.source,
+        identity.machineId,
+        identity.harness,
+        identity.sessionId,
+        input.kind === "prompt_submitted" && correlationKey !== undefined
+          ? 0
+          : evidence.epoch,
+        input.kind,
+        correlationKey ?? "",
+        input.inFlightCount ?? 0,
+        input.scheduledCount ?? 0,
+      ]);
+      const receiveSequence = evidence.lastAppliedSequence + 1;
+      const inserted =
+        this.database
+          .prepare(
+            `
+            INSERT OR IGNORE INTO session_activity_events (
+              safe_identity, machine_id, harness, session_id,
+              receive_sequence, kind, source, observed_at
+            ) VALUES (
+              @safeIdentity, @machineId, @harness, @sessionId,
+              @receiveSequence, @kind, @source, @observedAt
+            )
+          `,
+          )
+          .run({
+            ...identity,
+            ...input,
+            safeIdentity,
+            receiveSequence,
+          }).changes === 1;
+      if (!inserted) {
+        return {
+          inserted: false,
+          activity: projectSessionActivity(
+            evidence,
+            input.observedAt,
+            this.getSessionControl(identity)?.mutedAt !== undefined,
+            this.activityPolicy,
+          ),
+        };
+      }
+      if (
+        input.kind === "turn_failed" ||
+        input.kind === "owned_process_failed" ||
+        input.kind === "session_ended"
+      ) {
+        const selectedRequests = this.database
+          .prepare(
+            `
+            SELECT correlation_id
+            FROM pending_requests
+            WHERE machine_id = @machineId
+              AND harness = @harness
+              AND session_id = @sessionId
+              AND state = 'open'
+          `,
+          )
+          .all(identity) as Array<{ correlation_id: string }>;
+        const selectedCorrelationIds = selectedRequests
+          .filter(({ correlation_id: correlationId }) =>
+            evidence.openRequests.has(
+              this.activityCorrelationDigest(
+                identity,
+                "request",
+                correlationId,
+              ),
+            ),
+          )
+          .map(({ correlation_id: correlationId }) => correlationId);
+        const closeRequest = this.database.prepare(
+          `
+          UPDATE pending_requests SET state = 'cancelled', resolved_at = ?
+          WHERE correlation_id = ? AND state = 'open'
+        `,
+        );
+        const closeInteractionDraft = this.database.prepare(
+          `
+          UPDATE interaction_drafts SET state = 'cancelled', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        );
+        const closeQuestionSetDraft = this.database.prepare(
+          `
+          UPDATE question_set_drafts SET state = 'cancelled', updated_at = ?
+          WHERE correlation_id = ? AND state IN ('pending', 'drafting')
+        `,
+        );
+        for (const correlationId of selectedCorrelationIds) {
+          closeRequest.run(input.observedAt, correlationId);
+          closeInteractionDraft.run(input.observedAt, correlationId);
+          closeQuestionSetDraft.run(input.observedAt, correlationId);
+        }
+      }
+      reduceSessionActivity(evidence, input, receiveSequence);
+      return {
+        inserted: true,
+        activity: this.persistSessionActivityEvidence(
+          identity,
+          evidence,
+          input.observedAt,
+        ),
+      };
+    })();
+  }
+
+  public applyStructuredSessionActivity(
+    identity: { machineId: string; harness: Harness; sessionId: string },
+    observation: StructuredActivityObservation,
+  ): SessionActivityRecord {
+    let activity = this.getSessionActivity(identity, observation.observedAt);
+    for (const input of sessionActivityInputsForStructuredObservation(
+      observation,
+    )) {
+      activity = this.applySessionActivityInput(identity, input).activity;
+    }
+    return activity;
   }
 
   public getSessionLaneState(input: {
@@ -2274,58 +3063,21 @@ export class RelayStore {
     harness: Harness;
     sessionId: string;
   }): SessionLaneState {
-    const row = this.database
-      .prepare(
-        `
-        SELECT
-          sessions.state,
-          sessions.last_event_type,
-          controls.muted_at,
-          controls.ended_at
-        FROM sessions
-        LEFT JOIN session_controls AS controls
-          ON controls.machine_id = sessions.machine_id
-          AND controls.harness = sessions.harness
-          AND controls.session_id = sessions.session_id
-        WHERE sessions.machine_id = @machineId
-          AND sessions.harness = @harness
-          AND sessions.session_id = @sessionId
-      `,
-      )
-      .get(input) as
-      | {
-          state: SessionRecord["state"];
-          last_event_type: EventType | null;
-          muted_at: string | null;
-          ended_at: string | null;
-        }
-      | undefined;
-    if (row === undefined) {
-      throw new Error("session topic references an unknown session");
-    }
-    if (row.ended_at !== null || row.last_event_type === "session.ended") {
-      return "ended";
-    }
-    if (
-      row.state === "stopped" ||
-      row.last_event_type === "turn.failed" ||
-      row.last_event_type === "process.exited"
-    ) {
-      return "crashed";
-    }
-    if (
-      row.state === "suspected_stalled" ||
-      row.last_event_type === "process.stale"
-    ) {
-      return "stale";
-    }
-    if (row.muted_at !== null) {
-      return "muted";
-    }
-    return row.state === "waiting" ? "waiting" : "running";
+    return legacyLaneStateForActivity(this.getSessionActivity(input));
   }
 
-  private topicFromRow(row: SessionTopicRow): SessionTopicRecord {
+  private topicFromRow(
+    row: SessionTopicRow,
+    now = new Date().toISOString(),
+  ): SessionTopicRecord {
+    const activity = this.getSessionActivity(
+      {
+        machineId: row.machine_id,
+        harness: row.harness,
+        sessionId: row.session_id,
+      },
+      now,
+    );
     return {
       machineId: row.machine_id,
       harness: row.harness,
@@ -2337,11 +3089,8 @@ export class RelayStore {
       ...(row.branch === null ? {} : { branch: row.branch }),
       shortSessionId: row.short_session_id,
       lifecycleState: row.lifecycle_state,
-      laneState: this.getSessionLaneState({
-        machineId: row.machine_id,
-        harness: row.harness,
-        sessionId: row.session_id,
-      }),
+      laneState: legacyLaneStateForActivity(activity),
+      activity,
       topicName: row.topic_name,
       ...(row.display_topic_name === null
         ? {}
@@ -2464,6 +3213,7 @@ export class RelayStore {
       if (session === undefined) {
         throw new Error("cannot claim a topic for an unknown session");
       }
+      const activity = this.getSessionActivity(input, input.now);
       const existingRow = this.getSessionTopicRow(input);
       if (
         existingRow?.provisioning_status === "ready" &&
@@ -2483,7 +3233,7 @@ export class RelayStore {
         lifecycleState: session.state,
         desiredTopicName: sessionTopicDisplayName(
           input.topicName,
-          this.getSessionLaneState(input),
+          activity.state,
         ),
       };
       this.database
@@ -2852,7 +3602,9 @@ export class RelayStore {
     return row === undefined ? undefined : this.topicFromRow(row);
   }
 
-  public listSessionTopics(): SessionTopicRecord[] {
+  public listSessionTopics(
+    now = new Date().toISOString(),
+  ): SessionTopicRecord[] {
     const rows = this.database
       .prepare(
         `
@@ -2869,7 +3621,7 @@ export class RelayStore {
       `,
       )
       .all() as SessionTopicRow[];
-    return rows.map((row) => this.topicFromRow(row));
+    return rows.map((row) => this.topicFromRow(row, now));
   }
 
   public reconcileSessionTopicTitles(input: {
@@ -2878,7 +3630,7 @@ export class RelayStore {
     now: string;
   }): number {
     assertIsoCutoff(input.now, "topic title reconciliation time");
-    const topics = this.listSessionTopics().filter(
+    const topics = this.listSessionTopics(input.now).filter(
       (topic) =>
         topic.transportName === input.transportName &&
         topic.transportScope === input.transportScope &&
@@ -2893,7 +3645,7 @@ export class RelayStore {
         }
         const desiredTopicName = sessionTopicDisplayName(
           topic.topicName,
-          topic.laneState,
+          topic.activity.state,
         );
         if (topic.displayTopicName === desiredTopicName) {
           if (
@@ -3349,8 +4101,12 @@ export class RelayStore {
     return result.changes === 1;
   }
 
-  public ingestEvent(eventInput: AgentAttentionEventV1): IngestResult {
+  public ingestEvent(
+    eventInput: AgentAttentionEventV1,
+    receivedAt = eventInput.occurredAt,
+  ): IngestResult {
     const event = AgentAttentionEventV1Schema.parse(eventInput);
+    assertIsoCutoff(receivedAt, "attention event receive time");
     return this.database.transaction(() => {
       if (
         this.sessionActuatorOwner({
@@ -3373,8 +4129,11 @@ export class RelayStore {
         sessionId: event.sessionId,
         project: event.project,
         capabilities: event.capabilities,
-        registeredAt: event.occurredAt,
+        registeredAt: receivedAt,
       });
+      const activityInputs = sessionActivityInputsForAttentionEvent(event).map(
+        (activityInput) => ({ ...activityInput, observedAt: receivedAt }),
+      );
 
       const state = stateForEvent(event.type);
       this.database
@@ -3398,8 +4157,11 @@ export class RelayStore {
         `,
         )
         .run({ ...event, state });
-      if (event.type === "session.ended") {
-        this.upsertSessionControl(event, "ended_at", event.occurredAt);
+      if (
+        event.type === "session.ended" &&
+        activityInputs.some(({ kind }) => kind === "session_ended")
+      ) {
+        this.upsertSessionControl(event, "ended_at", receivedAt);
       }
 
       const payloadJson = JSON.stringify(event);
@@ -3545,6 +4307,18 @@ export class RelayStore {
               index === 0 ? null : `wizard_back_${randomUUID()}`,
             );
           }
+        }
+      }
+      if (inserted) {
+        for (const activityInput of activityInputs) {
+          this.applySessionActivityInput(
+            {
+              machineId: event.machineId,
+              harness: event.harness,
+              sessionId: event.sessionId,
+            },
+            activityInput,
+          );
         }
       }
       return {
@@ -4695,6 +5469,20 @@ export class RelayStore {
       `,
       )
       .run({ ...event, now });
+    if (field === "ended_at" && event.type !== "session.ended") {
+      this.applySessionActivityInput(
+        {
+          machineId: event.machineId,
+          harness: event.harness,
+          sessionId: event.sessionId,
+        },
+        {
+          kind: "session_ended",
+          observedAt: now,
+          source: "operator",
+        },
+      );
+    }
   }
 
   public executeCardAction(input: {
@@ -8754,7 +9542,10 @@ export class RelayStore {
     })();
   }
 
-  public listSessions(limit?: number): SessionRecord[] {
+  public listSessions(
+    limit?: number,
+    now = new Date().toISOString(),
+  ): SessionRecord[] {
     if (
       limit !== undefined &&
       (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
@@ -8774,28 +9565,39 @@ export class RelayStore {
       `,
       )
       .all(...(limit === undefined ? [] : [limit])) as SessionRow[];
-    return rows.map((row) => ({
-      machineId: row.machine_id,
-      bridgeSessionId: row.bridge_session_id,
-      harness: row.harness,
-      surface: row.surface,
-      harnessVersion: row.harness_version,
-      sessionId: row.session_id,
-      project: ProjectRefSchema.parse(JSON.parse(row.project_json) as unknown),
-      state: row.state,
-      ...(row.last_event_type === null
-        ? {}
-        : { lastEventType: row.last_event_type }),
-      lastSeenAt: row.last_seen_at,
-      lastSequence: row.last_sequence,
-    }));
+    return rows.map((row) => {
+      const identity = {
+        machineId: row.machine_id,
+        harness: row.harness,
+        sessionId: row.session_id,
+      };
+      return {
+        ...identity,
+        bridgeSessionId: row.bridge_session_id,
+        surface: row.surface,
+        harnessVersion: row.harness_version,
+        project: ProjectRefSchema.parse(
+          JSON.parse(row.project_json) as unknown,
+        ),
+        state: row.state,
+        ...(row.last_event_type === null
+          ? {}
+          : { lastEventType: row.last_event_type }),
+        lastSeenAt: row.last_seen_at,
+        lastSequence: row.last_sequence,
+        activity: this.getSessionActivity(identity, now),
+      };
+    });
   }
 
-  public getSession(input: {
-    machineId: string;
-    harness: Harness;
-    sessionId: string;
-  }): SessionRecord | undefined {
+  public getSession(
+    input: {
+      machineId: string;
+      harness: Harness;
+      sessionId: string;
+    },
+    now = new Date().toISOString(),
+  ): SessionRecord | undefined {
     const row = this.database
       .prepare(
         `
@@ -8827,6 +9629,7 @@ export class RelayStore {
         : { lastEventType: row.last_event_type }),
       lastSeenAt: row.last_seen_at,
       lastSequence: row.last_sequence,
+      activity: this.getSessionActivity(input, now),
     };
   }
 

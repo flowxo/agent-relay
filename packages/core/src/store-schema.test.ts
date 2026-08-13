@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
 import { RELAY_STORE_SCHEMA_VERSION, RelayStore } from "./store.js";
+import { SESSION_ACTIVITY_SCHEMA_DOWN_SQL } from "./activity-schema.js";
 
 function schemaVersion(database: Database.Database): number {
   return database.pragma("user_version", { simple: true }) as number;
@@ -403,6 +404,211 @@ describe("SQLite schema compatibility", () => {
         .get(),
     ).toEqual({ inserted_count: 1, deleted_count: 0 });
     upgraded.close();
+  });
+
+  it("migrates version-nine sessions conservatively and reverses without touching retained data", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+
+    const prior = new Database(databasePath);
+    prior.exec(SESSION_ACTIVITY_SCHEMA_DOWN_SQL);
+    prior.exec(`
+      INSERT INTO sessions (
+        machine_id, harness, session_id, bridge_session_id, surface,
+        harness_version, project_json, capabilities_json, state,
+        last_event_type, last_seen_at, last_sequence, updated_at
+      ) VALUES
+      (
+        'machine_schema_activity_v9_12345678', 'codex',
+        'session_schema_unknown_v9_12345678',
+        'bridge_schema_activity_v9_12345678', 'cli', '0.145.0',
+        '{"displayName":"example","cwdHash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+        '{}', 'active', 'turn.started', '2026-08-13T12:00:00.000Z', 9,
+        '2026-08-13T12:00:00.000Z'
+      ),
+      (
+        'machine_schema_activity_v9_12345678', 'claude',
+        'session_schema_failed_v9_12345678',
+        'bridge_schema_activity_v9_12345678', 'cli', '2.1.219',
+        '{"displayName":"example","cwdHash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}',
+        '{}', 'stopped', 'turn.failed', '2026-08-13T12:01:00.000Z', 4,
+        '2026-08-13T12:01:00.000Z'
+      ),
+      (
+        'machine_schema_activity_v9_12345678', 'cursor',
+        'session_schema_exit_v9_12345678',
+        'bridge_schema_activity_v9_12345678', 'cli', '2026.07.23',
+        '{"displayName":"example","cwdHash":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}',
+        '{}', 'stopped', 'process.exited', '2026-08-13T12:01:30.000Z', 3,
+        '2026-08-13T12:01:30.000Z'
+      ),
+      (
+        'machine_schema_activity_v9_12345678', 'codex',
+        'session_schema_deferred_request_v9_12345678',
+        'bridge_schema_activity_v9_12345678', 'cli', '0.145.0',
+        '{"displayName":"example","cwdHash":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}',
+        '{}', 'waiting', 'permission.required', '2026-08-13T12:01:40.000Z', 2,
+        '2026-08-13T12:01:40.000Z'
+      ),
+      (
+        'machine_schema_activity_v9_12345678', 'codex',
+        'session_schema_selected_request_v9_12345678',
+        'bridge_schema_activity_v9_12345678', 'sdk', '0.145.0',
+        '{"displayName":"example","cwdHash":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}',
+        '{}', 'waiting', 'input.required', '2026-08-13T12:01:50.000Z', 2,
+        '2026-08-13T12:01:50.000Z'
+      );
+      INSERT INTO events (
+        event_id, machine_id, harness, session_id, type, payload_json,
+        status, next_attempt_at, created_at
+      ) VALUES
+      (
+        'event_schema_deferred_request_v9_12345678',
+        'machine_schema_activity_v9_12345678', 'codex',
+        'session_schema_deferred_request_v9_12345678', 'permission.required',
+        '{"surface":"cli"}', 'delivered', '2026-08-13T12:01:40.000Z',
+        '2026-08-13T12:01:40.000Z'
+      ),
+      (
+        'event_schema_selected_request_v9_12345678',
+        'machine_schema_activity_v9_12345678', 'codex',
+        'session_schema_selected_request_v9_12345678', 'input.required',
+        '{"surface":"sdk"}', 'delivered', '2026-08-13T12:01:50.000Z',
+        '2026-08-13T12:01:50.000Z'
+      );
+      INSERT INTO pending_requests (
+        correlation_id, event_id, machine_id, harness, session_id, state,
+        request_kind, question, expires_at, created_at
+      ) VALUES
+      (
+        'request_schema_deferred_v9_12345678',
+        'event_schema_deferred_request_v9_12345678',
+        'machine_schema_activity_v9_12345678', 'codex',
+        'session_schema_deferred_request_v9_12345678', 'open', 'permission',
+        'Synthetic deferred request', '2026-08-13T12:10:00.000Z',
+        '2026-08-13T12:01:40.000Z'
+      ),
+      (
+        'request_schema_selected_v9_12345678',
+        'event_schema_selected_request_v9_12345678',
+        'machine_schema_activity_v9_12345678', 'codex',
+        'session_schema_selected_request_v9_12345678', 'open', 'input',
+        'Synthetic selected request', '2026-08-13T12:10:00.000Z',
+        '2026-08-13T12:01:50.000Z'
+      );
+      CREATE TABLE retained_activity_fixture (value TEXT NOT NULL);
+      INSERT INTO retained_activity_fixture VALUES ('preserved-v9-data');
+    `);
+    prior.pragma("user_version = 9");
+    prior.close();
+
+    const upgradedStore = new RelayStore(databasePath);
+    expect(
+      upgradedStore.getSessionActivity(
+        {
+          machineId: "machine_schema_activity_v9_12345678",
+          harness: "codex",
+          sessionId: "session_schema_unknown_v9_12345678",
+        },
+        "2026-08-13T12:02:00.000Z",
+      ),
+    ).toMatchObject({
+      state: "unknown",
+      confidence: "confirmed",
+      reason: "evidence_gap",
+    });
+    expect(
+      upgradedStore.getSessionActivity(
+        {
+          machineId: "machine_schema_activity_v9_12345678",
+          harness: "codex",
+          sessionId: "session_schema_deferred_request_v9_12345678",
+        },
+        "2026-08-13T12:02:00.000Z",
+      ),
+    ).toMatchObject({
+      state: "unknown",
+      requestCount: 0,
+      reason: "evidence_gap",
+    });
+    expect(
+      upgradedStore.getSessionActivity(
+        {
+          machineId: "machine_schema_activity_v9_12345678",
+          harness: "codex",
+          sessionId: "session_schema_selected_request_v9_12345678",
+        },
+        "2026-08-13T12:02:00.000Z",
+      ),
+    ).toMatchObject({
+      state: "needs_input",
+      requestCount: 1,
+      reason: "request_open",
+    });
+    expect(
+      upgradedStore.getSessionActivity(
+        {
+          machineId: "machine_schema_activity_v9_12345678",
+          harness: "claude",
+          sessionId: "session_schema_failed_v9_12345678",
+        },
+        "2026-08-13T12:02:00.000Z",
+      ),
+    ).toMatchObject({
+      state: "failed",
+      confidence: "confirmed",
+      reason: "turn_failed",
+    });
+    expect(
+      upgradedStore.getSessionActivity(
+        {
+          machineId: "machine_schema_activity_v9_12345678",
+          harness: "cursor",
+          sessionId: "session_schema_exit_v9_12345678",
+        },
+        "2026-08-13T12:02:00.000Z",
+      ),
+    ).toMatchObject({
+      state: "unknown",
+      confidence: "confirmed",
+      reason: "evidence_gap",
+    });
+    upgradedStore.close();
+
+    const reverse = new Database(databasePath);
+    reverse.exec(SESSION_ACTIVITY_SCHEMA_DOWN_SQL);
+    reverse.pragma("user_version = 9");
+    expect(
+      reverse
+        .prepare("SELECT value FROM retained_activity_fixture")
+        .pluck()
+        .get(),
+    ).toBe("preserved-v9-data");
+    expect(reverse.prepare("SELECT COUNT(*) FROM sessions").pluck().get()).toBe(
+      5,
+    );
+    expect(
+      reverse
+        .prepare(
+          "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'session_activity%'",
+        )
+        .pluck()
+        .get(),
+    ).toBe(0);
+    reverse.close();
+
+    // Forward replay remains safe after the reverse proof.
+    new RelayStore(databasePath).close();
+    const replayed = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(replayed)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      replayed
+        .prepare("SELECT value FROM retained_activity_fixture")
+        .pluck()
+        .get(),
+    ).toBe("preserved-v9-data");
+    replayed.close();
   });
 
   it("refuses to open a newer schema and leaves it untouched", async () => {
