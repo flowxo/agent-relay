@@ -1,0 +1,17 @@
+{
+  "schema": "agent-relay-vendor-integration-fixtures.v1",
+  "recordedAt": "2026-08-13T18:00:00.000Z",
+  "contractVersion": "agent-relay-integration.v1@1.0.0",
+  "sources": {
+    "codex": "https://developers.openai.com/codex/plugins",
+    "claude": "https://code.claude.com/docs/en/plugins-reference",
+    "cursor": "https://cursor.com/docs/reference/plugins"
+  },
+  "evidence": "official-docs+exact-version-local-help+controlled-synthetic-lifecycle",
+  "privacy": "All observations and scenarios are sanitized and synthetic. No provider traffic, account data, private path, prompt, session data, or environment value is present.",
+  "fixtures": [
+    "capabilities.v1.json",
+    "compatibility.v1.json",
+    "lifecycle-scenarios.v1.json"
+  ]
+}

@@ -2,6 +2,40 @@
 
 ## Proven
 
+- FXO-1606 delivers versioned vendor-native integration bundles for Codex,
+  Claude Code, and Cursor. Current official documentation and the frozen
+  `codex-cli 0.145.0`, `2.1.219 (Claude Code)`, and `2026.07.23-e383d2b`
+  surfaces were rechecked on 2026-08-13. Codex is a native plugin in an Agent
+  Relay-owned local marketplace; Claude Code and Cursor are accurately named
+  local plugins loaded through `--plugin-dir`. The bundles compose, without
+  forking, FXO-1602's activity inputs, FXO-1604's exact `agent-relay-mcp.v1`
+  binding, and FXO-1605's byte-exact official skills. Connect, doctor, and
+  dashboard entries delegate to Relay core, and all native trust, permissions,
+  approvals, authentication, and security prompts remain native. An
+  ownership-checked lifecycle provides dry-run, install, repeat install,
+  reinstall, upgrade, drift detection/repair, disable/re-enable, bounded
+  rollback, and uninstall. It refuses symlinks, malformed configuration, unowned
+  targets, manual duplicates, conflicting active/disabled trees, and
+  incompatible contract metadata before unsafe mutation; handled interruptions
+  restore exact prior trees and metadata. Doctor reports only secret-free
+  component, ownership, disabled, drift, harness, Relay, MCP, skill-contract,
+  security, trust, and conflict health. Frozen fixtures, artifact digest
+  snapshots, isolated-home preservation and failure evaluations, packaged
+  provenance/inventory checks, and a two-session same-project binding test cover
+  the acceptance boundary. The exact Codex native add/list/remove/marketplace
+  lifecycle passed in isolated homes, Claude plugin validation passed, and
+  Cursor accepted its local plugin directory; current installed versions were
+  recorded only as compatible-unverified. The final `pnpm check` passed all
+  formatting, governance, docs, fixtures, security, policy, lint, type, 90
+  Vitest files/790 tests, contracts, builds, the 314,908-byte packed/1,928,839-
+  byte unpacked 11-file package, isolated vendor lifecycle, hosted proof, and
+  alpha.2-to-alpha.3 packed lifecycle. All three Chromium E2E scenarios passed,
+  and `pnpm audit --prod` found no known vulnerability. Only temporary vendor
+  homes, credential-empty validation, fake delivery, synthetic scenarios, and
+  loopback services were used; no normal harness installation, provider traffic,
+  package publication, immutable-version reuse, registry/account mutation,
+  marketplace submission, release, or production deployment occurred.
+
 - FXO-1605 ships one reviewed `agent-relay-skill-contract.v1` at version `1.0.0`
   and deterministic official Codex, Claude Code, and Cursor `SKILL.md` renders.
   The contract pins Agent Relay `>=0.1.0-alpha.2 <0.2.0-0`, MCP

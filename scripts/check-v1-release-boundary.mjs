@@ -78,11 +78,17 @@ assert(
   "package name differs",
 );
 assert(
-  boundary.package.version === release.version &&
-    release.version === rootPackage.version,
-  "package version differs",
+  boundary.package.version === "0.1.0-alpha.2" &&
+    release.version === "0.1.0-alpha.3" &&
+    release.version === rootPackage.version &&
+    release.priorFixtureVersion === boundary.package.version,
+  "published and successor package versions differ from the immutable boundary",
 );
-assert(boundary.package.intendedTag === release.gitTag, "intended tag differs");
+assert(
+  boundary.package.intendedTag === "v0.1.0-alpha.2" &&
+    release.gitTag === "v0.1.0-alpha.3",
+  "published or successor intended tag differs",
+);
 assert(
   boundary.package.tagStatus === "published-immutable" &&
     boundary.package.publicationCompleted === true,
@@ -90,17 +96,22 @@ assert(
 );
 assert(
   boundary.package.publicationApproved === true &&
-    release.publication.approved === true &&
-    release.publication.registryAction === "publish",
-  "bounded publication approval differs",
+    release.publication.approved === false &&
+    release.publication.registryAction === "blocked",
+  "published approval or successor publication block differs",
 );
 assert(
   boundary.releaseAuthorization.decision ===
     "go-with-named-nonblocking-residuals" &&
-    boundary.releaseAuthorization.decisionReference ===
-      release.publication.decisionReference &&
-    boundary.releaseAuthorization.executionIssue ===
-      release.publication.executionIssue,
+    /^https:\/\/linear\.app\/flowxo\/issue\/FXO-1574\//.test(
+      boundary.releaseAuthorization.decisionReference,
+    ) &&
+    /^https:\/\/linear\.app\/flowxo\/issue\/FXO-1164\//.test(
+      boundary.releaseAuthorization.executionIssue,
+    ) &&
+    release.publication.decision === "not-authorized-for-alpha.3" &&
+    release.publication.decisionReference === null &&
+    release.publication.executionIssue === null,
   "owner decision binding differs",
 );
 assert(

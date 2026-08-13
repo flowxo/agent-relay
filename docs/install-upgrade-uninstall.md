@@ -5,8 +5,10 @@
 >
 > **Verified target:** macOS on Apple silicon, Node.js 22, pnpm 11
 
-Agent Relay changes user-level harness configuration. Always inspect the dry run
-before installing or reconciling an upgrade.
+The vendor-native lifecycle writes only Agent Relay-owned plugin trees and
+launcher metadata. The legacy direct-hook lifecycle changes user-level harness
+configuration. Always inspect the relevant dry run before installation or
+upgrade.
 
 ## Prepare a source build safely
 
@@ -52,15 +54,14 @@ pnpm package:lifecycle:check
 To retain the exact candidate tarball locally:
 
 ```sh
-pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.2.tgz
-tar -tzf .artifacts/agent-relay-0.1.0-alpha.2.tgz
+pnpm pack --out .artifacts/agent-relay-0.1.0-alpha.3.tgz
+tar -tzf .artifacts/agent-relay-0.1.0-alpha.3.tgz
 ```
 
 Packing runs only the repository's deterministic staging build. It does not
-publish or change harness configuration. The staged manifest remains
-registry-eligible while the workspace root remains `private`, but the bounded
-FXO-1164 alpha.2 authorization is consumed. Packing locally does not authorize
-publishing, replacing, or reusing that version.
+publish or change harness configuration. The alpha.3 staged manifest remains
+private and publication is blocked. The bounded FXO-1164 alpha.2 authorization
+is consumed and does not authorize publishing this or any other version.
 
 The automated proof installs the tarball with dependency lifecycle scripts
 disabled, explicitly rebuilds the reviewed SQLite native dependency, and runs
@@ -74,7 +75,7 @@ For a retained local installation from that exact tarball:
 mkdir -p .artifacts/local-install
 pnpm --dir .artifacts/local-install add \
   --ignore-scripts \
-  "$PWD/.artifacts/agent-relay-0.1.0-alpha.2.tgz"
+  "$PWD/.artifacts/agent-relay-0.1.0-alpha.3.tgz"
 pnpm --dir .artifacts/local-install rebuild better-sqlite3
 .artifacts/local-install/node_modules/.bin/agent-relay --version
 ```
@@ -83,7 +84,28 @@ Keep that prefix in place while hooks are installed because the owned launcher
 targets its exact package entry. Prefer the exact public-registry installation
 above unless evaluating a source change.
 
-## Inspect and install hooks and official skills
+## Install the vendor-native integrations
+
+The recommended AR5 path composes native plugin or local-integration bundles
+without editing vendor settings:
+
+```sh
+node apps/relay/dist/cli.js integrations install --dry-run
+node apps/relay/dist/cli.js integrations install
+node apps/relay/dist/cli.js doctor
+```
+
+Follow the [vendor-native integration guide](vendor-integrations.md) for Codex's
+native local-marketplace activation, Claude Code's skills-directory discovery,
+Cursor's frozen `--plugin-dir` fallback, trust, updates, conflicts, disable,
+rollback, and uninstall. Do not run this path alongside the legacy direct-hook
+installation: preflight reports duplicate Agent Relay hooks, MCP servers, or
+skills rather than creating ambiguous ownership.
+
+## Legacy direct-hook installation
+
+The original direct-hook lifecycle remains supported for an installation that
+has not migrated yet:
 
 ```sh
 node apps/relay/dist/cli.js install --dry-run

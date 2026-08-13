@@ -4,10 +4,17 @@ All notable user-visible changes to Agent Relay will be documented here. The
 project uses Semantic Versioning; prerelease entries explicitly call out
 breaking changes and required operator action.
 
-## 0.1.0-alpha.2 — Unreleased
+## 0.1.0-alpha.3 — Unreleased
 
 ### Added
 
+- Add versioned vendor-native Agent Relay bundles for Codex, Claude Code, and
+  Cursor with frozen activity hooks, the exact local MCP binding contract,
+  canonical official skills, and core-delegating connect, doctor, and dashboard
+  entry points. The new ownership-safe lifecycle supports install, reinstall,
+  upgrade, drift repair, disable, re-enable, rollback, and uninstall without
+  rewriting unrelated vendor configuration; doctor adds secret-free component,
+  compatibility, conflict, trust, and repair health.
 - Ship one versioned `agent-relay-skill-contract.v1` and deterministic official
   Codex, Claude Code, and Cursor skills for the exact `agent-relay-mcp.v1`
   surface. The owned installer now supports idempotent install/update/repair and
@@ -20,6 +27,15 @@ breaking changes and required operator action.
   session, schema-11 digest-only binding persistence, bounded waits and typed
   fallback, shared durable interaction/activity authority, synthetic fixtures,
   safe doctor checks, and fail-closed concurrent-session correlation.
+
+### Changed
+
+- SQLite schemas 10 and 11 add the privacy-bounded durable session-activity
+  ledger and digest-only exact MCP binding state. Telegram, MCP, and the web
+  board consume the same canonical activity and interaction authority; existing
+  sessions migrate conservatively without manufacturing activity or binding.
+
+## 0.1.0-alpha.2 — 2026-08-11
 
 ### Fixed
 
@@ -35,11 +51,6 @@ breaking changes and required operator action.
 
 ### Changed
 
-- SQLite schema 10 adds the privacy-bounded durable session-activity ledger.
-  Telegram and the web board now consume the same Working, Needs input,
-  Background work, Idle, Done, Failed, Unknown, and Ended projection; mute and
-  transport delivery remain independent. Existing schema-9 sessions migrate
-  conservatively without manufacturing Working or Done.
 - Preserve `v0.1.0-alpha.1`, its tagged workflow, and its build/SBOM
   attestations as immutable stopped-publication evidence. The corrected
   candidate advances to `0.1.0-alpha.2`; FXO-1574 approves one bounded future

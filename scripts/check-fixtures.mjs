@@ -32,6 +32,11 @@ const fixtureSets = [
     root: "skills/agent-relay/fixtures",
     manifest: "skills/agent-relay/fixtures/manifest.json",
   },
+  {
+    name: "vendor integrations",
+    root: "integrations/agent-relay/fixtures",
+    manifest: "integrations/agent-relay/fixtures/manifest.json",
+  },
 ];
 
 const forbiddenText = [

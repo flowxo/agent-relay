@@ -19,6 +19,7 @@ import type { RelayMcpBindingState } from "@agent-relay/protocol";
 import { inspectAgentRelayInstallation } from "./installer.js";
 import type { InstallationCheck } from "./installer.js";
 import { AGENT_RELAY_VERSION } from "./release.js";
+import { inspectVendorIntegrations } from "./vendor-integration-lifecycle.js";
 import type { TransportReadinessReport } from "./transport-config.js";
 
 export function observeAppleSiliconHardware(): boolean {
@@ -548,29 +549,39 @@ export async function runDoctor(
 
   if (options.rootDir !== undefined) {
     try {
-      const installation = await inspectAgentRelayInstallation(
-        options.rootDir,
-        {
-          packageVersion: options.packageVersion ?? AGENT_RELAY_VERSION,
-          ...(options.runtimeEntryPath === undefined
-            ? {}
-            : { runtimeEntryPath: options.runtimeEntryPath }),
-          ...(options.runtimeNodePath === undefined
-            ? {}
-            : { runtimeNodePath: options.runtimeNodePath }),
-          harnessVersions: Object.fromEntries(
-            harnessObservations
-              .filter(
-                (
-                  observation,
-                ): observation is HarnessVersionObservation & {
-                  version: string;
-                } => observation.version !== undefined,
-              )
-              .map((observation) => [observation.harness, observation.version]),
-          ),
-        },
+      const harnessVersions = Object.fromEntries(
+        harnessObservations
+          .filter(
+            (
+              observation,
+            ): observation is HarnessVersionObservation & {
+              version: string;
+            } => observation.version !== undefined,
+          )
+          .map((observation) => [observation.harness, observation.version]),
       );
+      const harnessClassifications = Object.fromEntries(
+        harnessObservations.map((observation) => [
+          observation.harness,
+          observation.classification,
+        ]),
+      );
+      const integrations = await inspectVendorIntegrations(options.rootDir, {
+        harnessVersions,
+        harnessClassifications,
+      });
+      const installation = integrations.installed
+        ? integrations
+        : await inspectAgentRelayInstallation(options.rootDir, {
+            packageVersion: options.packageVersion ?? AGENT_RELAY_VERSION,
+            ...(options.runtimeEntryPath === undefined
+              ? {}
+              : { runtimeEntryPath: options.runtimeEntryPath }),
+            ...(options.runtimeNodePath === undefined
+              ? {}
+              : { runtimeNodePath: options.runtimeNodePath }),
+            harnessVersions,
+          });
       checks.push(...installation.checks.map(installationDoctorCheck));
     } catch (error) {
       checks.push({

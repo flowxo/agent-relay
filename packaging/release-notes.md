@@ -1,11 +1,9 @@
-# Agent Relay 0.1.0-alpha.2 release candidate
+# Agent Relay 0.1.0-alpha.3 release candidate
 
-> **Candidate status:** FXO-1574 approved one bounded future FXO-1164
-> publication after the exact final merge commit and regenerated digests are
-> recorded. Consult the generated manifest's build-time `tagStatus`; these notes
-> do not claim that the alpha.2 tag, npm package, or GitHub prerelease exists.
-> The immutable alpha.1 tag and attestations remain stopped-publication
-> evidence.
+> **Candidate status:** publication is blocked. The alpha.2 authorization was
+> consumed and does not carry to alpha.3. These notes authorize no registry,
+> tag, release, production, live-provider, or vendor-directory action. The
+> published alpha.2 artifacts and stopped alpha.1 evidence remain immutable.
 
 Agent Relay is a local-first attention and control layer for concurrent Codex,
 Claude Code, and Cursor sessions. It keeps SQLite authoritative on the
@@ -18,13 +16,14 @@ transports.
 Follow the public journey in the repository README:
 
 1. evaluate the support, privacy, and known-limit boundary;
-2. inspect `install --dry-run`, install the owned hooks, and run `doctor`;
+2. inspect `integrations install --dry-run`, install the owned vendor bundles,
+   complete native activation and trust, and run `doctor`;
 3. prove one local delivery with the fake transport;
 4. choose exactly one transport;
 5. use a supported harness;
 6. reconcile upgrades before restarting the daemon; and
-7. uninstall owned hooks before package removal, with optional local erasure as
-   a separate destructive step.
+7. uninstall native snapshots and owned bundles before package removal, with
+   optional local erasure as a separate destructive step.
 
 The credential-free `web-demo` shows four concurrent bounded synthetic sessions
 using a separate SQLite database and fake transport. It contains no external
@@ -43,8 +42,8 @@ hostname, repository identity, or machine-specific path.
   independent.
 - Explicit fake, direct Telegram, signed outbound webhook, or WhooshBang
   transport selection, with no automatic dual-send or failover.
-- Transactional hook installation, reconciliation, diagnosis, ownership-aware
-  uninstall, and optional post-uninstall erasure.
+- Recoverable vendor-plugin installation, upgrade, drift repair, disable,
+  rollback, ownership-aware uninstall, and optional post-uninstall erasure.
 
 ## Support evidence
 
@@ -55,16 +54,13 @@ snapshots are Codex CLI `codex-cli 0.145.0`, Claude Code CLI
 `agent-relay doctor` and `agent-relay capabilities`; a different installed
 harness version is `compatible-unverified`, not silently supported.
 
-The current clean source candidate has credential-free package, hosted,
-lifecycle, contract, and browser proof. Native release-exit is **not green**:
-the exact arm64 Node target was reached, then the command failed closed because
-the machine had no installed harness at an exact frozen verified snapshot. This
-limitation must not be converted into a support claim or erased with live
-traffic.
+The source candidate is evaluated with credential-free package, hosted,
+lifecycle, contract, and browser proof. Publication remains blocked regardless
+of local verification status.
 
 ## Configuration, installer, schema, and privacy changes
 
-- The release candidate identity is `@flowxo/agent-relay@0.1.0-alpha.2`.
+- The release candidate identity is `@flowxo/agent-relay@0.1.0-alpha.3`.
 - Release packing canonicalizes the gzip operating-system byte to `255` before
   comparing final compressed bytes. Noncanonical bundles fail verification.
 - Development-only `brace-expansion`, `fast-uri`, and `postcss` are pinned to
@@ -88,9 +84,9 @@ traffic.
 
 Stop Agent Relay processes, install the exact newer artifact with dependency
 scripts disabled, explicitly rebuild the reviewed SQLite dependency, run
-`doctor`, inspect and apply `install --dry-run` / `install`, require a second
-install to be unchanged, then run the fake canary before reselecting a real
-transport.
+`doctor`, inspect and apply `integrations upgrade --dry-run` /
+`integrations upgrade`, require a following `integrations install` to be
+unchanged, then run the fake canary before reselecting a real transport.
 
 SQLite migrations are forward-only. Roll back only when the older binary
 explicitly supports the database schema or after restoring a reviewed private
@@ -115,46 +111,26 @@ the private vulnerability-reporting path.
 - FXO-1568 approves MIT and `Copyright (c) 2026 Flow XO, LLC` for the exact
   bundled WhooshBang contracts rc.12 and SDK rc.13 artifacts. Different
   versions, source commits, or archive digests require a new review.
-- Alpha.2 has one bounded publication approval with the named non-blocking
-  residuals. The first npm publish remains an interactive 2FA bootstrap because
-  the package must already exist before trusted-publisher setup. The exact OIDC
-  publisher is installed immediately afterward; no token is retained and every
-  later publish uses OIDC.
+- Alpha.3 publication is blocked. FXO-1574 approved one bounded FXO-1164
+  publication for alpha.2; that execution is complete and consumed. No approval
+  carries to this candidate.
 
 ## Exact artifact and provenance boundary
 
 `pnpm release:bundle` creates the npm tarball, SPDX SBOM, package-content
 snapshot, these release notes, source manifest, and `SHA256SUMS` from one clean
-commit. The manifest records whether the intended tag actually points at that
-commit. A local build is unsigned evidence; only the separately authorized
-tagged GitHub workflow can create signed build and SBOM attestations.
+commit. The generated manifest's build-time `tagStatus` records whether the
+intended tag actually points at that commit. A local build is unsigned evidence;
+only the separately authorized tagged GitHub workflow can create signed build
+and SBOM attestations.
 
-The immutable alpha.1 source commit `cda92d179e76c00eac848a3d496fa298115cce45`
-produced equal-size Linux and macOS archives whose extracted files and
-uncompressed tar stream were identical. Only gzip header offset 9 (the tenth
-byte) differed (`0x03` versus `0x13`), changing the artifact digest and its
-downstream SBOM/checksum/attestation bindings. The alpha.1 tag, tagged run, and
-attestations are retained; the version and tag are never deleted, moved, or
-reused.
+`pnpm release:evidence` can verify an exact clean bundle and record a sanitized
+clean-home fake-canary result. It never forwards provider credentials or
+contacts a live provider. That evidence does not authorize publication.
 
-`pnpm release:evidence` then verifies that exact bundle and records a sanitized
-clean-home packed-package fake-canary result. It never forwards provider
-credentials to the installed runtime or contacts a live provider, and it does
-not substitute for the currently non-green native release-exit gate.
-
-The retained live-reviewed package remains the earlier PR #39 alpha.1 tarball,
-SHA-256 `654d6137233088905824f7960538b4d2e5911b9d100dcd1b825f79a15d84b198`. It
-contains none of PR #40, PR #41, or PR #42. The source candidate entering the
-freeze was PR #40 merge `eb5ae1316949f5053c6ae64fdf6d624243e2b2ee`; its
-ephemeral package proof had SHA-256
-`8f68350f3dda8a18d64e865a58e66029ed16a050edcf2631408a35534ab2f543` and was
-neither retained nor live-tested. The current frozen source after FXO-1161 is PR
-#41 reviewed head `875e5631ad45bbeb86c377e73dabe4d616b46413`, merge
-`0adb7288483df331fbaaefb9b392ee2f4f3c7d84`. Its separate credential-free
-release-bundle proof had SHA-256
-`3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106`, 277,069
-bytes, 11 packed files, and six SPDX packages; it was not live-tested. No
-live-card authorization carries forward. The completed onboarding predecessor is
-PR #42, reviewed head `52f04958bc6f3b838ff080eb8bc9111ac7e6f338`, merge
-`c44ef5d38c3caa6ce2e6fa86c45976dfcb6f5f2a`. FXO-1574 records the corrected
-alpha.2 source and regenerated digests before the approved FXO-1164 execution.
+The alpha.1 failed-publication tag and the published alpha.2 package, tag,
+release, checksums, SBOM, and attestations remain immutable. Alpha.3 uses a new
+semantic version precisely because an immutable published version cannot be
+moved, replaced, or reused. Any future alpha.3 publication needs a separate
+owner decision, exact final commit, regenerated digests, protected workflow, and
+OIDC verification.
