@@ -1,3 +1,8 @@
+import {
+  SESSION_ACTIVITY_FIXTURE_SET_VERSION,
+  SESSION_ACTIVITY_POLICY_VERSION,
+} from "./activity.js";
+
 export const SESSION_ACTIVITY_SCHEMA_UP_SQL = `
   CREATE TABLE IF NOT EXISTS activity_identity_secrets (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -56,6 +61,24 @@ export const SESSION_ACTIVITY_SCHEMA_UP_SQL = `
       REFERENCES sessions(machine_id, harness, session_id) ON DELETE CASCADE
   );
 
+  CREATE TRIGGER IF NOT EXISTS session_activity_sessions_insert
+  AFTER INSERT ON sessions
+  BEGIN
+    INSERT OR IGNORE INTO session_activity (
+      machine_id, harness, session_id, epoch, foreground, ended,
+      evidence_gap, failure_reason, last_observed_at, idle_since,
+      last_source, background_snapshot_count, state, confidence, reason,
+      in_flight_count, request_count, last_applied_sequence,
+      policy_version, fixture_set_version, created_at, updated_at
+    ) VALUES (
+      NEW.machine_id, NEW.harness, NEW.session_id, 0, 'not_started', 0, 0,
+      NULL, NEW.last_seen_at, NULL, 'recovery', 0, 'idle', 'confirmed',
+      'session_observed', 0, 0, 0, '${SESSION_ACTIVITY_POLICY_VERSION}',
+      '${SESSION_ACTIVITY_FIXTURE_SET_VERSION}', NEW.last_seen_at,
+      NEW.updated_at
+    );
+  END;
+
   CREATE TABLE IF NOT EXISTS session_activity_correlations (
     machine_id TEXT NOT NULL,
     harness TEXT NOT NULL,
@@ -111,6 +134,7 @@ export const SESSION_ACTIVITY_SCHEMA_UP_SQL = `
 /** Test/rollback proof only. Production remains forward-only. */
 export const SESSION_ACTIVITY_SCHEMA_DOWN_SQL = `
   DROP INDEX IF EXISTS session_activity_state_idx;
+  DROP TRIGGER IF EXISTS session_activity_sessions_insert;
   DROP TABLE IF EXISTS session_activity_events;
   DROP TABLE IF EXISTS session_activity_correlations;
   DROP TABLE IF EXISTS session_activity;

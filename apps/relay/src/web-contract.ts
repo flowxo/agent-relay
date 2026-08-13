@@ -15,7 +15,7 @@ import {
 } from "@agent-relay/core";
 
 export const WEB_API_VERSION = "3";
-export const WEB_ASSET_VERSION = "4";
+export const WEB_ASSET_VERSION = "5";
 
 const opaqueId = z
   .string()

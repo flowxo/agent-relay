@@ -982,7 +982,6 @@ async function initializeAuthentication() {
     } else {
       await exchangeBootstrapGrant(grant);
     }
-    await showAuthenticatedConsole();
   } catch (error) {
     if (grant !== null) removeBootstrapGrantFromHistory();
     requireCredential(
@@ -991,6 +990,16 @@ async function initializeAuthentication() {
         : error.code === "web-bootstrap-expired" || error.status === 410
           ? "This launch link expired. Run agent-relay dashboard --web again."
           : "This launch link is stale or already used. Run agent-relay dashboard --web again.",
+    );
+    return;
+  }
+  try {
+    await showAuthenticatedConsole();
+  } catch (error) {
+    requireCredential(
+      error.status === 401
+        ? "This browser session ended. Run agent-relay dashboard --web to reconnect safely."
+        : "This browser session is authenticated, but dashboard data could not load. Refresh the page; if the problem continues, restart Agent Relay and run agent-relay dashboard --web again.",
     );
   }
 }

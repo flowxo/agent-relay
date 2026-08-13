@@ -43,6 +43,13 @@ breaking changes and required operator action.
   board consume the same canonical activity and interaction authority; existing
   sessions migrate conservatively without manufacturing activity or binding.
 
+### Fixed
+
+- Repair missing session-activity projections left by a concurrently running
+  older process during upgrade, and prevent the gap from recurring on legacy
+  session inserts. The authenticated dashboard now distinguishes a protected
+  data-load failure from an invalid or replayed browser bootstrap grant.
+
 ## 0.1.0-alpha.2 — 2026-08-11
 
 ### Fixed
