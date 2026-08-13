@@ -14,6 +14,7 @@ import {
   RelayStore,
 } from "@agent-relay/core";
 import type { Harness } from "@agent-relay/protocol";
+import type { RelayMcpBindingState } from "@agent-relay/protocol";
 
 import { inspectAgentRelayInstallation } from "./installer.js";
 import type { InstallationCheck } from "./installer.js";
@@ -125,6 +126,11 @@ export interface DoctorOptions {
     readonly configured: boolean;
     readonly enabled: boolean;
     readonly adapterAvailable: boolean;
+  };
+  mcp?: {
+    readonly serverAvailable: boolean;
+    readonly daemonAvailable: boolean;
+    readonly correlationState?: RelayMcpBindingState | "missing";
   };
 }
 
@@ -265,6 +271,31 @@ export async function runDoctor(
         : runnerBridge.configured
           ? "experimental runner bridge is explicitly disabled"
           : "experimental runner bridge is disabled by default",
+    });
+  }
+  if (options.mcp !== undefined) {
+    checks.push({
+      name: "relay-mcp-server",
+      ok: options.mcp.serverAvailable,
+      level: options.mcp.serverAvailable ? "pass" : "fail",
+      detail: options.mcp.serverAvailable
+        ? "versioned local stdio MCP entrypoint is available"
+        : "local stdio MCP entrypoint is unavailable",
+    });
+    const state = options.mcp.correlationState;
+    const failed = state === "ambiguous" || state === "revoked";
+    const bound = state === "bound";
+    checks.push({
+      name: "relay-mcp-correlation",
+      ok: !failed,
+      level: failed ? "fail" : bound ? "pass" : "warn",
+      detail: failed
+        ? "exact MCP/native-session correlation failed closed"
+        : bound
+          ? "one exact native session is bound without exposing its authority"
+          : options.mcp.daemonAvailable
+            ? "MCP correlation handshake is ready; no exact active native session is bound"
+            : "MCP correlation handshake is installed; live daemon readiness was not proven",
     });
   }
   if (options.transportReadiness !== undefined) {

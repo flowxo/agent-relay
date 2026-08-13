@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -50,6 +50,7 @@ import { replayFallbackSpool } from "./fallback-spool.js";
 import { runHook } from "./hook-runner.js";
 import { installAgentRelay, uninstallAgentRelay } from "./installer.js";
 import { loadOrCreateMachineId } from "./machine-id.js";
+import { runRelayMcpServer } from "./mcp-server.js";
 import {
   WHOOSHBANG_COMMAND_USAGE,
   runWhooshBangCommand,
@@ -93,6 +94,7 @@ Commands:
   daemon             Start the local relay daemon
   web-demo           Start a sanitized local web demo
   hook <harness>     Accept one native harness hook payload on stdin
+  mcp                Serve typed operator interactions over local stdio MCP
   run <harness>      Supervise a harness CLI process
   status             Show daemon and delivery status
   drain              Deliver queued events
@@ -232,6 +234,10 @@ export async function main(
   }
   if (isInertCommandHelpRequest(command, args)) {
     process.stdout.write(USAGE);
+    return;
+  }
+  if (command === "mcp") {
+    await runRelayMcpServer();
     return;
   }
   const stateDir =
@@ -592,6 +598,7 @@ export async function main(
       harness === "cursor" && supervised ? "cli" : configuredSurface;
     const raw = await readStdin();
     const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+    const mcpBindingToken = environment("AGENT_RELAY_MCP_BINDING");
     const machineId =
       environment("AGENT_RELAY_MACHINE_ID") ??
       (await loadOrCreateMachineId(join(stateDir, "machine-id")));
@@ -612,6 +619,7 @@ export async function main(
       daemonUrl:
         environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
       ...(daemonToken === undefined ? {} : { daemonToken }),
+      ...(mcpBindingToken === undefined ? {} : { mcpBindingToken }),
       fallbackPath: join(stateDir, "fallback-spool.ndjson"),
       waitMs: numericFlag(args, "--wait-ms", 0),
       lateResume: supervised,
@@ -716,6 +724,8 @@ export async function main(
       runnerBridgePaths(stateDir).configuration,
     );
     const liveDaemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
+    const activeMcpBinding = environment("AGENT_RELAY_MCP_BINDING");
+    const runtimeEntryPath = installEntryPath(args);
     const liveRequested = args.includes("--live");
     const liveStatus = liveRequested
       ? await new RelayClient({
@@ -726,11 +736,25 @@ export async function main(
           .status()
           .catch(() => null)
       : undefined;
+    const mcpStatus =
+      activeMcpBinding === undefined
+        ? undefined
+        : await new RelayClient({
+            baseUrl:
+              environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
+            ...(liveDaemonToken === undefined
+              ? {}
+              : { token: liveDaemonToken }),
+          })
+            .mcpStatus(activeMcpBinding, {
+              schema: "agent-relay-mcp-status.v1",
+            })
+            .catch(() => null);
     const report = await runDoctor({
       databasePath: flag(args, "--db") ?? ":memory:",
       rootDir: resolve(flag(args, "--root") ?? homedir()),
       packageVersion: AGENT_RELAY_VERSION,
-      runtimeEntryPath: installEntryPath(args),
+      runtimeEntryPath,
       runtimeNodePath: process.execPath,
       runtime: {
         platform: process.platform,
@@ -755,6 +779,15 @@ export async function main(
         configured: runnerBridgeConfiguration !== undefined,
         enabled: runnerBridgeConfiguration?.enabled ?? false,
         adapterAvailable: false,
+      },
+      mcp: {
+        serverAvailable: existsSync(runtimeEntryPath),
+        daemonAvailable:
+          (liveStatus !== null && liveStatus !== undefined) ||
+          (mcpStatus !== null && mcpStatus !== undefined),
+        ...(mcpStatus === null || mcpStatus === undefined
+          ? {}
+          : { correlationState: mcpStatus.bindingState }),
       },
     });
     output(report);

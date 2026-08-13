@@ -1,6 +1,13 @@
 import type {
   AgentAttentionEventV1,
+  OperatorInteractionAnswerV1,
   RelayDiagnosticV1,
+  RelayMcpAskV1,
+  RelayMcpBindingState,
+  RelayMcpCancelV1,
+  RelayMcpQuestionnaireV1,
+  RelayMcpRequestState,
+  RelayMcpStatusV1,
   SessionHeartbeatV1,
   SessionRegistrationV1,
 } from "@agent-relay/protocol";
@@ -51,6 +58,37 @@ export interface RelayClientOptions {
 }
 
 const TELEGRAM_CANARY_ACTIVATION_TIMEOUT_MS = 15_000;
+
+export interface McpBindingResponse {
+  outcome: string;
+  bindingState?: RelayMcpBindingState;
+}
+
+export interface McpInteractionResponse {
+  outcome: string;
+  bindingState?: RelayMcpBindingState;
+  requestId?: string;
+  requestState?: RelayMcpRequestState;
+}
+
+export interface McpStatusResponse {
+  bindingState: RelayMcpBindingState | "missing";
+  harness?: Harness;
+  activityState?:
+    | "working"
+    | "needs_input"
+    | "background_work"
+    | "idle"
+    | "done"
+    | "failed"
+    | "unknown"
+    | "ended";
+  openRequestCount?: number;
+  delivery: "available" | "degraded" | "unavailable";
+  requestId?: string;
+  requestState?: RelayMcpRequestState;
+  answer?: OperatorInteractionAnswerV1;
+}
 
 export class RelayClient {
   private readonly baseUrl: string;
@@ -223,6 +261,90 @@ export class RelayClient {
 
   public async status(): Promise<RelayDaemonStatus> {
     return await this.request<RelayDaemonStatus>("/v1/status");
+  }
+
+  private mcpHeaders(bindingToken: string): Record<string, string> {
+    return { "x-agent-relay-mcp-binding": bindingToken };
+  }
+
+  public async registerMcpBinding(
+    bindingToken: string,
+    input: {
+      machineId: string;
+      bridgeSessionId: string;
+      harness: Harness;
+    },
+  ): Promise<McpBindingResponse> {
+    return await this.request<McpBindingResponse>("/v1/mcp/bindings/register", {
+      method: "POST",
+      headers: this.mcpHeaders(bindingToken),
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async claimMcpBinding(
+    bindingToken: string,
+    input: {
+      machineId: string;
+      bridgeSessionId: string;
+      harness: Harness;
+      sessionId: string;
+    },
+  ): Promise<McpBindingResponse> {
+    return await this.request<McpBindingResponse>("/v1/mcp/bindings/claim", {
+      method: "POST",
+      headers: this.mcpHeaders(bindingToken),
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async endMcpBinding(
+    bindingToken: string,
+    input: {
+      machineId: string;
+      bridgeSessionId: string;
+      harness: Harness;
+      sessionId?: string;
+    },
+  ): Promise<McpBindingResponse> {
+    return await this.request<McpBindingResponse>("/v1/mcp/bindings/end", {
+      method: "POST",
+      headers: this.mcpHeaders(bindingToken),
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async openMcpInteraction(
+    bindingToken: string,
+    input: RelayMcpAskV1 | RelayMcpQuestionnaireV1,
+  ): Promise<McpInteractionResponse> {
+    return await this.request<McpInteractionResponse>("/v1/mcp/interactions", {
+      method: "POST",
+      headers: this.mcpHeaders(bindingToken),
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async cancelMcpInteraction(
+    bindingToken: string,
+    input: RelayMcpCancelV1,
+  ): Promise<McpInteractionResponse> {
+    return await this.request<McpInteractionResponse>("/v1/mcp/cancel", {
+      method: "POST",
+      headers: this.mcpHeaders(bindingToken),
+      body: JSON.stringify(input),
+    });
+  }
+
+  public async mcpStatus(
+    bindingToken: string,
+    input: RelayMcpStatusV1,
+  ): Promise<McpStatusResponse> {
+    return await this.request<McpStatusResponse>("/v1/mcp/status", {
+      method: "POST",
+      headers: this.mcpHeaders(bindingToken),
+      body: JSON.stringify(input),
+    });
   }
 
   public async getRequest(

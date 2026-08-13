@@ -1,0 +1,16 @@
+{
+  "schema": "agent-relay-mcp-ask.v1",
+  "requestId": "request_mcp_fixture_0001",
+  "title": "Choose the synthetic rollout",
+  "question": {
+    "questionId": "question_mcp_fixture_0001",
+    "kind": "single-select",
+    "prompt": "Which synthetic rollout should continue?",
+    "options": [
+      { "optionId": "option_mcp_alpha_0001", "label": "Alpha" },
+      { "optionId": "option_mcp_beta_0001", "label": "Beta" }
+    ]
+  },
+  "expiresInMs": 600000,
+  "waitTimeoutMs": 120000
+}

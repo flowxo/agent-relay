@@ -81,10 +81,12 @@ The current frozen CLI evidence is intentionally narrow:
 - the experimental Codex app-server adapter: selected thread, turn, item,
   approval, error, and owned-process lifecycle observations.
 
-Relay's own durable structured interactions and unexpected owned-child exits are
-selected too. Permission, tool, subagent, compaction, notification, and
-session-end hooks that AR5.1 marked current-only or deferred remain excluded.
-They require new exact-version evidence before they can influence activity.
+Relay's own durable structured interactions—including exactly bound local MCP
+questions—and unexpected owned-child exits are selected too. The MCP adapter
+creates the same durable `input.required` event and does not reinterpret this
+policy. Permission, tool, subagent, compaction, notification, and session-end
+hooks that AR5.1 marked current-only or deferred remain excluded. They require
+new exact-version evidence before they can influence activity.
 
 A transport disconnect affects delivery health, not execution. Missing or
 contradictory lifecycle evidence fails closed to `Unknown`; restart never
@@ -94,12 +96,18 @@ failures, and explicit ended sessions.
 
 ## Privacy and persistence
 
-SQLite schema 10 stores only the allowlisted activity fields, bounded counts,
+SQLite schema 11 stores only the allowlisted activity fields, bounded counts,
 receive sequence, policy provenance, and keyed correlation digests. A private
 random database secret keys source-event and native correlation identities. Raw
 prompts, assistant text, tool input/output, commands, error detail, transcripts,
 working paths, environment, arguments, credentials, account IDs, model/task
 descriptions, and raw native IDs are not stored in activity tables.
+
+Schema 11 also stores local MCP/native-session bindings. Only a keyed digest of
+the ephemeral binding authority and exact bounded identity fields are retained;
+the authority itself, prompts, answers, tool arguments, and paths are not. This
+binding selects which existing session may open a request. It does not add
+activity evidence or change any state precedence or timing rule.
 
 The executable frozen timing corpus lives at
 `packages/harnesses/fixtures/activity-policy/timing-trials.json`. The policy and

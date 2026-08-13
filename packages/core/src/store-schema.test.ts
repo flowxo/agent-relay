@@ -20,6 +20,51 @@ async function digest(path: string): Promise<string> {
 }
 
 describe("SQLite schema compatibility", () => {
+  it("migrates schema ten to secret-digest MCP session bindings", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    new RelayStore(databasePath).close();
+    const prior = new Database(databasePath);
+    prior.exec(`
+      DROP INDEX mcp_session_bindings_session_idx;
+      DROP TABLE mcp_session_bindings;
+    `);
+    prior.pragma("user_version = 10");
+    prior.close();
+
+    new RelayStore(databasePath).close();
+    const upgraded = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(upgraded)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      upgraded
+        .prepare(
+          `
+          SELECT name
+          FROM sqlite_master
+          WHERE type = 'table' AND name = 'mcp_session_bindings'
+        `,
+        )
+        .pluck()
+        .get(),
+    ).toBe("mcp_session_bindings");
+    expect(
+      upgraded
+        .prepare("PRAGMA table_info(mcp_session_bindings)")
+        .all()
+        .map((column) => (column as { name: string }).name),
+    ).toEqual(
+      expect.arrayContaining([
+        "token_digest",
+        "machine_id",
+        "bridge_session_id",
+        "harness",
+        "session_id",
+        "state",
+      ]),
+    );
+    upgraded.close();
+  });
+
   it("upgrades an unversioned prior store without losing retained data", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");
