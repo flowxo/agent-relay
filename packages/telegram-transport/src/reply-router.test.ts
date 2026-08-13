@@ -1075,7 +1075,7 @@ describe("Telegram reply correlation", () => {
     expect(runtime.transport.operatorControls[0]).toMatchObject({
       context: { topicId: String(topicId) },
       message: {
-        text: expect.stringContaining("🟡 Waiting"),
+        text: expect.stringContaining("🟡 Needs input"),
         buttons: [],
       },
     });
@@ -1101,6 +1101,7 @@ describe("Telegram reply correlation", () => {
     runtime.service.ingest({
       ...questionEvent("correlation_status_ended", "session_status_ended", 13),
       type: "session.ended",
+      surface: "app-server",
       request: undefined,
     });
     await runtime.service.drain();
@@ -1122,7 +1123,7 @@ describe("Telegram reply correlation", () => {
     expect(control?.context.topicId).toBe("9999");
     expect(control?.message.text).toContain("Open Agent Relay sessions · 2");
     expect(control?.message.text).toContain("STATE  AGENT   PROJECT");
-    expect(control?.message.text).toContain("WAIT");
+    expect(control?.message.text).toContain("INPUT");
     expect(control?.message.text).toContain("codex");
     expect(control?.message.text).toContain("claude");
     expect(control?.message.text).not.toContain("session_status_ended");

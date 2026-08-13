@@ -117,13 +117,14 @@ topic failures, path/secret sanitization, and restart reuse.
 The readable session suffix now carries a six-character digest of the full
 machine/harness/session identity, and the 128-character name bound preserves
 that suffix. Fixtures prove that two sessions ending in the same eight
-characters still receive distinguishable names. `topicRecords` expose `running`,
-`waiting`, `muted`, `crashed`, `ended`, and `stale` lane states from durable
-session, latest-event, and control records. Schema 8 keeps the stable base name
-separate from the applied and desired display title; state changes schedule
+characters still receive distinguishable names. Schema 8 keeps the stable base
+name separate from the applied and desired display title; state changes schedule
 bounded leased edits, and file-backed fixtures prove retry and restart recovery.
-Existing SQLite files backfill their current provider title before the first
-state reconciliation.
+Schema 10 replaces the earlier broad topic-lane projection with the
+[privacy-bounded durable shared activity model](session-activity.md). Topic
+records, Telegram status, and the local web API now consume the same eight-state
+record and keep mute independent. Existing SQLite files receive a conservative
+migration before the first activity reconciliation.
 
 The Telegram HTTP fixtures classify a
 `400 Bad Request: message thread not found` response only when `sendMessage`

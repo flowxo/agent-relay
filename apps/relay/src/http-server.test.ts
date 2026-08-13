@@ -238,15 +238,15 @@ describe("relay HTTP daemon", () => {
     expect(appText).toContain("x-agent-relay-csrf");
     const version = await fetch(`${runtime.baseUrl}/ui/version.js`);
     expect(version.status).toBe(200);
-    expect(await version.text()).toContain('WEB_API_VERSION = "1"');
+    expect(await version.text()).toContain('WEB_API_VERSION = "2"');
     const meta = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
       headers: webHeaders(runtime),
     });
     expect(meta.status).toBe(200);
     await expect(meta.json()).resolves.toEqual({
       schema: "agent-relay-web-meta.v1",
-      apiVersion: "1",
-      assetVersion: "2",
+      apiVersion: "2",
+      assetVersion: "3",
       commandSchemas: [
         "agent-relay-web-resolve.v1",
         "agent-relay-web-session-action.v1",
@@ -513,7 +513,11 @@ describe("relay HTTP daemon", () => {
       sessions: [
         {
           displayId: sessionTopicMetadata(input).shortSessionId,
-          state: "waiting",
+          activity: {
+            state: "needs_input",
+            stateLabel: "Needs input",
+            requestCount: 1,
+          },
           lifecycleState: "waiting",
         },
       ],
@@ -1004,7 +1008,10 @@ describe("relay HTTP daemon", () => {
     await expect(first.json()).resolves.toMatchObject({
       outcome: "succeeded",
       replayed: false,
-      sessionState: "muted",
+      sessionActivity: {
+        state: "idle",
+        muted: true,
+      },
       surfaceSync: "updated",
     });
     expect(runtime.transport.messageEdits.at(-1)?.text).toContain(

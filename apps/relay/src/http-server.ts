@@ -13,7 +13,7 @@ import type {
   PendingRequestRecord,
   RelayLogger,
   RelayService,
-  SessionLaneState,
+  SessionActivityRecord,
   SessionRecord,
   WebChangeRecord,
 } from "@agent-relay/core";
@@ -42,7 +42,7 @@ import {
   WebMetaV1Schema,
   WebResolveRequestV1Schema,
   WebSessionActionV1Schema,
-  WebSessionSummaryV1Schema,
+  WebSessionSummaryV2Schema,
   WebTimelineEntryV1Schema,
 } from "./web-contract.js";
 import { loadWebAsset } from "./web-assets.js";
@@ -53,7 +53,7 @@ import type {
   WebDiagnosticExportV1,
   WebEventDetailV1,
   WebEventRevealV1,
-  WebSessionSummaryV1,
+  WebSessionSummaryV2,
   WebSessionAction,
   WebSupportedAction,
   WebTimelineEntryV1,
@@ -482,7 +482,7 @@ function responseForm(
 function sessionActions(
   service: RelayService,
   session: SessionRecord,
-  laneState: SessionLaneState,
+  activity: SessionActivityRecord,
   attentionCount: number,
 ): { latestEventId?: string; supportedActions: WebSessionAction[] } {
   const latest = service.store.getLatestEventForSession(session)?.event;
@@ -501,10 +501,14 @@ function sessionActions(
   ) {
     supportedActions.push("continue");
   }
-  if (supported.has("mute") && laneState !== "muted" && laneState !== "ended") {
+  if (supported.has("mute") && !activity.muted && activity.state !== "ended") {
     supportedActions.push("mute");
   }
-  if (supported.has("end") && laneState !== "ended" && attentionCount === 0) {
+  if (
+    supported.has("end") &&
+    activity.state !== "ended" &&
+    attentionCount === 0
+  ) {
     supportedActions.push("end");
   }
   return { latestEventId: latest.eventId, supportedActions };
@@ -513,16 +517,16 @@ function sessionActions(
 function toWebSession(
   service: RelayService,
   session: SessionRecord,
-  laneState: SessionLaneState,
+  activity: SessionActivityRecord,
   attentionCount: number,
-): WebSessionSummaryV1 {
+): WebSessionSummaryV2 {
   const key = sessionPublicKey(session);
   const readableSuffix = session.sessionId
     .slice(-8)
     .replace(/[^A-Za-z0-9]/g, "_");
-  const actions = sessionActions(service, session, laneState, attentionCount);
-  return WebSessionSummaryV1Schema.parse({
-    schema: "agent-relay-web-session.v1",
+  const actions = sessionActions(service, session, activity, attentionCount);
+  return WebSessionSummaryV2Schema.parse({
+    schema: "agent-relay-web-session.v2",
     sessionKey: key,
     displayId: `${readableSuffix}-${key.slice(0, 6)}`,
     harness: session.harness,
@@ -531,7 +535,7 @@ function toWebSession(
     ...(session.project.branch === undefined
       ? {}
       : { branch: redactText(session.project.branch, 240) }),
-    state: laneState,
+    activity,
     lifecycleState: session.state,
     ...(session.lastEventType === undefined
       ? {}
@@ -712,8 +716,8 @@ export function createRelayHttpServer(
         sendJson(response, 200, {
           sessions: service
             .listSessionsWithAttention(limit)
-            .map(({ session, laneState, attentionCount }) =>
-              toWebSession(service, session, laneState, attentionCount),
+            .map(({ session, activity, attentionCount }) =>
+              toWebSession(service, session, activity, attentionCount),
             ),
         });
         return;
@@ -762,7 +766,9 @@ export function createRelayHttpServer(
           surfaceSync,
           ...(session === undefined
             ? {}
-            : { sessionState: service.store.getSessionLaneState(session) }),
+            : {
+                sessionActivity: session.activity,
+              }),
         });
         return;
       }

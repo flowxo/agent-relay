@@ -199,7 +199,7 @@ function renderSessions() {
             ? "is-highlighted"
             : ""
         }" data-session-key="${escapeHtml(session.sessionKey)}" data-open-session>
-          <span class="lane-indicator ${escapeHtml(session.state)}" aria-hidden="true"></span>
+          <span class="lane-indicator ${escapeHtml(session.activity.state)}" aria-hidden="true"></span>
           <div class="session-identity">
             <strong>${escapeHtml(session.displayId)}</strong>
             <small>${escapeHtml(session.surface)} · ${escapeHtml(session.lastEventType ?? "registered")}</small>
@@ -210,10 +210,10 @@ function renderSessions() {
           </div>
           <div class="session-harness">
             <span class="harness-badge">${escapeHtml(session.harness)}</span>
-            <span class="lane-badge ${escapeHtml(session.state)}">${escapeHtml(session.state)}</span>
+            <span class="lane-badge ${escapeHtml(session.activity.state)}">${escapeHtml(session.activity.stateLabel)}${session.activity.muted ? " · muted" : ""}</span>
           </div>
           <div class="session-activity">
-            <strong>${escapeHtml(relativeTime(session.lastSeenAt))}</strong>
+            <strong>${escapeHtml(relativeTime(session.activity.lastObservedAt))}</strong>
             <small>last activity</small>
           </div>
           <span class="attention-badge ${
@@ -534,7 +534,7 @@ function openTimeline(key) {
   elements.timelineTitle.textContent = `${session.repository} · ${session.displayId}`;
   elements.timelineSubtitle.textContent = `${session.harness} · ${
     session.branch ?? "default branch"
-  } · ${session.state}`;
+  } · ${session.activity.stateLabel}`;
   elements.sessionControlStatus.textContent = "";
   renderSessionControls(session);
   elements.eventDetailPanel.hidden = true;
@@ -763,7 +763,7 @@ async function refresh() {
     } else {
       elements.timelineSubtitle.textContent = `${openSession.harness} · ${
         openSession.branch ?? "default branch"
-      } · ${openSession.state}`;
+      } · ${openSession.activity.stateLabel}`;
       renderSessionControls(openSession);
       void loadTimeline(model.openSessionKey);
     }
@@ -1110,5 +1110,12 @@ setInterval(() => {
   }
   if (model.connection !== "disconnected") {
     render();
+  }
+  if (
+    model.connection === "connected" &&
+    model.token.length > 0 &&
+    Date.now() - model.lastSync >= 5_000
+  ) {
+    scheduleRefresh();
   }
 }, 5_000);

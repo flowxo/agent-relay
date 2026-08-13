@@ -622,7 +622,7 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     const { default: Database } = await import("better-sqlite3");
     const priorDatabase = new Database(databasePath);
     assert(
-      priorDatabase.pragma("user_version", { simple: true }) === 9,
+      priorDatabase.pragma("user_version", { simple: true }) === 10,
       "prior fixture database did not start at the known schema",
     );
     priorDatabase.exec(`
@@ -753,7 +753,7 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
 
     const migratedDatabase = new Database(databasePath);
     assert(
-      migratedDatabase.pragma("user_version", { simple: true }) === 9,
+      migratedDatabase.pragma("user_version", { simple: true }) === 10,
       "current package did not migrate the prior schema forward",
     );
     migratedDatabase.pragma("wal_checkpoint(TRUNCATE)");
@@ -762,7 +762,7 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     const futureDatabasePath = resolve(stateDir, "future.sqlite");
     await copyFile(databasePath, futureDatabasePath);
     const futureDatabase = new Database(futureDatabasePath);
-    futureDatabase.pragma("user_version = 10");
+    futureDatabase.pragma("user_version = 11");
     futureDatabase.close();
     const downgradeDoctor = parseJson(
       (
@@ -791,7 +791,7 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       readonly: true,
     });
     assert(
-      futureUnchanged.pragma("user_version", { simple: true }) === 10,
+      futureUnchanged.pragma("user_version", { simple: true }) === 11,
       "downgrade refusal changed the future schema",
     );
     futureUnchanged.close();

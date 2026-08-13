@@ -58,19 +58,19 @@ and bodies above the daemon limit. It never emits an
 
 All list limits default to 100 and are bounded from 1 through 500.
 
-| Method and route                           | Result                                                                       |
-| ------------------------------------------ | ---------------------------------------------------------------------------- |
-| `GET /v1/web/meta`                         | Static-asset/API and mutation-contract compatibility                         |
-| `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, lane state, attention count |
-| `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions               |
-| `GET /v1/web/sessions/:key/timeline`       | Correlated retained session evidence                                         |
-| `GET /v1/web/events/:eventId`              | One bounded event/request detail                                             |
-| `GET /v1/web/events/:eventId/reveal`       | Explicit bounded private-content reveal                                      |
-| `GET /v1/web/diagnostics/export`           | Downloadable re-sanitized diagnostic evidence                                |
-| `GET /v1/web/changes?after=0&limit=100`    | Ordered durable changes and retained cursor bounds                           |
-| `GET /v1/web/stream?after=0`               | Ordered Server-Sent Events                                                   |
-| `POST /v1/web/requests/:requestId/resolve` | Idempotent typed response resolution                                         |
-| `POST /v1/web/sessions/:key/actions`       | Exact-event Continue, Mute, or End command                                   |
+| Method and route                           | Result                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `GET /v1/web/meta`                         | Static-asset/API and mutation-contract compatibility                                 |
+| `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, canonical activity, attention count |
+| `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions                       |
+| `GET /v1/web/sessions/:key/timeline`       | Correlated retained session evidence                                                 |
+| `GET /v1/web/events/:eventId`              | One bounded event/request detail                                                     |
+| `GET /v1/web/events/:eventId/reveal`       | Explicit bounded private-content reveal                                              |
+| `GET /v1/web/diagnostics/export`           | Downloadable re-sanitized diagnostic evidence                                        |
+| `GET /v1/web/changes?after=0&limit=100`    | Ordered durable changes and retained cursor bounds                                   |
+| `GET /v1/web/stream?after=0`               | Ordered Server-Sent Events                                                           |
+| `POST /v1/web/requests/:requestId/resolve` | Idempotent typed response resolution                                                 |
+| `POST /v1/web/sessions/:key/actions`       | Exact-event Continue, Mute, or End command                                           |
 
 Session summaries use a stable 24-character key instead of returning the machine
 or harness session ID. Their display ID matches Telegram's readable
@@ -80,9 +80,14 @@ operator can correlate the same lane across surfaces. Event detail omits
 option callback tokens, stored answers, and structured draft content. Prompt,
 label, summary, and failure previews are secret-redacted and bounded.
 
-Session `state` is the operator-facing lane state: `running`, `waiting`,
-`crashed`, `stale`, `muted`, or `ended`. `lifecycleState` retains the underlying
-harness lifecycle without asking the browser to infer controls or failures.
+The API-2 session summary is `agent-relay-web-session.v2`. Its `activity` field
+is the canonical `agent-relay-session-activity.v1` record. Its state is
+`working`, `needs_input`, `background_work`, `idle`, `done`, `failed`,
+`unknown`, or `ended`; `stateLabel` contains the exact operator-facing label.
+Confidence, bounded reason and source, server-clock last activity, open counts,
+and independent mute configuration travel with that projection. See the
+[durable activity reference](session-activity.md). `lifecycleState` remains as a
+legacy underlying harness observation and is not an operator-state contract.
 
 Request read models advertise only actions proven for the event's harness
 capabilities:
@@ -227,10 +232,10 @@ node apps/relay/dist/cli.js web-demo
 
 The command uses `127.0.0.1:4318`, the fake Telegram transport, a fixed
 dedicated demo SQLite file and log beneath `~/.agent-relay/web-demo/`, and four
-bounded synthetic lanes (running, waiting, and crashed). It ignores provider and
-daemon bearer environment credentials, never contains assistant transcript
-content, and does not log either generated local credential value. Open
-`http://127.0.0.1:4318/ui/` and copy the two fields from
+bounded synthetic lanes across Working, Needs input, Idle, and Failed. It
+ignores provider and daemon bearer environment credentials, never contains
+assistant transcript content, and does not log either generated local credential
+value. Open `http://127.0.0.1:4318/ui/` and copy the two fields from
 `~/.agent-relay/web-demo/web-credential.json`. Only `--port` is configurable;
 the command rejects `--db`, `--log`, and `--host` so a demo cannot read another
 database, write another log, or leave the loopback boundary. Stop an existing

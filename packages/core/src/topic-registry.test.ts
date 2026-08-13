@@ -81,7 +81,7 @@ describe("durable session topic registry", () => {
         branch: "codex/topic-registry",
         shortSessionId: expect.stringMatching(/^12345678-[a-f0-9]{6}$/),
         lifecycleState: "waiting",
-        laneState: "waiting",
+        activity: expect.objectContaining({ state: "idle" }),
         provisioningStatus: "ready",
         topicId: "1000",
       }),
@@ -557,31 +557,43 @@ describe("durable session topic registry", () => {
   });
 
   it("keeps stable topic identity while synchronizing state titles", async () => {
+    const testClock = clock();
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();
-    const service = new RelayService(store, transport);
+    const service = new RelayService(store, transport, { now: testClock.now });
     const sessionId = "session_topic_states_12345678";
     const started = event("evt_topic_state_running_12345678", {
       sessionId,
       sequence: 1,
-      type: "session.started",
+      type: "turn.started",
     });
     service.ingest(started);
     await service.drain();
-    const originalName = store.listSessionTopics()[0]?.topicName;
+    const originalName = store.listSessionTopics(
+      testClock.now().toISOString(),
+    )[0]?.topicName;
     if (originalName === undefined) {
       throw new Error("missing original topic name");
     }
-    expect(store.listSessionTopics()[0]?.laneState).toBe("running");
-    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
-      `🟢 ${originalName}`,
-    );
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]?.activity,
+    ).toMatchObject({ state: "working", muted: false });
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]
+        ?.displayTopicName,
+    ).toBe(`🟢 ${originalName}`);
 
     service.ingest(
       event("evt_topic_state_waiting_12345678", {
         sessionId,
         sequence: 2,
-        type: "turn.stopped",
+        type: "input.required",
+        request: {
+          correlationId: "request_topic_state_12345678",
+          kind: "input",
+          question: "Synthetic bounded question",
+          expiresAt: "2026-07-25T12:10:00.000Z",
+        },
       }),
     );
     await service.drain();
@@ -589,10 +601,13 @@ describe("durable session topic registry", () => {
       scheduled: 1,
       updated: 1,
     });
-    expect(store.listSessionTopics()[0]?.laneState).toBe("waiting");
-    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
-      `🟡 ${originalName}`,
-    );
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]?.activity,
+    ).toMatchObject({ state: "needs_input", muted: false });
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]
+        ?.displayTopicName,
+    ).toBe(`🟡 ${originalName}`);
 
     const muteAction = transport.deliveries
       .at(-1)
@@ -608,55 +623,110 @@ describe("durable session topic registry", () => {
         now: "2026-07-25T12:00:01.000Z",
       }).outcome,
     ).toBe("succeeded");
-    expect(store.listSessionTopics()[0]?.laneState).toBe("muted");
-    await service.drainTopicTitleUpdates();
-    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
-      `🔕 ${originalName}`,
-    );
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]?.activity,
+    ).toMatchObject({ state: "needs_input", muted: true });
+    await expect(service.drainTopicTitleUpdates()).resolves.toMatchObject({
+      scheduled: 0,
+      updated: 0,
+    });
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]
+        ?.displayTopicName,
+    ).toBe(`🟡 ${originalName}`);
 
+    expect(
+      store.resolveRequest({
+        correlationId: "request_topic_state_12345678",
+        answer: "Synthetic answer",
+        resolvedBy: "telegram",
+        now: testClock.now().toISOString(),
+      }).outcome,
+    ).toBe("answered");
     service.ingest(
-      event("evt_topic_state_crashed_12345678", {
+      event("evt_topic_state_recovery_12345678", {
         sessionId,
         sequence: 3,
-        type: "turn.failed",
-        failure: {
-          class: "synthetic",
-          message: "Synthetic crash state",
-        },
+        type: "turn.started",
       }),
     );
     await service.drain();
     await service.drainTopicTitleUpdates();
-    expect(store.listSessionTopics()[0]?.laneState).toBe("crashed");
-    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
-      `🔴 ${originalName}`,
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]
+        ?.displayTopicName,
+    ).toBe(`🟢 ${originalName}`);
+
+    store.applySessionActivityInput(
+      {
+        machineId: started.machineId,
+        harness: started.harness,
+        sessionId,
+      },
+      {
+        kind: "turn_failed",
+        observedAt: testClock.now().toISOString(),
+        source: "codex_app_server",
+        correlationKey: "turn_topic_state_failure_12345678",
+      },
     );
+    await service.drainTopicTitleUpdates();
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]?.activity.state,
+    ).toBe("failed");
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]
+        ?.displayTopicName,
+    ).toBe(`🔴 ${originalName}`);
+
+    service.ingest(
+      event("evt_topic_state_second_recovery_12345678", {
+        sessionId,
+        sequence: 5,
+        type: "turn.started",
+      }),
+    );
+    await service.drain();
+    await service.drainTopicTitleUpdates();
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]?.activity.state,
+    ).toBe("working");
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]
+        ?.displayTopicName,
+    ).toBe(`🟢 ${originalName}`);
 
     service.ingest(
       event("evt_topic_state_stale_12345678", {
         sessionId,
-        sequence: 4,
+        sequence: 6,
         type: "process.stale",
       }),
     );
     await service.drain();
     await service.drainTopicTitleUpdates();
-    expect(store.listSessionTopics()[0]?.laneState).toBe("stale");
-    expect(store.listSessionTopics()[0]?.displayTopicName).toBe(
-      `🟠 ${originalName}`,
-    );
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]?.activity.state,
+    ).toBe("unknown");
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0]
+        ?.displayTopicName,
+    ).toBe(`🟠 ${originalName}`);
 
     service.ingest(
       event("evt_topic_state_ended_12345678", {
         sessionId,
-        sequence: 5,
+        sequence: 7,
         type: "session.ended",
+        surface: "app-server",
       }),
     );
     await service.drain();
     await service.drainTopicTitleUpdates();
-    expect(store.listSessionTopics()[0]).toMatchObject({
-      laneState: "ended",
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0],
+    ).toMatchObject({
+      activity: expect.objectContaining({ state: "ended", muted: true }),
       topicName: originalName,
       displayTopicName: `⚫ ${originalName}`,
     });
@@ -702,7 +772,9 @@ describe("durable session topic registry", () => {
       retrying: 1,
       updated: 0,
     });
-    expect(store.listSessionTopics()[0]).toMatchObject({
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0],
+    ).toMatchObject({
       titleUpdateStatus: "retry",
       titleAttemptCount: 1,
       titleLastErrorCode: "fake-topic-edit-timeout",
@@ -722,10 +794,12 @@ describe("durable session topic registry", () => {
       updated: 1,
       retrying: 0,
     });
-    expect(store.listSessionTopics()[0]).toMatchObject({
+    expect(
+      store.listSessionTopics(testClock.now().toISOString())[0],
+    ).toMatchObject({
       titleUpdateStatus: "ready",
       titleAttemptCount: 2,
-      displayTopicName: expect.stringMatching(/^🟡 /u),
+      displayTopicName: expect.stringMatching(/^⚪ /u),
     });
     store.close();
   });
@@ -782,7 +856,9 @@ describe("durable session topic registry", () => {
         now: testClock.now,
       });
       secondService.recover();
-      expect(secondStore.listSessionTopics()[0]).toMatchObject({
+      expect(
+        secondStore.listSessionTopics(testClock.now().toISOString())[0],
+      ).toMatchObject({
         titleUpdateStatus: "retry",
         titleLastErrorCode: "topic-title-update-interrupted",
       });
@@ -792,9 +868,11 @@ describe("durable session topic registry", () => {
         claimed: 1,
         updated: 1,
       });
-      expect(secondStore.listSessionTopics()[0]).toMatchObject({
+      expect(
+        secondStore.listSessionTopics(testClock.now().toISOString())[0],
+      ).toMatchObject({
         titleUpdateStatus: "ready",
-        displayTopicName: expect.stringMatching(/^🟡 /u),
+        displayTopicName: expect.stringMatching(/^⚪ /u),
       });
       secondStore.close();
     } finally {
@@ -803,9 +881,10 @@ describe("durable session topic registry", () => {
   });
 
   it("reconciles a topic that disappears during a state-title edit", async () => {
+    const testClock = clock();
     const store = new RelayStore();
     const transport = new FakeNotificationTransport();
-    const service = new RelayService(store, transport);
+    const service = new RelayService(store, transport, { now: testClock.now });
     const sessionId = "session_topic_title_missing_12345678";
     service.ingest(
       event("evt_topic_title_missing_started_12345678", {
@@ -815,21 +894,16 @@ describe("durable session topic registry", () => {
       }),
     );
     await service.drain();
-    const topicId = store.listSessionTopics()[0]?.topicId;
-    const muteAction = transport.deliveries[0]?.message.actions?.find(
-      (action) => action.kind === "mute",
+    const topicId = store.listSessionTopics(testClock.now().toISOString())[0]
+      ?.topicId;
+    service.ingest(
+      event("evt_topic_title_missing_stopped_12345678", {
+        sessionId,
+        sequence: 2,
+        type: "turn.stopped",
+      }),
     );
-    if (muteAction === undefined) {
-      throw new Error("missing synthetic mute action");
-    }
-    expect(
-      store.executeCardAction({
-        token: muteAction.token,
-        kind: "mute",
-        updateId: 402,
-        now: "2026-07-25T12:00:01.000Z",
-      }).outcome,
-    ).toBe("succeeded");
+    await service.drain();
     if (topicId === undefined || !transport.simulateTopicDeletion(topicId)) {
       throw new Error("missing synthetic topic");
     }
@@ -874,6 +948,7 @@ describe("durable session topic registry", () => {
         sessionId,
         sequence: 10,
         type: "session.ended",
+        surface: "app-server",
       }),
     );
     await service.drain();

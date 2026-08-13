@@ -148,15 +148,21 @@ const cursorPermissionSchema = z
   .passthrough();
 
 function summarizeTool(name: string, input: unknown): string {
-  if (
-    typeof input === "object" &&
-    input !== null &&
-    "command" in input &&
-    typeof input.command === "string"
-  ) {
-    return `${name}: ${input.command.slice(0, 300)}`;
-  }
-  return `Permission requested for ${name}`;
+  void input;
+  const toolClass = name.replace(/[^A-Za-z0-9._-]/gu, "_").slice(0, 80);
+  return `Permission requested for ${toolClass || "tool"}`;
+}
+
+const CLAUDE_STOP_FAILURE_CLASSES = new Set([
+  "authentication",
+  "context_limit",
+  "permission",
+  "rate_limit",
+  "timeout",
+]);
+
+function claudeStopFailureClass(value: string): string {
+  return CLAUDE_STOP_FAILURE_CLASSES.has(value) ? value : "stop-failure";
 }
 
 function issuesFor(error: z.ZodError): NonNullable<ParseDiagnostic["issues"]> {
@@ -321,10 +327,7 @@ function parseCodex(
         sessionId: parsed.data.session_id,
         turnId: parsed.data.turn_id,
         type: "turn.stopped",
-        summary: parsed.data.last_assistant_message?.slice(0, 500),
-        ...(parsed.data.last_assistant_message === null
-          ? {}
-          : { lastAssistantMessage: parsed.data.last_assistant_message }),
+        summary: "Foreground work stopped.",
         stopHookActive: parsed.data.stop_hook_active,
       },
       context,
@@ -452,12 +455,7 @@ function parseClaude(
               },
             }
           : {
-              summary: parsed.data.last_assistant_message?.slice(0, 500),
-              ...(parsed.data.last_assistant_message === null
-                ? {}
-                : {
-                    lastAssistantMessage: parsed.data.last_assistant_message,
-                  }),
+              summary: "Foreground work stopped.",
             }),
         stopHookActive: parsed.data.stop_hook_active,
       },
@@ -480,10 +478,10 @@ function parseClaude(
         cwd: parsed.data.cwd,
         sessionId: parsed.data.session_id,
         type: "turn.failed",
-        summary: parsed.data.last_assistant_message?.slice(0, 500),
+        summary: "The harness reported a terminal turn failure.",
         failure: {
-          class: parsed.data.error,
-          message: parsed.data.error_details ?? parsed.data.error,
+          class: claudeStopFailureClass(parsed.data.error),
+          message: "The harness reported a terminal turn failure.",
         },
       },
       context,
@@ -542,13 +540,16 @@ function parseClaude(
         cwd: parsed.data.cwd,
         sessionId: parsed.data.session_id,
         type: requiresInput ? "input.required" : "turn.activity",
-        summary: parsed.data.message.slice(0, 500),
+        summary: requiresInput
+          ? "The harness reported that operator input may be required."
+          : "The harness reported a bounded activity notification.",
         ...(requiresInput
           ? {
               request: {
                 correlationId: `req_notification_${context.sequence}`,
                 kind: "input" as const,
-                question: parsed.data.message,
+                question:
+                  "The harness reported that operator input may be required.",
                 expiresAt: new Date(
                   Date.parse(context.occurredAt) + 10 * 60_000,
                 ).toISOString(),
@@ -584,13 +585,18 @@ function parseCursor(
       return malformed("cursor", "Cursor stop payload has no workspace root");
     }
     const isFailure = parsed.data.status === "error";
+    const isAmbiguous = parsed.data.status === "aborted";
     return eventFromAdapter(
       "cursor",
       {
         cwd,
         sessionId: parsed.data.conversation_id,
         turnId: `cursor_loop_${parsed.data.loop_count}`,
-        type: isFailure ? "turn.failed" : "turn.stopped",
+        type: isFailure
+          ? "turn.failed"
+          : isAmbiguous
+            ? "process.stale"
+            : "turn.stopped",
         summary: `Cursor stopped with status ${parsed.data.status}`,
         ...(isFailure
           ? {

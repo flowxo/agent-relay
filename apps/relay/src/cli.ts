@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   CompositeLogger,
+  DEFAULT_SESSION_ACTIVITY_POLICY,
   JsonLineLogger,
   RotatingFileLogger,
 } from "@agent-relay/core";
@@ -423,6 +424,44 @@ export async function main(
         : undefined;
     const daemon = await startDaemon({
       databasePath,
+      activityPolicy: {
+        idleToDoneMs: integerFlag(
+          args,
+          "--activity-idle-to-done-ms",
+          Number(
+            environment("AGENT_RELAY_ACTIVITY_IDLE_TO_DONE_MS") ??
+              String(DEFAULT_SESSION_ACTIVITY_POLICY.idleToDoneMs),
+          ),
+        ),
+        workingWithoutTerminalToUnknownMs: integerFlag(
+          args,
+          "--activity-working-to-unknown-ms",
+          Number(
+            environment("AGENT_RELAY_ACTIVITY_WORKING_TO_UNKNOWN_MS") ??
+              String(
+                DEFAULT_SESSION_ACTIVITY_POLICY.workingWithoutTerminalToUnknownMs,
+              ),
+          ),
+        ),
+        openForegroundWorkToUnknownMs: integerFlag(
+          args,
+          "--activity-foreground-work-to-unknown-ms",
+          Number(
+            environment("AGENT_RELAY_ACTIVITY_FOREGROUND_WORK_TO_UNKNOWN_MS") ??
+              String(
+                DEFAULT_SESSION_ACTIVITY_POLICY.openForegroundWorkToUnknownMs,
+              ),
+          ),
+        ),
+        backgroundWorkToUnknownMs: integerFlag(
+          args,
+          "--activity-background-work-to-unknown-ms",
+          Number(
+            environment("AGENT_RELAY_ACTIVITY_BACKGROUND_WORK_TO_UNKNOWN_MS") ??
+              String(DEFAULT_SESSION_ACTIVITY_POLICY.backgroundWorkToUnknownMs),
+          ),
+        ),
+      },
       webEnabled,
       selectedTransport: transportSelection.selected,
       transportSelection,

@@ -1,19 +1,21 @@
 import {
   redactText,
-  sessionLanePresentation,
+  sessionActivityPresentation,
   type RelayStore,
-  type SessionLaneState,
+  type SessionActivityState,
   type SessionTopicRecord,
 } from "@agent-relay/core";
 import type { OperatorControlMessage } from "@agent-relay/notification-contracts";
 
-const STATUS_PRIORITY: Record<SessionLaneState, number> = {
-  crashed: 0,
-  waiting: 1,
-  stale: 2,
-  running: 3,
-  muted: 4,
-  ended: 5,
+const STATUS_PRIORITY: Record<SessionActivityState, number> = {
+  needs_input: 0,
+  failed: 1,
+  unknown: 2,
+  working: 3,
+  background_work: 4,
+  idle: 5,
+  done: 6,
+  ended: 7,
 };
 
 function titleCase(value: string): string {
@@ -70,11 +72,12 @@ function openTopics(
         topic.transportScope === transportScope &&
         topic.provisioningStatus === "ready" &&
         topic.topicId !== undefined &&
-        topic.laneState !== "ended",
+        topic.activity.state !== "ended",
     )
     .sort(
       (left, right) =>
-        STATUS_PRIORITY[left.laneState] - STATUS_PRIORITY[right.laneState] ||
+        STATUS_PRIORITY[left.activity.state] -
+          STATUS_PRIORITY[right.activity.state] ||
         right.updatedAt.localeCompare(left.updatedAt) ||
         left.shortSessionId.localeCompare(right.shortSessionId),
     );
@@ -85,9 +88,10 @@ export function renderSessionStatus(
   topic: SessionTopicRecord,
   now: Date,
 ): OperatorControlMessage {
-  const session = store.getSession(topic);
-  const presentation = sessionLanePresentation(topic.laneState);
-  const openRequests = store.countOpenRequests(topic);
+  const session = store.getSession(topic, now.toISOString());
+  const activity =
+    session?.activity ?? store.getSessionActivity(topic, now.toISOString());
+  const presentation = sessionActivityPresentation(activity.state);
   const lines = [
     "Agent Relay status",
     "",
@@ -96,11 +100,14 @@ export function renderSessionStatus(
     `Branch: ${topic.branch ?? "unknown"}`,
     `Harness: ${titleCase(topic.provider)} / ${session?.surface ?? "unknown"}`,
     `Session: ${topic.shortSessionId}`,
+    `Confidence: ${titleCase(activity.confidence)}`,
+    `Reason: ${activity.reasonText}`,
+    `Source: ${activity.source}`,
     `Last event: ${session?.lastEventType ?? "none recorded"}`,
-    `Last seen: ${
-      session === undefined ? "unknown" : relativeAge(session.lastSeenAt, now)
-    }`,
-    `Open requests: ${String(openRequests)}`,
+    `Last activity: ${relativeAge(activity.lastObservedAt, now)}`,
+    `In flight: ${String(activity.inFlightCount)}`,
+    `Open requests: ${String(activity.requestCount)}`,
+    `Delivery: ${activity.muted ? "Muted" : "Enabled"}`,
   ];
   return {
     text: redactText(lines.join("\n"), 4_000),
@@ -137,7 +144,7 @@ export function renderOpenSessionStatus(
   const rows = visible.map((topic) =>
     tableRow(
       [
-        sessionLanePresentation(topic.laneState).shortLabel,
+        sessionActivityPresentation(topic.activity.state).shortLabel,
         topic.provider,
         topic.repository,
         topic.branch ?? "unknown",

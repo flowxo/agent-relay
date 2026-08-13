@@ -305,8 +305,8 @@ for (const [label, checkSource] of [
 }
 requireText(
   storeSource,
-  /RELAY_STORE_SCHEMA_VERSION = 9;/,
-  "SQLite schema is not 9",
+  /RELAY_STORE_SCHEMA_VERSION = 10;/,
+  "SQLite schema is not 10",
 );
 requireText(
   installerSource,
@@ -418,7 +418,7 @@ for (const [pattern, message] of [
     /native release-exit is (?:\*\*)?green/i,
     "native release-exit green status is missing",
   ],
-  [/SQLite schema (?:is |version )`?9`?/, "current SQLite schema is missing"],
+  [/SQLite schema (?:is |version )`?10`?/, "current SQLite schema is missing"],
   [/Cursor IDE late resume is unsupported/i, "Cursor IDE limit is missing"],
   [
     /Cursor permission automation (?:is|remains) disabled/i,

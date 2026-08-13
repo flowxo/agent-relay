@@ -11,16 +11,48 @@ import {
   summarizeSessions,
 } from "./state.js";
 
+const stateLabels = {
+  working: "Working",
+  needs_input: "Needs input",
+  background_work: "Background work",
+  idle: "Idle",
+  done: "Done",
+  failed: "Failed",
+  unknown: "Unknown",
+  ended: "Ended",
+};
+
+function activity(state = "working", overrides = {}) {
+  return {
+    schema: "agent-relay-session-activity.v1",
+    policyVersion: "ar5.1.v1",
+    fixtureSetVersion: "ar5.1-2026-08-13",
+    state,
+    stateLabel: stateLabels[state],
+    confidence: "confirmed",
+    reason: state === "working" ? "foreground_recent" : "evidence_gap",
+    reasonText: "Synthetic bounded reason.",
+    source: "codex_cli",
+    lastObservedAt: "2026-07-25T12:00:00.000Z",
+    inFlightCount: 0,
+    requestCount: state === "needs_input" ? 1 : 0,
+    muted: false,
+    epoch: 1,
+    lastAppliedSequence: 1,
+    ...overrides,
+  };
+}
+
 function session(overrides = {}) {
   return {
-    schema: "agent-relay-web-session.v1",
+    schema: "agent-relay-web-session.v2",
     sessionKey: "session-key-000000000001",
     displayId: "00000001-123abc",
     harness: "codex",
     surface: "cli",
     repository: "agent-relay",
     branch: "codex/console",
-    state: "running",
+    activity: activity(),
     lifecycleState: "active",
     lastSeenAt: "2026-07-25T12:00:00.000Z",
     attentionCount: 0,
@@ -52,17 +84,17 @@ describe("local session board state", () => {
       session({ attentionCount: 2 }),
       session({
         sessionKey: "session-key-000000000002",
-        state: "waiting",
+        activity: activity("needs_input"),
       }),
       session({
         sessionKey: "session-key-000000000003",
-        state: "crashed",
+        activity: activity("failed"),
       }),
     ]);
 
     expect(result.map(({ sessionKey }) => sessionKey)).toEqual([
-      "session-key-000000000003",
       "session-key-000000000002",
+      "session-key-000000000003",
       "session-key-000000000001",
     ]);
     expect(result.at(-1)?.attentionCount).toBe(2);
@@ -76,19 +108,19 @@ describe("local session board state", () => {
         harness: "claude",
         repository: "console",
         branch: "feature/quiet-board",
-        state: "muted",
+        activity: activity("background_work", { muted: true }),
       }),
       session({
         sessionKey: "session-key-000000000003",
         harness: "cursor",
         repository: "console",
-        state: "ended",
+        activity: activity("ended"),
       }),
     ];
 
     expect(
       filterSessions(sessions, {
-        state: "muted",
+        state: "background_work",
         harness: "claude",
         repository: "console",
         query: "quiet",
@@ -126,7 +158,23 @@ describe("local session board state", () => {
         sessionKey: `session-key-${String(index).padStart(12, "0")}`,
         harness: ["codex", "claude", "cursor"][index % 3],
         repository: `repository-${index % 8}`,
-        state: ["running", "waiting", "crashed", "muted", "ended"][index % 5],
+        activity: activity(
+          [
+            "working",
+            "needs_input",
+            "background_work",
+            "idle",
+            "done",
+            "failed",
+            "unknown",
+            "ended",
+          ][index % 8],
+          {
+            lastObservedAt: new Date(
+              Date.parse("2026-07-25T12:00:00.000Z") - index * 1_000,
+            ).toISOString(),
+          },
+        ),
         lastSeenAt: new Date(
           Date.parse("2026-07-25T12:00:00.000Z") - index * 1_000,
         ).toISOString(),
@@ -144,8 +192,14 @@ describe("local session board state", () => {
   it("summarizes risk and ignores duplicate or regressive stream cursors", () => {
     const sessions = [
       session(),
-      session({ sessionKey: "session-key-000000000002", state: "stale" }),
-      session({ sessionKey: "session-key-000000000003", state: "crashed" }),
+      session({
+        sessionKey: "session-key-000000000002",
+        activity: activity("unknown"),
+      }),
+      session({
+        sessionKey: "session-key-000000000003",
+        activity: activity("failed"),
+      }),
     ];
     expect(summarizeSessions(sessions, [attention()])).toEqual({
       attention: 1,

@@ -491,24 +491,26 @@ code {
   background: #9ca49e;
 }
 
-.lane-indicator.running {
+.lane-indicator.working {
   background: var(--green);
 }
 
-.lane-indicator.waiting {
+.lane-indicator.needs_input {
   background: var(--amber);
 }
 
-.lane-indicator.crashed {
+.lane-indicator.failed {
   background: var(--red);
 }
 
-.lane-indicator.muted,
+.lane-indicator.idle,
+.lane-indicator.done,
 .lane-indicator.ended {
   background: #8d9490;
 }
 
-.lane-indicator.stale {
+.lane-indicator.unknown,
+.lane-indicator.background_work {
   background: var(--blue);
 }
 
@@ -568,17 +570,17 @@ code {
   background: #eef0ec;
 }
 
-.lane-badge.waiting {
+.lane-badge.needs_input {
   color: var(--amber);
   background: var(--amber-soft);
 }
 
-.lane-badge.crashed {
+.lane-badge.failed {
   color: var(--red);
   background: var(--red-soft);
 }
 
-.lane-badge.running {
+.lane-badge.working {
   color: var(--green);
   background: var(--green-soft);
 }

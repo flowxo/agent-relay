@@ -278,7 +278,7 @@ for (const pattern of [
   /native release-exit is \*\*green\*\*/i,
   /3b81a97c46763008f7831222384d1c89e2f79ffbdba2a920adc9767f02ce1106/,
   /does \*\*not\*\* contain PR #40/,
-  /SQLite schema (?:is |version )`?9`?/,
+  /SQLite schema (?:is |version )`?10`?/,
   /does not publish/i,
 ]) {
   requireText(
