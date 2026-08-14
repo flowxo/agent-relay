@@ -35,6 +35,11 @@ breaking changes and required operator action.
   session, schema-11 digest-only binding persistence, bounded waits and typed
   fallback, shared durable interaction/activity authority, synthetic fixtures,
   safe doctor checks, and fail-closed concurrent-session correlation.
+- Add one protected `agent-relay-project-read.v1` surface for browser and TUI
+  dashboards: private-keyed exact-worktree identities, safe non-identity labels,
+  an All projects aggregate, complete current and attention sets, opaque
+  cursor-paginated terminal history, canonical activity, and bounded coalesced
+  pull invalidations. Existing web API version 3 consumers remain compatible.
 
 ### Changed
 
@@ -43,10 +48,11 @@ breaking changes and required operator action.
   with `pnpm check:fast`/`pnpm check:pr` and lightweight local dogfood; `main`
   advances only to an explicitly qualified immutable candidate, and publication
   consumes its SHA-bound evidence instead of rebuilding and retesting it.
-- SQLite schemas 10 and 11 add the privacy-bounded durable session-activity
+- SQLite schemas 10 through 12 add the privacy-bounded durable session-activity
   ledger and digest-only exact MCP binding state. Telegram, MCP, and the web
   board consume the same canonical activity and interaction authority; existing
-  sessions migrate conservatively without manufacturing activity or binding.
+  sessions migrate conservatively without manufacturing activity or binding;
+  schema 12 adds opaque project mappings and bounded recent-history indexes.
 
 ### Fixed
 

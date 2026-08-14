@@ -109,6 +109,16 @@ the authority itself, prompts, answers, tool arguments, and paths are not. This
 binding selects which existing session may open a request. It does not add
 activity evidence or change any state precedence or timing rule.
 
+SQLite schema 12 adds the opaque project identity and presentation-neutral
+project read model. It returns this canonical activity record unchanged,
+including confidence, safe reason, server receive-clock activity, bounded work
+and request counts, and independent mute state. Project summaries classify
+`Done` and `Ended` as recent history and all other states as current;
+`Needs input`, `Failed`, and `Unknown` additionally form the complete attention
+set. Browser and terminal clients may filter or render these values, but must
+not read SQLite directly, inspect events to infer a replacement state, or treat
+delivery health as execution evidence.
+
 The executable frozen timing corpus lives at
 `packages/harnesses/fixtures/activity-policy/timing-trials.json`. The policy and
 fixture provenance is recorded in every canonical projection so diagnostics can

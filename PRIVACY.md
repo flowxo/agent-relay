@@ -20,7 +20,8 @@ stores:
   answers, session metadata, diagnostics, resume claims, transport message/topic
   identifiers, topic-cleanup/prune modes, inactivity cutoffs, bounded candidate
   metadata, decisions, attempt state, native-hook ordering allocations, and two
-  monotonic event insertion/deletion counters;
+  monotonic event insertion/deletion counters, keyed opaque project identity
+  mappings, and bounded content-free project-read invalidations;
 - `fallback-spool.ndjson` and its segment, pending, and processing siblings,
   containing bounded normalized hook records that could not reach the daemon yet
   or are being recovered;
@@ -59,6 +60,15 @@ and event identifiers, a SHA-256 canonical source fingerprint, a numeric
 sequence, and allocation/update timestamps. The allocator does not add the raw
 hook body, transcript, assistant message, task detail, credential, or
 machine-specific path to SQLite.
+
+The project read stores the existing project working-directory digest and a
+private-keyed `prj_...` mapping, never a new cleartext path. Ordinary project
+responses contain only that opaque key, an independently sanitized label, opaque
+session keys, canonical activity, bounded counts, and encrypted opaque cursors.
+They exclude absolute paths, home directories, remotes, branches, prompts,
+transcripts, answers, credentials, OAuth URLs, path digests, and native
+machine/session identifiers. Cursor plaintext is authenticated and encrypted;
+its bounded keyset tie-break material is not logged or returned separately.
 
 For a Claude Code Stop that reports active background work, Agent Relay retains
 only the in-flight and scheduled item counts. It discards task and cron IDs,

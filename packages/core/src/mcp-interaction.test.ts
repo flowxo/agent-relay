@@ -128,7 +128,7 @@ describe("durable local MCP interactions", () => {
       state: "bound",
       sessionId: sessionId("b"),
     });
-    expect(RELAY_STORE_SCHEMA_VERSION).toBe(11);
+    expect(RELAY_STORE_SCHEMA_VERSION).toBe(12);
     restarted.close();
   });
 

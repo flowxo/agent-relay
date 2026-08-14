@@ -569,6 +569,230 @@ describe("relay HTTP daemon", () => {
     await runtime.close();
   });
 
+  it("serves one protected presentation-neutral project snapshot without private routing data", async () => {
+    const runtime = await setup(
+      "synthetic-daemon-secret",
+      undefined,
+      webCredential,
+    );
+    const syntheticPrivateHome = [
+      "",
+      "Users",
+      "synthetic-operator",
+      "client-checkout",
+    ].join("/");
+    const input: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_project_read_safe_12345678",
+      machineId: "machine_project_read_private_12345678",
+      sessionId: "session_project_read_private_12345678",
+      bridgeSessionId: "bridge_project_read_private_12345678",
+      project: {
+        ...makeProjectRef(syntheticPrivateHome),
+        displayName: "sk-syntheticProjectCredential123456789",
+        branch: "feature/private-customer-identifier",
+      },
+      type: "input.required",
+      summary:
+        "Never expose https://oauth.example.invalid/authorize?client=private",
+      lastAssistantMessage: "PRIVATE_PROJECT_TRANSCRIPT_SENTINEL",
+      request: {
+        correlationId: "request_project_read_private_12345678",
+        kind: "input",
+        question: "PRIVATE_PROJECT_PROMPT_SENTINEL",
+        expiresAt: "2026-07-24T12:10:00.000Z",
+      },
+    };
+    runtime.service.ingest(input);
+    expect(
+      runtime.service.heartbeat({
+        schema: "agent-heartbeat.v1",
+        machineId: input.machineId,
+        harness: input.harness,
+        sessionId: input.sessionId,
+        sequence: input.sequence + 1,
+        state: "waiting",
+        observedAt: "2030-01-01T00:00:00.000Z",
+      }),
+    ).toBe(true);
+
+    const response = await fetch(`${runtime.baseUrl}/v1/web/projects?limit=1`, {
+      headers: webHeaders(runtime),
+    });
+    const text = await response.text();
+    expect(response.status, text).toBe(200);
+    expect(JSON.parse(text)).toMatchObject({
+      schema: "agent-relay-project-read.v1",
+      selectedProjectKey: "all",
+      projects: {
+        all: {
+          label: "All projects",
+          currentCount: 1,
+          needsAttentionCount: 1,
+        },
+        items: [{ label: "Project" }],
+      },
+      needsAttention: [
+        {
+          harness: "codex",
+          activity: {
+            schema: "agent-relay-session-activity.v1",
+            state: "needs_input",
+            confidence: "confirmed",
+            reason: "request_open",
+            requestCount: 1,
+          },
+          pendingInteraction: { state: "waiting", count: 1 },
+          deliveryHealth: { muted: false },
+          lastSeenAt: "2026-07-24T12:00:00.000Z",
+        },
+      ],
+    });
+    expect(text).not.toContain(["", "Users", ""].join("/"));
+    expect(text).not.toContain("synthetic-operator");
+    expect(text).not.toContain(input.machineId);
+    expect(text).not.toContain(input.sessionId);
+    expect(text).not.toContain("feature/private");
+    expect(text).not.toContain("PRIVATE_PROJECT_PROMPT_SENTINEL");
+    expect(text).not.toContain("PRIVATE_PROJECT_TRANSCRIPT_SENTINEL");
+    expect(text).not.toContain("oauth.example.invalid");
+    expect(text).not.toContain("cwdHash");
+    expect(text).not.toContain("repository");
+    expect(text).not.toContain("syntheticProjectCredential");
+    const legacyChanges = await fetch(
+      `${runtime.baseUrl}/v1/web/changes?limit=100`,
+      { headers: webHeaders(runtime) },
+    );
+    const legacyText = await legacyChanges.text();
+    expect(legacyChanges.status, legacyText).toBe(200);
+    const legacyBody = JSON.parse(legacyText) as {
+      changes: Array<{ kind: string }>;
+    };
+    expect(legacyBody.changes.some((change) => change.kind === "session")).toBe(
+      true,
+    );
+    expect(
+      legacyBody.changes.every((change) => change.kind !== "activity"),
+    ).toBe(true);
+    expect(legacyText).not.toContain(input.machineId);
+    expect(legacyText).not.toContain(input.sessionId);
+    await runtime.close();
+  });
+
+  it("keeps project reads authorized, GET-only, bounded, and compatibility-additive", async () => {
+    const runtime = await setup(
+      "synthetic-daemon-secret",
+      undefined,
+      webCredential,
+    );
+    const missing = await fetch(`${runtime.baseUrl}/v1/web/projects`);
+    expect(missing.status).toBe(401);
+    const daemonBearer = await fetch(`${runtime.baseUrl}/v1/web/projects`, {
+      headers: { authorization: "Bearer synthetic-daemon-secret" },
+    });
+    expect(daemonBearer.status).toBe(401);
+
+    const snapshot = await fetch(`${runtime.baseUrl}/v1/web/projects?limit=1`, {
+      headers: webHeaders(runtime),
+    });
+    expect(snapshot.status).toBe(200);
+    const snapshotBody = (await snapshot.json()) as {
+      changeCursor: string;
+    };
+    const changes = await fetch(
+      `${runtime.baseUrl}/v1/web/project-changes?cursor=${encodeURIComponent(snapshotBody.changeCursor)}&limit=1`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(changes.status).toBe(200);
+    await expect(changes.json()).resolves.toMatchObject({
+      schema: "agent-relay-project-changes.v1",
+      invalidations: [],
+      hasMore: false,
+    });
+
+    const invalidCursor = await fetch(
+      `${runtime.baseUrl}/v1/web/project-changes?cursor=arc1_invalid-cursor-value`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(invalidCursor.status).toBe(400);
+    await expect(invalidCursor.json()).resolves.toEqual({
+      code: "invalid_cursor",
+      message: "project cursor is invalid",
+    });
+    const oversized = await fetch(
+      `${runtime.baseUrl}/v1/web/projects?limit=101`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(oversized.status).toBe(400);
+    const writeAttempt = await fetch(`${runtime.baseUrl}/v1/web/projects`, {
+      method: "POST",
+      headers: {
+        ...webHeaders(runtime, { csrf: true }),
+        "content-type": "application/json",
+      },
+      body: "{}",
+    });
+    expect(writeAttempt.status).toBe(404);
+
+    const existing = await fetch(`${runtime.baseUrl}/v1/web/sessions?limit=1`, {
+      headers: webHeaders(runtime),
+    });
+    expect(existing.status).toBe(200);
+    await expect(existing.json()).resolves.toEqual({ sessions: [] });
+    const meta = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
+      headers: webHeaders(runtime),
+    });
+    await expect(meta.json()).resolves.toMatchObject({
+      schema: "agent-relay-web-meta.v1",
+      apiVersion: "3",
+      assetVersion: "5",
+    });
+    await runtime.close();
+  });
+
+  it("returns a stable stale-cursor failure after concurrent history changes", async () => {
+    const runtime = await setup(undefined, undefined, webCredential);
+    for (let index = 0; index < 3; index += 1) {
+      const terminal: AgentAttentionEventV1 = {
+        ...event(),
+        eventId: `evt_project_history_${String(index)}_12345678`,
+        bridgeSessionId: `bridge_project_history_${String(index)}_12345678`,
+        sessionId: `session_project_history_${String(index)}_12345678`,
+        type: "turn.stopped",
+      };
+      delete terminal.request;
+      runtime.service.ingest(terminal);
+    }
+    const first = await fetch(`${runtime.baseUrl}/v1/web/projects?limit=1`, {
+      headers: webHeaders(runtime),
+    });
+    const firstBody = (await first.json()) as {
+      recent: { nextCursor?: string };
+    };
+    expect(first.status).toBe(200);
+    expect(firstBody.recent.nextCursor).toBeDefined();
+
+    const concurrent: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_project_history_concurrent_12345678",
+      bridgeSessionId: "bridge_project_history_concurrent_12345678",
+      sessionId: "session_project_history_concurrent_12345678",
+      type: "session.started",
+    };
+    delete concurrent.request;
+    runtime.service.ingest(concurrent);
+    const stale = await fetch(
+      `${runtime.baseUrl}/v1/web/projects?limit=1&cursor=${encodeURIComponent(firstBody.recent.nextCursor!)}`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(stale.status).toBe(409);
+    await expect(stale.json()).resolves.toEqual({
+      code: "stale_cursor",
+      message: "project history changed; fetch a fresh snapshot",
+    });
+    await runtime.close();
+  });
+
   it("correlates a bounded session timeline and reveals private content only explicitly", async () => {
     const runtime = await setup(undefined, undefined, webCredential);
     const secret = "sk-syntheticRevealSecret123456789";

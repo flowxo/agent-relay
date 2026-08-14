@@ -1161,13 +1161,17 @@ export class RelayService {
   }
 
   public heartbeat(heartbeat: SessionHeartbeatV1): boolean {
-    const updated = this.store.heartbeat(heartbeat);
+    const receivedAt = this.now().toISOString();
+    const updated = this.store.heartbeat({
+      ...heartbeat,
+      observedAt: receivedAt,
+    });
     if (!updated) {
       this.logger.log({
         level: "warn",
         code: "heartbeat.unknown-session",
         message: "heartbeat did not match a registered session",
-        at: this.now().toISOString(),
+        at: receivedAt,
         details: {
           machineId: heartbeat.machineId,
           harness: heartbeat.harness,

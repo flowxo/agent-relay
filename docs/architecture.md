@@ -34,26 +34,34 @@ uses the same runtime-validated, expiring, first-writer-wins transition.
 
 ## Components
 
-| Component                 | Responsibility                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                         |
-| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling           |
-| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback                  |
-| Local MCP server          | Expose four versioned typed operator tools for one secret-bound supervised native session         |
-| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention                |
-| SQLite store              | Persist identity, event order, attempts, requests, answers, topics, cleanup, and resume ownership |
-| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts           |
-| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core                      |
-| Provider adapters         | Project cards to Telegram, a signed webhook, WhooshBang, or a fake without owning request state   |
-| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume                |
-| Web companion             | Present authenticated projections and submit typed decisions to the same store                    |
-| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation                 |
+| Component                 | Responsibility                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Protocol                  | Strict event, request, answer, command, session, and diagnostic contracts                                   |
+| Harness adapters          | Parse native payloads or implement one exact structured driver without channel coupling                     |
+| Hook runner               | Read one bounded stdin payload, contact the daemon, or write a redacted fallback                            |
+| Local MCP server          | Expose four versioned typed operator tools for one secret-bound supervised native session                   |
+| Local daemon              | Compose concrete adapters and own HTTP ingress, scheduling, polling, and retention                          |
+| SQLite store              | Persist identity, activity, event order, attempts, requests, answers, topics, cleanup, and resume ownership |
+| Notification contracts    | Define bounded delivery, receipt, topic, interaction, capability, and failure contracts                     |
+| Notification presentation | Render provider-neutral cards and negotiate interaction capabilities in core                                |
+| Provider adapters         | Project cards to Telegram, a signed webhook, WhooshBang, or a fake without owning request state             |
+| Supervisor                | Own a CLI child, observe its exit, and execute an officially supported late resume                          |
+| Web companion             | Consume protected bounded projections and submit typed decisions to the same store                          |
+| Runner bridge             | Optional outbound session protocol, separate state, typed local harness actuation                           |
 
 The MCP server is a local protocol adapter, not another authority. A supervisor
 creates an ephemeral secret handshake shared only with its owned harness, native
 hooks, and MCP child. SQLite stores its keyed digest and binds only after an
 exact native session is durably known. Ambiguity is terminal. No project,
 timestamp, process-name, or recent-session heuristic participates in binding.
+
+Core also owns the presentation-neutral project read model. It maps an exact
+checkout/worktree digest to a private-keyed opaque identity, projects the one
+canonical activity reducer, computes exact aggregate/current/attention counts,
+and keyset-paginates only terminal history. Browser and TUI adapters
+authenticate to the bounded HTTP read surface and render it. They do not query
+SQLite or replay lifecycle events themselves. Lightweight project change records
+are content-free invalidations, not an alternate state log.
 
 ## Notification dependency direction
 

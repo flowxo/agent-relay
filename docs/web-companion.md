@@ -117,6 +117,15 @@ The Server-Sent Events stream resumes from a durable cursor. If retention
 removed history or the database changed, the server sends a reset and the board
 refetches authoritative state.
 
+The daemon also exposes an additive presentation-neutral project read for future
+browser and TUI clients. It supplies opaque exact-worktree identity, safe
+labels, exact aggregate/current/attention counts, cursor-paginated terminal
+history, canonical activity, and bounded pull invalidations. Clients consume the
+protected API; they do not read `relay.sqlite` or implement a second activity
+reducer. The current board's existing API remains compatible. See
+[Presentation-neutral project read](local-web-api.md#presentation-neutral-project-read)
+for the complete reconnect and failure contract.
+
 ## Security and privacy defaults
 
 - loopback listener only;

@@ -4,6 +4,7 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import {
   AgentAttentionEventV1Schema,
+  HarnessSchema,
   RelayMcpAskV1Schema,
   RelayMcpCancelV1Schema,
   RelayMcpQuestionnaireV1Schema,
@@ -27,6 +28,11 @@ import type {
 } from "@agent-relay/protocol";
 import {
   NOOP_LOGGER,
+  PROJECT_CHANGE_MAX_BATCH_SIZE,
+  PROJECT_HISTORY_MAX_PAGE_SIZE,
+  ProjectKeySchema,
+  ProjectReadError,
+  SessionActivityStateSchema,
   redactDiagnosticText,
   redactText,
   renderDeliveryMessage,
@@ -81,6 +87,20 @@ const drainSchema = z
 const diagnosticLimitSchema = z.coerce.number().int().min(1).max(500);
 const webLimitSchema = z.coerce.number().int().min(1).max(500);
 const webCursorSchema = z.coerce.number().int().nonnegative();
+const projectHistoryLimitSchema = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(PROJECT_HISTORY_MAX_PAGE_SIZE);
+const projectChangeLimitSchema = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(PROJECT_CHANGE_MAX_BATCH_SIZE);
+const projectKeySchema = ProjectKeySchema;
+const projectStateSchema = SessionActivityStateSchema;
+const projectHarnessSchema = HarnessSchema;
+const opaqueProjectCursorSchema = z.string().min(16).max(1_024);
 
 const retentionSchema = z
   .object({
@@ -966,6 +986,54 @@ export function createRelayHttpServer(
         );
         return;
       }
+      if (request.method === "GET" && url.pathname === "/v1/web/projects") {
+        const projectKey = projectKeySchema.parse(
+          url.searchParams.get("project") ?? "all",
+        );
+        const harnessValue = url.searchParams.get("harness");
+        const stateValue = url.searchParams.get("state");
+        const cursorValue = url.searchParams.get("cursor");
+        sendJson(
+          response,
+          200,
+          service.store.readProjectSnapshot({
+            projectKey,
+            ...(harnessValue === null
+              ? {}
+              : { harness: projectHarnessSchema.parse(harnessValue) }),
+            ...(stateValue === null
+              ? {}
+              : { state: projectStateSchema.parse(stateValue) }),
+            historyLimit: projectHistoryLimitSchema.parse(
+              url.searchParams.get("limit") ?? "50",
+            ),
+            ...(cursorValue === null
+              ? {}
+              : {
+                  historyCursor: opaqueProjectCursorSchema.parse(cursorValue),
+                }),
+          }),
+        );
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/v1/web/project-changes"
+      ) {
+        sendJson(
+          response,
+          200,
+          service.store.readProjectChanges({
+            cursor: opaqueProjectCursorSchema.parse(
+              url.searchParams.get("cursor"),
+            ),
+            limit: projectChangeLimitSchema.parse(
+              url.searchParams.get("limit") ?? "100",
+            ),
+          }),
+        );
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/v1/web/sessions") {
         const limit = webLimitSchema.parse(
           url.searchParams.get("limit") ?? "100",
@@ -1747,6 +1815,8 @@ export function createRelayHttpServer(
       throw new HttpRequestError(404, "not-found", "relay route not found");
     } catch (error) {
       const zodError = error instanceof z.ZodError ? error : undefined;
+      const projectReadError =
+        error instanceof ProjectReadError ? error : undefined;
       const webSessionError =
         error instanceof WebSessionAuthorityError ? error : undefined;
       const requestError =
@@ -1754,14 +1824,25 @@ export function createRelayHttpServer(
       const status =
         requestError?.status ??
         webSessionError?.status ??
+        (projectReadError?.code === "project_not_found"
+          ? 404
+          : projectReadError?.code === "stale_cursor"
+            ? 409
+            : projectReadError?.code === "complete_set_capacity_exceeded"
+              ? 503
+              : projectReadError === undefined
+                ? undefined
+                : 400) ??
         (zodError === undefined ? 500 : 400);
       const code =
         requestError?.code ??
         webSessionError?.code ??
+        projectReadError?.code ??
         (zodError === undefined ? "internal-error" : "invalid-payload");
       const message =
         requestError?.message ??
         webSessionError?.message ??
+        projectReadError?.message ??
         (zodError === undefined
           ? "relay request failed"
           : "request payload failed validation");
