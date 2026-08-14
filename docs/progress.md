@@ -2,6 +2,31 @@
 
 ## Proven
 
+- FXO-1608 rebuilds the authenticated browser dashboard around projects,
+  attention, and recent work. A project rail carries **All projects** plus one
+  item per exact opaque worktree identity from FXO-1607, and the selected pane
+  is ordered Needs attention, Current sessions grouped by harness, then
+  cursor-paginated Recent sessions. Current and attention sets stay complete
+  while only history pages; the loaded history view stops at a stated bound.
+  Cards consume only FXO-1602's canonical state, confidence, safe reason, last
+  activity, in-flight work, pending interaction, and independent muted flag, so
+  the page contains no second activity reducer, no opaque-identity decoding, and
+  no SQLite access. Live updates use bounded `project-changes` polling with
+  fresh-snapshot recovery, and a stated policy keeps content from moving under
+  the pointer, keyboard focus, or an unsent answer. Structured questions and
+  questionnaires answer through the protected interaction API bound to the exact
+  session; duplicate, late, expired, cancelled, reconnect, restart, and
+  stale-cursor paths are deterministic. Paths, remotes, branches, prompts,
+  transcripts, command output, machine identifiers, and harness session
+  identifiers are absent from rendered content, URLs, browser storage, and
+  accessibility text. Coverage is 41 focused view-model unit cases including
+  adversarial-markup rendering, four new API-integration contracts over many
+  projects, harnesses, deep history, and cursor scope, and 18 Chromium
+  end-to-end cases covering navigation, pagination, interaction, the update-hold
+  policy, keyboard/landmark/announcement behavior, laptop and 390-pixel
+  viewports, reduced motion, restart recovery, and redaction. Static asset
+  version 6; web API version 3 and every existing route are unchanged.
+
 - FXO-1680 separates the development and release control planes. Feature work
   targets `dev`; `main` is advanced only to the exact SHA from a successful,
   explicitly authorized qualification. A central tested manifest classifies

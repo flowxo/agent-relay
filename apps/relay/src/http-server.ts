@@ -1157,13 +1157,13 @@ export function createRelayHttpServer(
             : { branch: redactText(event.project.branch, 240) }),
           ...(event.summary === undefined
             ? {}
-            : { summary: redactText(event.summary, 1_000) }),
+            : { summary: redactDiagnosticText(event.summary, 1_000) }),
           ...(event.failure === undefined
             ? {}
             : {
                 failure: {
                   code: event.failure.class,
-                  message: redactText(event.failure.message, 500),
+                  message: redactDiagnosticText(event.failure.message, 500),
                 },
               }),
           ...(pending === undefined

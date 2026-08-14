@@ -43,6 +43,23 @@ breaking changes and required operator action.
 
 ### Changed
 
+- Rebuild the authenticated local dashboard around projects instead of a flat
+  session list. A project rail carries **All projects** plus one item per exact
+  opaque worktree identity with attention and current counts; the selected pane
+  is ordered Needs attention, Current sessions grouped by harness, then
+  cursor-paginated Recent sessions. Sessions get a stable readable name such as
+  `brisk-otter-42`, rendered from the opaque session key alone. Cards render
+  only canonical `agent-relay-session-activity.v1` state, confidence, safe
+  reason, last activity, in-flight work, pending interaction, and an independent
+  muted indicator — never a client-side activity guess, a path, a branch, a
+  transcript, or a private session identifier. Live updates come from bounded
+  `project-changes` polling with fresh-snapshot recovery and never move content
+  under the pointer, keyboard focus, or an unsent answer. Structured questions
+  and questionnaires, capability-gated `Continue`/`Mute`/`End` with an End
+  confirmation, bounded timeline and event evidence, semantic landmarks,
+  keyboard operation, status announcements, reduced motion, and 390-pixel
+  viewports are covered by unit, API-integration, and Chromium end-to-end tests.
+  Static asset version 6; web API version 3 is unchanged.
 - Split development, integration, dogfood, release qualification, and
   publication into explicit risk-selected phases. Feature work targets `dev`
   with `pnpm check:fast`/`pnpm check:pr` and lightweight local dogfood; `main`
@@ -56,6 +73,14 @@ breaking changes and required operator action.
 
 ### Fixed
 
+- Keep the WhooshBang per-request timeout alive. The bound was an
+  `AbortSignal.timeout` reachable only through `AbortSignal.any`, so the runtime
+  could collect it before it fired and a stuck hosted poll or acknowledgement
+  would hang instead of being bounded and retried. The poller now owns the timer
+  and releases it when the request settles.
+- Apply the path-stripping redaction already used by the timeline and diagnostic
+  export to the bounded event-detail summary and failure message, so the new
+  evidence view cannot surface a working path a producer put in a summary.
 - Repair missing session-activity projections left by a concurrently running
   older process during upgrade, and prevent the gap from recurring on legacy
   session inserts. The authenticated dashboard now distinguishes a protected

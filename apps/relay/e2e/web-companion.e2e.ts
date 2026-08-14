@@ -251,13 +251,11 @@ test("shows sanitized concurrent fake sessions and requires a new launch after d
   await connect(page, active);
   await expect(page.locator("[data-connection-label]")).toHaveText("Live");
 
-  await expect(
-    page.locator("[data-session-list] [data-open-session]"),
-  ).toHaveCount(4);
-  await expect(page.locator("[data-session-list]")).toContainText(
-    "payments-api",
+  await expect(page.locator("[data-current-list] .session-card")).toHaveCount(
+    4,
   );
-  await expect(page.locator("[data-session-list]")).toContainText("Failed");
+  await expect(page.locator("[data-rail-list]")).toContainText("payments-api");
+  await expect(page.locator("[data-attention-list]")).toContainText("Failed");
   await expect(page.locator("body")).not.toContainText("private transcript");
 
   const form = textForm(page, active);
@@ -296,7 +294,7 @@ test("rejects a stale browser form after Telegram resolves the exact request", a
   if (active === undefined) {
     throw new Error("browser runtime is unavailable");
   }
-  await page.route("**/v1/web/stream?*", async (route) => {
+  await page.route("**/v1/web/project-changes?*", async (route) => {
     await route.abort();
   });
   await connect(page, active);
@@ -309,8 +307,8 @@ test("rejects a stale browser form after Telegram resolves the exact request", a
   await form.getByRole("button", { name: "Submit response" }).click();
 
   await expect(textForm(page, active)).toHaveCount(0);
-  await expect(page.locator("[data-resolution-list]")).toContainText(
-    "resolved in telegram",
+  await expect(page.locator("[data-notice-list]")).toContainText(
+    "answered in telegram",
   );
   expect(
     active.daemon?.service.getRequest(active.seed.textRequestId),
@@ -375,9 +373,7 @@ test("allows only one winner in a simultaneous fake-Telegram and browser race", 
   );
 
   await expect(textForm(page, active)).toHaveCount(0);
-  await expect(page.locator("[data-resolution-list]")).toContainText(
-    "answered",
-  );
+  await expect(page.locator("[data-notice-list]")).toContainText("answered");
   const stored = active.daemon?.service.getRequest(active.seed.textRequestId);
   expect(stored).toMatchObject({ state: "answered" });
   expect(["telegram", "web"]).toContain(stored?.resolvedBy);
