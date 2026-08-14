@@ -283,12 +283,29 @@ for (const pattern of [
   /git\/refs\/heads\/main/,
   /force=false/,
   /contents: write/,
+  /statuses: write/,
+  /statuses\/\$\{CANDIDATE_SHA\}/,
+  /context=release-qualified/,
 ]) {
   requireText(
     promotion,
     pattern,
     `main promotion is missing ${String(pattern)}`,
   );
+}
+for (const [path, workflow] of workflows) {
+  if (path === ".github/workflows/promote-main.yml") continue;
+  for (const forbidden of [
+    /statuses: write/,
+    /context=release-qualified/,
+    /statuses\/\$\{CANDIDATE_SHA\}/,
+  ]) {
+    forbidText(
+      workflow,
+      forbidden,
+      `${path} can mint the protected main qualification status ${String(forbidden)}`,
+    );
+  }
 }
 for (const forbidden of [
   /pull_request:/,

@@ -46,9 +46,12 @@ describe("bounded structured logging", () => {
     expect(contents.join("")).toContain("[REDACTED_OPENAI_KEY]");
   });
 
-  it("surfaces file failures through a fallback logger", () => {
+  it("surfaces file failures through a fallback logger", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "agent-relay-logger-failure-"),
+    );
     const fallback = new MemoryLogger();
-    const logger = new RotatingFileLogger(tmpdir(), {
+    const logger = new RotatingFileLogger(directory, {
       maxBytes: 1_024,
       maxFiles: 2,
       fallbackLogger: fallback,

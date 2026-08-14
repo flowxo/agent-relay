@@ -689,8 +689,15 @@ test("real workflows preserve PR, fork, candidate, promotion, and publication bo
     candidate,
     /pull_request:|\npush:|contents: write|id-token: write|secrets\./,
   );
-  assert.match(promotion, /qualification\.mjs verify[\s\S]*force=false/);
+  assert.match(promotion, /statuses: write/);
+  assert.match(
+    promotion,
+    /qualification\.mjs verify[\s\S]*context=release-qualified[\s\S]*force=false/,
+  );
   assert.doesNotMatch(promotion, /pnpm check|npm publish|id-token: write/);
+  for (const workflow of [ci, validation, codeql, candidate, publication]) {
+    assert.doesNotMatch(workflow, /statuses: write|context=release-qualified/);
+  }
   assert.match(
     publication,
     /refs\/remotes\/origin\/main\^\{commit\}[\s\S]*qualification\.mjs verify[\s\S]*environment: npm-prerelease[\s\S]*id-token: write/,

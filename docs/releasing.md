@@ -105,8 +105,10 @@ them for `v0.1.0-alpha.2`, which already exists and must not move or be reused.
 
 First dispatch **Promote qualified candidate to main** with the candidate SHA,
 successful non-dry-run qualification run ID, and `PROMOTE <candidate-sha>`. It
-re-verifies the workflow/run/SHA/manifest/check and artifact bindings and
-fast-forwards `main` without creating a new commit. Then, and only with separate
+re-verifies the workflow/run/SHA/manifest/check and artifact bindings, creates
+the branch-ruleset-required `release-qualified` status on that exact SHA, and
+fast-forwards `main` without creating a new commit. No other workflow receives
+permission to create that status. Then, and only with separate
 version/publication authorization, create the tag on that exact SHA:
 
 ```sh
