@@ -132,7 +132,11 @@ export class RotatingFileLogger implements RelayLogger {
     try {
       let size = 0;
       try {
-        size = statSync(this.path).size;
+        const target = statSync(this.path);
+        if (!target.isFile()) {
+          throw new Error("rotating log target is not a regular file");
+        }
+        size = target.size;
       } catch (error) {
         if (!isErrorCode(error, "ENOENT")) {
           throw error;

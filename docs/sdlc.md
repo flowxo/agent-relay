@@ -14,9 +14,10 @@ feature/fix ──PR──> dev ──explicit qualification──> exact candid
 
 This is a control boundary, not a convention. PR workflows cannot publish or
 qualify a release. Candidate qualification is manual, permission-checked, and
-bound to one SHA. `main` promotion verifies that evidence and fast-forwards to
-the same SHA, avoiding an untested merge commit. Publication downloads and
-verifies the qualification artifact instead of rebuilding trust from scratch.
+bound to one SHA. `main` promotion verifies that evidence, creates the protected
+`release-qualified` status for that exact commit, and fast-forwards to the same
+SHA, avoiding an untested merge commit. Publication downloads and verifies the
+qualification artifact instead of rebuilding trust from scratch.
 
 ## Normal development loop
 
