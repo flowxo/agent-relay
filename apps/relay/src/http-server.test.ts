@@ -51,6 +51,41 @@ function event(): AgentAttentionEventV1 {
   };
 }
 
+interface ProjectSnapshotSession {
+  sessionKey: string;
+  projectKey: string;
+  projectLabel: string;
+  harness: string;
+  activity: { state: string };
+}
+
+interface ProjectSnapshotBody {
+  selectedProjectKey: string;
+  changeCursor: string;
+  projects: {
+    all: {
+      label: string;
+      currentCount: number;
+      needsAttentionCount: number;
+      recentCount: number;
+    };
+    items: Array<{ projectKey: string; label: string }>;
+    truncated: boolean;
+  };
+  needsAttention: ProjectSnapshotSession[];
+  currentByHarness: Array<{
+    harness: string;
+    sessions: ProjectSnapshotSession[];
+  }>;
+  recent: { items: ProjectSnapshotSession[]; nextCursor?: string };
+}
+
+interface ProjectChangesBody {
+  cursor: string;
+  invalidations: Array<{ kinds: string[]; coalescedCount: number }>;
+  hasMore: boolean;
+}
+
 function webSessionKey(input: AgentAttentionEventV1): string {
   return sha256(
     `${input.machineId}\u001f${input.harness}\u001f${input.sessionId}`,
@@ -115,18 +150,19 @@ async function setup(
   credential?: WebCredential,
   telegramCanaryReady?: () => boolean,
   webSessionAuthority?: WebSessionAuthority,
+  now: () => Date = () => new Date("2026-07-24T12:00:00.000Z"),
 ) {
   const store = new RelayStore();
   const transport = new FakeNotificationTransport();
   const logger = new MemoryLogger();
   const service = new RelayService(store, transport, {
     logger,
-    now: () => new Date("2026-07-24T12:00:00.000Z"),
+    now,
   });
   const replyRouter = new TelegramReplyRouter(store, transport, {
     operatorUserId: 7001,
     chatId: 9001,
-    now: () => new Date("2026-07-24T12:00:00.000Z"),
+    now,
   });
   const server = createRelayHttpServer(service, {
     ...(token === undefined ? {} : { token }),
@@ -238,11 +274,20 @@ describe("relay HTTP daemon", () => {
     expect(page.headers.get("x-frame-options")).toBe("DENY");
     expect(page.headers.get("cross-origin-opener-policy")).toBe("same-origin");
     const html = await page.text();
-    expect(html).toContain("Agent Relay Console");
+    expect(html).toContain("Agent Relay Dashboard");
+    expect(html).toContain('aria-label="Projects"');
+    expect(html).toContain('id="needs-attention"');
+    expect(html).toContain('id="current-sessions"');
+    expect(html).toContain('id="recent-sessions"');
+    expect(html).toContain("data-rail-list");
     expect(html).toContain("data-attention-list");
+    expect(html).toContain("data-current-list");
+    expect(html).toContain("data-history-body");
+    expect(html).toContain("data-load-more");
+    expect(html).toContain("data-live-region");
+    expect(html).toContain("data-update-pill");
     expect(html).toContain("data-timeline-list");
     expect(html).toContain("data-export-diagnostics");
-    expect(html).toContain("data-session-controls");
     expect(html).toContain("agent-relay dashboard --web");
     expect(html).toContain("Advanced recovery: connect manually");
     expect(html).toContain('name="csrfCredential"');
@@ -253,7 +298,8 @@ describe("relay HTTP daemon", () => {
     expect(app.status).toBe(200);
     expect(app.headers.get("content-type")).toContain("text/javascript");
     const appText = await app.text();
-    expect(appText).toContain("/v1/web/stream");
+    expect(appText).toContain("/v1/web/projects?");
+    expect(appText).toContain("/v1/web/project-changes?cursor=");
     expect(appText).toContain("/timeline?limit=200");
     expect(appText).toContain("/reveal");
     expect(appText).toContain("/diagnostics/export?limit=500");
@@ -277,7 +323,7 @@ describe("relay HTTP daemon", () => {
     await expect(meta.json()).resolves.toEqual({
       schema: "agent-relay-web-meta.v1",
       apiVersion: "3",
-      assetVersion: "5",
+      assetVersion: "6",
       commandSchemas: [
         "agent-relay-web-resolve.v1",
         "agent-relay-web-session-action.v1",
@@ -745,7 +791,7 @@ describe("relay HTTP daemon", () => {
     await expect(meta.json()).resolves.toMatchObject({
       schema: "agent-relay-web-meta.v1",
       apiVersion: "3",
-      assetVersion: "5",
+      assetVersion: "6",
     });
     await runtime.close();
   });
@@ -790,6 +836,345 @@ describe("relay HTTP daemon", () => {
       code: "stale_cursor",
       message: "project history changed; fetch a fresh snapshot",
     });
+    await runtime.close();
+  });
+
+  it("serves the exact dashboard read set with correlated identities across many projects and harnesses", async () => {
+    const runtime = await setup(
+      undefined,
+      undefined,
+      webCredential,
+      undefined,
+      undefined,
+      () => new Date(),
+    );
+    const harnesses = ["codex", "codex", "codex", "claude", "cursor"] as const;
+    for (let index = 0; index < 6; index += 1) {
+      const waiting = index < 2;
+      const current: AgentAttentionEventV1 = {
+        ...event(),
+        eventId: `evt_dashboard_current_${String(index)}_1234`,
+        machineId: "machine_dashboard_1234567890",
+        bridgeSessionId: `bridge_dashboard_current_${String(index)}_1234`,
+        sessionId: `session_dashboard_current_${String(index)}_1234`,
+        harness: harnesses[index] ?? "claude",
+        project: makeProjectRef(
+          `/workspace/dashboard-${String(index % 3)}/service`,
+        ),
+        type: waiting ? "input.required" : "turn.started",
+        ...(waiting
+          ? {
+              request: {
+                correlationId: `request_dashboard_${String(index)}_12345678`,
+                kind: "input" as const,
+                question: `Synthetic dashboard question ${String(index)}`,
+                expiresAt: new Date(Date.now() + 600_000).toISOString(),
+              },
+            }
+          : {}),
+      };
+      if (!waiting) delete current.request;
+      runtime.service.ingest(current);
+    }
+    for (let index = 0; index < 3; index += 1) {
+      const terminal: AgentAttentionEventV1 = {
+        ...event(),
+        eventId: `evt_dashboard_terminal_${String(index)}_1234`,
+        machineId: "machine_dashboard_1234567890",
+        bridgeSessionId: `bridge_dashboard_terminal_${String(index)}_1234`,
+        sessionId: `session_dashboard_terminal_${String(index)}_1234`,
+        surface: "app-server",
+        project: makeProjectRef(`/workspace/dashboard-0/service`),
+        type: "session.ended",
+      };
+      delete terminal.request;
+      runtime.service.ingest(terminal);
+    }
+
+    const [snapshotResponse, sessionsResponse, attentionResponse] =
+      await Promise.all([
+        fetch(`${runtime.baseUrl}/v1/web/projects?project=all&limit=25`, {
+          headers: webHeaders(runtime),
+        }),
+        fetch(`${runtime.baseUrl}/v1/web/sessions?limit=500`, {
+          headers: webHeaders(runtime),
+        }),
+        fetch(`${runtime.baseUrl}/v1/web/attention?limit=500`, {
+          headers: webHeaders(runtime),
+        }),
+      ]);
+    expect(snapshotResponse.status).toBe(200);
+    const snapshot = (await snapshotResponse.json()) as ProjectSnapshotBody;
+    const sessions = (
+      (await sessionsResponse.json()) as {
+        sessions: Array<{
+          sessionKey: string;
+          supportedActions: string[];
+          latestEventId?: string;
+        }>;
+      }
+    ).sessions;
+    const attention = (
+      (await attentionResponse.json()) as {
+        attention: Array<{ sessionKey: string; requestId: string }>;
+      }
+    ).attention;
+
+    const currentKeys = snapshot.currentByHarness.flatMap((group) =>
+      group.sessions.map((session) => session.sessionKey),
+    );
+    const capabilityKeys = new Set(
+      sessions.map((session) => session.sessionKey),
+    );
+    expect(currentKeys).toHaveLength(6);
+    expect(new Set(currentKeys).size).toBe(6);
+    expect(currentKeys.every((key) => capabilityKeys.has(key))).toBe(true);
+    expect(
+      sessions.every((session) => session.latestEventId !== undefined),
+    ).toBe(true);
+    expect(snapshot.currentByHarness.map((group) => group.harness)).toEqual([
+      "codex",
+      "claude",
+      "cursor",
+    ]);
+    for (const group of snapshot.currentByHarness) {
+      expect(
+        group.sessions.every((session) => session.harness === group.harness),
+      ).toBe(true);
+    }
+    const attentionKeys = snapshot.needsAttention.map(
+      (session) => session.sessionKey,
+    );
+    expect(attentionKeys).toHaveLength(2);
+    expect(attentionKeys.every((key) => currentKeys.includes(key))).toBe(true);
+    expect(attention).toHaveLength(2);
+    expect(
+      attention.every((item) => attentionKeys.includes(item.sessionKey)),
+    ).toBe(true);
+    expect(
+      snapshot.recent.items.every(
+        (session) => session.activity.state === "ended",
+      ),
+    ).toBe(true);
+    expect(snapshot.recent.items).toHaveLength(3);
+    expect(snapshot.projects.items).toHaveLength(3);
+    expect(snapshot.projects.all.currentCount).toBe(6);
+    expect(snapshot.projects.all.needsAttentionCount).toBe(2);
+    await runtime.close();
+  });
+
+  it("keeps complete current and attention sets across every history page", async () => {
+    const runtime = await setup(
+      undefined,
+      undefined,
+      webCredential,
+      undefined,
+      undefined,
+      () => new Date(),
+    );
+    const waiting: AgentAttentionEventV1 = {
+      ...event(),
+      eventId: "evt_dashboard_page_open_12345678",
+      machineId: "machine_dashboard_page_12345678",
+      bridgeSessionId: "bridge_dashboard_page_open_12345678",
+      sessionId: "session_dashboard_page_open_12345678",
+      project: makeProjectRef("/workspace/paged/service"),
+      type: "input.required",
+      request: {
+        correlationId: "request_dashboard_page_12345678",
+        kind: "input",
+        question: "Synthetic paged question",
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      },
+    };
+    runtime.service.ingest(waiting);
+    for (let index = 0; index < 7; index += 1) {
+      const terminal: AgentAttentionEventV1 = {
+        ...event(),
+        eventId: `evt_dashboard_page_${String(index)}_12345678`,
+        machineId: "machine_dashboard_page_12345678",
+        bridgeSessionId: `bridge_dashboard_page_${String(index)}_12345678`,
+        sessionId: `session_dashboard_page_${String(index)}_12345678`,
+        surface: "app-server",
+        project: makeProjectRef("/workspace/paged/service"),
+        type: "session.ended",
+      };
+      delete terminal.request;
+      runtime.service.ingest(terminal);
+    }
+
+    const pages: ProjectSnapshotBody[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await fetch(
+        `${runtime.baseUrl}/v1/web/projects?project=all&limit=3${
+          cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`
+        }`,
+        { headers: webHeaders(runtime) },
+      );
+      expect(response.status).toBe(200);
+      const page = (await response.json()) as ProjectSnapshotBody;
+      pages.push(page);
+      cursor = page.recent.nextCursor;
+    } while (cursor !== undefined && pages.length < 10);
+
+    expect(pages).toHaveLength(3);
+    const historyKeys = pages.flatMap((page) =>
+      page.recent.items.map((session) => session.sessionKey),
+    );
+    expect(historyKeys).toHaveLength(7);
+    expect(new Set(historyKeys).size).toBe(7);
+    for (const page of pages) {
+      expect(page.needsAttention).toHaveLength(1);
+      expect(page.needsAttention[0]?.sessionKey).toBe(webSessionKey(waiting));
+      expect(
+        page.currentByHarness.flatMap((group) => group.sessions),
+      ).toHaveLength(1);
+      expect(page.projects.all.recentCount).toBe(7);
+    }
+
+    const scopedCursor = pages[0]?.recent.nextCursor;
+    expect(scopedCursor).toBeDefined();
+    const mismatched = await fetch(
+      `${runtime.baseUrl}/v1/web/projects?project=all&limit=3&harness=claude&cursor=${encodeURIComponent(
+        scopedCursor ?? "",
+      )}`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(mismatched.status).toBe(400);
+    await expect(mismatched.json()).resolves.toMatchObject({
+      code: "invalid_cursor",
+    });
+    await runtime.close();
+  });
+
+  it("scopes a selected worktree, disambiguates duplicate labels, and rejects an unknown project", async () => {
+    const runtime = await setup(
+      undefined,
+      undefined,
+      webCredential,
+      undefined,
+      undefined,
+      () => new Date(),
+    );
+    for (const [index, cwd] of [
+      "/workspace/alpha/service",
+      "/workspace/beta/service",
+    ].entries()) {
+      const input: AgentAttentionEventV1 = {
+        ...event(),
+        eventId: `evt_dashboard_scope_${String(index)}_12345678`,
+        machineId: "machine_dashboard_scope_12345678",
+        bridgeSessionId: `bridge_dashboard_scope_${String(index)}_12345678`,
+        sessionId: `session_dashboard_scope_${String(index)}_12345678`,
+        project: makeProjectRef(cwd),
+        type: "turn.started",
+      };
+      delete input.request;
+      runtime.service.ingest(input);
+    }
+    const all = (await (
+      await fetch(`${runtime.baseUrl}/v1/web/projects?project=all&limit=25`, {
+        headers: webHeaders(runtime),
+      })
+    ).json()) as ProjectSnapshotBody;
+    expect(all.projects.items).toHaveLength(2);
+    const labels = all.projects.items.map((item) => item.label);
+    expect(new Set(labels).size).toBe(2);
+    expect(labels.every((label) => label.startsWith("service"))).toBe(true);
+    const keys = all.projects.items.map((item) => item.projectKey);
+    expect(new Set(keys).size).toBe(2);
+
+    const selected = (await (
+      await fetch(
+        `${runtime.baseUrl}/v1/web/projects?project=${encodeURIComponent(
+          keys[0] ?? "",
+        )}&limit=25`,
+        { headers: webHeaders(runtime) },
+      )
+    ).json()) as ProjectSnapshotBody;
+    expect(selected.selectedProjectKey).toBe(keys[0]);
+    const scopedSessions = selected.currentByHarness.flatMap(
+      (group) => group.sessions,
+    );
+    expect(scopedSessions).toHaveLength(1);
+    expect(scopedSessions[0]?.projectKey).toBe(keys[0]);
+    expect(selected.projects.all.currentCount).toBe(2);
+
+    const missing = await fetch(
+      `${runtime.baseUrl}/v1/web/projects?project=prj_${"0".repeat(48)}`,
+      { headers: webHeaders(runtime) },
+    );
+    expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toMatchObject({
+      code: "project_not_found",
+    });
+    await runtime.close();
+  });
+
+  it("advances the dashboard change cursor and coalesces durable writes into one invalidation", async () => {
+    const runtime = await setup(
+      undefined,
+      undefined,
+      webCredential,
+      undefined,
+      undefined,
+      () => new Date(),
+    );
+    const first = (await (
+      await fetch(`${runtime.baseUrl}/v1/web/projects?limit=25`, {
+        headers: webHeaders(runtime),
+      })
+    ).json()) as ProjectSnapshotBody;
+    const quiet = (await (
+      await fetch(
+        `${runtime.baseUrl}/v1/web/project-changes?cursor=${encodeURIComponent(
+          first.changeCursor,
+        )}`,
+        { headers: webHeaders(runtime) },
+      )
+    ).json()) as ProjectChangesBody;
+    expect(quiet.invalidations).toEqual([]);
+    expect(quiet.hasMore).toBe(false);
+
+    for (let index = 0; index < 3; index += 1) {
+      const input: AgentAttentionEventV1 = {
+        ...event(),
+        eventId: `evt_dashboard_change_${String(index)}_12345678`,
+        machineId: "machine_dashboard_change_12345678",
+        bridgeSessionId: `bridge_dashboard_change_${String(index)}_1234`,
+        sessionId: `session_dashboard_change_${String(index)}_12345678`,
+        project: makeProjectRef("/workspace/changing/service"),
+        type: "turn.started",
+      };
+      delete input.request;
+      runtime.service.ingest(input);
+    }
+
+    const invalidated = (await (
+      await fetch(
+        `${runtime.baseUrl}/v1/web/project-changes?cursor=${encodeURIComponent(
+          quiet.cursor,
+        )}`,
+        { headers: webHeaders(runtime) },
+      )
+    ).json()) as ProjectChangesBody;
+    expect(invalidated.invalidations).toHaveLength(1);
+    expect(invalidated.invalidations[0]?.coalescedCount).toBeGreaterThan(1);
+    expect(invalidated.invalidations[0]?.kinds.length).toBeGreaterThan(0);
+    expect(JSON.stringify(invalidated)).not.toContain("session_dashboard");
+    expect(JSON.stringify(invalidated)).not.toContain("machine_dashboard");
+
+    const settled = (await (
+      await fetch(
+        `${runtime.baseUrl}/v1/web/project-changes?cursor=${encodeURIComponent(
+          invalidated.cursor,
+        )}`,
+        { headers: webHeaders(runtime) },
+      )
+    ).json()) as ProjectChangesBody;
+    expect(settled.invalidations).toEqual([]);
+    expect(settled.hasMore).toBe(false);
     await runtime.close();
   });
 

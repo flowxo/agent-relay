@@ -13,10 +13,10 @@ For operator setup and the shorter privacy/threat summary, start with the
 [local web companion guide](./web-companion.md). This document is the versioned
 HTTP and browser-behavior reference.
 
-The built-in session board is served at `http://127.0.0.1:4317/ui/`. Its static
-shell is public on loopback and contains no relay data or credential. The normal
-entry is `agent-relay dashboard --web`: the CLI verifies the protected app,
-creates a 60-second single-use grant, and opens an authenticated browser
+The built-in project dashboard is served at `http://127.0.0.1:4317/ui/`. Its
+static shell is public on loopback and contains no relay data or credential. The
+normal entry is `agent-relay dashboard --web`: the CLI verifies the protected
+app, creates a 60-second single-use grant, and opens an authenticated browser
 session. Direct `/ui/` access shows that command first; persistent manual bearer
 and CSRF fields are behind **Advanced recovery** and remain page-memory-only.
 Authenticated API responses remain the only source of session and attention
@@ -233,11 +233,37 @@ request remains open.
 
 The UI refuses to connect when `/v1/web/meta` reports a different API or asset
 version. API version 3 provides the browser-session bootstrap without changing
-the canonical session/request authority. Asset version 5 distinguishes a
-post-authentication data-load failure from an invalid or replayed bootstrap
-grant. The package check separately verifies that all five static files, their
-version marker, API negotiation, and both mutation schemas survived the build.
-CI runs that check from compiled output before the browser suite.
+the canonical session/request authority. Asset version 6 is the project-centric
+dashboard. The package check separately verifies that all five static files,
+their version marker, API negotiation, and both mutation schemas survived the
+build. CI runs that check from compiled output before the browser suite.
+
+### Built-in dashboard client contract
+
+The shipped dashboard is one consumer of these routes and adds no privileged
+path. Its exact per-refresh call set is `GET /v1/web/meta`,
+`GET /v1/web/projects`, `GET /v1/web/sessions?limit=500`, and
+`GET /v1/web/attention?limit=500`. It joins them only on the opaque 24-character
+`sessionKey`:
+
+- `/v1/web/projects` supplies project identity, the complete current and
+  attention sets, canonical activity, and cursor-paginated history;
+- `/v1/web/sessions` supplies the advertised `supportedActions` and
+  `latestEventId` for the newest 500 sessions, so `Details`, `Continue`, `Mute`,
+  and `End` are capability-gated rather than guessed; sessions outside that
+  window render those controls disabled with a stated reason; and
+- `/v1/web/attention` supplies open request forms. A request whose `sessionKey`
+  is absent from the snapshot is out of the selected scope and is not rendered.
+
+History pages request `limit=25` and reuse the exact `project`, `harness`, and
+`state` scope bound into the cursor. A `409 stale_cursor` or
+`400 invalid_cursor` discards accumulated pages and reloads the newest first
+page. Change polling uses `GET /v1/web/project-changes` every three seconds,
+pauses while the tab is hidden, and forces a fresh snapshot at least once per
+minute. The dashboard does not consume `/v1/web/stream`; that Server-Sent Events
+route is unchanged for other clients. It renders only `/v1/web/projects` fields
+plus the bounded event projection, and it never renders `repository`, `branch`,
+`lifecycleState`, or `displayId` from the legacy summary.
 
 ## Timeline, detail, and diagnostics
 
@@ -382,7 +408,15 @@ data. It covers bootstrap exchange and history cleanup, refresh and direct-tab
 reopening, replay rejection, compact/manual recovery, browser-session loss and
 page-memory draft clearance across a complete daemon restart, a stale browser
 form after a Telegram-first answer, and a synchronized Telegram/browser race
-with one durable winner. CI follows
+with one durable winner. The dashboard suite adds the project rail and
+attention/current/recent hierarchy across four generated projects and three
+harnesses, duplicate-label worktree selection, deep-history cursor pagination
+without duplication, stale-cursor recovery, free-text and questionnaire
+answering bound to the exact session, the focus-hold update policy,
+keyboard-only navigation with landmarks and status announcements, end
+confirmation, laptop and 390-pixel viewports, reduced motion, daemon-restart
+recovery, and a redaction sweep that also asserts no injected markup and no
+browser storage. CI follows
 [Playwright's documented browser installation](https://playwright.dev/docs/ci)
 and runs one worker for reproducibility.
 

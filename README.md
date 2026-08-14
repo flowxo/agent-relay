@@ -43,7 +43,8 @@ credential retention, live-provider work, or any later release.
 - Buttons for choices and common actions such as **Continue**, **Details**,
   **Mute**, and **End**.
 - Free-text answers routed to the exact request that opened them.
-- A local session board at `http://127.0.0.1:4317/ui/`.
+- A local project dashboard at `http://127.0.0.1:4317/ui/` showing what needs
+  attention, what is running now, and what finished recently, per checkout.
 - Durable delivery and reply state in SQLite, including retries and visible dead
   letters.
 - Native hooks for ordinary use, plus an opt-in supervisor when you need proven

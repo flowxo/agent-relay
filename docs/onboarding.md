@@ -303,7 +303,7 @@ The local browser API is documented in [`local-web-api.md`](./local-web-api.md).
 Its authenticated read models and resumable stream can also be exercised with
 `curl` without a real bot token.
 
-Open the authenticated compact session board with:
+Open the authenticated project dashboard with:
 
 ```sh
 agent-relay dashboard --web
@@ -318,21 +318,27 @@ visible/history state. Persistent bearer and CSRF values never enter the normal
 browser flow, URL, shell arguments, logs, diagnostics, analytics, or browser
 storage.
 
-The board shows stable session identities, filters real
-running/waiting/crashed/stale/muted/ended lane states, and maintains a global
-expiry-ordered attention queue. Refresh and direct reopening work for 30 minutes
-idle and at most eight hours. Browser-session loss, expiry, or daemon restart
-shows the primary launcher command again. Direct `/ui/` access keeps manual
-bearer/CSRF input behind **Advanced recovery: connect manually**; use it only
-when the desktop browser opener is unavailable.
+The dashboard opens on one project view. A left rail lists **All projects** and
+one item per exact checkout or worktree with attention and current counts; the
+selected pane is ordered **Needs attention**, **Current sessions** grouped by
+harness, then cursor-paginated **Recent sessions**. Cards show the canonical
+Working, Needs input, Background work, Idle, Done, Failed, Unknown, or Ended
+state with its confidence and safe reason on demand, plus known in-flight work,
+pending interactions, and an independent muted indicator. State and harness
+filters narrow the server read; the text box narrows only the sessions already
+loaded and says so. Refresh and direct reopening work for 30 minutes idle and at
+most eight hours. Browser-session loss, expiry, or daemon restart shows the
+primary launcher command again. Direct `/ui/` access keeps manual bearer/CSRF
+input behind **Advanced recovery: connect manually**; use it only when the
+desktop browser opener is unavailable.
 
-Select any session row to open its bounded evidence timeline. Event, delivery,
-request, operator-action, and continuation entries share their retained event
-and correlation IDs. Default details remain transcript-free. The separate
-**Reveal private assistant excerpt** action is the only UI path that requests
-bounded assistant content, and recognized secrets remain redacted. **Export
-diagnostics** downloads at most 500 retained records after applying current
-secret and machine-path redaction again.
+Choose **Details** on any session to open its bounded evidence timeline. Event,
+delivery, request, operator-action, and continuation entries share their
+retained event and correlation IDs. Default details remain transcript-free. The
+separate **Reveal private assistant excerpt** action is the only UI path that
+requests bounded assistant content, and recognized secrets remain redacted.
+**Export diagnostics** downloads at most 500 retained records after applying
+current secret and machine-path redaction again.
 
 Open attention cards contain the locally supported response form: free text,
 single choice, bounded multi-select, or an ordered mixed question set. Form

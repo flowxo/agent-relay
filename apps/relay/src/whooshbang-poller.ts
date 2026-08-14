@@ -229,11 +229,27 @@ export class WhooshBangInteractionPoller {
     );
   }
 
-  private boundedSignal(parent: AbortSignal): AbortSignal {
-    return AbortSignal.any([
-      parent,
-      AbortSignal.timeout(this.requestTimeoutMs),
-    ]);
+  /**
+   * Bounds one hosted request. An `AbortSignal.timeout` reachable only through
+   * `AbortSignal.any` can be garbage collected before it fires, which silently
+   * drops the bound and lets a stuck request hang instead of retrying. An owned
+   * controller and an explicit timer keep the bound alive; `release` must run
+   * once the request settles so a completed poll never delays shutdown.
+   */
+  private boundedSignal(parent: AbortSignal): {
+    signal: AbortSignal;
+    release: () => void;
+  } {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(new Error("whooshbang request bound elapsed"));
+    }, this.requestTimeoutMs);
+    return {
+      signal: AbortSignal.any([parent, controller.signal]),
+      release: () => {
+        clearTimeout(timer);
+      },
+    };
   }
 
   private validationFor(event: HostedInteractionEvent): HostedAnswerValidation {
@@ -305,16 +321,19 @@ export class WhooshBangInteractionPoller {
   ): Promise<"acknowledged" | "retry" | "stop"> {
     const providerReasonCode =
       work.disposition === "quarantined" ? work.reasonCode : undefined;
+    const bound = this.boundedSignal(signal);
     try {
-      const response = await this.options.source.acknowledge({
-        eventId: work.eventId,
-        cursor: work.cursor,
-        disposition: work.disposition,
-        ...(providerReasonCode === undefined
-          ? {}
-          : { reasonCode: providerReasonCode }),
-        signal: this.boundedSignal(signal),
-      });
+      const response = await this.options.source
+        .acknowledge({
+          eventId: work.eventId,
+          cursor: work.cursor,
+          disposition: work.disposition,
+          ...(providerReasonCode === undefined
+            ? {}
+            : { reasonCode: providerReasonCode }),
+          signal: bound.signal,
+        })
+        .finally(bound.release);
       if (
         response.event_id !== work.eventId ||
         response.cursor !== work.cursor ||
@@ -380,20 +399,23 @@ export class WhooshBangInteractionPoller {
     signal: AbortSignal,
   ): Promise<"complete" | "retry" | "stop"> {
     const operationId = whooshbangResolutionOperationId(work.eventId);
+    const bound = this.boundedSignal(signal);
     try {
-      const result = await this.presenter.reflect({
-        operationId,
-        messageId: work.messageId,
-        interactionId: work.interactionId,
-        presentation: work.outcome,
-        ...(work.resolutionSource === undefined
-          ? {}
-          : { resolutionSource: work.resolutionSource }),
-        ...(work.reasonCode === undefined
-          ? {}
-          : { reasonCode: work.reasonCode }),
-        signal: this.boundedSignal(signal),
-      });
+      const result = await this.presenter
+        .reflect({
+          operationId,
+          messageId: work.messageId,
+          interactionId: work.interactionId,
+          presentation: work.outcome,
+          ...(work.resolutionSource === undefined
+            ? {}
+            : { resolutionSource: work.resolutionSource }),
+          ...(work.reasonCode === undefined
+            ? {}
+            : { reasonCode: work.reasonCode }),
+          signal: bound.signal,
+        })
+        .finally(bound.release);
       if (signal.aborted) {
         return "stop";
       }
@@ -579,15 +601,18 @@ export class WhooshBangInteractionPoller {
         const pollState = this.options.store.hostedPollStatus(
           this.options.streamKey,
         );
+        const bound = this.boundedSignal(signal);
         try {
-          const batch = await this.options.source.poll({
-            ...(pollState.committedCursor === undefined
-              ? {}
-              : { after: pollState.committedCursor }),
-            limit: this.limit,
-            waitSeconds: this.waitSeconds,
-            signal: this.boundedSignal(signal),
-          });
+          const batch = await this.options.source
+            .poll({
+              ...(pollState.committedCursor === undefined
+                ? {}
+                : { after: pollState.committedCursor }),
+              limit: this.limit,
+              waitSeconds: this.waitSeconds,
+              signal: bound.signal,
+            })
+            .finally(bound.release);
           if (signal.aborted) {
             break;
           }
