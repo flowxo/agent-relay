@@ -30,6 +30,10 @@ import {
   createQualificationEvidence,
   verifyQualificationEvidence,
 } from "../sdlc/qualification.mjs";
+import {
+  validateArchiveEntries,
+  validateManifest as validateHarnessManifest,
+} from "../sdlc/provision-harnesses.mjs";
 
 const manifest = await readManifest();
 const packageSource = JSON.parse(
@@ -99,6 +103,36 @@ test("phase manifest is deterministic, complete, and command-backed", () => {
     !selectedChecks(manifest, "release", []).some(
       (check) => check.id === "security-regressions",
     ),
+  );
+});
+
+test("release qualification harnesses are immutable, bounded, and archive-safe", async () => {
+  const harnessManifest = validateHarnessManifest(
+    JSON.parse(
+      await readFile(
+        resolve(repositoryRoot, "sdlc/qualification-harnesses.json"),
+        "utf8",
+      ),
+    ),
+  );
+  assert.deepEqual(
+    harnessManifest.harnesses.map(({ id, versionOutput }) => ({
+      id,
+      versionOutput,
+    })),
+    [
+      { id: "codex", versionOutput: "codex-cli 0.145.0" },
+      { id: "claude", versionOutput: "2.1.219 (Claude Code)" },
+      { id: "cursor", versionOutput: "2026.07.23-e383d2b" },
+    ],
+  );
+  assert.throws(
+    () => validateArchiveEntries(["package/../../private"], "package"),
+    /unsafe path/,
+  );
+  assert.throws(
+    () => validateArchiveEntries(["another-root/tool"], "package"),
+    /declared root/,
   );
 });
 
@@ -649,7 +683,7 @@ test("real workflows preserve PR, fork, candidate, promotion, and publication bo
   assert.doesNotMatch(codeql, /\npush:|contents: write|secrets\./);
   assert.match(
     candidate,
-    /workflow_dispatch:[\s\S]*environment: release-candidate[\s\S]*pnpm check:release/,
+    /workflow_dispatch:[\s\S]*environment: release-candidate[\s\S]*provision-harnesses\.mjs[\s\S]*pnpm check:release/,
   );
   assert.doesNotMatch(
     candidate,

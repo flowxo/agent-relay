@@ -98,6 +98,11 @@ jobs:
       - run: pnpm contracts:preinstall
       - run: pnpm rebuild
       - run: pnpm exec playwright install chromium
+      - name: Provision checksum-verified frozen harnesses
+        run: |
+          node scripts/sdlc/provision-harnesses.mjs \
+            --output "$RUNNER_TEMP/agent-relay-qualified-harnesses" \
+            --github-path "$GITHUB_PATH"
       - name: Run heavyweight qualification exactly once
         run: pnpm check:release
       - name: Create SHA-, workflow-, input-, and artifact-bound evidence

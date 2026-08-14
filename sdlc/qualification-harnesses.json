@@ -1,0 +1,37 @@
+{
+  "schema": "agent-relay-qualified-harnesses.v1",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "harnesses": [
+    {
+      "id": "codex",
+      "executable": "codex",
+      "versionOutput": "codex-cli 0.145.0",
+      "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.145.0-darwin-arm64.tgz",
+      "sha256": "53ff1055d35ca3dc964e8bedc2431e46c00608f7c8e145b222122648a7a4e3e8",
+      "maximumBytes": 134217728,
+      "archiveRoot": "package",
+      "binary": "package/vendor/aarch64-apple-darwin/bin/codex"
+    },
+    {
+      "id": "claude",
+      "executable": "claude",
+      "versionOutput": "2.1.219 (Claude Code)",
+      "url": "https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.219.tgz",
+      "sha256": "36a0a1e56ac982f3122c88fc836f69a9d139975ceb9b5ddf44e2b01f75998bda",
+      "maximumBytes": 83886080,
+      "archiveRoot": "package",
+      "binary": "package/claude"
+    },
+    {
+      "id": "cursor",
+      "executable": "cursor-agent",
+      "versionOutput": "2026.07.23-e383d2b",
+      "url": "https://downloads.cursor.com/lab/2026.07.23-e383d2b/darwin/arm64/agent-cli-package.tar.gz",
+      "sha256": "f2eb25851f2079dcdf0558a816e06c402d187abfca93255d35167020439ebbf2",
+      "maximumBytes": 73400320,
+      "archiveRoot": "dist-package",
+      "binary": "dist-package/cursor-agent"
+    }
+  ]
+}

@@ -56,6 +56,14 @@ the [release-readiness evaluation](release-readiness.md). Native release-exit is
 lifecycle and one fake delivery; no live-provider traffic was run. Candidate,
 tagged, and public-registry modes publish nothing.
 
+The clean GitHub runner does not borrow operator-installed tools. Immediately
+before qualification it downloads the exact frozen Codex, Claude Code, and
+Cursor arm64 distributions declared in `sdlc/qualification-harnesses.json`,
+enforces HTTPS origin and byte bounds, verifies SHA-256 before extraction,
+rejects unsafe archive trees, and performs only inert `--version` checks in an
+empty home. Those binaries are exposed only to the qualification job and receive
+no provider credentials or private session state.
+
 The builder rebuilds and packs twice with the commit timestamp as
 `SOURCE_DATE_EPOCH`, then rejects different SHA-256 digests. It emits only:
 

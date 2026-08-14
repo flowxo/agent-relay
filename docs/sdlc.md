@@ -149,6 +149,14 @@ manifest digest, candidate/base SHA, workflow/run identity, dogfood evidence,
 and every release artifact digest. It contains synthetic results only, never
 real session content or credentials.
 
+The protected workflow provisions the three frozen harness executables from the
+checksum-, origin-, platform-, and size-bound
+`sdlc/qualification-harnesses.json` before that single command. It never reads
+an operator home or runner credential store; validation is limited to inert
+`--version` calls in an empty home. This makes native qualification
+deterministic on a clean GitHub macOS arm64 runner without widening the verified
+capability matrix to whatever tool versions happen to be current.
+
 Dispatch **Promote qualified candidate to main** with the candidate SHA,
 qualification run, and `PROMOTE <candidate-sha>`. The workflow verifies the
 successful manual run and every artifact digest, requires the candidate to be a
