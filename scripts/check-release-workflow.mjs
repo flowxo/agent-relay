@@ -6,6 +6,7 @@ import { runtimeDependencyGraph } from "./lib/release-bundle.mjs";
 import { assertReleaseExitConfiguration } from "./lib/release-exit-policy.mjs";
 import { assertReleaseConfiguration } from "./lib/release-policy.mjs";
 import { selectedChecks } from "./sdlc/lib.mjs";
+import { validateManifest as validateHarnessManifest } from "./sdlc/provision-harnesses.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -46,6 +47,9 @@ const release = JSON.parse(await text("packaging/release.json"));
 const releaseExit = JSON.parse(await text("packaging/release-exit.json"));
 const actionLock = JSON.parse(await text("packaging/actions-lock.json"));
 const manifest = JSON.parse(await text("sdlc/checks.json"));
+const harnessManifest = JSON.parse(
+  await text("sdlc/qualification-harnesses.json"),
+);
 const thirdPartyNotices = await text("THIRD_PARTY_NOTICES.md");
 const bootstrapPublish = await text("scripts/bootstrap-publish-release.mjs");
 const releasePolicy = await text("scripts/lib/release-policy.mjs");
@@ -53,6 +57,7 @@ const releasing = await text("docs/releasing.md");
 
 assertReleaseConfiguration(release, rootPackage);
 assertReleaseExitConfiguration(releaseExit, release);
+validateHarnessManifest(harnessManifest);
 const runtimeGraph = await runtimeDependencyGraph(root, release);
 for (const dependency of runtimeGraph.packages) {
   requireText(
@@ -243,6 +248,7 @@ for (const pattern of [
   /collaborators\/\$\{GITHUB_ACTOR\}\/permission/,
   /candidate\.mjs/,
   /Reject redundant qualification/,
+  /provision-harnesses\.mjs/,
   /pnpm check:release/,
   /qualification\.mjs create/,
   /actions\/upload-artifact@/,
