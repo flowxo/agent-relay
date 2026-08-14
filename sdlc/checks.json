@@ -1,0 +1,529 @@
+{
+  "schema": "agent-relay-sdlc.v1",
+  "version": 1,
+  "toolchain": {
+    "node": "22",
+    "pnpm": "11.17.0"
+  },
+  "latencyBudgetsSeconds": {
+    "fast": 180,
+    "pullRequest": 600,
+    "dogfoodDeploy": 300,
+    "releaseQualification": 2700
+  },
+  "documentationOnly": [
+    "**/*.md",
+    "docs/**",
+    ".github/ISSUE_TEMPLATE/**",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "MAINTAINERS.md",
+    "PRIVACY.md",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "rules": [
+    {
+      "id": "sdlc-control-plane",
+      "patterns": [
+        "sdlc/**",
+        "scripts/sdlc/**",
+        "scripts/test/sdlc*.node-test.mjs",
+        ".github/workflows/**",
+        ".github/pull_request_template.md",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        ".node-version"
+      ],
+      "risks": ["control", "release"]
+    },
+    {
+      "id": "operator-web-ux",
+      "patterns": [
+        "apps/relay/web/**",
+        "apps/relay/e2e/**",
+        "playwright.config.*",
+        "apps/relay/src/dashboard*.ts",
+        "apps/relay/src/http-server*.ts",
+        "apps/relay/src/web-*.ts",
+        "apps/relay/scripts/check-web-package.mjs"
+      ],
+      "risks": ["relay", "web", "ux", "security"]
+    },
+    {
+      "id": "persistence-and-migrations",
+      "patterns": [
+        "packages/core/src/store*.ts",
+        "packages/core/src/*schema*.ts",
+        "packages/core/src/activity*.ts",
+        "packages/core/src/session-activity-store*.ts",
+        "packages/core/src/retention*.ts"
+      ],
+      "risks": ["core", "persistence"]
+    },
+    {
+      "id": "installer-and-lifecycle",
+      "patterns": [
+        "apps/relay/src/installer*.ts",
+        "apps/relay/src/vendor-integration-lifecycle*.ts",
+        "apps/relay/src/vendor-plugin-artifacts*.ts",
+        "scripts/build-package.mjs",
+        "scripts/check-package*.mjs",
+        "scripts/check-hosted-package.mjs",
+        "scripts/check-vendor-integration-package.mjs",
+        "packaging/package-files.json"
+      ],
+      "risks": ["relay", "installer", "lifecycle"]
+    },
+    {
+      "id": "release-and-publication",
+      "patterns": [
+        "packaging/release*.json",
+        "packaging/actions-lock.json",
+        "packaging/release-notes.md",
+        "scripts/build-release.mjs",
+        "scripts/verify-release-bundle.mjs",
+        "scripts/check-release-*.mjs",
+        "scripts/publish-release.mjs",
+        "scripts/bootstrap-publish-release.mjs",
+        "scripts/lib/release-*.mjs",
+        "scripts/test/release-*.node-test.mjs"
+      ],
+      "risks": ["release", "security"]
+    },
+    {
+      "id": "security-and-privacy",
+      "patterns": [
+        "SECURITY.md",
+        "PRIVACY.md",
+        "apps/relay/src/private-config*.ts",
+        "packages/core/src/redaction*.ts",
+        "scripts/lib/safe-packed-environment.mjs",
+        "scripts/check-repository-secrets.mjs",
+        "scripts/test/repository-secrets.node-test.mjs",
+        "scripts/test/safe-packed-environment.node-test.mjs"
+      ],
+      "risks": ["security"]
+    },
+    {
+      "id": "contracts-and-capabilities",
+      "patterns": [
+        "contracts/**",
+        "vendor/**",
+        "packages/protocol/**",
+        "packages/harnesses/**",
+        "packages/runner-bridge/**",
+        "packages/whooshbang-transport/**",
+        "fixtures/**"
+      ],
+      "risks": ["contracts", "shared"]
+    },
+    {
+      "id": "vendor-integrations",
+      "patterns": ["integrations/**", "skills/**", "docs/integrations/**"],
+      "risks": ["integrations"]
+    },
+    {
+      "id": "relay-runtime",
+      "patterns": ["apps/relay/**"],
+      "risks": ["relay"]
+    },
+    {
+      "id": "core-runtime",
+      "patterns": ["packages/core/**"],
+      "risks": ["core"]
+    },
+    {
+      "id": "transport-runtime",
+      "patterns": [
+        "packages/notification-contracts/**",
+        "packages/telegram-transport/**",
+        "packages/webhook-transport/**"
+      ],
+      "risks": ["transport", "shared"]
+    },
+    {
+      "id": "other-workspace-code",
+      "patterns": ["packages/**", "scripts/**", "*.config.*"],
+      "risks": ["shared"]
+    },
+    {
+      "id": "documentation",
+      "patterns": ["**/*.md", "docs/**", ".github/ISSUE_TEMPLATE/**"],
+      "risks": ["docs"]
+    }
+  ],
+  "fallbackRisks": ["unknown", "shared", "security", "web", "lifecycle"],
+  "checks": [
+    {
+      "id": "sdlc-integrity",
+      "title": "SDLC manifest and workflow parity",
+      "command": ["node", "--test", "scripts/test/sdlc.node-test.mjs"],
+      "phases": ["fast", "pr", "release"],
+      "group": "core",
+      "always": true,
+      "targetSeconds": 3,
+      "purpose": "Prevents phase, classifier, workflow, authorization, and evidence drift.",
+      "credentials": "none"
+    },
+    {
+      "id": "format",
+      "title": "Repository formatting",
+      "command": ["pnpm", "format:check"],
+      "phases": ["fast", "pr", "release"],
+      "group": "core",
+      "always": true,
+      "targetSeconds": 8,
+      "purpose": "Keeps generated and authored text deterministic.",
+      "credentials": "none"
+    },
+    {
+      "id": "governance",
+      "title": "Governance policy",
+      "command": ["pnpm", "governance:check"],
+      "phases": ["fast", "pr", "release"],
+      "group": "core",
+      "always": true,
+      "targetSeconds": 2,
+      "purpose": "Protects ownership, contribution, and repository governance contracts.",
+      "credentials": "none"
+    },
+    {
+      "id": "repository-secrets",
+      "title": "Credential and private-data scan",
+      "command": ["pnpm", "secrets:check"],
+      "phases": ["fast", "pr", "release"],
+      "group": "core",
+      "always": true,
+      "targetSeconds": 3,
+      "purpose": "Rejects credentials, private paths, databases, logs, and secret-shaped tracked content.",
+      "credentials": "none"
+    },
+    {
+      "id": "public-docs",
+      "title": "Public documentation contracts",
+      "command": ["pnpm", "docs:check"],
+      "phases": ["fast", "pr", "release"],
+      "group": "core",
+      "whenRisks": ["docs", "release", "control", "unknown"],
+      "targetSeconds": 3,
+      "purpose": "Finds stale public claims and release-boundary wording.",
+      "credentials": "none"
+    },
+    {
+      "id": "lint",
+      "title": "Static lint",
+      "command": ["pnpm", "lint"],
+      "phases": ["fast", "pr", "release"],
+      "group": "core",
+      "whenRisks": [
+        "control",
+        "web",
+        "security",
+        "persistence",
+        "installer",
+        "release",
+        "contracts",
+        "integrations",
+        "relay",
+        "core",
+        "transport",
+        "shared",
+        "unknown"
+      ],
+      "targetSeconds": 12,
+      "purpose": "Finds deterministic TypeScript and JavaScript defects.",
+      "credentials": "none"
+    },
+    {
+      "id": "typecheck",
+      "title": "Workspace typecheck",
+      "command": ["pnpm", "typecheck"],
+      "phases": ["fast", "pr", "release"],
+      "group": "core",
+      "whenRisks": [
+        "control",
+        "web",
+        "security",
+        "persistence",
+        "installer",
+        "release",
+        "contracts",
+        "integrations",
+        "relay",
+        "core",
+        "transport",
+        "shared",
+        "unknown"
+      ],
+      "targetSeconds": 20,
+      "purpose": "Protects cross-package compile-time contracts.",
+      "credentials": "none"
+    },
+    {
+      "id": "unit-relay",
+      "title": "Focused Relay tests",
+      "command": ["pnpm", "exec", "vitest", "run", "apps/relay/src"],
+      "phases": ["fast"],
+      "group": "core",
+      "whenRisks": [
+        "web",
+        "ux",
+        "security",
+        "installer",
+        "integrations",
+        "relay"
+      ],
+      "targetSeconds": 25,
+      "purpose": "Provides focused feedback for the Relay CLI, daemon, browser, and integration composition root.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "unit-core",
+      "title": "Focused core tests",
+      "command": ["pnpm", "exec", "vitest", "run", "packages/core/src"],
+      "phases": ["fast"],
+      "group": "core",
+      "whenRisks": ["core", "persistence"],
+      "targetSeconds": 20,
+      "purpose": "Provides focused feedback for authoritative persistence and interaction behavior.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "unit-all-fast-fallback",
+      "title": "Fail-safe workspace unit tests",
+      "command": ["pnpm", "test"],
+      "phases": ["fast"],
+      "group": "core",
+      "supersedes": ["unit-relay", "unit-core"],
+      "whenRisks": ["control", "contracts", "shared", "unknown", "transport"],
+      "targetSeconds": 40,
+      "purpose": "Broadens local feedback when shared ownership or classification is uncertain.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "unit-all",
+      "title": "Workspace unit tests",
+      "command": ["pnpm", "test"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": [
+        "control",
+        "web",
+        "security",
+        "persistence",
+        "installer",
+        "release",
+        "contracts",
+        "integrations",
+        "relay",
+        "core",
+        "transport",
+        "shared",
+        "unknown"
+      ],
+      "targetSeconds": 40,
+      "purpose": "Protects the integrated repository behavior before merge.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "fixtures",
+      "title": "Fixture safety and inventory",
+      "command": ["pnpm", "fixtures:check"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["contracts", "shared", "unknown"],
+      "targetSeconds": 3,
+      "purpose": "Protects fixture provenance, sanitization, size, and manifest inventory.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "skills",
+      "title": "Generated skill parity",
+      "command": ["pnpm", "skills:check"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["integrations", "installer", "shared", "unknown"],
+      "targetSeconds": 3,
+      "purpose": "Finds missing or stale generated vendor skill assets.",
+      "credentials": "none"
+    },
+    {
+      "id": "capabilities",
+      "title": "Capability evidence parity",
+      "command": ["pnpm", "capabilities:check"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["contracts", "integrations", "shared", "unknown"],
+      "targetSeconds": 3,
+      "purpose": "Keeps supported harness claims generated from authoritative evidence.",
+      "credentials": "none"
+    },
+    {
+      "id": "contracts-whooshbang",
+      "title": "WhooshBang consumer contract",
+      "command": ["pnpm", "contracts:whooshbang"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["contracts", "transport", "shared", "unknown"],
+      "targetSeconds": 8,
+      "purpose": "Protects exact vendored hosted-transport compatibility.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "contracts-runner",
+      "title": "Runner protocol contract",
+      "command": ["pnpm", "contracts:runner"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["contracts", "shared", "unknown"],
+      "targetSeconds": 8,
+      "purpose": "Protects the exact native runner protocol boundary.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "security-regressions",
+      "title": "Repository security regression tests",
+      "command": [
+        "node",
+        "--test",
+        "scripts/test/repository-secrets.node-test.mjs",
+        "scripts/test/safe-packed-environment.node-test.mjs"
+      ],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["security", "unknown"],
+      "targetSeconds": 4,
+      "purpose": "Proves credential scanning, private-path rejection, and fake-only packed runtime environment isolation.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "release-policy",
+      "title": "Release and publication policy",
+      "command": ["pnpm", "release:policy:check"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["release", "control", "unknown"],
+      "supersedes": ["security-regressions"],
+      "targetSeconds": 8,
+      "purpose": "Protects versions, tags, OIDC, action pins, authorization, provenance, and publication boundaries.",
+      "credentials": "none"
+    },
+    {
+      "id": "distribution",
+      "title": "Compiled distribution contract",
+      "command": ["pnpm", "dist:check"],
+      "phases": ["pr", "release"],
+      "group": "core",
+      "whenRisks": ["web", "installer", "release", "integrations", "unknown"],
+      "targetSeconds": 25,
+      "purpose": "Finds missing web assets, version markers, and executable distribution mismatches.",
+      "credentials": "none"
+    },
+    {
+      "id": "package",
+      "title": "Packed package smoke proof",
+      "command": ["pnpm", "package:check"],
+      "phases": ["pr", "release"],
+      "group": "lifecycle",
+      "whenRisks": ["persistence", "installer", "release", "unknown"],
+      "targetSeconds": 45,
+      "purpose": "Protects package contents, isolated install, CLI, fake canary, and local web API.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "package-integrations",
+      "title": "Vendor integration package proof",
+      "command": ["pnpm", "package:integrations:check"],
+      "phases": ["pr", "release"],
+      "group": "lifecycle",
+      "whenRisks": ["integrations", "installer", "release", "unknown"],
+      "targetSeconds": 35,
+      "purpose": "Protects isolated vendor install, repair, disable, rollback, and uninstall preservation.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "package-lifecycle",
+      "title": "Package lifecycle and migration matrix",
+      "command": ["pnpm", "package:lifecycle:check"],
+      "phases": ["release"],
+      "group": "lifecycle",
+      "whenRisks": ["persistence", "installer", "release", "unknown"],
+      "targetSeconds": 90,
+      "purpose": "Protects clean install, upgrade, repair, schema refusal, rollback, uninstall, and retained user data.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "package-hosted",
+      "title": "Hosted package isolation proof",
+      "command": ["pnpm", "package:hosted:check"],
+      "phases": ["release"],
+      "group": "release",
+      "targetSeconds": 120,
+      "purpose": "Protects packed hosted interaction replay, revocation, privacy, and provider isolation.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "browser-e2e",
+      "title": "Packaged Chromium operator flow",
+      "command": ["pnpm", "test:e2e"],
+      "phases": ["pr", "release"],
+      "group": "browser",
+      "whenRisks": ["web", "ux", "unknown"],
+      "targetSeconds": 45,
+      "purpose": "Protects authenticated loopback browser behavior in a bounded synthetic environment.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "release-bundle",
+      "title": "Two-build reproducible release bundle",
+      "command": ["pnpm", "release:bundle"],
+      "phases": ["release"],
+      "group": "release",
+      "targetSeconds": 30,
+      "purpose": "Produces and compares two exact package archives, checksums, SBOM, and source manifest.",
+      "credentials": "none"
+    },
+    {
+      "id": "release-bundle-verify",
+      "title": "Release bundle verification",
+      "command": ["pnpm", "release:bundle:verify"],
+      "phases": ["release"],
+      "group": "release",
+      "targetSeconds": 8,
+      "purpose": "Re-verifies the immutable six-file candidate bundle.",
+      "credentials": "none"
+    },
+    {
+      "id": "release-evidence",
+      "title": "Clean-home candidate evidence",
+      "command": ["pnpm", "release:evidence"],
+      "phases": ["release"],
+      "group": "release",
+      "targetSeconds": 90,
+      "purpose": "Proves clean-home install, fake delivery, web assets, and protected local API from the exact bundle.",
+      "credentials": "synthetic only"
+    },
+    {
+      "id": "native-release-exit",
+      "title": "Pinned Apple-silicon release exit",
+      "command": ["pnpm", "release:exit:candidate"],
+      "phases": ["release"],
+      "group": "release",
+      "targetSeconds": 900,
+      "purpose": "Proves the exact pinned Node and Apple-silicon clean install, doctor, fake delivery, preservation, uninstall, and package removal boundary.",
+      "credentials": "pinned public Node archive; isolated home and synthetic data"
+    },
+    {
+      "id": "production-audit",
+      "title": "Production dependency audit",
+      "command": ["pnpm", "audit", "--prod"],
+      "phases": ["release"],
+      "group": "release",
+      "targetSeconds": 30,
+      "purpose": "Checks the exact production dependency graph against the registry advisory service.",
+      "credentials": "public registry network; no credential"
+    }
+  ]
+}

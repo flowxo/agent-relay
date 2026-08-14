@@ -128,6 +128,18 @@ export function releaseExitSourceCommit(release, git) {
   return state.commit;
 }
 
+export function candidateReleaseExitSourceCommit(release, git) {
+  assert(
+    git?.intendedTagState?.status !== "exists-elsewhere",
+    `${release.gitTag} already points at another commit`,
+  );
+  assert(
+    typeof git?.commit === "string" && /^[a-f0-9]{40}$/.test(git.commit),
+    "candidate source does not resolve to one full commit",
+  );
+  return git.commit;
+}
+
 export function summarizePublicRegistryArtifact(
   release,
   bundle,

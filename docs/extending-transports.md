@@ -176,9 +176,9 @@ contract does not provide. See the [hosted boundary](hosted-whooshbang.md).
 - privacy/redaction and outbound size limits; and
 - fake-canary parity without provider credentials.
 
-Run `pnpm check`, `pnpm test:e2e` for changed operator surfaces, and the
-provider's isolated contract suite. Update the architecture, privacy, support,
-compatibility, progress, and changelog surfaces in the same change.
+Run `pnpm check:pr` (which selects browser E2E for changed operator surfaces)
+and the provider's isolated contract suite. Update the architecture, privacy,
+support, compatibility, progress, and changelog surfaces in the same change.
 
 For a normal transport change, begin with:
 
@@ -186,7 +186,7 @@ For a normal transport change, begin with:
 pnpm fixtures:check
 pnpm exec vitest run packages/core packages/notification-contracts
 pnpm exec vitest run packages/telegram-transport
-pnpm check
+pnpm check:pr
 ```
 
 Then run `pnpm test:e2e` for changed operator flows and the provider-specific

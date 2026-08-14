@@ -218,6 +218,15 @@ durable state contains the cutoff and bounded topic/session display metadata,
 not transcript text. Pruning does not erase or mark the local session ended, and
 later activity can create a new provider topic.
 
+Development tooling follows the same minimization rule. Exploratory dogfood
+records contain only the source commit, branch, dirty flag, build digest,
+deployment time, and service-restart result. They do not contain coding-session
+prompts, answers, transcripts, provider identifiers, credentials, browser
+sessions, or local diagnostic contents. Formal candidate dogfood evidence is a
+short, secret-free list of tested flow names, environment class, limitations,
+tester, timestamp, result, and exact candidate SHA. CI artifacts use synthetic
+credentials and isolated homes; real dogfood content must never be uploaded.
+
 ## Uninstall and erasure
 
 Run `agent-relay uninstall` before removing the package. It removes only owned

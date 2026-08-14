@@ -1,27 +1,28 @@
-name: CI
+name: CodeQL
 
 on:
   pull_request:
     branches:
       - dev
       - main
+  schedule:
+    - cron: "31 8 * * 3"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   classify:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      core: ${{ steps.classify.outputs.core }}
-      browser: ${{ steps.classify.outputs.browser }}
-      lifecycle: ${{ steps.classify.outputs.lifecycle }}
-      rebuild_native: ${{ steps.classify.outputs.documentation_only != 'true' }}
+      documentation_only: ${{ steps.classify.outputs.documentation_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -39,30 +40,31 @@ jobs:
           node-version-file: .trusted-sdlc/.node-version
           package-manager-cache: false
       - id: classify
-        name: Select risk-proportionate checks with trusted base code
         run:
           node .trusted-sdlc/scripts/sdlc/classify.mjs --repository
           "$GITHUB_WORKSPACE" --base "${{ github.event.pull_request.base.sha }}"
           --head "${{ github.event.pull_request.head.sha }}" --github-output
           "$GITHUB_OUTPUT"
 
-  validation:
+  analyze:
     needs: classify
-    uses: flowxo/agent-relay/.github/workflows/validate.yml@dev
-    with:
-      base_sha: ${{ github.event.pull_request.base.sha }}
-      head_sha: ${{ github.event.pull_request.head.sha }}
-      run_core: ${{ needs.classify.outputs.core == 'true' }}
-      run_browser: ${{ needs.classify.outputs.browser == 'true' }}
-      run_lifecycle: ${{ needs.classify.outputs.lifecycle == 'true' }}
-      rebuild_native: ${{ needs.classify.outputs.rebuild_native == 'true' }}
-
-  pr-gate:
-    if: always()
-    needs: [classify, validation]
+    if:
+      always() && (github.event_name != 'pull_request' ||
+      needs.classify.outputs.documentation_only != 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - name: Require every selected check and no release work
-        run: |
-          test "${{ needs.classify.result }}" = success
-          test "${{ needs.validation.result }}" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL without credentials or build scripts
+        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
+        with:
+          languages: actions,javascript-typescript
+          build-mode: none
+          queries: security-extended
+      - name: Analyze
+        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4

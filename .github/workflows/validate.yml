@@ -1,0 +1,132 @@
+name: Reusable validation
+
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+      run_core:
+        required: true
+        type: boolean
+      run_browser:
+        required: true
+        type: boolean
+      run_lifecycle:
+        required: true
+        type: boolean
+      rebuild_native:
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    if: inputs.run_core
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check out the protected dev check manifest and runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: dev
+          path: .trusted-sdlc
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .trusted-sdlc/.node-version
+          cache: pnpm
+      - name: Move the trusted control plane outside the candidate tree
+        run: mv .trusted-sdlc "$RUNNER_TEMP/agent-relay-trusted-sdlc"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm contracts:preinstall
+      - if: inputs.rebuild_native
+        run: pnpm rebuild
+      - name: Run the locally reproducible PR core gate
+        run:
+          node "$RUNNER_TEMP/agent-relay-trusted-sdlc/scripts/sdlc/run.mjs"
+          --repository "$GITHUB_WORKSPACE" --phase pr --groups core --base "${{
+          inputs.base_sha }}" --head "${{ inputs.head_sha }}"
+
+  browser:
+    if: inputs.run_browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check out the protected dev check manifest and runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: dev
+          path: .trusted-sdlc
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .trusted-sdlc/.node-version
+          cache: pnpm
+      - name: Move the trusted control plane outside the candidate tree
+        run: mv .trusted-sdlc "$RUNNER_TEMP/agent-relay-trusted-sdlc"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm contracts:preinstall
+      - run: pnpm rebuild
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run browser proof selected by the central classifier
+        run:
+          node "$RUNNER_TEMP/agent-relay-trusted-sdlc/scripts/sdlc/run.mjs"
+          --repository "$GITHUB_WORKSPACE" --phase pr --groups browser --base
+          "${{ inputs.base_sha }}" --head "${{ inputs.head_sha }}"
+
+  lifecycle:
+    if: inputs.run_lifecycle
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check out the protected dev check manifest and runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: dev
+          path: .trusted-sdlc
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .trusted-sdlc/.node-version
+          cache: pnpm
+      - name: Move the trusted control plane outside the candidate tree
+        run: mv .trusted-sdlc "$RUNNER_TEMP/agent-relay-trusted-sdlc"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm contracts:preinstall
+      - run: pnpm rebuild
+      - name:
+          Run installer or migration proofs selected by the central classifier
+        run:
+          node "$RUNNER_TEMP/agent-relay-trusted-sdlc/scripts/sdlc/run.mjs"
+          --repository "$GITHUB_WORKSPACE" --phase pr --groups lifecycle --base
+          "${{ inputs.base_sha }}" --head "${{ inputs.head_sha }}"

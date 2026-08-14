@@ -1,0 +1,70 @@
+name: Promote qualified candidate to main
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact publication-eligible qualified dev SHA
+        required: true
+        type: string
+      qualification_run_id:
+        description: Successful non-dry-run qualification run ID
+        required: true
+        type: string
+      confirmation:
+        description: Type PROMOTE followed by the exact candidate SHA
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: promote-main
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-candidate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Require exact confirmation and fast-forward relationship
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$GITHUB_SHA" = "$CANDIDATE_SHA"
+          test "$CONFIRMATION" = "PROMOTE $CANDIDATE_SHA"
+          git merge-base --is-ancestor origin/main "$CANDIDATE_SHA"
+      - name: Fetch and verify publication-eligible qualification evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QUALIFICATION_RUN_ID: ${{ inputs.qualification_run_id }}
+        run: |
+          mkdir -p .artifacts/qualification-download .artifacts/sdlc
+          test "$(printf '%s' "$QUALIFICATION_RUN_ID" | tr -d '0-9')" = ""
+          gh run download "$QUALIFICATION_RUN_ID" --name "agent-relay-qualification-${CANDIDATE_SHA}" --dir .artifacts/qualification-download
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${QUALIFICATION_RUN_ID}" > .artifacts/sdlc/qualification-run.json
+          cp -R .artifacts/qualification-download/.artifacts/release .artifacts/release
+          cp -R .artifacts/qualification-download/.artifacts/release-evidence .artifacts/release-evidence
+          cp -R .artifacts/qualification-download/.artifacts/release-exit .artifacts/release-exit
+          cp .artifacts/qualification-download/.artifacts/sdlc/qualification.json .artifacts/sdlc/qualification.json
+          node scripts/sdlc/qualification.mjs verify --candidate "$CANDIDATE_SHA" --evidence .artifacts/sdlc/qualification.json --run-metadata .artifacts/sdlc/qualification-run.json
+      - name: Fast-forward main without creating an unqualified commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run:
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/main"
+          -f sha="$CANDIDATE_SHA" -F force=false

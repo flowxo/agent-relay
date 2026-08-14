@@ -81,6 +81,32 @@ General bugs and support questions belong in the
 once the repository is public. Follow [SUPPORT.md](SUPPORT.md) when preparing a
 sanitized report.
 
+## Development and release workflow boundary
+
+Normal feature work targets `dev`; `main` is advanced only to an exact commit
+whose release-candidate evidence has already passed. Pull-request validation is
+credential-free, has read-only repository permission, and cannot access a
+protected environment, publish, attest, promote `main`, or qualify a release.
+Fork pull requests receive no secrets. Unknown paths broaden the central risk
+classification rather than silently skipping checks.
+
+Exploratory `pnpm dogfood:deploy` is a local development operation. It preserves
+the existing local security boundary and records only commit/build identity; it
+does not read provider credentials or private coding-session content and cannot
+be treated as release evidence. Formal UX evidence is bounded, secret-free,
+fresh, and tied to an exact candidate SHA. Field names or values resembling
+credentials, prompts, answers, sessions, private paths, or transcripts are
+rejected.
+
+Release qualification requires an explicit manual dispatch, a protected
+`release-candidate` environment, write-or-higher actor permission, exact-SHA
+confirmation, and applicable dogfood evidence. Publication accepts only a
+successful, non-dry-run artifact from that workflow and re-verifies its
+repository, workflow, run, SHA, manifest, complete check inventory, and file
+digests. The `npm-prerelease` OIDC/provenance, immutable version/tag, public
+repository, and release-policy gates remain separate. See
+[the SDLC boundary](docs/sdlc.md).
+
 ## Local web bootstrap boundary
 
 The supported browser entry is `agent-relay dashboard --web` against the exact

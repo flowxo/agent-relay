@@ -19,10 +19,13 @@ Closes <!-- Linear/GitHub issue -->
 <!-- Describe focused tests, synthetic fixtures, and observed versions. Never claim evidence that was not collected. -->
 
 - Focused checks:
-- `pnpm check`:
-- `pnpm test:e2e` when an operator surface changed:
-- `pnpm package:check` / `pnpm package:lifecycle:check` when applicable:
-- `pnpm audit --prod` when dependencies or release inputs changed:
+- `pnpm check:pr`:
+- Risk classification (`pnpm sdlc:classify` summary):
+- Exploratory dogfood commit/flows (when performed; not release evidence):
+- Skipped evidence and reason:
+
+Heavy release qualification is intentionally absent from an implementation PR.
+Do not mark exploratory dogfood as candidate evidence.
 
 ## Maintainer and security gates
 

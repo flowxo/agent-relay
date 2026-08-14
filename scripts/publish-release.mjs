@@ -58,6 +58,7 @@ await verifyReleaseBundle({
   rootPackage,
   directory,
   expectedCommit: process.env.GITHUB_SHA,
+  allowTagPromotion: true,
 });
 
 if (!execute) {

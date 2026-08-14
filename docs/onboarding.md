@@ -52,7 +52,7 @@ From the repository root:
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm contracts:preinstall
 pnpm rebuild
-pnpm check
+pnpm check:pr
 pnpm build
 ```
 
@@ -260,7 +260,8 @@ pnpm relay -- daemon
 ```
 
 The built and installed command serves the same packaged assets and versioned
-API; `pnpm check` verifies that compatibility from compiled output.
+API; `pnpm check:pr` selects compiled-distribution and browser proof when those
+surfaces changed.
 
 Expected startup evidence includes:
 

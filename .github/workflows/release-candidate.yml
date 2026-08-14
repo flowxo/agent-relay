@@ -1,0 +1,124 @@
+name: Release candidate qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact dev or hotfix commit to qualify
+        required: true
+        type: string
+      base_sha:
+        description: Last released main SHA used for risk and UX applicability
+        required: true
+        type: string
+      confirmation:
+        description: Type QUALIFY followed by the exact candidate SHA
+        required: true
+        type: string
+      dogfood_evidence:
+        description:
+          Compact agent-relay-dogfood-evidence.v1 JSON; required only for UX
+          changes
+        required: false
+        type: string
+      dry_run:
+        description:
+          Prove qualification mechanics without producing publication-eligible
+          evidence
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-candidate-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    runs-on: macos-14
+    timeout-minutes: 60
+    environment: release-candidate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Resolve dispatch actor permission without exposing credentials
+        id: permission
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${GITHUB_ACTOR}/permission" --jq .permission)"
+          printf 'value=%s\n' "$permission" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Authorize immutable candidate and validate conditional UX evidence
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          ACTOR_PERMISSION: ${{ steps.permission.outputs.value }}
+          DOGFOOD_EVIDENCE: ${{ inputs.dogfood_evidence }}
+          QUALIFICATION_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          node scripts/sdlc/candidate.mjs \
+            --candidate "$CANDIDATE_SHA" \
+            --base "$BASE_SHA" \
+            --confirmation "$CONFIRMATION" \
+            --actor-permission "$ACTOR_PERMISSION" \
+            --dogfood-evidence "$DOGFOOD_EVIDENCE" \
+            --dry-run "$QUALIFICATION_DRY_RUN"
+      - name: Reject redundant qualification of identical inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          key="$(node -p "require('./.artifacts/sdlc/candidate-authorization.json').qualificationKey")"
+          while read -r run_id; do
+            test -n "$run_id" || continue
+            directory=".artifacts/prior-qualification-${run_id}"
+            if gh run download "$run_id" --name "agent-relay-qualification-${CANDIDATE_SHA}" --dir "$directory" 2>/dev/null; then
+              prior="$(find "$directory" -path '*/.artifacts/sdlc/qualification.json' -print -quit)"
+              if test -n "$prior" && test "$(node -p "require('./${prior}').qualificationKey")" = "$key"; then
+                echo "Qualification already exists for these exact inputs in run ${run_id}; reuse that immutable evidence."
+                exit 1
+              fi
+            fi
+          done < <(gh run list --workflow release-candidate.yml --commit "$CANDIDATE_SHA" --status success --limit 100 --json databaseId --jq '.[].databaseId')
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm contracts:preinstall
+      - run: pnpm rebuild
+      - run: pnpm exec playwright install chromium
+      - name: Run heavyweight qualification exactly once
+        run: pnpm check:release
+      - name: Create SHA-, workflow-, input-, and artifact-bound evidence
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          node scripts/sdlc/qualification.mjs create \
+            --candidate "$CANDIDATE_SHA" \
+            --authorization .artifacts/sdlc/candidate-authorization.json \
+            --results .artifacts/sdlc/release-results.json \
+            --output .artifacts/sdlc/qualification.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: agent-relay-qualification-${{ inputs.candidate_sha }}
+          path: |
+            .artifacts/release/
+            .artifacts/release-evidence/
+            .artifacts/release-exit/
+            .artifacts/sdlc/candidate-authorization.json
+            .artifacts/sdlc/release-results.json
+            .artifacts/sdlc/qualification.json
+            .artifacts/playwright/
+          if-no-files-found: error
+          retention-days: 30

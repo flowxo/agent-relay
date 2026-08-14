@@ -317,7 +317,7 @@ for (const [label, checkSource] of [
 requireText(
   storeSource,
   /RELAY_STORE_SCHEMA_VERSION = 11;/,
-  "SQLite schema is not 10",
+  "SQLite schema is not 11",
 );
 requireText(
   installerSource,

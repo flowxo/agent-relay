@@ -7,6 +7,7 @@ import {
   assertInstalledPackageIdentity,
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
+  candidateReleaseExitSourceCommit,
   releaseExitSourceCommit,
   summarizeCapabilitiesEvidence,
   summarizeDoctorEvidence,
@@ -142,6 +143,34 @@ test("anchors post-publication release exit to the immutable source tag", () => 
         intendedTagState: { status: "not-created", commit: null },
       }),
     /must exist before post-publication release exit/,
+  );
+});
+
+test("anchors pre-tag candidate release exit to HEAD without allowing tag reuse", () => {
+  const release = { gitTag: "v0.1.0-alpha.3" };
+  const commit = "b".repeat(40);
+  for (const status of ["not-created", "verified-at-head"]) {
+    assert.equal(
+      candidateReleaseExitSourceCommit(release, {
+        commit,
+        intendedTagState: {
+          status,
+          commit: status === "not-created" ? null : commit,
+        },
+      }),
+      commit,
+    );
+  }
+  assert.throws(
+    () =>
+      candidateReleaseExitSourceCommit(release, {
+        commit,
+        intendedTagState: {
+          status: "exists-elsewhere",
+          commit: "c".repeat(40),
+        },
+      }),
+    /already points at another commit/,
   );
 });
 
