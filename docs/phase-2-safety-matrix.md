@@ -33,7 +33,7 @@ The authoritative full gate is:
 
 ```sh
 corepack pnpm install --frozen-lockfile
-pnpm check
+pnpm check:pr
 pnpm audit --prod
 ```
 

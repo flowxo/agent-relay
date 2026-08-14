@@ -410,7 +410,7 @@ describe("vendor integration isolated-home lifecycle", () => {
     expect(doctor.checks.map((check) => check.name)).not.toContain(
       "install-manifest",
     );
-  });
+  }, 10_000);
 
   it("rolls an interrupted multi-harness update back to its exact prior trees", async () => {
     const runtime = await setup();

@@ -574,16 +574,19 @@ to share safe diagnostics.
 
 ## Development
 
-The full local quality gate is:
+The normal local gates are:
 
 ```sh
-pnpm check
+pnpm check          # fast, risk-selected development feedback
+pnpm check:pr       # reproducible required PR gate
 ```
 
-It runs formatting, governance, documentation, fixture and secret checks,
-linting, type checking, tests, compatibility generation checks, contract tests,
-and isolated package proofs. No real bot token, transcript, or hosted account is
-needed.
+Feature branches normally target `dev`; `main` is the exact qualified release
+line. Coherent local changes can be tried immediately with `pnpm dogfood:deploy`
+without starting release qualification. Risk selection, exploratory dogfood,
+candidate qualification, and publication evidence reuse are documented in the
+[development and release lifecycle](docs/sdlc.md). No real bot token,
+transcript, or hosted account is needed by repository checks.
 
 Compatibility summaries in this README and `SUPPORT.md` are generated from the
 runtime registry. After changing harness evidence, run:
@@ -597,6 +600,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md), then use the focused references
 for the part you are changing:
 
 - [Package contents and artifact boundary](docs/packaging.md)
+- [Development, dogfood, and release lifecycle](docs/sdlc.md)
 - [Prerelease builds and publication](docs/releasing.md)
 - [Release-readiness evidence](docs/release-readiness.md)
 - [Non-implementer public release walkthrough](docs/public-release-walkthrough.md)

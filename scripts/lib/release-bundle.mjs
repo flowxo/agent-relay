@@ -835,6 +835,7 @@ export async function verifyReleaseBundle({
   rootPackage,
   directory,
   expectedCommit,
+  allowTagPromotion = false,
 }) {
   assertReleaseConfiguration(release, rootPackage);
   const names = releaseArtifactNames(release);
@@ -919,11 +920,16 @@ export async function verifyReleaseBundle({
       manifest.commit === currentGit.commit,
       "release manifest commit differs from the checked source",
     );
+    const currentTagStatus =
+      currentGit.intendedTagState?.status === "verified-at-head"
+        ? "verified-at-head"
+        : "not-created";
     assert(
-      manifest.tagStatus ===
-        (currentGit.intendedTagState?.status === "verified-at-head"
-          ? "verified-at-head"
-          : "not-created"),
+      manifest.tagStatus === currentTagStatus ||
+        (allowTagPromotion === true &&
+          manifest.tagStatus === "not-created" &&
+          currentTagStatus === "verified-at-head" &&
+          currentGit.intendedTagState?.commit === manifest.commit),
       "release manifest tag status differs from the checked source",
     );
   }

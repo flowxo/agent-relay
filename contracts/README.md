@@ -57,7 +57,7 @@ execution before the artifact audit. CI uses this order:
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm contracts:preinstall
 pnpm rebuild
-pnpm check
+pnpm check:pr
 ```
 
 The first command resolves and links dependencies without running lifecycle
@@ -108,7 +108,7 @@ Every update is an explicit reviewable change:
    compatibility-policy change also requires byte-for-byte portfolio
    coordination and new pinned digests.
 5. Run the safe install ordering above, then `pnpm contracts:whooshbang` and the
-   normal `pnpm check`.
+   normal `pnpm check:pr`.
 6. Include the owner changelog/migration note, exact producer build evidence,
    generated `.contract-results/c0-08.json`, and consumer output in the pull
    request.
@@ -150,8 +150,8 @@ pnpm contracts:runner:update -- \
 Apply refuses dirty lock/vendor targets. It derives the lock from validated
 bytes, replaces only the lock plus two vendored archives, verifies the complete
 new set, and restores the prior set if replacement is interrupted. Then run
-`pnpm contracts:runner`, the exact native canary, `pnpm check`, and the producer
-consumer verifier before committing the update.
+`pnpm contracts:runner`, the exact native canary, `pnpm check:pr`, and the
+producer consumer verifier before committing the update.
 
 Do not treat an unchanged archive digest as permission to rewrite provenance by
 hand. Do not widen the compatibility commitment, publish either private `0.0.0`

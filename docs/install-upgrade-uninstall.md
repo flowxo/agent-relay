@@ -18,13 +18,29 @@ From a clean checkout:
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm contracts:preinstall
 pnpm rebuild
-pnpm check
+pnpm check:pr
 pnpm build
 ```
 
 The first install is scripts-disabled. The contract preflight verifies the exact
 vendored WhooshBang archives before the approved SQLite native build runs. No
 Telegram credential is needed.
+
+For a contributor who wants to use a coherent feature branch in real local
+coding sessions before it is a release candidate, use:
+
+```sh
+pnpm dogfood:deploy
+pnpm dogfood:status
+```
+
+This lightweight path runs `check:fast`, retains the built CLI, reconciles the
+owned launcher, preserves the existing Agent Relay home/session/configuration,
+and restarts the separately configured `com.flowxo.agent-relay.dogfood` service
+when present. Otherwise it reports `not-installed`; restart a foreground daemon
+normally. It does not run the release suite or create formal evidence.
+`pnpm dogfood:rollback` restores the previous retained build. See
+[the two dogfood modes](sdlc.md#two-dogfood-modes).
 
 Do not install the unrelated unscoped `agent-relay` package from npm. For the
 public prerelease, use an exact version and keep dependency lifecycle scripts
@@ -44,7 +60,8 @@ registry mutation.
 
 ## Build and inspect the local package candidate
 
-The repository quality gate includes an isolated package proof:
+The PR classifier selects an isolated package proof for package, installer, or
+persistence changes. Run it directly when inspecting that boundary:
 
 ```sh
 pnpm package:check

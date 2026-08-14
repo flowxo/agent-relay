@@ -91,7 +91,7 @@ Before committing a fixture:
 3. update the nearest manifest and capability evidence when applicable;
 4. add positive, malformed, oversized, duplicate, stale, and isolation cases
    appropriate to the contract; and
-5. run `pnpm fixtures:check`, the focused contract tests, and `pnpm check`.
+5. run `pnpm fixtures:check`, the focused contract tests, and `pnpm check:pr`.
 
 If safe sanitization is uncertain, do not publish the payload. Describe the
 shape privately to a maintainer and build a smaller synthetic reproduction.

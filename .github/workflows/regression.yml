@@ -1,0 +1,34 @@
+name: Scheduled regression
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  broad-regression:
+    if: github.repository == 'flowxo/agent-relay'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: dev
+          persist-credentials: false
+      - uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm contracts:preinstall
+      - run: pnpm rebuild
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run broad code and browser regression without release packaging
+        run:
+          pnpm check:pr -- --files-json '["unclassified/scheduled-regression"]'

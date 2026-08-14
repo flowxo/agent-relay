@@ -38,6 +38,7 @@ import {
   assertInstalledPackageIdentity,
   assertNativeRuntimeObservation,
   assertReleaseExitConfiguration,
+  candidateReleaseExitSourceCommit,
   releaseExitSourceCommit,
   summarizeCapabilitiesEvidence,
   summarizeDoctorEvidence,
@@ -58,10 +59,12 @@ assertReleaseExitConfiguration(exit, release);
 const arguments_ = process.argv.slice(2);
 assert(
   arguments_.length === 0 ||
-    (arguments_.length === 1 && arguments_[0] === "--public-registry"),
-  "usage: check-release-exit.mjs [--public-registry]",
+    (arguments_.length === 1 &&
+      ["--candidate", "--public-registry"].includes(arguments_[0])),
+  "usage: check-release-exit.mjs [--candidate|--public-registry]",
 );
 const publicRegistry = arguments_[0] === "--public-registry";
+const candidateMode = arguments_[0] === "--candidate";
 
 function assert(condition, message) {
   if (!condition) {
@@ -440,7 +443,9 @@ async function obtainPublicRegistryArtifact(bundle, authorizedTarball) {
 
 await assertCleanGit(root);
 const git = await readGitBuildInfo(root, release.gitTag);
-const sourceCommit = releaseExitSourceCommit(release, git);
+const sourceCommit = candidateMode
+  ? candidateReleaseExitSourceCommit(release, git)
+  : releaseExitSourceCommit(release, git);
 const releaseDirectory = resolve(root, ".artifacts/release");
 const bundle = await verifyReleaseBundle({
   release,
@@ -989,6 +994,7 @@ try {
     qualification: {
       runnerCommit: git.commit,
       sourceCommit,
+      candidateMode,
     },
     target: {
       operatingSystem: "macOS",

@@ -146,7 +146,7 @@ For a normal adapter change, the minimum local command sequence is:
 pnpm fixtures:check
 pnpm exec vitest run packages/harnesses
 pnpm capabilities:check
-pnpm check
+pnpm check:pr
 ```
 
 Run `pnpm capabilities:generate` first when the reviewed compatibility registry

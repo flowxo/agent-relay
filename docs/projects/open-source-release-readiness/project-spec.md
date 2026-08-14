@@ -59,7 +59,8 @@ This project begins from completed evidence, not an architectural rewrite:
 - fallback, retry, dead-letter, retention, and redaction paths are tested;
 - compiled-distribution install/doctor/uninstall is proven in an isolated home;
   and
-- `pnpm check` passes the repository's full test and build gate.
+- `pnpm check:pr` passes the risk-selected integration gate, and deliberately
+  promoted candidates pass `pnpm check:release`.
 
 Canonical details:
 
@@ -445,10 +446,13 @@ Generated commit lists do not replace curated release notes.
 
 ## 11. Test and release evidence
 
-### 11.1 Existing quality gate
+### 11.1 Development and qualification gates
 
-`pnpm check` remains required and covers formatting, lint, types, tests,
-capability drift, and distribution build.
+`pnpm check` is the fast development alias. `pnpm check:pr` is required before
+integration and covers risk-selected formatting, lint, types, tests, capability
+drift, distribution, browser, and package proofs. The complete release matrix is
+owned by `pnpm check:release` after explicit candidate promotion; see
+[`docs/sdlc.md`](../../sdlc.md).
 
 ### 11.2 New packaging checks
 

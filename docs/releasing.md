@@ -23,49 +23,38 @@ publisher and requires separate release authorization.
 
 ## Release inputs
 
-The release source is one clean commit. `pnpm release:bundle` refuses modified
-tracked files and unignored untracked files. Ignored `.artifacts/` output cannot
-enter the package; `packaging/package-files.json` remains the exact 11-file
-allowlist.
-
-Before proposing a tag:
-
-```sh
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm contracts:preinstall
-pnpm rebuild
-pnpm check
-pnpm exec playwright install chromium
-pnpm test:e2e
-pnpm audit --prod
-git status --short
-```
+The release source is one clean, immutable commit integrated on `dev`.
+Implementation PRs run `pnpm check:pr`; they do not build a release bundle or
+perform publication work. Human exploratory dogfood can occur from a feature or
+`dev` build at any time without starting qualification. For a candidate that
+contains UX changes, record the required concise, secret-free evidence against
+the exact candidate SHA before promotion. See [the SDLC guide](sdlc.md).
 
 The semantic prerelease version must agree across `package.json`,
 `packaging/release.json`, and the compiled source version. Its exact tag is
 `v<version>`, and the npm dist-tag is the first prerelease identifier, currently
 `alpha`. Curate `CHANGELOG.md`; generated commit lists are not release notes.
 
-From the clean commit, run:
+Dispatch **Release candidate qualification** from the exact `dev` SHA with the
+last released `main` SHA, `QUALIFY <candidate-sha>`, applicable dogfood JSON,
+and `dry_run: false`. A write/maintain/admin actor and the protected
+`release-candidate` environment are required. The workflow runs
+`pnpm check:release` exactly once, including all quality, browser, package,
+lifecycle, reproducibility, clean-home, audit, and security checks. It uploads a
+30-day artifact named by the candidate SHA. An identical candidate/input key is
+not rerun; reuse the named successful run.
 
-```sh
-pnpm release:bundle
-pnpm release:bundle:verify
-pnpm release:evidence
-```
+A `dry_run: true` dispatch may verify qualification mechanics, but its artifact
+is permanently ineligible for promotion or publication. It neither tags nor
+publishes.
 
-Pull-request and default-branch CI also build the exact bundle without uploading
-it and report the normalized archive SHA-256. Compare that Linux digest with the
-clean macOS result before seeking candidate approval. Only the protected tagged
-workflow uploads or attests release artifacts.
-
-On the supported Apple-silicon target, the separate native Node 22
-installed-artifact matrix uses `pnpm release:exit`; see the
-[release-readiness evaluation](release-readiness.md). Native release-exit is
+On the supported Apple-silicon target, candidate qualification invokes the
+native Node 22 installed-artifact matrix as `pnpm release:exit:candidate`; see
+the [release-readiness evaluation](release-readiness.md). Native release-exit is
 **green** on exact arm64 Node.js 22.23.1 with an isolated exact Codex CLI
 `0.145.0` harness. It proved the complete credential-free, hook-denied package
-lifecycle and one fake delivery; no live-provider traffic was run. The command
-publishes nothing.
+lifecycle and one fake delivery; no live-provider traffic was run. Candidate,
+tagged, and public-registry modes publish nothing.
 
 The builder rebuilds and packs twice with the commit timestamp as
 `SOURCE_DATE_EPOCH`, then rejects different SHA-256 digests. It emits only:
@@ -90,8 +79,8 @@ tag, whether that tag existed at build time, package identity, package manager,
 source-input paths/digests, artifact/SBOM/content/note digests and sizes, and
 the two-build match.
 
-`pnpm release:evidence` re-verifies that exact clean-commit bundle, installs its
-tarball into an isolated home and prefix, and proves help, version,
+The release-evidence step re-verifies that exact clean-commit bundle, installs
+its tarball into an isolated home and prefix, and proves help, version,
 capabilities, the fake canary, web assets, and authenticated loopback API
 without forwarding provider credentials to the installed runtime. Its ignored
 mode-`0600` JSON and checksum live under `.artifacts/release-evidence/`. This is
@@ -99,14 +88,18 @@ credential-free evidence, not a live provider test or a replacement for native
 release-exit.
 
 `SHA256SUMS` and the manifest are integrity metadata, not signed provenance.
-Signed provenance comes from the GitHub attestation job described below.
+Signed provenance comes from the publication attestation job described below.
 
-## Tagged GitHub build
+## Promote, tag, and consume qualification evidence
 
 The following commands describe a newly authorized future version. Never run
 them for `v0.1.0-alpha.2`, which already exists and must not move or be reused.
 
-Push an exact tag only after its commit is green:
+First dispatch **Promote qualified candidate to main** with the candidate SHA,
+successful non-dry-run qualification run ID, and `PROMOTE <candidate-sha>`. It
+re-verifies the workflow/run/SHA/manifest/check and artifact bindings and
+fast-forwards `main` without creating a new commit. Then, and only with separate
+version/publication authorization, create the tag on that exact SHA:
 
 ```sh
 git tag --annotate v0.1.0-alpha.2 --message "Agent Relay 0.1.0-alpha.2"
@@ -114,19 +107,22 @@ git push origin v0.1.0-alpha.2
 ```
 
 Replace the example with the newly approved version and exact candidate only
-after its authorization records the final commit and regenerated digests. The
-`Prerelease` workflow also supports a manual dispatch, but the selected ref must
-be the exact tag or the build fails. The immutable alpha.1 and alpha.2 tags must
-never be deleted, moved, or reused.
+after its authorization records the final commit. The immutable alpha.1 and
+alpha.2 tags must never be deleted, moved, or reused.
 
+Dispatch **Prerelease publication** on that tag with the qualification run ID.
 The workflow:
 
 1. checks out the full tagged commit without persisted Git credentials;
-2. performs the frozen scripts-disabled install and approved native rebuild;
-3. runs `pnpm check`, packaged Chromium E2E, and the production audit;
-4. produces the reproducible six-file bundle;
-5. uploads the bundle for 14 days; and
-6. grants OIDC/attestation write permissions only to a separate attestation job.
+2. downloads the candidate-SHA artifact from the named successful manual
+   qualification run;
+3. verifies the repository, workflow, run, head SHA, qualification-input key,
+   manifest/check inventory, publication eligibility, and every artifact digest;
+4. accepts the post-qualification tag only when it now points to the bundle's
+   exact commit, without rebuilding the bundle or repeating tests;
+5. uploads the verified bundle for 14 days; and
+6. grants OIDC/attestation write permissions only to separate attestation and
+   protected publication jobs.
 
 All third-party actions are pinned to immutable commit SHAs in
 `packaging/actions-lock.json`. Updating a pin requires rechecking the official

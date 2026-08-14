@@ -36,7 +36,8 @@ development.
 
 ## Run focused checks while developing
 
-Run the smallest relevant tests first. Examples:
+Feature and fix branches start from current `origin/dev`; `main` is the
+already-qualified release line. Run the smallest relevant tests first. Examples:
 
 ```sh
 pnpm exec vitest run packages/protocol
@@ -51,38 +52,49 @@ pnpm contracts:whooshbang
 Use a specific test file when possible:
 
 ```sh
-pnpm exec vitest run packages/core/test/daemon.test.ts
+pnpm exec vitest run apps/relay/src/daemon.test.ts
 ```
 
-Before requesting review, run the same credential-free gate as CI:
+During ordinary development, run the fast risk-selected gate:
 
 ```sh
 pnpm check
+# intentional alias for pnpm check:fast
 ```
 
-For a changed operator-facing web flow, install the repository-pinned Chromium
-once and run the packaged browser proof:
+Before requesting review, run the one credential-free command that matches
+required PR CI:
 
 ```sh
-pnpm exec playwright install chromium
-pnpm test:e2e
+pnpm check:pr
 ```
 
-For package, installer, migration, or release-boundary changes, also run the
-artifact checks explicitly so their evidence is easy to review:
+The central classifier in `sdlc/checks.json` selects browser E2E for web/auth/
+session changes, lifecycle proofs for persistence or installer changes, and safe
+broad checks for unknown files. Inspect its decision with `pnpm sdlc:classify`.
+Do not manually reproduce a guessed CI command graph.
+
+For coherent human testing before review or merge, deploy the current feature or
+`dev` working tree into the existing local dogfood environment:
 
 ```sh
-pnpm package:check
-pnpm package:lifecycle:check
-pnpm release:policy:check
-pnpm audit --prod
+pnpm dogfood:deploy
+pnpm dogfood:status
+# if needed
+pnpm dogfood:rollback
 ```
 
-These commands publish nothing and require no npm, Telegram, GitHub, or hosted
-service credential. `pnpm release:bundle` additionally requires a clean checkout
-and produces a local six-file bundle without publishing it. From that exact
-clean commit, `pnpm release:evidence` verifies the bundle and writes a sanitized
-clean-home fake-transport proof. Follow the
+Exploratory dogfood runs only fast relevant checks, preserves the existing Agent
+Relay state and unrelated harness configuration, and is never formal release
+evidence. It may exercise real local coding sessions, but its record contains no
+prompts, answers, session content, credentials, or provider data. Use fake
+transport unless a separate task authorizes provider traffic.
+
+Heavy hosted-package, full lifecycle, complete browser, reproducibility,
+clean-home evidence, production audit, and release-exit work belong to an
+explicit release candidate, not an ordinary PR. `pnpm check:release` exists for
+qualification/troubleshooting and publishes nothing; do not repeatedly run it
+during implementation. Follow the [SDLC guide](docs/sdlc.md) and
 [prerelease guide](docs/releasing.md).
 
 ## Architecture boundaries
@@ -155,15 +167,17 @@ security-sensitive design issue form.
 
 ## Pull requests
 
-Keep each change coherent and tie it to its owning issue. A reviewable pull
-request:
+Keep each change coherent, tie it to its owning issue, and normally target
+`dev`. Direct PRs to `main` are reserved for reviewed emergency hotfixes and do
+not bypass exact-SHA qualification. A reviewable pull request:
 
 1. explains the user-visible outcome and the boundary it preserves;
 2. includes deterministic tests for relevant duplicates, retries, malformed
    input, timeouts, stale answers, and concurrent-session isolation;
 3. updates public docs, `CHANGELOG.md`, generated evidence, and
    `docs/progress.md` when their claims change;
-4. records the focused and full checks actually run;
+4. records focused checks, `pnpm check:pr`, and any exploratory dogfood actually
+   performed without claiming release qualification;
 5. calls out assumptions, skipped evidence, and residual risk; and
 6. contains no private or machine-specific data.
 

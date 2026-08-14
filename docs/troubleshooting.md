@@ -3,6 +3,42 @@
 Start with local evidence. Do not solve a support problem by publishing a
 database, raw log, credential, transcript, identity, or machine path.
 
+## A local or PR SDLC check selects unexpected work
+
+Inspect the central decision before changing a workflow:
+
+```sh
+pnpm sdlc:classify
+pnpm check:pr -- --dry-run
+```
+
+The classifier compares the working branch with `dev` (falling back to `main`)
+and includes local uncommitted files. Documentation-only changes should select
+only the core policy/docs gate. Web/auth/session changes select browser proof;
+persistence and installer changes select their lifecycle proof. An unrecognized
+path deliberately broadens the PR. Add a tested rule to `sdlc/checks.json`
+rather than adding a path glob to a workflow.
+
+Every runner failure prints an exact command such as:
+
+```sh
+pnpm check:pr -- --only <check-id> --base <base-sha> --head <head-sha>
+```
+
+If local selection differs from CI, fetch `origin/dev`, use the exact base/head
+SHAs displayed by CI, confirm Node from `.node-version` and pnpm from
+`packageManager`, then run `pnpm sdlc:check`. Do not start release qualification
+to diagnose an ordinary PR.
+
+If exploratory dogfood is unhealthy, use `pnpm dogfood:status`, then
+`pnpm dogfood:rollback`. A separately configured dogfood service that is absent
+is reported as `not-installed`; restart a foreground daemon normally or pass a
+reviewed local service label with `--service`. These commands do not create
+formal release evidence. Candidate errors identify stale SHA/evidence, missing
+UX applicability, permission, workflow, digest, or qualification-input
+mismatches; correct the named input or deliberately qualify the changed
+candidate rather than reusing stale evidence.
+
 ## A Relay MCP tool reports a binding error
 
 Run `agent-relay doctor` from the same supervised environment without printing

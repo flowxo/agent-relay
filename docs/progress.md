@@ -2,6 +2,24 @@
 
 ## Proven
 
+- FXO-1680 separates the development and release control planes. Feature work
+  targets `dev`; `main` is advanced only to the exact SHA from a successful,
+  explicitly authorized qualification. A central tested manifest classifies
+  changed and deleted paths, fails unknown files safe, and drives `check:fast`,
+  `check:pr`, and `check:release`. PRs consume the protected `dev`
+  classifier/runner, run conditional package/browser/CodeQL evidence without
+  release or write privileges, and do not rerun on merge. Exploratory dogfood
+  installs a retained coherent working build without RC ceremony or private
+  evidence capture. UX-bearing candidates require bounded pass/fail evidence;
+  formal qualification binds authorization, inputs, complete checks, workflow,
+  bundle, and artifacts to one SHA for 30 days. Main promotion and prerelease
+  publication verify and reuse that evidence while preserving OIDC, provenance,
+  immutable version/tag, environment, registry, and release-exit safeguards. On
+  the implementation working tree, `check:fast` completed eight selected checks
+  in 62 seconds and `check:pr` completed 17 selected checks in 145 seconds,
+  including 807 Vitest cases and the relevant package/vendor lifecycle
+  preservation proofs while omitting browser and release-only work.
+
 - FXO-1606 delivers versioned vendor-native integration bundles for Codex,
   Claude Code, and Cursor. Current official documentation and the frozen
   `codex-cli 0.145.0`, `2.1.219 (Claude Code)`, and `2026.07.23-e383d2b`

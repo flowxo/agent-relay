@@ -15,7 +15,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
 import process from "node:process";
 import { clearTimeout, setTimeout } from "node:timers";
 import { pathToFileURL, URL } from "node:url";
@@ -24,6 +24,7 @@ import {
   currentReleaseRuntime,
   isSupportedReleaseRuntime,
 } from "./lib/release-policy.mjs";
+import { runtimeDependencyGraph } from "./lib/release-bundle.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const { fetch, Headers, Request, URLSearchParams } = globalThis;
@@ -1496,6 +1497,26 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
   let oauthPrivateValues;
   const daemonOutputs = [];
   try {
+    const runtimeDependencies = await runtimeDependencyGraph(root, release);
+    const dependencyOverrides = {};
+    for (const dependency of runtimeDependencies.packages) {
+      const dependencyTarball = resolve(
+        temporaryRoot,
+        `dependency-${dependency.name.replaceAll("/", "-").replace(/^@/, "")}-${dependency.version}.tgz`,
+      );
+      await run(
+        "pnpm",
+        [
+          "--dir",
+          dirname(dependency.manifestPath),
+          "pack",
+          "--out",
+          dependencyTarball,
+        ],
+        { temporaryRoot, timeoutMs: 180_000 },
+      );
+      dependencyOverrides[dependency.name] = `file:${dependencyTarball}`;
+    }
     const tarball = resolve(temporaryRoot, "agent-relay.tgz");
     await run("pnpm", ["pack", "--out", tarball], {
       temporaryRoot,
@@ -1512,6 +1533,19 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     await writeFile(
       resolve(prefix, "package.json"),
       `${JSON.stringify({ name: "hosted-package-proof", private: true })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      resolve(prefix, "pnpm-workspace.yaml"),
+      [
+        "packages: []",
+        "overrides:",
+        ...Object.entries(dependencyOverrides).map(
+          ([name, value]) =>
+            `  ${JSON.stringify(name)}: ${JSON.stringify(value)}`,
+        ),
+        "",
+      ].join("\n"),
       "utf8",
     );
     await run(

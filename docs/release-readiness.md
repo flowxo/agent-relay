@@ -66,21 +66,26 @@ and those backups are data, not package-manager files.
 The package itself can live in any retained local prefix. The launcher records
 the exact package entry and Node executable, so moving or removing that prefix
 without running Agent Relay's uninstall first makes doctor report a mismatch.
-The current SQLite schema is `10`; migrations are forward-only and a newer
+The current SQLite schema is `11`; migrations are forward-only and a newer
 schema fails closed as an unsafe downgrade.
 
 ## Verify the exact release
 
-From a clean checkout with the frozen dependencies already installed:
+Ordinary feature work uses `pnpm check` and `pnpm check:pr`; it does not run the
+following release matrix. Deliberately dispatch **Release candidate
+qualification** on the exact candidate SHA. Its authoritative command is:
 
 ```sh
-pnpm check
-pnpm test:e2e
-pnpm audit --prod
-pnpm release:bundle
-pnpm release:bundle:verify
-pnpm release:evidence
-pnpm release:exit
+pnpm check:release
+```
+
+That single phase includes the complete quality, browser, package, hosted,
+lifecycle, reproducibility, clean-home evidence, dependency-audit, security, and
+pinned native Apple-silicon/Node release-exit suite and emits immutable reusable
+evidence. After publication, validate the public registry artifact when
+required:
+
+```sh
 pnpm release:validate:public
 ```
 
@@ -118,8 +123,9 @@ answer, summary, and transcript fields. The runtime archive cache is also under
 ignored `.artifacts/` and is hash-checked on every use.
 
 This local proof can validate checksums and native execution, but it cannot
-create signed GitHub provenance. The separate tagged workflow must succeed
-before a release claims GitHub build/SBOM attestations.
+create signed GitHub provenance. The publication workflow consumes the
+qualification artifact and must succeed before a release claims GitHub
+build/SBOM attestations; it does not repeat qualification.
 
 ## Recorded release evidence
 

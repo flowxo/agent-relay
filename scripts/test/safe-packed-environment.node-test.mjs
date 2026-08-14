@@ -109,3 +109,17 @@ test("package proofs retain the allowlisted fake-only runtime boundary", async (
   assert.doesNotMatch(releaseBundle, /\.\.\.process\.env/);
   assert.doesNotMatch(releaseBundle, /\$\{executable\} \$\{args\.join/);
 });
+
+test("offline package proofs vendor the complete runtime dependency graph", async () => {
+  for (const path of [
+    "../check-package.mjs",
+    "../check-package-lifecycle.mjs",
+    "../check-hosted-package.mjs",
+  ]) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.match(source, /runtimeDependencyGraph\(root, release\)/);
+    assert.match(source, /dependencyOverrides\[dependency\.name\]/);
+    assert.match(source, /resolve\(prefix, "pnpm-workspace\.yaml"\)/);
+    assert.match(source, /"--offline"/);
+  }
+});

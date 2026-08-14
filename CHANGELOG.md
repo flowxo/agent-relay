@@ -38,6 +38,11 @@ breaking changes and required operator action.
 
 ### Changed
 
+- Split development, integration, dogfood, release qualification, and
+  publication into explicit risk-selected phases. Feature work targets `dev`
+  with `pnpm check:fast`/`pnpm check:pr` and lightweight local dogfood; `main`
+  advances only to an explicitly qualified immutable candidate, and publication
+  consumes its SHA-bound evidence instead of rebuilding and retesting it.
 - SQLite schemas 10 and 11 add the privacy-bounded durable session-activity
   ledger and digest-only exact MCP binding state. Telegram, MCP, and the web
   board consume the same canonical activity and interaction authority; existing
