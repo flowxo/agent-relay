@@ -10,6 +10,7 @@ import { makeProjectRef } from "@agent-relay/protocol";
 
 import { RELAY_STORE_SCHEMA_VERSION, RelayStore } from "./store.js";
 import { SESSION_ACTIVITY_SCHEMA_DOWN_SQL } from "./activity-schema.js";
+import { PROJECT_READ_SCHEMA_DOWN_SQL } from "./project-read-schema.js";
 
 function schemaVersion(database: Database.Database): number {
   return database.pragma("user_version", { simple: true }) as number;
@@ -22,6 +23,124 @@ async function digest(path: string): Promise<string> {
 }
 
 describe("SQLite schema compatibility", () => {
+  it("migrates schema 11 project reads forward and proves a data-preserving reverse replay", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
+    const databasePath = join(directory, "relay.sqlite");
+    const store = new RelayStore(databasePath);
+    store.registerSession({
+      schema: "agent-session.v1",
+      machineId: "machine_project_schema_12345678",
+      harness: "codex",
+      sessionId: "session_project_schema_12345678",
+      bridgeSessionId: "bridge_project_schema_12345678",
+      surface: "cli",
+      harnessVersion: "synthetic-test-version",
+      project: makeProjectRef("/synthetic/schema/project-checkout"),
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+      registeredAt: "2026-08-13T12:00:00.000Z",
+    });
+    store.close();
+
+    const prior = new Database(databasePath);
+    prior.exec(PROJECT_READ_SCHEMA_DOWN_SQL);
+    prior.exec(
+      "CREATE TABLE retained_project_fixture (value TEXT NOT NULL); INSERT INTO retained_project_fixture VALUES ('preserved-v11-data');",
+    );
+    prior.pragma("user_version = 11");
+    prior.close();
+
+    const upgraded = new RelayStore(databasePath);
+    expect(
+      upgraded.readProjectSnapshot({ now: "2026-08-13T12:01:00.000Z" }),
+    ).toMatchObject({
+      projects: { totalCount: 1, all: { totalCount: 1 } },
+    });
+    upgraded.close();
+
+    const inspected = new Database(databasePath);
+    expect(schemaVersion(inspected)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      inspected
+        .prepare("SELECT COUNT(*) FROM project_identities")
+        .pluck()
+        .get(),
+    ).toBe(1);
+    expect(
+      inspected
+        .prepare(
+          "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'project_read_activity_%'",
+        )
+        .pluck()
+        .get(),
+    ).toBe(3);
+    expect(
+      inspected
+        .prepare(
+          "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('sessions_project_recent_idx', 'sessions_recent_idx')",
+        )
+        .pluck()
+        .get(),
+    ).toBe(2);
+    const scopedPlan = inspected
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT machine_id FROM sessions
+         WHERE json_extract(project_json, '$.cwdHash') = ?
+         ORDER BY last_seen_at DESC, machine_id, harness, session_id
+         LIMIT 101`,
+      )
+      .all(
+        makeProjectRef("/synthetic/schema/project-checkout").cwdHash,
+      ) as Array<{
+      detail: string;
+    }>;
+    expect(scopedPlan.map((row) => row.detail).join("\n")).toContain(
+      "sessions_project_recent_idx",
+    );
+    const globalPlan = inspected
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT machine_id FROM sessions
+         ORDER BY last_seen_at DESC, machine_id, harness, session_id
+         LIMIT 101`,
+      )
+      .all() as Array<{ detail: string }>;
+    expect(globalPlan.map((row) => row.detail).join("\n")).toContain(
+      "sessions_recent_idx",
+    );
+    inspected.exec(PROJECT_READ_SCHEMA_DOWN_SQL);
+    inspected.pragma("user_version = 11");
+    expect(
+      inspected
+        .prepare("SELECT value FROM retained_project_fixture")
+        .pluck()
+        .get(),
+    ).toBe("preserved-v11-data");
+    expect(
+      inspected.prepare("SELECT COUNT(*) FROM sessions").pluck().get(),
+    ).toBe(1);
+    expect(
+      inspected.prepare("SELECT COUNT(*) FROM session_activity").pluck().get(),
+    ).toBe(1);
+    inspected.close();
+
+    new RelayStore(databasePath).close();
+    const replayed = new Database(databasePath, { readonly: true });
+    expect(schemaVersion(replayed)).toBe(RELAY_STORE_SCHEMA_VERSION);
+    expect(
+      replayed
+        .prepare("SELECT value FROM retained_project_fixture")
+        .pluck()
+        .get(),
+    ).toBe("preserved-v11-data");
+    replayed.close();
+  });
+
   it("repairs missing activity projections and prevents legacy insert gaps", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-schema-"));
     const databasePath = join(directory, "relay.sqlite");
@@ -721,6 +840,7 @@ describe("SQLite schema compatibility", () => {
     upgradedStore.close();
 
     const reverse = new Database(databasePath);
+    reverse.exec(PROJECT_READ_SCHEMA_DOWN_SQL);
     reverse.exec(SESSION_ACTIVITY_SCHEMA_DOWN_SQL);
     reverse.pragma("user_version = 9");
     expect(

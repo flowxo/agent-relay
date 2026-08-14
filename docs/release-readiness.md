@@ -66,7 +66,7 @@ and those backups are data, not package-manager files.
 The package itself can live in any retained local prefix. The launcher records
 the exact package entry and Node executable, so moving or removing that prefix
 without running Agent Relay's uninstall first makes doctor report a mismatch.
-The current SQLite schema is `11`; migrations are forward-only and a newer
+The current SQLite schema is `12`; migrations are forward-only and a newer
 schema fails closed as an unsafe downgrade.
 
 ## Verify the exact release

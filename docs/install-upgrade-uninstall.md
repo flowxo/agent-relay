@@ -247,19 +247,20 @@ backups, unrelated hooks, other skills, MCP servers, and harness instructions.
 The install reconciliation is idempotent and repairs deterministic drift only
 where the Agent Relay ownership marker remains present.
 
-SQLite migrations are forward-only. The current schema is version `11`. Earlier
+SQLite migrations are forward-only. The current schema is version `12`. Earlier
 migrations include the unversioned alpha fixture, version `5` native-hook
 sequence counters, version `7` WhooshBang naming, version `8` durable
 topic-title state, version `9` content-free lifetime counters, and version `10`
 the privacy-bounded durable shared activity model. Version `11` adds keyed,
-digest-only exact MCP binding records. Stop the daemon and supervised processes
-before crossing a schema boundary, and keep a private database backup. Native
-hooks and the daemon intentionally share the same `relay.sqlite` so allocation
-commits are ordered across processes. If a database advertises a newer schema
-than the running package supports, Agent Relay refuses to open it and doctor
-reports `refusing unsafe downgrade`; use the newer package or restore a database
-backup instead of forcing the older binary. Arbitrary downgrade safety is not
-claimed.
+digest-only exact MCP binding records. Version `12` adds keyed opaque project
+identities, bounded project-read invalidations, and the terminal-history query
+indexes. Stop the daemon and supervised processes before crossing a schema
+boundary, and keep a private database backup. Native hooks and the daemon
+intentionally share the same `relay.sqlite` so allocation commits are ordered
+across processes. If a database advertises a newer schema than the running
+package supports, Agent Relay refuses to open it and doctor reports
+`refusing unsafe downgrade`; use the newer package or restore a database backup
+instead of forcing the older binary. Arbitrary downgrade safety is not claimed.
 
 ## Roll back a candidate
 

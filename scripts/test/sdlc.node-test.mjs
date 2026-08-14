@@ -334,6 +334,7 @@ test("candidate authorization rejects automation, weak permissions, wrong refs, 
     ["rev-parse", "refs/remotes/origin/main^{commit}"],
     { cwd: repositoryRoot, encoding: "utf8" },
   ).trim();
+  const now = new Date("2026-08-13T12:00:00.000Z");
   const base = {
     candidateSha,
     baseSha: mainSha,
@@ -344,6 +345,17 @@ test("candidate authorization rejects automation, weak permissions, wrong refs, 
     confirmation: `QUALIFY ${candidateSha}`,
     ref: "refs/heads/dev",
     dryRun: true,
+    now,
+    dogfoodEvidence: {
+      schema: "agent-relay-dogfood-evidence.v1",
+      candidateSha,
+      result: "pass",
+      testedAt: "2026-08-13T11:00:00.000Z",
+      tester: "synthetic operator",
+      environment: "isolated test environment",
+      flows: ["exercised the synthetic candidate authorization boundary"],
+      limitations: [],
+    },
   };
   const accepted = await authorizeCandidate(base);
   assert.equal(accepted.candidateSha, candidateSha);

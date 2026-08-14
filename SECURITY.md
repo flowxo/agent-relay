@@ -124,6 +124,13 @@ normal URL, argv, browser store, log, analytics, error, or diagnostic path.
 Direct `/ui/` access exposes no Relay data and keeps the persistent manual path
 behind **Advanced recovery**.
 
+Project-centric dashboard reads use this same protected boundary. They are
+GET-only, need no CSRF, and return bounded opaque projections from the
+authoritative SQLite store. The additive routes do not accept the daemon hook
+bearer. All writes retain the existing exact Origin/Host, browser-session, and
+CSRF checks. Project identities and cursors are private-keyed; a safe display
+label is never authorization or correlation identity.
+
 This is a local-process trust boundary, not remote access. Tunnels, reverse
 proxies, public listeners, and repurposing these credentials/sessions for an
 internet origin are unsupported. They do not add a reviewed public identity,

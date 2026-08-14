@@ -76,7 +76,8 @@ and bodies above the daemon limit. It never emits an
 
 ## Read models
 
-All list limits default to 100 and are bounded from 1 through 500.
+The established general list routes default to 100 and are bounded from 1
+through 500. The project read routes have narrower bounds documented below.
 
 | Method and route                           | Result                                                                               |
 | ------------------------------------------ | ------------------------------------------------------------------------------------ |
@@ -85,6 +86,8 @@ All list limits default to 100 and are bounded from 1 through 500.
 | `POST /v1/web/bootstrap/revoke`            | Best-effort revocation after a browser-open failure                                  |
 | `GET /v1/web/session`                      | Active browser-session metadata and ephemeral page-memory CSRF                       |
 | `GET /v1/web/meta`                         | Static-asset/API and mutation-contract compatibility                                 |
+| `GET /v1/web/projects`                     | Opaque project summaries, complete active sets, and one recent-history page          |
+| `GET /v1/web/project-changes?cursor=...`   | Bounded, coalesced project-snapshot invalidations                                    |
 | `GET /v1/web/sessions?limit=100`           | Session key, harness/surface, repository/branch, canonical activity, attention count |
 | `GET /v1/web/attention?limit=100`          | Open request previews, expiry, safe choices, supported actions                       |
 | `GET /v1/web/sessions/:key/timeline`       | Correlated retained session evidence                                                 |
@@ -112,6 +115,105 @@ Confidence, bounded reason and source, server-clock last activity, open counts,
 and independent mute configuration travel with that projection. See the
 [durable activity reference](session-activity.md). `lifecycleState` remains as a
 legacy underlying harness observation and is not an operator-state contract.
+
+### Presentation-neutral project read
+
+`GET /v1/web/projects` is the protected read surface for project-centric browser
+and terminal dashboards. It is additive to web API version 3; the existing
+`/sessions`, `/attention`, `/changes`, and `/stream` responses are unchanged.
+The response schema is `agent-relay-project-read.v1` and its nested project and
+session schemas are independently versioned.
+
+The `project` query defaults to `all`. An exact checkout or worktree has a
+stable `prj_...` key derived with a private database key from its existing path
+digest. A sibling worktree, another checkout, and two unrelated directories with
+the same basename therefore remain distinct. The key survives daemon restart
+with the same database. The human label is a separately sanitized, bounded
+convenience and must never be used as identity; duplicate labels gain a short
+suffix from the opaque project key. Unsafe path-, URL-, Git-, control-, or
+credential-shaped labels become `Project`.
+
+`projects.all` is the exact **All projects** aggregate. Each summary reports
+current, needs-attention, needs-input, failed-or-unknown, recent, and total
+session counts. At most 200 individual project summaries are returned, with an
+explicit `totalCount` and `truncated`; the selected project remains present even
+when it falls outside that window. Aggregate counts remain exact and do not
+depend on this presentation bound.
+
+The session sets use only the canonical `agent-relay-session-activity.v1`
+projection:
+
+- `currentByHarness` contains every session not canonically `Done` or `Ended`;
+- `needsAttention` independently contains every current `Needs input`, `Failed`,
+  or `Unknown` session; and
+- `recent.items` contains only `Done` and `Ended` history.
+
+The current and needs-attention sets are never truncated by `limit`. Their
+explicit safety capacity is 1,000 sessions; exceeding it returns
+`503 complete_set_capacity_exceeded` instead of a misleading partial result.
+Only recent history is paginated. `limit` defaults to 50 and is bounded from 1
+through 100. Optional `harness` and canonical `state` filters apply consistently
+to the returned session sets and history; `project` selects one opaque project.
+
+Recent history sorts newest first by server receive-clock `lastSeenAt`, then by
+a stable internal lane tuple. The tuple is held only inside the authenticated
+opaque cursor and is never returned. A history cursor binds the project and
+filters, the first page's change watermark, projection time, and keyset
+position. This prevents timestamp ties, clock-only state transitions, and deep
+history from omitting or repeating sessions. A changed database returns
+`409 stale_cursor`; a malformed, wrong-scope, or foreign-database cursor returns
+`400 invalid_cursor`; cursors older than 24 hours return `409 stale_cursor`.
+Fetch a fresh first page in either stale case.
+
+Each session exposes only its opaque session and project keys, safe label,
+harness/surface, canonical activity state/confidence/safe reason and last
+activity, bounded known in-flight count, bounded pending-interaction
+state/count, and orthogonal muted delivery health. It does not expose absolute
+paths, home directories, remotes, branches, prompts, transcripts, answers,
+credentials, OAuth URLs, machine IDs, native session IDs, bridge IDs, path
+digests, or the private pagination tie-break values. A presentation client must
+not read SQLite or derive another activity state from events.
+
+### Project change and reconnect protocol
+
+The snapshot's opaque `changeCursor` starts
+`GET /v1/web/project-changes?cursor=...`. A call reads at most 100 changes by
+default and never more than 200. It returns zero or one content-free
+invalidation containing only bounded kinds, a safe timestamp, and a coalesced
+count. `hasMore` says that additional retained rows exist. This pull protocol
+keeps no per-subscriber queue, so a slow, paused, or duplicated browser/TUI
+cannot consume unbounded daemon memory.
+
+Clients use this deterministic sequence:
+
+1. On startup or reconnect, discard any assumed live state and fetch one fresh
+   project snapshot. An empty response is authoritative, not an error.
+2. Poll changes from that snapshot's cursor. With no invalidation, retain the
+   data and advance to the returned cursor. Also fetch a fresh snapshot at least
+   once per minute so server-clock activity thresholds advance without a durable
+   write.
+3. Coalesce any invalidation or `hasMore` backlog into one fresh snapshot fetch;
+   do not replay changes as session state. Replace all visible data and restart
+   polling from the new snapshot cursor.
+4. On `invalid_cursor`, `stale_cursor`, retention loss, database replacement, or
+   daemon restart, fetch a fresh snapshot. Never guess across the gap.
+
+Multiple durable writes may coalesce into one invalidation, and repeated fresh
+snapshots are safe. Snapshot data and its watermark share one SQLite read
+transaction, as do change bounds and their returned batch. Native timestamps do
+not control ordering: the daemon's monotonic receive time updates session
+recency, while the canonical reducer consumes unique evidence in durable receive
+order. Late or out-of-order native sequences cannot rewind the retained native
+sequence. Missing or contradictory evidence remains the literal canonical
+`Unknown`; clients must not relabel it. Current activity changes caused only by
+the documented clock thresholds are reflected on the next fresh snapshot.
+
+The new routes are GET-only and use the existing persistent web bearer or
+host-bound browser session. They need no CSRF because they do not mutate. Every
+web mutation retains its same-origin and CSRF requirements. Rollback at the HTTP
+boundary is simply to stop consuming these additive routes. SQLite schema 12 is
+forward-only: an older schema-11 binary must use a reviewed pre-migration backup
+or be replaced by a schema-12-capable build; never edit `user_version`.
 
 Request read models advertise only actions proven for the event's harness
 capabilities:

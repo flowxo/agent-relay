@@ -1,5 +1,11 @@
 import { Buffer } from "node:buffer";
-import { createHmac, randomUUID } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 
 import Database from "better-sqlite3";
 import { z } from "zod";
@@ -44,6 +50,7 @@ import {
   DEFAULT_SESSION_ACTIVITY_POLICY,
   SESSION_ACTIVITY_FIXTURE_SET_VERSION,
   SESSION_ACTIVITY_POLICY_VERSION,
+  SessionActivityStateSchema,
   SessionActivityInputSchema,
   initialSessionActivityEvidence,
   projectSessionActivity,
@@ -58,10 +65,39 @@ import type {
   SessionActivityPolicy,
   SessionActivityRecord,
   SessionActivitySource,
+  SessionActivityState,
   StructuredActivityObservation,
 } from "./activity.js";
 import { SESSION_ACTIVITY_SCHEMA_UP_SQL } from "./activity-schema.js";
-import { sessionTopicDisplayName } from "./topic.js";
+import {
+  PROJECT_CHANGE_DEFAULT_BATCH_SIZE,
+  PROJECT_CHANGE_MAX_BATCH_SIZE,
+  PROJECT_COMPLETE_SET_MAX,
+  PROJECT_CURSOR_MAX_AGE_MS,
+  PROJECT_HISTORY_DEFAULT_PAGE_SIZE,
+  PROJECT_HISTORY_MAX_PAGE_SIZE,
+  PROJECT_INVALIDATION_SCHEMA,
+  PROJECT_READ_SCHEMA,
+  PROJECT_SUMMARY_MAX,
+  ProjectReadChangesV1Schema,
+  ProjectKeySchema,
+  ProjectReadError,
+  ProjectReadSessionV1Schema,
+  ProjectReadSnapshotV1Schema,
+  ProjectSummaryV1Schema,
+} from "./project-read.js";
+import type {
+  ProjectKey,
+  ProjectReadChangeKind,
+  ProjectReadChangesV1,
+  ProjectReadQuery,
+  ProjectReadSessionV1,
+  ProjectReadSnapshotV1,
+  ProjectSummaryV1,
+} from "./project-read.js";
+import { PROJECT_READ_SCHEMA_UP_SQL } from "./project-read-schema.js";
+import { redactDiagnosticText } from "./redaction.js";
+import { sessionPublicKey, sessionTopicDisplayName } from "./topic.js";
 
 export type DeliveryStatus =
   "queued" | "retry" | "delivering" | "delivered" | "dead_letter";
@@ -78,7 +114,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxDelayMs: 60_000,
 };
 
-export const RELAY_STORE_SCHEMA_VERSION = 11;
+export const RELAY_STORE_SCHEMA_VERSION = 12;
 
 const MCP_BINDING_TOKEN_PATTERN = /^mcpbind_[A-Za-z0-9_-]{32,96}$/u;
 
@@ -1257,6 +1293,74 @@ interface WebChangeRow {
   payload_json: string;
 }
 
+interface ProjectSessionRow extends SessionRow {
+  project_key: string;
+}
+
+interface ProjectSummaryRow {
+  project_cwd_hash: string;
+  project_key: string;
+  display_name: string;
+  current_count: number;
+  needs_attention_count: number;
+  needs_input_count: number;
+  failed_or_unknown_count: number;
+  recent_count: number;
+  total_count: number;
+  last_activity_at: string;
+}
+
+interface ProjectAggregateRow {
+  current_count: number;
+  needs_attention_count: number;
+  needs_input_count: number;
+  failed_or_unknown_count: number;
+  recent_count: number;
+  total_count: number;
+  last_activity_at: string | null;
+  project_count: number;
+}
+
+const ProjectHistoryCursorPayloadSchema = z
+  .object({
+    version: z.literal(1),
+    kind: z.literal("history"),
+    issuedAt: z.iso.datetime({ offset: true }),
+    snapshotChangeId: z.number().int().nonnegative(),
+    scope: z
+      .object({
+        projectKey: ProjectKeySchema,
+        harness: HarnessSchema.optional(),
+        state: SessionActivityStateSchema.optional(),
+      })
+      .strict(),
+    position: z
+      .object({
+        lastSeenAt: z.iso.datetime({ offset: true }),
+        machineId: z.string().min(1).max(128),
+        harness: HarnessSchema,
+        sessionId: z.string().min(1).max(128),
+      })
+      .strict(),
+  })
+  .strict();
+
+const ProjectChangeCursorPayloadSchema = z
+  .object({
+    version: z.literal(1),
+    kind: z.literal("changes"),
+    issuedAt: z.iso.datetime({ offset: true }),
+    changeId: z.number().int().nonnegative(),
+  })
+  .strict();
+
+type ProjectHistoryCursorPayload = z.infer<
+  typeof ProjectHistoryCursorPayloadSchema
+>;
+type ProjectChangeCursorPayload = z.infer<
+  typeof ProjectChangeCursorPayloadSchema
+>;
+
 interface SessionTimelineRow {
   id: string;
   kind: SessionTimelineKind;
@@ -1374,6 +1478,78 @@ function assertHostedOpaque(
     throw new Error(`${name} is not a bounded opaque value`);
   }
 }
+
+function safeProjectLabel(value: string): string {
+  const withoutControls = [...value]
+    .map((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined &&
+        (codePoint <= 0x1f || codePoint === 0x7f)
+        ? " "
+        : character;
+    })
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (
+    withoutControls.length === 0 ||
+    withoutControls === "." ||
+    withoutControls === ".." ||
+    /(?:[\\/]|\b(?:https?|ssh|file):|\bgit@|\.git$)/iu.test(withoutControls)
+  ) {
+    return "Project";
+  }
+  const redacted = redactDiagnosticText(withoutControls, 72);
+  return redacted.includes("[REDACTED") ? "Project" : redacted;
+}
+
+const PROJECT_EFFECTIVE_SESSIONS_CTE = `
+  WITH effective_sessions AS (
+    SELECT
+      sessions.machine_id,
+      sessions.bridge_session_id,
+      sessions.harness,
+      sessions.surface,
+      sessions.harness_version,
+      sessions.session_id,
+      sessions.project_json,
+      sessions.capabilities_json,
+      sessions.state,
+      sessions.last_event_type,
+      sessions.last_seen_at,
+      sessions.last_sequence,
+      identities.project_cwd_hash,
+      identities.project_key,
+      json_extract(sessions.project_json, '$.displayName') AS display_name,
+      activity.last_observed_at,
+      CASE
+        WHEN activity.state = 'idle'
+          AND activity.idle_since IS NOT NULL
+          AND activity.idle_since <= @idleDoneBefore
+          THEN 'done'
+        WHEN activity.state = 'working'
+          AND activity.in_flight_count > 0
+          AND activity.last_observed_at <= @foregroundWorkStaleBefore
+          THEN 'unknown'
+        WHEN activity.state = 'working'
+          AND activity.in_flight_count = 0
+          AND activity.last_observed_at <= @workingStaleBefore
+          THEN 'unknown'
+        WHEN activity.state = 'background_work'
+          AND activity.last_observed_at <= @backgroundWorkStaleBefore
+          THEN 'unknown'
+        ELSE activity.state
+      END AS effective_state
+    FROM sessions
+    JOIN session_activity AS activity
+      ON activity.machine_id = sessions.machine_id
+      AND activity.harness = sessions.harness
+      AND activity.session_id = sessions.session_id
+    JOIN project_identities AS identities
+      ON identities.project_cwd_hash =
+        json_extract(sessions.project_json, '$.cwdHash')
+  )
+`;
 
 function collisionComparable(payloadJson: string): string {
   const event = AgentAttentionEventV1Schema.parse(
@@ -2595,6 +2771,8 @@ export class RelayStore {
         );
       }
     }
+    this.database.exec(PROJECT_READ_SCHEMA_UP_SQL);
+    this.repairProjectIdentities();
     this.database.pragma(
       `user_version = ${String(RELAY_STORE_SCHEMA_VERSION)}`,
     );
@@ -2638,6 +2816,7 @@ export class RelayStore {
           projectJson: JSON.stringify(session.project),
           capabilitiesJson: JSON.stringify(session.capabilities),
         });
+      this.ensureProjectIdentity(session.project.cwdHash, session.registeredAt);
       this.database
         .prepare(
           `
@@ -2679,6 +2858,70 @@ export class RelayStore {
       .update(`agent-relay-activity:${domain}:v1\u001f`)
       .update(JSON.stringify(values))
       .digest("hex");
+  }
+
+  private projectKeyForHash(projectCwdHash: string): string {
+    return `prj_${this.activityDigest("project-identity", [projectCwdHash]).slice(0, 48)}`;
+  }
+
+  private ensureProjectIdentity(projectCwdHash: string, now: string): string {
+    if (!/^sha256:[a-f0-9]{64}$/u.test(projectCwdHash)) {
+      throw new Error("project checkout digest is malformed");
+    }
+    assertIsoCutoff(now, "project identity update time");
+    const projectKey = this.projectKeyForHash(projectCwdHash);
+    this.database
+      .prepare(
+        `
+        INSERT INTO project_identities (
+          project_cwd_hash, project_key, created_at, updated_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(project_cwd_hash) DO UPDATE SET
+          updated_at = MAX(project_identities.updated_at, excluded.updated_at)
+      `,
+      )
+      .run(projectCwdHash, projectKey, now, now);
+    const stored = this.database
+      .prepare(
+        "SELECT project_key FROM project_identities WHERE project_cwd_hash = ?",
+      )
+      .pluck()
+      .get(projectCwdHash) as string | undefined;
+    if (stored !== projectKey) {
+      throw new Error("opaque project identity collision detected");
+    }
+    return projectKey;
+  }
+
+  private repairProjectIdentities(): void {
+    const hashes = this.database
+      .prepare(
+        `
+        SELECT DISTINCT json_extract(sessions.project_json, '$.cwdHash')
+          AS cwd_hash
+        FROM sessions
+        LEFT JOIN project_identities AS identities
+          ON identities.project_cwd_hash =
+            json_extract(sessions.project_json, '$.cwdHash')
+        WHERE identities.project_cwd_hash IS NULL
+          AND json_extract(sessions.project_json, '$.cwdHash') LIKE 'sha256:%'
+        ORDER BY cwd_hash
+      `,
+      )
+      .pluck()
+      .all() as unknown[];
+    const now = new Date().toISOString();
+    const repair = this.database.transaction(() => {
+      for (const candidate of hashes) {
+        if (
+          typeof candidate === "string" &&
+          /^sha256:[a-f0-9]{64}$/u.test(candidate)
+        ) {
+          this.ensureProjectIdentity(candidate, now);
+        }
+      }
+    });
+    repair();
   }
 
   private mcpBindingDigest(token: string): string {
@@ -4524,14 +4767,14 @@ export class RelayStore {
               ELSE last_event_type
             END,
             last_sequence = MAX(last_sequence, @sequence),
-            last_seen_at = MAX(last_seen_at, @occurredAt),
-            updated_at = @occurredAt
+            last_seen_at = MAX(last_seen_at, @receivedAt),
+            updated_at = @receivedAt
           WHERE machine_id = @machineId
             AND harness = @harness
             AND session_id = @sessionId
         `,
         )
-        .run({ ...event, state });
+        .run({ ...event, state, receivedAt });
       if (
         event.type === "session.ended" &&
         activityInputs.some(({ kind }) => kind === "session_ended")
@@ -9435,6 +9678,668 @@ export class RelayStore {
       code: row.code,
       message: row.message,
     }));
+  }
+
+  private projectReadTimeParameters(now: string): {
+    now: string;
+    idleDoneBefore: string;
+    workingStaleBefore: string;
+    foregroundWorkStaleBefore: string;
+    backgroundWorkStaleBefore: string;
+  } {
+    assertIsoCutoff(now, "project read snapshot time");
+    const timestamp = Date.parse(now);
+    const before = (duration: number): string =>
+      new Date(timestamp - duration).toISOString();
+    return {
+      now,
+      idleDoneBefore: before(this.activityPolicy.idleToDoneMs),
+      workingStaleBefore: before(
+        this.activityPolicy.workingWithoutTerminalToUnknownMs,
+      ),
+      foregroundWorkStaleBefore: before(
+        this.activityPolicy.openForegroundWorkToUnknownMs,
+      ),
+      backgroundWorkStaleBefore: before(
+        this.activityPolicy.backgroundWorkToUnknownMs,
+      ),
+    };
+  }
+
+  private projectCursorKey(): Buffer {
+    return createHmac("sha256", this.activitySecret())
+      .update("agent-relay-project-cursor-key:v1")
+      .digest();
+  }
+
+  private sealProjectCursor(payload: object): string {
+    const nonce = randomBytes(12);
+    const cipher = createCipheriv(
+      "aes-256-gcm",
+      this.projectCursorKey(),
+      nonce,
+    );
+    cipher.setAAD(Buffer.from("agent-relay-project-cursor:v1", "utf8"));
+    const ciphertext = Buffer.concat([
+      cipher.update(JSON.stringify(payload), "utf8"),
+      cipher.final(),
+    ]);
+    const tag = cipher.getAuthTag();
+    return `arc1_${Buffer.concat([nonce, tag, ciphertext]).toString("base64url")}`;
+  }
+
+  private openProjectCursor(cursor: string): unknown {
+    if (!/^arc1_[A-Za-z0-9_-]{24,1000}$/u.test(cursor)) {
+      throw new ProjectReadError("invalid_cursor", "project cursor is invalid");
+    }
+    try {
+      const encoded = Buffer.from(cursor.slice(5), "base64url");
+      if (encoded.byteLength < 29 || encoded.byteLength > 768) {
+        throw new Error("cursor size is invalid");
+      }
+      const nonce = encoded.subarray(0, 12);
+      const tag = encoded.subarray(12, 28);
+      const ciphertext = encoded.subarray(28);
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        this.projectCursorKey(),
+        nonce,
+      );
+      decipher.setAAD(Buffer.from("agent-relay-project-cursor:v1", "utf8"));
+      decipher.setAuthTag(tag);
+      return JSON.parse(
+        Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString(
+          "utf8",
+        ),
+      ) as unknown;
+    } catch (error) {
+      if (error instanceof ProjectReadError) throw error;
+      throw new ProjectReadError("invalid_cursor", "project cursor is invalid");
+    }
+  }
+
+  private assertProjectCursorFresh(issuedAt: string, now: string): void {
+    const issued = Date.parse(issuedAt);
+    const current = Date.parse(now);
+    if (!Number.isFinite(issued) || issued > current + 60_000) {
+      throw new ProjectReadError("invalid_cursor", "project cursor is invalid");
+    }
+    if (current - issued > PROJECT_CURSOR_MAX_AGE_MS) {
+      throw new ProjectReadError(
+        "stale_cursor",
+        "project cursor is stale; fetch a fresh snapshot",
+      );
+    }
+  }
+
+  private parseHistoryCursor(
+    cursor: string,
+    now: string,
+  ): ProjectHistoryCursorPayload {
+    let parsed: ProjectHistoryCursorPayload;
+    try {
+      parsed = ProjectHistoryCursorPayloadSchema.parse(
+        this.openProjectCursor(cursor),
+      );
+    } catch (error) {
+      if (error instanceof ProjectReadError) throw error;
+      throw new ProjectReadError("invalid_cursor", "project cursor is invalid");
+    }
+    this.assertProjectCursorFresh(parsed.issuedAt, now);
+    return parsed;
+  }
+
+  private parseChangeCursor(
+    cursor: string,
+    now: string,
+  ): ProjectChangeCursorPayload {
+    let parsed: ProjectChangeCursorPayload;
+    try {
+      parsed = ProjectChangeCursorPayloadSchema.parse(
+        this.openProjectCursor(cursor),
+      );
+    } catch (error) {
+      if (error instanceof ProjectReadError) throw error;
+      throw new ProjectReadError("invalid_cursor", "project cursor is invalid");
+    }
+    this.assertProjectCursorFresh(parsed.issuedAt, now);
+    return parsed;
+  }
+
+  private webChangeWatermark(): number {
+    const row = this.database
+      .prepare(
+        `
+        SELECT MAX(value) AS watermark
+        FROM (
+          SELECT COALESCE(MAX(change_id), 0) AS value FROM web_changes
+          UNION ALL
+          SELECT COALESCE(
+            (SELECT seq FROM sqlite_sequence WHERE name = 'web_changes'), 0
+          ) AS value
+        )
+      `,
+      )
+      .get() as { watermark: number | null };
+    return row.watermark ?? 0;
+  }
+
+  private projectHashForKey(projectKey: ProjectKey): string | undefined {
+    if (projectKey === "all") return undefined;
+    const hash = this.database
+      .prepare(
+        `SELECT identities.project_cwd_hash
+         FROM project_identities AS identities
+         WHERE identities.project_key = ?
+           AND EXISTS (
+             SELECT 1 FROM sessions
+             WHERE json_extract(sessions.project_json, '$.cwdHash') =
+               identities.project_cwd_hash
+           )`,
+      )
+      .pluck()
+      .get(projectKey) as string | undefined;
+    if (hash === undefined) {
+      throw new ProjectReadError(
+        "project_not_found",
+        "opaque project identity was not found",
+      );
+    }
+    return hash;
+  }
+
+  private queryProjectSummaryRows(
+    time: ReturnType<RelayStore["projectReadTimeParameters"]>,
+    projectCwdHash?: string,
+  ): ProjectSummaryRow[] {
+    return this.database
+      .prepare(
+        `
+        ${PROJECT_EFFECTIVE_SESSIONS_CTE}
+        SELECT
+          project_cwd_hash,
+          project_key,
+          (
+            SELECT latest.display_name
+            FROM effective_sessions AS latest
+            WHERE latest.project_cwd_hash = grouped.project_cwd_hash
+            ORDER BY latest.last_seen_at DESC, latest.machine_id,
+              latest.harness, latest.session_id
+            LIMIT 1
+          ) AS display_name,
+          SUM(effective_state NOT IN ('done', 'ended')) AS current_count,
+          SUM(effective_state IN ('needs_input', 'failed', 'unknown'))
+            AS needs_attention_count,
+          SUM(effective_state = 'needs_input') AS needs_input_count,
+          SUM(effective_state IN ('failed', 'unknown'))
+            AS failed_or_unknown_count,
+          SUM(effective_state IN ('done', 'ended')) AS recent_count,
+          COUNT(*) AS total_count,
+          MAX(last_observed_at) AS last_activity_at
+        FROM effective_sessions AS grouped
+        ${projectCwdHash === undefined ? "" : "WHERE project_cwd_hash = @projectCwdHash"}
+        GROUP BY project_cwd_hash, project_key
+        ORDER BY needs_attention_count DESC, current_count DESC,
+          last_activity_at DESC, project_key
+        LIMIT @summaryLimit
+      `,
+      )
+      .all({
+        ...time,
+        projectCwdHash: projectCwdHash ?? null,
+        summaryLimit:
+          projectCwdHash === undefined ? PROJECT_SUMMARY_MAX + 1 : 1,
+      }) as ProjectSummaryRow[];
+  }
+
+  private projectSummaries(
+    now: string,
+    selectedProjectCwdHash?: string,
+  ): {
+    all: ProjectSummaryV1;
+    items: ProjectSummaryV1[];
+    totalCount: number;
+    truncated: boolean;
+    labels: Map<string, string>;
+  } {
+    const time = this.projectReadTimeParameters(now);
+    const aggregate = this.database
+      .prepare(
+        `
+        ${PROJECT_EFFECTIVE_SESSIONS_CTE}
+        SELECT
+          COALESCE(SUM(effective_state NOT IN ('done', 'ended')), 0)
+            AS current_count,
+          COALESCE(SUM(effective_state IN ('needs_input', 'failed', 'unknown')), 0)
+            AS needs_attention_count,
+          COALESCE(SUM(effective_state = 'needs_input'), 0)
+            AS needs_input_count,
+          COALESCE(SUM(effective_state IN ('failed', 'unknown')), 0)
+            AS failed_or_unknown_count,
+          COALESCE(SUM(effective_state IN ('done', 'ended')), 0)
+            AS recent_count,
+          COUNT(*) AS total_count,
+          MAX(last_observed_at) AS last_activity_at,
+          COUNT(DISTINCT project_cwd_hash) AS project_count
+        FROM effective_sessions
+      `,
+      )
+      .get(time) as ProjectAggregateRow;
+    const initialRows = this.queryProjectSummaryRows(time);
+    const visibleRows = initialRows.slice(0, PROJECT_SUMMARY_MAX);
+    if (
+      selectedProjectCwdHash !== undefined &&
+      !visibleRows.some(
+        (row) => row.project_cwd_hash === selectedProjectCwdHash,
+      )
+    ) {
+      const selected = this.queryProjectSummaryRows(
+        time,
+        selectedProjectCwdHash,
+      )[0];
+      if (selected !== undefined) {
+        if (visibleRows.length >= PROJECT_SUMMARY_MAX) visibleRows.pop();
+        visibleRows.push(selected);
+      }
+    }
+    const bases = visibleRows.map((row) => safeProjectLabel(row.display_name));
+    const duplicateCounts = new Map<string, number>();
+    for (const base of bases) {
+      duplicateCounts.set(base, (duplicateCounts.get(base) ?? 0) + 1);
+    }
+    const labels = new Map<string, string>();
+    const items = visibleRows.map((row, index) => {
+      const base = bases[index] ?? "Project";
+      const label =
+        (duplicateCounts.get(base) ?? 0) > 1
+          ? `${base.slice(0, 85)} · ${row.project_key.slice(-6)}`
+          : base;
+      labels.set(row.project_key, label);
+      return ProjectSummaryV1Schema.parse({
+        schema: "agent-relay-project-summary.v1",
+        projectKey: row.project_key,
+        label,
+        currentCount: row.current_count,
+        needsAttentionCount: row.needs_attention_count,
+        needsInputCount: row.needs_input_count,
+        failedOrUnknownCount: row.failed_or_unknown_count,
+        recentCount: row.recent_count,
+        totalCount: row.total_count,
+        lastActivityAt: row.last_activity_at,
+      });
+    });
+    return {
+      all: ProjectSummaryV1Schema.parse({
+        schema: "agent-relay-project-summary.v1",
+        projectKey: "all",
+        label: "All projects",
+        currentCount: aggregate.current_count,
+        needsAttentionCount: aggregate.needs_attention_count,
+        needsInputCount: aggregate.needs_input_count,
+        failedOrUnknownCount: aggregate.failed_or_unknown_count,
+        recentCount: aggregate.recent_count,
+        totalCount: aggregate.total_count,
+        ...(aggregate.last_activity_at === null
+          ? {}
+          : { lastActivityAt: aggregate.last_activity_at }),
+      }),
+      items,
+      totalCount: aggregate.project_count,
+      truncated: aggregate.project_count > PROJECT_SUMMARY_MAX,
+      labels,
+    };
+  }
+
+  private toProjectReadSession(
+    row: ProjectSessionRow,
+    projectionAt: string,
+    projectLabel: string,
+  ): ProjectReadSessionV1 {
+    const identity = {
+      machineId: row.machine_id,
+      harness: row.harness,
+      sessionId: row.session_id,
+    };
+    const activity = this.getSessionActivity(identity, projectionAt);
+    return ProjectReadSessionV1Schema.parse({
+      schema: "agent-relay-project-session.v1",
+      sessionKey: sessionPublicKey(identity),
+      projectKey: row.project_key,
+      projectLabel,
+      harness: row.harness,
+      surface: row.surface,
+      activity,
+      lastSeenAt: row.last_seen_at,
+      knownInFlightWork: { count: activity.inFlightCount },
+      pendingInteraction: {
+        state: activity.requestCount > 0 ? "waiting" : "none",
+        count: activity.requestCount,
+      },
+      deliveryHealth: { muted: activity.muted },
+    });
+  }
+
+  private queryProjectSessions(input: {
+    projectCwdHash?: string;
+    harness?: Harness;
+    state?: SessionActivityState;
+    category: "current" | "recent";
+    limit: number;
+    position?: ProjectHistoryCursorPayload["position"];
+    projectionAt: string;
+  }): ProjectSessionRow[] {
+    const time = this.projectReadTimeParameters(input.projectionAt);
+    const category =
+      input.category === "current"
+        ? "effective_state NOT IN ('done', 'ended')"
+        : "effective_state IN ('done', 'ended')";
+    const position =
+      input.position === undefined
+        ? ""
+        : `AND (
+            last_seen_at < @positionLastSeenAt
+            OR (
+              last_seen_at = @positionLastSeenAt
+              AND (
+                machine_id > @positionMachineId
+                OR (
+                  machine_id = @positionMachineId
+                  AND (
+                    harness > @positionHarness
+                    OR (
+                      harness = @positionHarness
+                      AND session_id > @positionSessionId
+                    )
+                  )
+                )
+              )
+            )
+          )`;
+    return this.database
+      .prepare(
+        `
+        ${PROJECT_EFFECTIVE_SESSIONS_CTE}
+        SELECT
+          machine_id, bridge_session_id, harness, surface, harness_version,
+          session_id, project_json, capabilities_json, state, last_event_type,
+          last_seen_at, last_sequence, project_key
+        FROM effective_sessions
+        WHERE ${category}
+          ${input.projectCwdHash === undefined ? "" : "AND project_cwd_hash = @projectCwdHash"}
+          ${input.harness === undefined ? "" : "AND harness = @filterHarness"}
+          ${input.state === undefined ? "" : "AND effective_state = @filterState"}
+          ${position}
+        ORDER BY last_seen_at DESC, machine_id, harness, session_id
+        LIMIT @resultLimit
+      `,
+      )
+      .all({
+        ...time,
+        projectCwdHash: input.projectCwdHash ?? null,
+        filterHarness: input.harness ?? null,
+        filterState: input.state ?? null,
+        positionLastSeenAt: input.position?.lastSeenAt ?? null,
+        positionMachineId: input.position?.machineId ?? null,
+        positionHarness: input.position?.harness ?? null,
+        positionSessionId: input.position?.sessionId ?? null,
+        resultLimit: input.limit,
+      }) as ProjectSessionRow[];
+  }
+
+  public readProjectSnapshot(
+    query: ProjectReadQuery = {},
+  ): ProjectReadSnapshotV1 {
+    const generatedAt = query.now ?? new Date().toISOString();
+    assertIsoCutoff(generatedAt, "project read snapshot time");
+    const projectKey = ProjectKeySchema.parse(query.projectKey ?? "all");
+    const harness =
+      query.harness === undefined
+        ? undefined
+        : HarnessSchema.parse(query.harness);
+    const state =
+      query.state === undefined
+        ? undefined
+        : SessionActivityStateSchema.parse(query.state);
+    const historyLimit =
+      query.historyLimit ?? PROJECT_HISTORY_DEFAULT_PAGE_SIZE;
+    if (
+      !Number.isSafeInteger(historyLimit) ||
+      historyLimit < 1 ||
+      historyLimit > PROJECT_HISTORY_MAX_PAGE_SIZE
+    ) {
+      throw new Error(
+        `project history page size must be between 1 and ${String(PROJECT_HISTORY_MAX_PAGE_SIZE)}`,
+      );
+    }
+    const scope = {
+      projectKey,
+      ...(harness === undefined ? {} : { harness }),
+      ...(state === undefined ? {} : { state }),
+    };
+    const historyCursor =
+      query.historyCursor === undefined
+        ? undefined
+        : this.parseHistoryCursor(query.historyCursor, generatedAt);
+    if (
+      historyCursor !== undefined &&
+      JSON.stringify(historyCursor.scope) !== JSON.stringify(scope)
+    ) {
+      throw new ProjectReadError(
+        "invalid_cursor",
+        "project cursor does not match the requested filters",
+      );
+    }
+    const historyProjectionAt = historyCursor?.issuedAt ?? generatedAt;
+
+    return this.database.transaction((): ProjectReadSnapshotV1 => {
+      const projectCwdHash = this.projectHashForKey(projectKey);
+      const currentChangeId = this.webChangeWatermark();
+      if (
+        historyCursor !== undefined &&
+        historyCursor.snapshotChangeId !== currentChangeId
+      ) {
+        throw new ProjectReadError(
+          "stale_cursor",
+          "project history changed; fetch a fresh snapshot",
+        );
+      }
+      const summaries = this.projectSummaries(generatedAt, projectCwdHash);
+      const currentRows = this.queryProjectSessions({
+        ...(projectCwdHash === undefined ? {} : { projectCwdHash }),
+        ...(harness === undefined ? {} : { harness }),
+        ...(state === undefined ? {} : { state }),
+        category: "current",
+        limit: PROJECT_COMPLETE_SET_MAX + 1,
+        projectionAt: generatedAt,
+      });
+      if (currentRows.length > PROJECT_COMPLETE_SET_MAX) {
+        throw new ProjectReadError(
+          "complete_set_capacity_exceeded",
+          "complete current and attention sets exceed the supported capacity",
+        );
+      }
+      const current = currentRows.map((row) =>
+        this.toProjectReadSession(
+          row,
+          generatedAt,
+          summaries.labels.get(row.project_key) ??
+            `Project · ${row.project_key.slice(-6)}`,
+        ),
+      );
+      const exactCurrent = current.filter(
+        (session) =>
+          session.activity.state !== "done" &&
+          session.activity.state !== "ended" &&
+          (state === undefined || session.activity.state === state),
+      );
+      const needsAttention = exactCurrent.filter((session) =>
+        ["needs_input", "failed", "unknown"].includes(session.activity.state),
+      );
+      const recentRows = this.queryProjectSessions({
+        ...(projectCwdHash === undefined ? {} : { projectCwdHash }),
+        ...(harness === undefined ? {} : { harness }),
+        ...(state === undefined ? {} : { state }),
+        category: "recent",
+        limit: historyLimit + 1,
+        ...(historyCursor === undefined
+          ? {}
+          : { position: historyCursor.position }),
+        projectionAt: historyProjectionAt,
+      });
+      const pageRows = recentRows.slice(0, historyLimit);
+      const recentItems = pageRows.map((row) =>
+        this.toProjectReadSession(
+          row,
+          historyProjectionAt,
+          summaries.labels.get(row.project_key) ??
+            `Project · ${row.project_key.slice(-6)}`,
+        ),
+      );
+      const lastPageRow = pageRows.at(-1);
+      const nextCursor =
+        recentRows.length <= historyLimit || lastPageRow === undefined
+          ? undefined
+          : this.sealProjectCursor({
+              version: 1,
+              kind: "history",
+              issuedAt: historyProjectionAt,
+              snapshotChangeId: currentChangeId,
+              scope,
+              position: {
+                lastSeenAt: lastPageRow.last_seen_at,
+                machineId: lastPageRow.machine_id,
+                harness: lastPageRow.harness,
+                sessionId: lastPageRow.session_id,
+              },
+            } satisfies ProjectHistoryCursorPayload);
+      const currentByHarness = (["codex", "claude", "cursor"] as const)
+        .map((groupHarness) => ({
+          harness: groupHarness,
+          sessions: exactCurrent.filter(
+            (session) => session.harness === groupHarness,
+          ),
+        }))
+        .filter((group) => group.sessions.length > 0);
+      return ProjectReadSnapshotV1Schema.parse({
+        schema: PROJECT_READ_SCHEMA,
+        generatedAt,
+        selectedProjectKey: projectKey,
+        filters: {
+          ...(harness === undefined ? {} : { harness }),
+          ...(state === undefined ? {} : { state }),
+        },
+        changeCursor: this.sealProjectCursor({
+          version: 1,
+          kind: "changes",
+          issuedAt: generatedAt,
+          changeId: currentChangeId,
+        } satisfies ProjectChangeCursorPayload),
+        projects: {
+          all: summaries.all,
+          items: summaries.items,
+          totalCount: summaries.totalCount,
+          truncated: summaries.truncated,
+        },
+        needsAttention,
+        currentByHarness,
+        recent: {
+          items: recentItems,
+          ...(nextCursor === undefined ? {} : { nextCursor }),
+        },
+        empty:
+          exactCurrent.length === 0 &&
+          needsAttention.length === 0 &&
+          recentItems.length === 0,
+        limits: {
+          historyPageSize: historyLimit,
+          historyPageSizeMax: PROJECT_HISTORY_MAX_PAGE_SIZE,
+          completeSetMax: PROJECT_COMPLETE_SET_MAX,
+          projectSummaryMax: PROJECT_SUMMARY_MAX,
+          changeBatchMax: PROJECT_CHANGE_MAX_BATCH_SIZE,
+        },
+      });
+    })();
+  }
+
+  public readProjectChanges(input: {
+    cursor: string;
+    limit?: number;
+    now?: string;
+  }): ProjectReadChangesV1 {
+    const now = input.now ?? new Date().toISOString();
+    assertIsoCutoff(now, "project change read time");
+    const limit = input.limit ?? PROJECT_CHANGE_DEFAULT_BATCH_SIZE;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > PROJECT_CHANGE_MAX_BATCH_SIZE
+    ) {
+      throw new Error(
+        `project change batch size must be between 1 and ${String(PROJECT_CHANGE_MAX_BATCH_SIZE)}`,
+      );
+    }
+    const parsed = this.parseChangeCursor(input.cursor, now);
+    return this.database.transaction((): ProjectReadChangesV1 => {
+      const bounds = this.webChangeBounds();
+      const watermark = this.webChangeWatermark();
+      if (
+        parsed.changeId > watermark ||
+        (bounds.firstCursor === undefined && parsed.changeId < watermark) ||
+        (bounds.firstCursor !== undefined &&
+          parsed.changeId + 1 < bounds.firstCursor)
+      ) {
+        throw new ProjectReadError(
+          "stale_cursor",
+          "project change cursor is stale; fetch a fresh snapshot",
+        );
+      }
+      const rows = this.listWebChanges(parsed.changeId, limit + 1);
+      const consumed = rows.slice(0, limit);
+      const changeId = consumed.at(-1)?.cursor ?? parsed.changeId;
+      const cursor = this.sealProjectCursor({
+        version: 1,
+        kind: "changes",
+        issuedAt: now,
+        changeId,
+      } satisfies ProjectChangeCursorPayload);
+      const order: readonly ProjectReadChangeKind[] = [
+        "session",
+        "activity",
+        "event",
+        "request",
+        "diagnostic",
+        "session-control",
+      ];
+      const kinds = order.filter((kind) =>
+        consumed.some((change) =>
+          kind === "activity"
+            ? change.kind === "session" &&
+              change.payload["projectReadActivity"] === 1
+            : change.kind === kind &&
+              !(
+                kind === "session" &&
+                change.payload["projectReadActivity"] === 1
+              ),
+        ),
+      );
+      return ProjectReadChangesV1Schema.parse({
+        schema: "agent-relay-project-changes.v1",
+        cursor,
+        invalidations:
+          consumed.length === 0
+            ? []
+            : [
+                {
+                  schema: PROJECT_INVALIDATION_SCHEMA,
+                  cursor,
+                  changedAt: consumed.at(-1)!.occurredAt,
+                  kinds,
+                  coalescedCount: consumed.length,
+                },
+              ],
+        hasMore: rows.length > limit,
+      });
+    })();
   }
 
   public listWebChanges(afterCursor = 0, limit = 100): WebChangeRecord[] {
