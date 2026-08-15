@@ -100,10 +100,10 @@ supervised runtime supplies `AGENT_RELAY_MCP_BINDING`,
 `AGENT_RELAY_MCP_HARNESS`, the exact machine and bridge IDs, and loopback daemon
 connection values. Official plugin manifests forward those placeholders through
 the native MCP `env` block so a harness that spawns a clean environment still
-receives them. Do not create or copy these values manually. The installer
-adds the official harness skill artifacts but does not add, replace, or delete
-any user MCP configuration. A harness without the exact compatible surface uses
-its native local question mechanism.
+receives them. Do not create or copy these values manually. The installer adds
+the official harness skill artifacts but does not add, replace, or delete any
+user MCP configuration. A harness without the exact compatible surface uses its
+native local question mechanism.
 
 Run `agent-relay doctor` to check that the packaged MCP entrypoint exists. In a
 supervised child environment it also safely reports whether correlation is

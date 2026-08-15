@@ -148,9 +148,7 @@ export class FakeNotificationTransport
   private nextTopicId = 1_000;
   private online = true;
 
-  public advanceTopicIdsPast(
-    topicIds: Iterable<string | undefined>,
-  ): void {
+  public advanceTopicIdsPast(topicIds: Iterable<string | undefined>): void {
     let highest = this.nextTopicId - 1;
     for (const topicId of topicIds) {
       if (topicId === undefined || !/^[0-9]+$/u.test(topicId)) continue;

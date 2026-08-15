@@ -109,10 +109,11 @@ The MCP wrapper only executes `agent-relay mcp`. Plugin MCP manifests forward
 the opaque supervisor placeholders (`AGENT_RELAY_MCP_BINDING` and the matching
 machine, bridge, harness, and loopback daemon values) through the native `env`
 block, because Claude Code's plugin MCP spawn does not inherit the process
-environment. The wrapper contains no session-correlation logic. Hook wrappers only send native payloads to
-`agent-relay hook`; the canonical parsers and FXO-1602 reducer decide what those
-signals mean. The main skill is copied byte-for-byte from the FXO-1605 canonical
-renderer. Connect, doctor, and dashboard entry points delegate to Relay core.
+environment. The wrapper contains no session-correlation logic. Hook wrappers
+only send native payloads to `agent-relay hook`; the canonical parsers and
+FXO-1602 reducer decide what those signals mean. The main skill is copied
+byte-for-byte from the FXO-1605 canonical renderer. Connect, doctor, and
+dashboard entry points delegate to Relay core.
 
 No manifest contains a bearer value, CSRF value, OAuth URL, account identifier,
 private path, or session heuristic. The plugins cannot approve permissions,
