@@ -195,6 +195,50 @@ describe("durable session topic registry", () => {
     }
   });
 
+  it("does not reuse persisted fake topic ids after a process restart", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-topics-"));
+    const databasePath = join(directory, "relay.sqlite");
+    try {
+      const firstStore = new RelayStore(databasePath);
+      const firstTransport = new FakeNotificationTransport();
+      const firstService = new RelayService(firstStore, firstTransport);
+      firstService.ingest(
+        event("evt_topic_before_process_restart", { sequence: 1 }),
+      );
+      await firstService.drain();
+      expect(firstTransport.topics[0]?.receipt.topicId).toBe("1000");
+      firstStore.close();
+
+      const secondStore = new RelayStore(databasePath);
+      const secondTransport = new FakeNotificationTransport();
+      secondTransport.advanceTopicIdsPast(
+        secondStore.listSessionTopics().map((topic) => topic.topicId),
+      );
+      const secondService = new RelayService(secondStore, secondTransport);
+      secondService.ingest(
+        event("evt_topic_after_process_restart", {
+          sequence: 2,
+          sessionId: "session_topic_after_restart_12345678",
+          bridgeSessionId: "bridge_topic_after_restart_12345678",
+        }),
+      );
+      await expect(secondService.drain()).resolves.toMatchObject({
+        delivered: 1,
+        deadLettered: 0,
+      });
+      expect(secondTransport.topics[0]?.receipt.topicId).toBe("1001");
+      expect(secondStore.listSessionTopics()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ topicId: "1000" }),
+          expect.objectContaining({ topicId: "1001" }),
+        ]),
+      );
+      secondStore.close();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("retries topic creation through the event spool and records a diagnostic", async () => {
     const testClock = clock();
     const store = new RelayStore();

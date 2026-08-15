@@ -59,6 +59,17 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+/** Claude/Cursor plugin MCP spawns a clean env; forward supervisor placeholders. */
+function supervisedMcpEnvironment(): Record<string, string> {
+  return {
+    AGENT_RELAY_MCP_HARNESS: "${AGENT_RELAY_MCP_HARNESS}",
+    AGENT_RELAY_MCP_BINDING: "${AGENT_RELAY_MCP_BINDING}",
+    AGENT_RELAY_MACHINE_ID: "${AGENT_RELAY_MACHINE_ID}",
+    AGENT_RELAY_BRIDGE_SESSION_ID: "${AGENT_RELAY_BRIDGE_SESSION_ID}",
+    AGENT_RELAY_DAEMON_URL: "${AGENT_RELAY_DAEMON_URL}",
+  };
+}
+
 function artifact(
   relativePath: string,
   content: string,
@@ -215,6 +226,7 @@ function codexArtifacts(): VendorPluginArtifact[] {
             command: "./bin/agent-relay-plugin",
             args: ["mcp"],
             cwd: "${PLUGIN_ROOT}",
+            env: supervisedMcpEnvironment(),
           },
         },
       }),
@@ -299,6 +311,7 @@ function claudeArtifacts(): VendorPluginArtifact[] {
           "agent-relay": {
             command: `${commandRoot}`,
             args: ["mcp"],
+            env: supervisedMcpEnvironment(),
           },
         },
       }),
@@ -388,6 +401,7 @@ function cursorArtifacts(): VendorPluginArtifact[] {
             command: `${commandRoot}`,
             args: ["mcp"],
             cwd: "${PLUGIN_ROOT}",
+            env: supervisedMcpEnvironment(),
           },
         },
       }),
