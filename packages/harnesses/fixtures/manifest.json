@@ -77,7 +77,8 @@
     "codex/permission-request-current-contract.json": "official-current example sanitized on 2026-08-13; lacks the parser-required tool_use_id and is not frozen-version support evidence",
     "codex/permission-request-with-correlation.json": "synthetic parser-contract fixture; not frozen-version support evidence",
     "claude/permission-request-current-contract.json": "official-current example sanitized on 2026-08-13; explicitly lacks tool_use_id and is not frozen-version support evidence",
-    "claude/permission-request-with-correlation.json": "synthetic parser-contract fixture; not frozen-version support evidence"
+    "claude/permission-request-with-correlation.json": "synthetic parser-contract fixture; not frozen-version support evidence",
+    "cursor/session-start.json": "official-current Cursor sessionStart example sanitized on 2026-08-15; handshake-only, not frozen-version activity evidence"
   },
   "selectedActivityEvidence": {
     "codex-cli-0.145.0": {
@@ -118,6 +119,7 @@
     "codex/session-start.json",
     "codex/stop.json",
     "codex/user-prompt-submit.json",
+    "cursor/session-start.json",
     "cursor/stop.json",
     "malformed/missing-session.json"
   ]

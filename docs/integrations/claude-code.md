@@ -24,6 +24,11 @@ The Relay supervisor supplies one opaque exact binding to the Claude process and
 its MCP subprocess. Running the MCP entry point without that binding fails
 closed rather than correlating by path, process, timing, or session metadata.
 
+Operator questions in a supervised Claude session are produced by the official
+skill calling `agent-relay-mcp.v1`. Claude's native `AskUserQuestion` remains a
+terminal prompt. Relay does not intercept it, including via PreToolUse.
+`ExitPlanMode` and `PermissionRequest` stay on Claude's native approval path.
+
 ## Data and permissions
 
 `${CLAUDE_PLUGIN_ROOT}` resolves only the owned local wrapper. MCP remains local

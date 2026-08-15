@@ -123,7 +123,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "hooks/hooks.json",
-        "sha256": "387fc483995e8281b8548323c640c17dd71d0990f8a9d8d4fb8e1dc3e4f9a537",
+        "sha256": "b20616e70503b1284797653c0ffa186cc7d80dcbd6db5a04bae10c7ecaf0c307",
       },
       {
         "mode": "600",

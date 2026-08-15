@@ -28,6 +28,11 @@ agent-relay run codex -- codex
 
 Without the supervisor-issued opaque binding, the MCP server fails closed.
 
+Operator questions in a supervised Codex session are produced by the official
+skill calling `agent-relay-mcp.v1`. Codex's native `request_user_input` remains
+a terminal prompt. Relay does not intercept it. Permission requests stay on
+Codex's native approval path.
+
 ## Data and permissions
 
 The plugin runs a local stdio MCP server and sends only selected native hook

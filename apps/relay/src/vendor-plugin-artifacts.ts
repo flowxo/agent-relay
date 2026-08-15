@@ -397,6 +397,7 @@ function cursorArtifacts(): VendorPluginArtifact[] {
       json({
         version: 1,
         hooks: {
+          sessionStart: [{ command: `"${commandRoot}" hook cursor` }],
           stop: [{ command: `"${commandRoot}" hook cursor` }],
         },
       }),

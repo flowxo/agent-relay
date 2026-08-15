@@ -351,6 +351,108 @@ describe("AR5.1 production activity reducer", () => {
     ).toEqual([]);
   });
 
+  it("selects Relay MCP question-sets for Claude without promoting native input notifications", () => {
+    const claudeBase: AgentAttentionEventV1 = {
+      schema: "agent-attention.v1",
+      eventId: "event_activity_claude_input_12345678",
+      occurredAt: iso(0),
+      sequence: 1,
+      machineId: "machine_activity_claude_input_12345678",
+      bridgeSessionId: "bridge_activity_claude_input_12345678",
+      harness: "claude",
+      surface: "cli",
+      harnessVersion: "frozen",
+      sessionId: "session_activity_claude_input_12345678",
+      project: makeProjectRef("/synthetic/activity-claude-input"),
+      type: "input.required",
+      request: {
+        correlationId: "request_activity_claude_native_12345678",
+        kind: "input",
+        question: "The harness reported that operator input may be required.",
+        expiresAt: iso(10 * 60_000),
+      },
+      capabilities: {
+        inlineContinue: true,
+        lateResume: true,
+        activeSteer: false,
+        permissionDecision: true,
+      },
+    };
+    expect(sessionActivityInputsForAttentionEvent(claudeBase)).toEqual([]);
+    expect(
+      sessionActivityInputsForAttentionEvent({
+        ...claudeBase,
+        eventId: "event_activity_claude_mcp_12345678",
+        request: {
+          correlationId: "request_activity_claude_mcp_12345678",
+          kind: "question-set",
+          question: "Synthetic Claude MCP question",
+          expiresAt: iso(10 * 60_000),
+          interaction: {
+            schema: "agent-interaction-request.v1",
+            requestId: "request_activity_claude_mcp_12345678",
+            createdAt: iso(0),
+            expiresAt: iso(10 * 60_000),
+            title: "Synthetic Claude MCP question",
+            lifecycle: "pending",
+            questions: [
+              {
+                questionId: "question_activity_claude_mcp_12345678",
+                kind: "confirm",
+                prompt: "Confirm the synthetic Claude MCP path.",
+                confirm: {
+                  optionId: "option_activity_claude_yes_12345678",
+                  label: "Confirm",
+                },
+                decline: {
+                  optionId: "option_activity_claude_no_12345678",
+                  label: "Decline",
+                },
+              },
+            ],
+            fallback: {
+              preferredMode: "buttons",
+              alternativeModes: ["numbered-text", "web-handoff"],
+              whenUnavailable: "use-alternative",
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        kind: "request_opened",
+        observedAt: iso(0),
+        source: "relay_interaction",
+        correlationKey: "request_activity_claude_mcp_12345678",
+      },
+    ]);
+  });
+
+  it("does not select Cursor sessionStart as activity evidence", () => {
+    expect(
+      sessionActivityInputsForAttentionEvent({
+        schema: "agent-attention.v1",
+        eventId: "event_activity_cursor_handshake_12345678",
+        occurredAt: iso(0),
+        sequence: 1,
+        machineId: "machine_activity_cursor_handshake_12345678",
+        bridgeSessionId: "bridge_activity_cursor_handshake_12345678",
+        harness: "cursor",
+        surface: "cli",
+        harnessVersion: "frozen",
+        sessionId: "session_activity_cursor_handshake_12345678",
+        project: makeProjectRef("/synthetic/activity-cursor-handshake"),
+        type: "session.started",
+        capabilities: {
+          inlineContinue: true,
+          lateResume: true,
+          activeSteer: false,
+          permissionDecision: true,
+        },
+      }),
+    ).toEqual([]);
+  });
+
   it("remains deterministic through duplicate-heavy bounded sequences", () => {
     for (let seed = 0; seed < 64; seed += 1) {
       const correlation = `work_property_${String(seed).padStart(4, "0")}`;

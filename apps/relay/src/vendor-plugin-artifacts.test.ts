@@ -62,11 +62,11 @@ describe("vendor-native Agent Relay plugin artifacts", () => {
     }
   });
 
-  it("uses only the frozen activity events and exact MCP metadata", () => {
+  it("uses frozen activity events, handshake-only Cursor sessionStart, and exact MCP metadata", () => {
     const expectedEvents = {
       codex: ["SessionStart", "Stop", "UserPromptSubmit"],
       claude: ["SessionStart", "Stop", "StopFailure", "UserPromptSubmit"],
-      cursor: ["stop"],
+      cursor: ["sessionStart", "stop"],
     } as const;
     for (const bundle of vendorPluginBundles()) {
       const hook = bundle.artifacts.find(

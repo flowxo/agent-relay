@@ -5,10 +5,14 @@ Agent Relay's provider-neutral structured interaction boundary is
 callback data, harness commands, provider credentials, transcripts, or machine
 paths.
 
-The [local Relay MCP server](relay-mcp.md) is one producer and consumer of this
-same contract. It wraps single questions and ordered questionnaires in the
-existing durable question-set path, so MCP does not introduce a second request,
-draft, answer, cancellation, expiry, or activity authority.
+The [local Relay MCP server](relay-mcp.md) is the supported producer of this
+contract from ordinary installed Codex, Claude Code, and Cursor sessions. The
+official skill calls `relay_ask` and `relay_ask_many` under `agent-relay run`.
+Native Ask User Question tools stay terminal-only. MCP wraps single questions
+and ordered questionnaires in the existing durable question-set path, so it does
+not introduce a second request, draft, answer, cancellation, expiry, or activity
+authority. Operators answer on fake or live Telegram and on the protected local
+web interaction API.
 
 ## Version 1 shapes
 

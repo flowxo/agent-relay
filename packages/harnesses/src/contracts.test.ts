@@ -179,6 +179,54 @@ describe.each([
   });
 });
 
+describe("Cursor handshake-only sessionStart", () => {
+  it("registers the exact session without private fields or activity-selected prompts", () => {
+    const result = parseHarnessJson(
+      "cursor",
+      fixture("cursor/session-start.json"),
+      context(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event).toMatchObject({
+        harness: "cursor",
+        type: "session.started",
+        sessionId: "cursor-conversation-handshake-0001",
+        summary: "Session opened.",
+      });
+      const normalized = JSON.stringify(result.event);
+      expect(normalized).not.toContain("/workspace/example");
+      expect(normalized).not.toContain("synthetic-operator@example.invalid");
+      expect(normalized).not.toContain("transcript");
+      expect(normalized).not.toContain("composer_mode");
+      expect(normalized).not.toContain("is_background_agent");
+      expect(result.event).not.toHaveProperty("user_email");
+      expect(result.event).not.toHaveProperty("transcript_path");
+    }
+  });
+
+  it("rejects a mismatched session and conversation identity", () => {
+    const payload = JSON.parse(fixture("cursor/session-start.json")) as Record<
+      string,
+      unknown
+    >;
+    payload["conversation_id"] = "cursor-conversation-other-0001";
+    const result = parseHarnessJson(
+      "cursor",
+      JSON.stringify(payload),
+      context(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.diagnostic).toMatchObject({
+        code: "malformed-payload",
+        safeBehavior: "native-prompt",
+      });
+    }
+  });
+});
+
 describe.each([
   [
     "codex",

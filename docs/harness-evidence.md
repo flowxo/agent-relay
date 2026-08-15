@@ -343,7 +343,8 @@ adoption, ownership, and restart-reconciliation suites.
   resume.
 - [Cursor hooks](https://cursor.com/docs/hooks) and the official
   [agent best-practices example](https://cursor.com/blog/agent-best-practices)
-  document the `stop` payload and `followup_message`.
+  document the `stop` payload and `followup_message`. Official `sessionStart` is
+  used only as an MCP handshake; it is not frozen activity evidence.
 - [Cursor CLI usage](https://docs.cursor.com/en/cli/using) documents session
   resume.
 - [Telegram Bot API](https://core.telegram.org/bots/api) documents

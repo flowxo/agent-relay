@@ -77,7 +77,9 @@ The current frozen CLI evidence is intentionally narrow:
 - Codex CLI: session start, prompt submission, and stop;
 - Claude CLI: session start, prompt submission, stop with bounded background
   counts, and stop failure;
-- Cursor CLI: stop only; and
+- Cursor CLI: stop only for activity, plus handshake-only `sessionStart` that
+  registers the exact conversation for MCP binding and is not selected work
+  evidence; and
 - the experimental Codex app-server adapter: selected thread, turn, item,
   approval, error, and owned-process lifecycle observations.
 
