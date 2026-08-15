@@ -17,20 +17,30 @@ agent-relay run cursor -- cursor-agent --plugin-dir "$HOME/.cursor/plugins/local
 ```
 
 Use Cursor's native local-plugin UI in products that discover the documented
-local directory automatically. Review the plugin, MCP declaration, and `stop`
-hook before trusting them. Agent Relay never substitutes for Cursor permissions,
-approvals, authentication, or hook trust.
+local directory automatically. Review the plugin, MCP declaration,
+`sessionStart` handshake hook, and `stop` hook before trusting them. Agent Relay
+never substitutes for Cursor permissions, approvals, authentication, or hook
+trust.
 
 The Relay supervisor supplies the exact opaque MCP binding. Without it the MCP
 server fails closed; no project, path, process, timing, or session heuristic is
 used.
 
+Operator questions are produced only by the official skill calling
+`agent-relay-mcp.v1` (`relay_ask`, `relay_ask_many`, `relay_cancel`,
+`relay_status`) under `agent-relay run`. Cursor's native `AskQuestion` tool
+stays in the terminal. Relay does not intercept it. The plugin installs a
+handshake-only `sessionStart` hook so the exact conversation can claim the MCP
+binding before the first question; that hook is not selected activity evidence.
+
 ## Data and compatibility
 
-Only the frozen `stop` activity event is installed. The wrapper delegates it to
-Relay's canonical Cursor parser and FXO-1602 reducer. It does not infer starts,
-permissions, subagents, compaction, or session end. MCP is local stdio and uses
-only the Relay supervisor's exact opaque binding.
+Only the frozen `stop` activity event is installed. The wrapper also forwards
+handshake-only `sessionStart` so MCP can bind the exact conversation, then
+delegates both payloads to Relay's canonical Cursor parser and FXO-1602 reducer.
+It does not infer starts, permissions, subagents, compaction, or session end as
+activity. MCP is local stdio and uses only the Relay supervisor's exact opaque
+binding.
 
 Other recognizable Cursor versions are compatible-unverified. Missing local
 plugin support is reported explicitly; run the Relay commands directly and keep

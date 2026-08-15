@@ -125,6 +125,34 @@ const claudeNotificationSchema = z
   })
   .passthrough();
 
+const cursorSessionStartSchema = z
+  .object({
+    hook_event_name: z.literal("sessionStart"),
+    workspace_roots: z.array(z.string().min(1)).min(1),
+    session_id: z.string().min(1).optional(),
+    conversation_id: z.string().min(1).optional(),
+  })
+  .passthrough()
+  .superRefine((value, context) => {
+    const sessionId = value.session_id ?? value.conversation_id;
+    if (sessionId === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "session_id or conversation_id is required",
+      });
+    }
+    if (
+      value.session_id !== undefined &&
+      value.conversation_id !== undefined &&
+      value.session_id !== value.conversation_id
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "session_id and conversation_id must match",
+      });
+    }
+  });
+
 const cursorStopSchema = z
   .object({
     hook_event_name: z.literal("stop"),
@@ -574,6 +602,35 @@ function parseCursor(
     "hook_event_name" in payload
       ? payload.hook_event_name
       : undefined;
+
+  if (eventName === "sessionStart") {
+    const parsed = cursorSessionStartSchema.safeParse(payload);
+    if (!parsed.success) {
+      return malformed(
+        "cursor",
+        "invalid Cursor sessionStart payload",
+        parsed.error,
+      );
+    }
+    const cwd = parsed.data.workspace_roots[0];
+    const sessionId = parsed.data.session_id ?? parsed.data.conversation_id;
+    if (cwd === undefined || sessionId === undefined) {
+      return malformed(
+        "cursor",
+        "Cursor sessionStart payload is missing a workspace root or session id",
+      );
+    }
+    return eventFromAdapter(
+      "cursor",
+      {
+        cwd,
+        sessionId,
+        type: "session.started",
+        summary: "Session opened.",
+      },
+      context,
+    );
+  }
 
   if (eventName === "stop") {
     const parsed = cursorStopSchema.safeParse(payload);

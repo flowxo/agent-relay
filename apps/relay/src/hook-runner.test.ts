@@ -132,6 +132,93 @@ describe("hook entrypoint", () => {
     store.close();
   });
 
+  it("claims Cursor sessionStart for the exact parsed conversation without selecting activity", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
+    const store = new RelayStore();
+    const service = new RelayService(store, new FakeNotificationTransport());
+    const bindingToken = `mcpbind_${"C".repeat(43)}`;
+    const client = new RelayClient({
+      fetch: async (input, init) => {
+        const pathname = new URL(String(input)).pathname;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (pathname === "/v1/events") {
+          const result = service.ingest(
+            body as Parameters<typeof service.ingest>[0],
+          );
+          return new Response(JSON.stringify(result), {
+            status: result.inserted ? 202 : 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const identity = body as {
+          machineId: string;
+          bridgeSessionId: string;
+          harness: "cursor";
+          sessionId?: string;
+        };
+        const result =
+          pathname === "/v1/mcp/bindings/register"
+            ? service.registerMcpSessionBinding({
+                token: bindingToken,
+                ...identity,
+              })
+            : service.claimMcpSessionBinding({
+                token: bindingToken,
+                ...identity,
+                sessionId: identity.sessionId ?? "missing",
+              });
+        return new Response(
+          JSON.stringify({
+            outcome: result.outcome,
+            ...(result.binding === undefined
+              ? {}
+              : { bindingState: result.binding.state }),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    const result = await runHook({
+      harness: "cursor",
+      surface: "cli",
+      harnessVersion: "2026.07.23-e383d2b",
+      raw: JSON.stringify({
+        hook_event_name: "sessionStart",
+        session_id: "cursor-hook-conversation-0001",
+        conversation_id: "cursor-hook-conversation-0001",
+        workspace_roots: ["/workspace/example"],
+      }),
+      machineId: "machine_hook_12345678",
+      bridgeSessionId: "bridge_hook_cursor_12345678",
+      sequence: 1,
+      occurredAt: "2026-07-24T12:00:00.000Z",
+      fallbackPath: join(directory, "fallback.ndjson"),
+      client,
+      mcpBindingToken: bindingToken,
+    });
+
+    expect(result).toMatchObject({ daemonAccepted: true });
+    expect(store.getMcpSessionBinding(bindingToken)).toMatchObject({
+      state: "bound",
+      machineId: "machine_hook_12345678",
+      bridgeSessionId: "bridge_hook_cursor_12345678",
+      harness: "cursor",
+      sessionId: "cursor-hook-conversation-0001",
+    });
+    expect(
+      store.getSessionActivity(
+        {
+          machineId: "machine_hook_12345678",
+          harness: "cursor",
+          sessionId: "cursor-hook-conversation-0001",
+        },
+        "2026-07-24T12:00:00.000Z",
+      ),
+    ).toMatchObject({ state: "idle" });
+    store.close();
+  });
+
   it("returns safe native JSON and queues the event through the client", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
     const store = new RelayStore();

@@ -8,6 +8,14 @@ breaking changes and required operator action.
 
 ### Added
 
+- Make operator questions work end to end across supervised Codex, Claude Code,
+  and Cursor sessions through the official skill and `agent-relay-mcp.v1`.
+  Native Ask User Question tools stay terminal-only. Cursor installs a
+  handshake-only `sessionStart` hook so the exact conversation can claim MCP
+  before the first question without widening selected activity evidence. Doctor
+  reports interaction production and configured operator surfaces. Answers
+  resolve through the existing durable request path on fake Telegram and the
+  protected local web API.
 - Add `agent-relay dashboard --web` as the safe one-command local dashboard
   path. It verifies the loopback daemon and protected app, opens a 60-second
   single-use Origin/Host-scoped grant, exchanges it for an HttpOnly

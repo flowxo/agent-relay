@@ -263,6 +263,11 @@ export async function startDaemon(
       ? {}
       : { activityPolicy: options.activityPolicy }),
   });
+  if (transport instanceof FakeNotificationTransport) {
+    transport.advanceTopicIdsPast(
+      store.listSessionTopics().map((topic) => topic.topicId),
+    );
+  }
   const service = new RelayService(store, transport, {
     logger,
     ...(options.coalescingWindowMs === undefined

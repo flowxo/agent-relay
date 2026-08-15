@@ -50,7 +50,19 @@ The binding lifecycle is `pending → bound → ended`; `ambiguous` and `revoked
 are terminal fail-closed states. A bounded tool wait may observe `pending` while
 the first native hook establishes the exact session. It never guesses.
 Supervisor shutdown ends the authority, while a reconnect or supported
-late-resume loop within the same supervisor retains it.
+late-resume loop within the same supervisor retains it. Cursor's frozen CLI has
+no selected session-start activity event, so the plugin installs a
+handshake-only `sessionStart` hook that claims the same exact session ID without
+feeding the activity reducer.
+
+Native harness question tools (`request_user_input`, `AskUserQuestion`,
+`AskQuestion`) remain terminal-only. Relay does not intercept, rewrite, or
+answer them. Ordinary operator questions in an installed session are produced by
+the official skill calling these MCP tools under `agent-relay run`. Missing,
+incompatible, pending, or unbound MCP returns a typed error and `localFallback`
+directing the harness to its native local question mechanism. Permission,
+`ExitPlanMode`, and shell-approval hooks stay on the native approval path and
+never become questionnaires.
 
 ## Durable request behavior
 
@@ -86,17 +98,22 @@ agent-relay mcp
 It uses newline-delimited JSON-RPC on stdin/stdout and opens no listener. The
 supervised runtime supplies `AGENT_RELAY_MCP_BINDING`,
 `AGENT_RELAY_MCP_HARNESS`, the exact machine and bridge IDs, and loopback daemon
-connection values. Do not create or copy these values manually. The installer
-adds the official harness skill artifacts but does not add, replace, or delete
-any user MCP configuration. A harness without the exact compatible surface uses
-its native local question mechanism.
+connection values. Official plugin manifests forward those placeholders through
+the native MCP `env` block so a harness that spawns a clean environment still
+receives them. Do not create or copy these values manually. The installer adds
+the official harness skill artifacts but does not add, replace, or delete any
+user MCP configuration. A harness without the exact compatible surface uses its
+native local question mechanism.
 
 Run `agent-relay doctor` to check that the packaged MCP entrypoint exists. In a
 supervised child environment it also safely reports whether correlation is
-pending, bound, ended, revoked, or ambiguous. The report never includes the
-binding authority, native session ID, request contents, answers, paths, provider
-IDs, or credentials. `ambiguous` and `revoked` are failures; an unbound but
-available handshake is a warning.
+pending, bound, ended, revoked, or ambiguous. It also reports
+`interaction-production` (MCP, correlation, official skills, plugins, and the
+Cursor `sessionStart` handshake) and `configured-surfaces` (selected delivery
+transport plus whether the local web companion is enabled). The report never
+includes the binding authority, native session ID, request contents, answers,
+paths, provider IDs, or credentials. `ambiguous` and `revoked` are failures; an
+unbound but available handshake is a warning.
 
 Do not use Relay MCP for permission, privilege, credential, or security approval
 prompts. Those stay on the harness's native approval path. Tool descriptions and

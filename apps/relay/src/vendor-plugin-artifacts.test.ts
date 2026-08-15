@@ -62,11 +62,11 @@ describe("vendor-native Agent Relay plugin artifacts", () => {
     }
   });
 
-  it("uses only the frozen activity events and exact MCP metadata", () => {
+  it("uses frozen activity events, handshake-only Cursor sessionStart, and exact MCP metadata", () => {
     const expectedEvents = {
       codex: ["SessionStart", "Stop", "UserPromptSubmit"],
       claude: ["SessionStart", "Stop", "StopFailure", "UserPromptSubmit"],
-      cursor: ["stop"],
+      cursor: ["sessionStart", "stop"],
     } as const;
     for (const bundle of vendorPluginBundles()) {
       const hook = bundle.artifacts.find(
@@ -111,18 +111,36 @@ describe("vendor-native Agent Relay plugin artifacts", () => {
       }),
     ) as Record<
       string,
-      { mcpServers: { "agent-relay": { command: string; cwd?: string } } }
+      {
+        mcpServers: {
+          "agent-relay": {
+            command: string;
+            cwd?: string;
+            env?: Record<string, string>;
+          };
+        };
+      }
     >;
+    const supervisedEnv = {
+      AGENT_RELAY_MCP_HARNESS: "${AGENT_RELAY_MCP_HARNESS}",
+      AGENT_RELAY_MCP_BINDING: "${AGENT_RELAY_MCP_BINDING}",
+      AGENT_RELAY_MACHINE_ID: "${AGENT_RELAY_MACHINE_ID}",
+      AGENT_RELAY_BRIDGE_SESSION_ID: "${AGENT_RELAY_BRIDGE_SESSION_ID}",
+      AGENT_RELAY_DAEMON_URL: "${AGENT_RELAY_DAEMON_URL}",
+    };
     expect(mcpConfigs["codex"]?.mcpServers["agent-relay"]).toMatchObject({
       command: "./bin/agent-relay-plugin",
       cwd: "${PLUGIN_ROOT}",
+      env: supervisedEnv,
     });
-    expect(mcpConfigs["claude"]?.mcpServers["agent-relay"].command).toBe(
-      "${CLAUDE_PLUGIN_ROOT}/bin/agent-relay-plugin",
-    );
+    expect(mcpConfigs["claude"]?.mcpServers["agent-relay"]).toMatchObject({
+      command: "${CLAUDE_PLUGIN_ROOT}/bin/agent-relay-plugin",
+      env: supervisedEnv,
+    });
     expect(mcpConfigs["cursor"]?.mcpServers["agent-relay"]).toMatchObject({
       command: "${PLUGIN_ROOT}/bin/agent-relay-plugin",
       cwd: "${PLUGIN_ROOT}",
+      env: supervisedEnv,
     });
     expect(JSON.stringify(mcpConfigs)).not.toMatch(
       /mcpbind_|bearer|csrf|oauth|session.?correlat/i,

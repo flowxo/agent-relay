@@ -98,6 +98,99 @@ describe("doctor version and installation checks", () => {
         level: "fail",
       }),
     );
+    expect(ambiguous.checks).toContainEqual(
+      expect.objectContaining({
+        name: "interaction-production",
+        level: "fail",
+      }),
+    );
+    expect(bound.checks).toContainEqual(
+      expect.objectContaining({
+        name: "interaction-production",
+        level: "warn",
+      }),
+    );
+  });
+
+  it("reports configured operator surfaces without leaking secrets", async () => {
+    const executables = await verifiedHarnessExecutables();
+    const readiness = {
+      schema: "agent-relay-transport-readiness.v1",
+      selectedTransport: "fake",
+      selection: {
+        configured: true,
+        selected: "fake",
+        source: "durable",
+      },
+      transports: {
+        fake: { ready: true },
+        whooshbang: {
+          binding: "inactive",
+          configured: false,
+          credentialPermissions: "inactive",
+          credentialPresent: false,
+          issueCodes: ["whooshbang-not-configured"],
+          pendingRevocations: 0,
+          ready: false,
+          resolutionPresentation: "unsupported-in-pinned-contract",
+        },
+        telegram: {
+          configured: "none",
+          deliveryReady: false,
+          issueCodes: [],
+          replyReady: false,
+          ready: false,
+          updateMode: "poll",
+          webhookReady: true,
+        },
+        webhook: {
+          configured: false,
+          issueCodes: ["webhook-not-configured"],
+          ready: false,
+          secretPresent: false,
+          source: "none",
+        },
+      },
+    } satisfies TransportReadinessReport;
+
+    const ready = await runDoctor({
+      executables,
+      transportReadiness: readiness,
+      webEnabled: true,
+      mcp: {
+        serverAvailable: true,
+        daemonAvailable: true,
+        correlationState: "bound",
+      },
+    });
+    expect(ready.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "configured-surfaces",
+          level: "pass",
+        }),
+        expect.objectContaining({
+          name: "interaction-production",
+          level: "warn",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(ready)).not.toMatch(
+      /mcpbind_|bearer|csrf|session_|\/Users\//i,
+    );
+
+    const disabledWeb = await runDoctor({
+      executables,
+      transportReadiness: readiness,
+      webEnabled: false,
+    });
+    expect(disabledWeb.checks).toContainEqual(
+      expect.objectContaining({
+        name: "configured-surfaces",
+        level: "warn",
+        detail: expect.stringContaining("web companion is disabled"),
+      }),
+    );
   });
 
   it("distinguishes compatible versions, drift, and missing harnesses", async () => {

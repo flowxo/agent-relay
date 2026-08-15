@@ -2,6 +2,19 @@
 
 ## Proven
 
+- FXO-1610 makes operator questions work end to end across supervised Codex,
+  Claude Code, and Cursor sessions without a second interaction store. The
+  official skill calls `agent-relay-mcp.v1`; native Ask User Question tools stay
+  terminal-only. Cursor installs a handshake-only `sessionStart` hook so the
+  exact conversation claims MCP before the first question, without widening
+  selected activity evidence. Claude MCP question-sets now drive **Needs input**
+  while native Claude input notifications stay excluded. Doctor reports
+  interaction production, Cursor handshake, and configured delivery plus web
+  surfaces. Concurrent same-project sessions, questionnaires, timeout, cancel,
+  duplicate, reconnect, restart, late answers, unavailable delivery, ambiguous
+  binding, and permission isolation are covered with fake Telegram and the
+  protected local web resolve API.
+
 - FXO-1608 rebuilds the authenticated browser dashboard around projects,
   attention, and recent work. A project rail carries **All projects** plus one
   item per exact opaque worktree identity from FXO-1607, and the selected pane

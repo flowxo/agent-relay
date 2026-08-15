@@ -19,7 +19,8 @@ documentation and the frozen executable versions from FXO-1601. The fixture is
 | Accurate bundle name    | Codex plugin in an Agent Relay-owned local marketplace                | Claude Code local plugin                                  | Cursor local plugin                                                                       |
 | Manifest                | `.codex-plugin/plugin.json`                                           | `.claude-plugin/plugin.json`                              | `.cursor-plugin/plugin.json`                                                              |
 | MCP                     | `.mcp.json`; local stdio                                              | `.mcp.json`; local stdio                                  | `mcp.json`; local stdio                                                                   |
-| Frozen hooks            | `SessionStart`, `UserPromptSubmit`, `Stop`                            | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure` | `stop`                                                                                    |
+| Frozen activity hooks   | `SessionStart`, `UserPromptSubmit`, `Stop`                            | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure` | `stop`                                                                                    |
+| Handshake hooks         | `SessionStart` (also selected activity)                               | `SessionStart` (also selected activity)                   | `sessionStart` (MCP binding only; not activity evidence)                                  |
 | Skill/instructions      | `skills/*/SKILL.md`                                                   | `skills/*/SKILL.md`                                       | `skills/*/SKILL.md`                                                                       |
 | Entry points            | connect, doctor, and dashboard auxiliary skills                       | connect, doctor, and dashboard commands                   | connect, doctor, and dashboard commands                                                   |
 | Settings/trust          | native plugin enablement, MCP policy, and hook review                 | native hook trust; no settings rewrite                    | native plugin enablement and hook trust                                                   |
@@ -104,12 +105,15 @@ Each bundle carries explicit metadata for:
   recognizable versions; and
 - loopback-only networking and native-only authorization.
 
-The MCP wrapper only executes `agent-relay mcp`. It inherits the opaque
-`AGENT_RELAY_MCP_BINDING` created by the Relay supervisor and contains no
-session-correlation logic. Hook wrappers only send native payloads to
-`agent-relay hook`; the canonical parsers and FXO-1602 reducer decide what those
-signals mean. The main skill is copied byte-for-byte from the FXO-1605 canonical
-renderer. Connect, doctor, and dashboard entry points delegate to Relay core.
+The MCP wrapper only executes `agent-relay mcp`. Plugin MCP manifests forward
+the opaque supervisor placeholders (`AGENT_RELAY_MCP_BINDING` and the matching
+machine, bridge, harness, and loopback daemon values) through the native `env`
+block, because Claude Code's plugin MCP spawn does not inherit the process
+environment. The wrapper contains no session-correlation logic. Hook wrappers
+only send native payloads to `agent-relay hook`; the canonical parsers and
+FXO-1602 reducer decide what those signals mean. The main skill is copied
+byte-for-byte from the FXO-1605 canonical renderer. Connect, doctor, and
+dashboard entry points delegate to Relay core.
 
 No manifest contains a bearer value, CSRF value, OAuth URL, account identifier,
 private path, or session heuristic. The plugins cannot approve permissions,

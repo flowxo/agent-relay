@@ -70,6 +70,7 @@
       ],
       "nativeValidation": "exact frozen CLI accepted the documented --plugin-dir surface in an isolated home; no provider invocation was attempted",
       "frozenActivityEvents": ["stop"],
+      "handshakeEvents": ["sessionStart"],
       "localInstall": "local plugin directory; frozen CLI loads with --plugin-dir",
       "otherVersionPolicy": "compatible-unverified"
     }

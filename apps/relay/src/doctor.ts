@@ -99,6 +99,7 @@ export interface DoctorOptions {
   runtimeEntryPath?: string;
   runtimeNodePath?: string;
   transportReadiness?: TransportReadinessReport;
+  webEnabled?: boolean;
   runtime?: {
     readonly platform: string;
     readonly architecture: string;
@@ -240,6 +241,112 @@ function installationDoctorCheck(check: InstallationCheck): DoctorCheck {
     level: check.level,
     detail: check.detail,
   };
+}
+
+function cursorHandshakeCheck(
+  checks: readonly DoctorCheck[],
+): DoctorCheck | undefined {
+  const artifacts = checks.find(
+    (check) => check.name === "integration-cursor-artifacts",
+  );
+  if (artifacts === undefined) {
+    return undefined;
+  }
+  const selected = !artifacts.detail.includes("was not selected");
+  if (!selected) {
+    return {
+      name: "cursor-handshake-hook",
+      ok: true,
+      level: "pass",
+      detail:
+        "Cursor sessionStart handshake hook is not required because the Cursor plugin was not selected",
+    };
+  }
+  return {
+    name: "cursor-handshake-hook",
+    ok: artifacts.ok,
+    level: artifacts.ok ? "pass" : "fail",
+    detail: artifacts.ok
+      ? "Cursor sessionStart handshake hook is installed for exact MCP binding"
+      : "Cursor sessionStart handshake hook is missing or drifted; run integrations repair",
+  };
+}
+
+function pushOperatorQuestionDoctorChecks(
+  checks: DoctorCheck[],
+  options: DoctorOptions,
+): void {
+  if (options.mcp !== undefined) {
+    const mcpServer = checks.find((check) => check.name === "relay-mcp-server");
+    const correlation = checks.find(
+      (check) => check.name === "relay-mcp-correlation",
+    );
+    const productionFails = checks.filter(
+      (check) =>
+        check.level === "fail" &&
+        (check.name === "relay-mcp-server" ||
+          check.name === "relay-mcp-correlation" ||
+          check.name.endsWith("-skill-presence") ||
+          check.name.endsWith("-skill-version") ||
+          check.name.endsWith("-skill-drift") ||
+          check.name === "integration-skill-contract-compatibility" ||
+          check.name === "integration-mcp-compatibility" ||
+          (check.name.startsWith("integration-") &&
+            check.name.endsWith("-artifacts"))),
+    );
+    const handshake = cursorHandshakeCheck(checks);
+    if (handshake !== undefined) {
+      checks.push(handshake);
+      if (handshake.level === "fail") {
+        productionFails.push(handshake);
+      }
+    }
+    const inspected = options.rootDir !== undefined;
+    const failed = productionFails.length > 0;
+    const warned =
+      !failed &&
+      (correlation?.level === "warn" ||
+        !inspected ||
+        handshake === undefined ||
+        handshake.level === "warn");
+    checks.push({
+      name: "interaction-production",
+      ok: mcpServer?.ok !== false && !failed,
+      level: failed ? "fail" : warned ? "warn" : "pass",
+      detail: failed
+        ? "operator questions cannot be produced: MCP, correlation, skill, plugin, or Cursor handshake is not ready"
+        : handshake !== undefined && inspected
+          ? "MCP, exact correlation, official skills, plugins, and Cursor sessionStart handshake are ready for operator questions"
+          : inspected
+            ? "MCP and official skills are ready; vendor plugin handshake was not inspected"
+            : "MCP correlation is installed; official skills, plugins, and handshake were not inspected",
+    });
+  }
+
+  if (
+    options.transportReadiness !== undefined ||
+    options.webEnabled !== undefined
+  ) {
+    const transport = checks.find(
+      (check) => check.name === "selected-transport-readiness",
+    );
+    const failed = transport?.ok === false;
+    const webKnown = options.webEnabled !== undefined;
+    const warned =
+      !failed && (transport === undefined || !webKnown || !options.webEnabled);
+    checks.push({
+      name: "configured-surfaces",
+      ok: !failed,
+      level: failed ? "fail" : warned ? "warn" : "pass",
+      detail: failed
+        ? "the selected delivery transport is not ready"
+        : options.webEnabled === false
+          ? "the selected delivery transport is ready; the local web companion is disabled"
+          : webKnown
+            ? "the selected delivery transport and local web companion are ready"
+            : "the selected delivery transport is ready; local web companion state was not proven",
+    });
+  }
 }
 
 export async function runDoctor(
@@ -595,6 +702,7 @@ export async function runDoctor(
       });
     }
   }
+  pushOperatorQuestionDoctorChecks(checks, options);
   return {
     healthy: checks.every((check) => check.level !== "fail"),
     checks,

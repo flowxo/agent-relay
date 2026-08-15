@@ -147,6 +147,18 @@ export class FakeNotificationTransport
   private nextMessageId = 1;
   private nextTopicId = 1_000;
   private online = true;
+
+  public advanceTopicIdsPast(topicIds: Iterable<string | undefined>): void {
+    let highest = this.nextTopicId - 1;
+    for (const topicId of topicIds) {
+      if (topicId === undefined || !/^[0-9]+$/u.test(topicId)) continue;
+      const value = Number(topicId);
+      if (Number.isSafeInteger(value) && value > highest) {
+        highest = value;
+      }
+    }
+    this.nextTopicId = highest + 1;
+  }
   public readonly callbackAcknowledgements: Array<{
     callbackId: string;
     text: string;

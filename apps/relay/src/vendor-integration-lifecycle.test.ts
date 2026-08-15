@@ -555,4 +555,37 @@ describe("vendor integration isolated-home lifecycle", () => {
       /\/Users\/|bearer|csrf|credential|mcpbind_|session_/i,
     );
   });
+
+  it("reports Cursor sessionStart handshake and interaction production after install", async () => {
+    const runtime = await setup();
+    await runVendorIntegrationLifecycle("install", {
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnessVersions: versions,
+      now,
+    });
+    const doctor = await runDoctor({
+      rootDir: runtime.rootDir,
+      mcp: {
+        serverAvailable: true,
+        daemonAvailable: true,
+        correlationState: "bound",
+      },
+    });
+    expect(doctor.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "cursor-handshake-hook",
+          level: "pass",
+        }),
+        expect.objectContaining({
+          name: "interaction-production",
+          level: "pass",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(doctor)).not.toMatch(
+      /\/Users\/|bearer|csrf|credential|mcpbind_|session_/i,
+    );
+  });
 });

@@ -844,6 +844,12 @@ export async function main(
           ? {}
           : { correlationState: mcpStatus.bindingState }),
       },
+      webEnabled:
+        liveStatus?.webEnabled ??
+        resolveWebEnabled({
+          environmentValue: environment("AGENT_RELAY_WEB_ENABLED"),
+          disabledByFlag: false,
+        }),
     });
     output(report);
     process.exitCode = report.healthy ? 0 : 1;

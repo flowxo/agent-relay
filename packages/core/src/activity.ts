@@ -591,11 +591,14 @@ export function sessionActivityInputsForAttentionEvent(
     observedAt: event.occurredAt,
     source,
   } as const;
+  // Native Claude CLI input notifications stay unselected. Relay MCP
+  // question-sets carry an interaction and remain selected.
   const selectedRequest = !(
     (event.type === "permission.required" && event.surface === "cli") ||
     (event.type === "input.required" &&
       event.harness === "claude" &&
-      event.surface === "cli")
+      event.surface === "cli" &&
+      event.request?.interaction === undefined)
   );
   const requestInput =
     event.request === undefined || !selectedRequest

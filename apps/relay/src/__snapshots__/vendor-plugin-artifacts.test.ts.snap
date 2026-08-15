@@ -12,7 +12,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": ".mcp.json",
-        "sha256": "2bb0a9353390842a2805321ad83ead322b9b8eca8154ac2092d02fa4c01b3009",
+        "sha256": "c3f73e152a9c5c4ff50ab1662f43ac8cfaa4ab7965788bb6154965a3f3362c16",
       },
       {
         "mode": "600",
@@ -65,7 +65,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": ".mcp.json",
-        "sha256": "66e0dd2f3e50285e24e2eb292774f8bc7afc8392f6f6dbc03ae619828753fb78",
+        "sha256": "c8bf78df55639392417d21427d16b7809631677f7eec1945839a676c6758b5dd",
       },
       {
         "mode": "600",
@@ -118,12 +118,12 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "mcp.json",
-        "sha256": "c7e9fda4db7a1326eb3c89cd8c79a6194d635bec71743be36b0a0d72c1fd0c24",
+        "sha256": "07d8042d3e3edcdb85cf68c47b518996ab17ea9bb12eb8e0d467e3d4be2d71ab",
       },
       {
         "mode": "600",
         "path": "hooks/hooks.json",
-        "sha256": "387fc483995e8281b8548323c640c17dd71d0990f8a9d8d4fb8e1dc3e4f9a537",
+        "sha256": "b20616e70503b1284797653c0ffa186cc7d80dcbd6db5a04bae10c7ecaf0c307",
       },
       {
         "mode": "600",

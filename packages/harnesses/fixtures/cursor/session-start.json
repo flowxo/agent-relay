@@ -1,0 +1,11 @@
+{
+  "hook_event_name": "sessionStart",
+  "session_id": "cursor-conversation-handshake-0001",
+  "conversation_id": "cursor-conversation-handshake-0001",
+  "is_background_agent": false,
+  "composer_mode": "agent",
+  "workspace_roots": ["/workspace/example"],
+  "transcript_path": "/workspace/fixtures/synthetic-transcript.jsonl",
+  "user_email": "synthetic-operator@example.invalid",
+  "cursor_version": "2026.07.23-e383d2b"
+}

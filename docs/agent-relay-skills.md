@@ -44,7 +44,8 @@ and selects the narrowest answer shape:
 Use `relay_ask` for one question and `relay_ask_many` for a small related
 questionnaire. `relay_status` inspects exact readiness, binding, delivery,
 activity, or one retained request. `relay_cancel` cancels an exact open request.
-There is no Relay notify or check tool.
+There is no Relay notify or check tool. Native harness question tools remain in
+the terminal; the skill does not wrap, intercept, or answer them.
 
 Relay never substitutes for the harness's native authorization or permission
 path. Credentials, privilege escalation, trust, security confirmation,
