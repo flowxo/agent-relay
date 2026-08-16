@@ -13,21 +13,21 @@ documentation and the frozen executable versions from FXO-1601. The fixture is
 
 ## Reviewed capability matrix
 
-| Surface                 | Codex                                                                        | Claude Code                                                                | Cursor                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Frozen version          | `codex-cli 0.145.0`                                                          | `2.1.219 (Claude Code)`                                                    | `2026.07.23-e383d2b`                                                        |
-| Accurate bundle name    | Codex plugin in an Agent Relay-owned local marketplace                       | Claude Code plugin in an Agent Relay-owned local marketplace               | Cursor local plugin                                                         |
-| Manifest                | `.codex-plugin/plugin.json`                                                  | `.claude-plugin/plugin.json`                                               | `.cursor-plugin/plugin.json`                                                |
-| MCP                     | `.mcp.json`; local stdio                                                     | `.mcp.json`; local stdio                                                   | user `mcp.json` (owned server); plugin `mcp.json` empty                     |
-| Frozen activity hooks   | `SessionStart`, `UserPromptSubmit`, `Stop`                                   | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`                  | `stop`                                                                      |
-| Handshake hooks         | `SessionStart` (also selected activity)                                      | `SessionStart` (also selected activity)                                    | `sessionStart` (MCP binding only; not activity evidence)                    |
-| Skill/instructions      | `skills/*/SKILL.md`                                                          | `skills/*/SKILL.md`                                                        | `skills/*/SKILL.md`                                                         |
-| Entry points            | connect, doctor, and dashboard auxiliary skills                              | connect, doctor, and dashboard commands                                    | connect, doctor, and dashboard commands                                     |
-| Settings/trust          | native hook trust; Agent Relay writes only its marketplace enablement tables | native hook trust; Agent Relay writes only its marketplace enablement keys | not offered; Cursor does not state a conversation id to MCP                 |
-| Update channel          | Relay lifecycle upgrade, then native local-marketplace refresh               | Relay lifecycle upgrade                                                    | Relay lifecycle upgrade                                                     |
-| Disable                 | Relay lifecycle disable writes owned Codex enablement off                    | Relay lifecycle disable writes owned Claude enablement off                 | not offered                                                                 |
-| Uninstall               | Relay lifecycle uninstall removes only owned Codex enablement tables         | Relay lifecycle uninstall removes only owned Claude enablement keys        | removes a leftover owned Cursor integration                                 |
-| Frozen local activation | install writes Codex enablement; launch `codex` as usual                     | install writes Claude enablement; launch `claude` as usual                 | not offered; Cursor does not state a conversation id to MCP                 |
+| Surface                 | Codex                                                                        | Claude Code                                                                | Cursor                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Frozen version          | `codex-cli 0.145.0`                                                          | `2.1.219 (Claude Code)`                                                    | `2026.07.23-e383d2b`                                        |
+| Accurate bundle name    | Codex plugin in an Agent Relay-owned local marketplace                       | Claude Code plugin in an Agent Relay-owned local marketplace               | Cursor local plugin                                         |
+| Manifest                | `.codex-plugin/plugin.json`                                                  | `.claude-plugin/plugin.json`                                               | `.cursor-plugin/plugin.json`                                |
+| MCP                     | `.mcp.json`; local stdio                                                     | `.mcp.json`; local stdio                                                   | user `mcp.json` (owned server); plugin `mcp.json` empty     |
+| Frozen activity hooks   | `SessionStart`, `UserPromptSubmit`, `Stop`                                   | `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`                  | `stop`                                                      |
+| Handshake hooks         | `SessionStart` (also selected activity)                                      | `SessionStart` (also selected activity)                                    | `sessionStart` (MCP binding only; not activity evidence)    |
+| Skill/instructions      | `skills/*/SKILL.md`                                                          | `skills/*/SKILL.md`                                                        | `skills/*/SKILL.md`                                         |
+| Entry points            | connect, doctor, and dashboard auxiliary skills                              | connect, doctor, and dashboard commands                                    | connect, doctor, and dashboard commands                     |
+| Settings/trust          | native hook trust; Agent Relay writes only its marketplace enablement tables | native hook trust; Agent Relay writes only its marketplace enablement keys | not offered; Cursor does not state a conversation id to MCP |
+| Update channel          | Relay lifecycle upgrade, then native local-marketplace refresh               | Relay lifecycle upgrade                                                    | Relay lifecycle upgrade                                     |
+| Disable                 | Relay lifecycle disable writes owned Codex enablement off                    | Relay lifecycle disable writes owned Claude enablement off                 | not offered                                                 |
+| Uninstall               | Relay lifecycle uninstall removes only owned Codex enablement tables         | Relay lifecycle uninstall removes only owned Claude enablement keys        | removes a leftover owned Cursor integration                 |
+| Frozen local activation | install writes Codex enablement; launch `codex` as usual                     | install writes Claude enablement; launch `claude` as usual                 | not offered; Cursor does not state a conversation id to MCP |
 
 Primary sources: [Codex plugins](https://developers.openai.com/codex/plugins),
 [Codex MCP](https://developers.openai.com/codex/mcp),
@@ -63,10 +63,10 @@ agent-relay integrations rollback
 agent-relay integrations uninstall
 ```
 
-Add `--harness codex` or `--harness claude` to select one harness. `--harness
-cursor` is refused for install, reinstall, upgrade, repair, and enable.
-`uninstall --harness cursor` removes a leftover owned Cursor integration.
-`--dry-run` performs preflight and reports intent without writing.
+Add `--harness codex` or `--harness claude` to select one harness.
+`--harness cursor` is refused for install, reinstall, upgrade, repair, and
+enable. `uninstall --harness cursor` removes a leftover owned Cursor
+integration. `--dry-run` performs preflight and reports intent without writing.
 
 Install, reinstall, upgrade, and repair preflight all known manual and legacy
 Agent Relay declarations. An unowned target, duplicate MCP server or hook,
@@ -83,10 +83,10 @@ bundles, lifecycle metadata, and a launcher with the Relay owner marker. Relay
 databases, logs, delivery configuration, credentials, and user content remain in
 place.
 
-After `integrations install`, launch `codex` or `claude` as usual. Exact
-binding uses the harness-stated native session ID. Concurrent
-sessions in the same project do not share answers. Correlation never uses
-project, path, process, PID, timing, or "most recent session."
+After `integrations install`, launch `codex` or `claude` as usual. Exact binding
+uses the harness-stated native session ID. Concurrent sessions in the same
+project do not share answers. Correlation never uses project, path, process,
+PID, timing, or "most recent session."
 
 `agent-relay run` remains for owned-child evidence and resume. It is not
 required to ask an operator question.
@@ -106,14 +106,13 @@ The MCP wrapper only executes `agent-relay mcp`. Plugin MCP manifests set a
 literal harness name. Claude's plugin MCP spawn is a clean environment, so its
 manifest forwards `${CLAUDE_SESSION_ID}` as the harness-stated native session.
 Codex plugin MCP uses `cwd: "."` because Codex does not expand `${PLUGIN_ROOT}`
-in `.mcp.json`. Codex inherits a harness-stated session from
-`_meta.threadId`. Cursor is not offered: `cursor-agent` states
-`CURSOR_CONVERSATION_ID` to hooks and shell children, not to MCP stdio.
-The wrapper contains no session-correlation heuristics. Hook
-wrappers only send native payloads to `agent-relay hook`; the canonical parsers
-and FXO-1602 reducer decide what those signals mean. The main skill is copied
-byte-for-byte from the FXO-1605 canonical renderer. Connect, doctor, and
-dashboard entry points delegate to Relay core.
+in `.mcp.json`. Codex inherits a harness-stated session from `_meta.threadId`.
+Cursor is not offered: `cursor-agent` states `CURSOR_CONVERSATION_ID` to hooks
+and shell children, not to MCP stdio. The wrapper contains no
+session-correlation heuristics. Hook wrappers only send native payloads to
+`agent-relay hook`; the canonical parsers and FXO-1602 reducer decide what those
+signals mean. The main skill is copied byte-for-byte from the FXO-1605 canonical
+renderer. Connect, doctor, and dashboard entry points delegate to Relay core.
 
 No manifest contains a bearer value, CSRF value, OAuth URL, account identifier,
 private path, or session heuristic. The plugins cannot approve permissions,

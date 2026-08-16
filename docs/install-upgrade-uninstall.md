@@ -140,10 +140,9 @@ node apps/relay/dist/cli.js doctor
 
 Follow the [vendor-native integration guide](vendor-integrations.md) for Codex
 and Claude Code local-marketplace activation, trust, updates, conflicts,
-disable, rollback, and uninstall. Cursor is not offered. Do not run
-this path alongside the legacy direct-hook installation: preflight reports
-duplicate Agent Relay hooks, MCP servers, or skills rather than creating
-ambiguous ownership.
+disable, rollback, and uninstall. Cursor is not offered. Do not run this path
+alongside the legacy direct-hook installation: preflight reports duplicate Agent
+Relay hooks, MCP servers, or skills rather than creating ambiguous ownership.
 
 ## Legacy direct-hook installation
 

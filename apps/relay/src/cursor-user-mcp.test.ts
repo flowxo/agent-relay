@@ -18,7 +18,11 @@ const unrelated = `{
 
 describe("Cursor user-MCP enablement merge", () => {
   it("adds only the Agent Relay server and can remove it again", () => {
-    const enabled = applyCursorPluginEnablement(unrelated, launcherPath, "enable");
+    const enabled = applyCursorPluginEnablement(
+      unrelated,
+      launcherPath,
+      "enable",
+    );
     expect(JSON.parse(enabled ?? "")).toEqual({
       mcpServers: {
         linear: { command: "safe-server" },
@@ -35,7 +39,9 @@ describe("Cursor user-MCP enablement merge", () => {
     expect(
       cursorPluginEnablementHealthy(enabled, launcherPath, "enabled"),
     ).toBe(true);
-    expect(cursorUserMcpHasForeignAgentRelay(enabled, launcherPath)).toBe(false);
+    expect(cursorUserMcpHasForeignAgentRelay(enabled, launcherPath)).toBe(
+      false,
+    );
 
     const disabled = applyCursorPluginEnablement(
       enabled,
@@ -57,13 +63,17 @@ describe("Cursor user-MCP enablement merge", () => {
     expect(JSON.parse(removed ?? "")).toEqual({
       mcpServers: { linear: { command: "safe-server" } },
     });
-    expect(
-      cursorPluginEnablementHealthy(removed, launcherPath, "absent"),
-    ).toBe(true);
+    expect(cursorPluginEnablementHealthy(removed, launcherPath, "absent")).toBe(
+      true,
+    );
   });
 
   it("deletes a file that only contained Agent Relay", () => {
-    const enabled = applyCursorPluginEnablement(undefined, launcherPath, "enable");
+    const enabled = applyCursorPluginEnablement(
+      undefined,
+      launcherPath,
+      "enable",
+    );
     expect(enabled).toContain('"agent-relay"');
     expect(
       applyCursorPluginEnablement(enabled, launcherPath, "uninstall"),
@@ -71,7 +81,11 @@ describe("Cursor user-MCP enablement merge", () => {
   });
 
   it("treats a prior owned Agent Relay declaration as upgradeable", () => {
-    const prior = applyCursorPluginEnablement(undefined, launcherPath, "enable");
+    const prior = applyCursorPluginEnablement(
+      undefined,
+      launcherPath,
+      "enable",
+    );
     const parsed = JSON.parse(prior ?? "") as {
       mcpServers: { "agent-relay": Record<string, unknown> };
     };

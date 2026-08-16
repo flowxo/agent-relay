@@ -104,10 +104,10 @@ each `tools/call` to Codex's harness-stated `_meta.threadId`. Cursor CLI states
 `CURSOR_CONVERSATION_ID` to shell children and hook payloads, not to MCP stdio
 or `tools/call` `_meta`; missing identity still fail-closes. `agent-relay run`
 may still supply `AGENT_RELAY_MCP_BINDING` for owned-child evidence. Do not
-create or copy binding values manually. The installer adds the official Claude and Codex skill artifacts. It does not
-install into Cursor: `cursor-agent` does not state a conversation id to MCP.
-A harness without the exact compatible surface uses its native local question
-mechanism.
+create or copy binding values manually. The installer adds the official Claude
+and Codex skill artifacts. It does not install into Cursor: `cursor-agent` does
+not state a conversation id to MCP. A harness without the exact compatible
+surface uses its native local question mechanism.
 
 Run `agent-relay doctor` to check that the packaged MCP entrypoint exists and
 that unsupervised exact binding is ready. In a live environment it also safely

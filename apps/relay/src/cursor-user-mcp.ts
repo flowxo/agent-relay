@@ -50,7 +50,10 @@ function mcpServersObject(
   config: CursorMcpObject,
 ): Record<string, unknown> | undefined {
   if (config.mcpServers === undefined) return undefined;
-  if (typeof config.mcpServers !== "object" || Array.isArray(config.mcpServers)) {
+  if (
+    typeof config.mcpServers !== "object" ||
+    Array.isArray(config.mcpServers)
+  ) {
     throw new Error(
       "Cursor MCP servers are not an object; preserve the file and reconcile it before retrying",
     );
@@ -98,7 +101,8 @@ export function cursorPluginEnablementHealthy(
   const owned = servers[CURSOR_OWNED_MCP_SERVER_NAME];
   if (expected === "enabled") {
     return (
-      JSON.stringify(owned) === JSON.stringify(cursorOwnedMcpServer(launcherPath))
+      JSON.stringify(owned) ===
+      JSON.stringify(cursorOwnedMcpServer(launcherPath))
     );
   }
   return owned === undefined;
