@@ -265,10 +265,14 @@ export type RelayMcpErrorCode = z.infer<typeof RelayMcpErrorCodeSchema>;
 export type RelayMcpToolResultV1 = z.infer<typeof RelayMcpToolResultV1Schema>;
 
 function jsonSchema(schema: z.ZodType): Record<string, unknown> {
-  return z.toJSONSchema(schema, {
+  const generated = z.toJSONSchema(schema, {
     target: "draft-2020-12",
     unrepresentable: "throw",
   }) as Record<string, unknown>;
+  if (generated["type"] === undefined && Array.isArray(generated["anyOf"])) {
+    return { type: "object", ...generated };
+  }
+  return generated;
 }
 
 export const RELAY_MCP_TOOL_DEFINITIONS = [

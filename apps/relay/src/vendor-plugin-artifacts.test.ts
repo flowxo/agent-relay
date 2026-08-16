@@ -9,6 +9,7 @@ import {
   VENDOR_INTEGRATION_OWNER,
   VENDOR_INTEGRATION_SCHEMA,
   VENDOR_INTEGRATION_VERSION,
+  claudeMarketplaceJson,
   codexMarketplaceJson,
   vendorPluginBundles,
 } from "./vendor-plugin-artifacts.js";
@@ -121,27 +122,25 @@ describe("vendor-native Agent Relay plugin artifacts", () => {
         };
       }
     >;
-    const supervisedEnv = {
-      AGENT_RELAY_MCP_HARNESS: "${AGENT_RELAY_MCP_HARNESS}",
-      AGENT_RELAY_MCP_BINDING: "${AGENT_RELAY_MCP_BINDING}",
-      AGENT_RELAY_MACHINE_ID: "${AGENT_RELAY_MACHINE_ID}",
-      AGENT_RELAY_BRIDGE_SESSION_ID: "${AGENT_RELAY_BRIDGE_SESSION_ID}",
-      AGENT_RELAY_DAEMON_URL: "${AGENT_RELAY_DAEMON_URL}",
-    };
     expect(mcpConfigs["codex"]?.mcpServers["agent-relay"]).toMatchObject({
       command: "./bin/agent-relay-plugin",
-      cwd: "${PLUGIN_ROOT}",
-      env: supervisedEnv,
+      cwd: ".",
+      env: { AGENT_RELAY_MCP_HARNESS: "codex" },
     });
     expect(mcpConfigs["claude"]?.mcpServers["agent-relay"]).toMatchObject({
       command: "${CLAUDE_PLUGIN_ROOT}/bin/agent-relay-plugin",
-      env: supervisedEnv,
+      env: {
+        AGENT_RELAY_MCP_HARNESS: "claude",
+        AGENT_RELAY_NATIVE_SESSION_ID: "${CLAUDE_SESSION_ID}",
+      },
     });
-    expect(mcpConfigs["cursor"]?.mcpServers["agent-relay"]).toMatchObject({
-      command: "${PLUGIN_ROOT}/bin/agent-relay-plugin",
-      cwd: "${PLUGIN_ROOT}",
-      env: supervisedEnv,
-    });
+    expect(mcpConfigs["cursor"]?.mcpServers).toEqual({});
+    expect(
+      JSON.stringify(mcpConfigs["codex"]?.mcpServers["agent-relay"]?.env),
+    ).not.toContain("AGENT_RELAY_MCP_BINDING");
+    expect(
+      JSON.stringify(mcpConfigs["claude"]?.mcpServers["agent-relay"]?.env),
+    ).not.toContain("AGENT_RELAY_MCP_BINDING");
     expect(JSON.stringify(mcpConfigs)).not.toMatch(
       /mcpbind_|bearer|csrf|oauth|session.?correlat/i,
     );
@@ -158,6 +157,14 @@ describe("vendor-native Agent Relay plugin artifacts", () => {
         expect((await stat(path)).mode & 0o777).toBe(artifact.mode);
       }
     }
+    expect(JSON.parse(claudeMarketplaceJson())).toMatchObject({
+      plugins: [
+        {
+          name: "agent-relay",
+          source: "./plugins/agent-relay",
+        },
+      ],
+    });
     expect(JSON.parse(codexMarketplaceJson())).toMatchObject({
       plugins: [
         {

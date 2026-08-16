@@ -1,67 +1,29 @@
 # Cursor integration
 
-Agent Relay supplies the smallest accurately named Cursor integration: a **local
-plugin** at `~/.cursor/plugins/local/agent-relay`. It contains
-`.cursor-plugin/plugin.json`, `mcp.json`, `hooks/hooks.json`, the canonical
-skill, commands, and one executable wrapper.
-
-The frozen `2026.07.23-e383d2b` CLI exposes plugin marketplace management and a
-global `--plugin-dir` option, but no native local plugin install, disable, or
-uninstall subcommand. Agent Relay does not claim otherwise.
-
-## Install and trust
+Agent Relay does **not** install into Cursor. `cursor-agent` tells hooks and
+shell children which conversation is running. It does not give that id to MCP.
+An install would show `relay_ask` and then fail closed: the question would never
+reach the dashboard.
 
 ```sh
 agent-relay integrations install --harness cursor
-agent-relay run cursor -- cursor-agent --plugin-dir "$HOME/.cursor/plugins/local/agent-relay"
+# refused: Cursor is not offered
 ```
 
-Use Cursor's native local-plugin UI in products that discover the documented
-local directory automatically. Review the plugin, MCP declaration,
-`sessionStart` handshake hook, and `stop` hook before trusting them. Agent Relay
-never substitutes for Cursor permissions, approvals, authentication, or hook
-trust.
-
-The Relay supervisor supplies the exact opaque MCP binding. Without it the MCP
-server fails closed; no project, path, process, timing, or session heuristic is
-used.
-
-Operator questions are produced only by the official skill calling
-`agent-relay-mcp.v1` (`relay_ask`, `relay_ask_many`, `relay_cancel`,
-`relay_status`) under `agent-relay run`. Cursor's native `AskQuestion` tool
-stays in the terminal. Relay does not intercept it. The plugin installs a
-handshake-only `sessionStart` hook so the exact conversation can claim the MCP
-binding before the first question; that hook is not selected activity evidence.
-
-## Data and compatibility
-
-Only the frozen `stop` activity event is installed. The wrapper also forwards
-handshake-only `sessionStart` so MCP can bind the exact conversation, then
-delegates both payloads to Relay's canonical Cursor parser and FXO-1602 reducer.
-It does not infer starts, permissions, subagents, compaction, or session end as
-activity. MCP is local stdio and uses only the Relay supervisor's exact opaque
-binding.
-
-Other recognizable Cursor versions are compatible-unverified. Missing local
-plugin support is reported explicitly; run the Relay commands directly and keep
-native questions and approvals in Cursor.
-
-## Updates, conflicts, disable, rollback, and uninstall
+`integrations install` (Claude and Codex) removes a leftover owned Agent Relay
+Cursor plugin tree and the owned `agent-relay` server from `~/.cursor/mcp.json`.
+Unrelated Cursor MCP servers stay. To clean only Cursor:
 
 ```sh
-agent-relay integrations upgrade --harness cursor
-agent-relay integrations repair --harness cursor
-agent-relay integrations disable --harness cursor
-agent-relay integrations enable --harness cursor
-agent-relay integrations rollback --harness cursor
 agent-relay integrations uninstall --harness cursor
 ```
 
-Restart Cursor or its CLI after discovery changes. An unowned local-plugin
-target or manual Agent Relay MCP/hook/skill stops preflight with remediation.
-Unrelated Cursor plugins, MCP servers, hooks, commands, skills, settings, and
-formatting are untouched. Disable and uninstall affect only the owned local
-tree; Relay data remains.
+Restart Cursor or `cursor-agent` after that cleanup. Native `AskQuestion` stays
+in the terminal. Use `claude` or `codex` for everyday Relay ask.
+
+When Cursor states a conversation id on MCP stdio or `tools/call` `_meta`, this
+integration can be offered again. Relay will not guess from project, path,
+process, timing, or the most recent session.
 
 Source contracts: [plugins](https://cursor.com/docs/plugins) and
 [plugin reference](https://cursor.com/docs/reference/plugins).

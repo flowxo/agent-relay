@@ -32,12 +32,46 @@ import {
   VENDOR_INTEGRATION_OWNER,
   VENDOR_INTEGRATION_SCHEMA,
   VENDOR_INTEGRATION_VERSION,
+  claudeMarketplaceJson,
   codexMarketplaceJson,
   vendorPluginBundle,
   vendorPluginBundles,
 } from "./vendor-plugin-artifacts.js";
+import { EXACT_SESSION_BINDING } from "./mcp-binding.js";
+import {
+  applyClaudePluginEnablement,
+  CLAUDE_LOCAL_PLUGIN_ID,
+  claudePluginEnablementHealthy,
+  parseClaudeUserSettings,
+} from "./claude-user-settings.js";
+import {
+  activateClaudeNativePlugin,
+  activateCodexNativePlugin,
+  type NativePluginActivationMode,
+  type NativePluginActivationRequest,
+} from "./native-plugin-activation.js";
+import {
+  applyCodexPluginEnablement,
+  codexPluginEnablementHealthy,
+} from "./codex-user-config.js";
+import {
+  applyCursorPluginEnablement,
+  cursorPluginEnablementHealthy,
+  cursorUserMcpHasForeignAgentRelay,
+  parseCursorUserMcp,
+} from "./cursor-user-mcp.js";
 
 const LIFECYCLE_SCHEMA = "agent-relay-integration-lifecycle.v1" as const;
+export const DEFAULT_INTEGRATION_HARNESSES = ["codex", "claude"] as const;
+const CURSOR_MUTATING_OPERATIONS = new Set<LifecycleOperation>([
+  "install",
+  "reinstall",
+  "upgrade",
+  "repair",
+  "enable",
+]);
+export const CURSOR_INTEGRATION_UNAVAILABLE =
+  "Cursor is not offered: cursor-agent does not give Agent Relay a conversation id, so an install would show tools that never deliver a question";
 const MANAGED_LAUNCHER_MARKER = "# Managed by agent-relay installer.";
 const MAX_INSPECT_BYTES = 1024 * 1024;
 const MAX_SNAPSHOT_BYTES = 512 * 1024;
@@ -149,9 +183,7 @@ const IntegrationMetadataSchema = z
       .object({
         networking: z.literal("loopback-only"),
         authorization: z.literal("native-harness-only"),
-        exactSessionBinding: z.literal(
-          "AGENT_RELAY_MCP_BINDING inherited from Relay supervisor",
-        ),
+        exactSessionBinding: z.literal(EXACT_SESSION_BINDING),
         embeddedCredentials: z.literal(false),
       })
       .strict(),
@@ -169,6 +201,13 @@ export interface VendorIntegrationPaths {
   targets: Record<Harness, string>;
   disabledTargets: Record<Harness, string>;
   codexMarketplacePath: string;
+  claudeMarketplacePath: string;
+  claudeMarketplaceRoot: string;
+  claudeSettingsPath: string;
+  legacyClaudeTarget: string;
+  codexMarketplaceRoot: string;
+  codexConfigPath: string;
+  cursorMcpJsonPath: string;
 }
 
 export interface VendorIntegrationOptions {
@@ -185,6 +224,10 @@ export interface VendorIntegrationOptions {
   >;
   /** Test-only interruption point; the public CLI never sets this. */
   failAfterWrites?: number;
+  /** Test-only native snapshot hook; the public CLI never sets this. */
+  nativePluginActivator?: (
+    request: NativePluginActivationRequest,
+  ) => Promise<void>;
 }
 
 export interface VendorIntegrationResult {
@@ -194,7 +237,7 @@ export interface VendorIntegrationResult {
   harnesses: Array<{
     harness: Harness;
     state: "installed" | "disabled" | "absent" | "drifted";
-    nativeActivation: "automatic" | "marketplace-review" | "plugin-dir";
+    nativeActivation: "automatic" | "marketplace-review";
     compatibility: {
       verifiedVersion: string;
       observedVersion?: string;
@@ -232,6 +275,7 @@ export function vendorIntegrationPaths(
   const root = resolve(rootDir);
   const stateDir = join(root, ".agent-relay");
   const codexMarketplace = join(stateDir, "vendor", "codex-marketplace");
+  const claudeMarketplace = join(stateDir, "vendor", "claude-marketplace");
   const paths: VendorIntegrationPaths = {
     rootDir: root,
     stateDir,
@@ -239,7 +283,7 @@ export function vendorIntegrationPaths(
     launcherPath: join(stateDir, "bin", "agent-relay"),
     targets: {
       codex: join(codexMarketplace, "plugins", "agent-relay"),
-      claude: join(stateDir, "vendor", "claude", "agent-relay"),
+      claude: join(claudeMarketplace, "plugins", "agent-relay"),
       cursor: join(root, ".cursor", "plugins", "local", "agent-relay"),
     },
     disabledTargets: {
@@ -253,11 +297,27 @@ export function vendorIntegrationPaths(
       "plugins",
       "marketplace.json",
     ),
+    claudeMarketplacePath: join(
+      claudeMarketplace,
+      ".claude-plugin",
+      "marketplace.json",
+    ),
+    claudeMarketplaceRoot: claudeMarketplace,
+    claudeSettingsPath: join(root, ".claude", "settings.json"),
+    legacyClaudeTarget: join(stateDir, "vendor", "claude", "agent-relay"),
+    codexMarketplaceRoot: codexMarketplace,
+    codexConfigPath: join(root, ".codex", "config.toml"),
+    cursorMcpJsonPath: join(root, ".cursor", "mcp.json"),
   };
   for (const path of [
     paths.manifestPath,
     paths.launcherPath,
     paths.codexMarketplacePath,
+    paths.claudeMarketplacePath,
+    paths.claudeSettingsPath,
+    paths.legacyClaudeTarget,
+    paths.codexConfigPath,
+    paths.cursorMcpJsonPath,
     ...Object.values(paths.targets),
     ...Object.values(paths.disabledTargets),
   ]) {
@@ -504,15 +564,11 @@ async function assertManualConfigurationDoesNotConflict(
     }
   }
 
-  for (const path of [
-    join(rootDir, ".claude.json"),
-    join(rootDir, ".cursor", "mcp.json"),
-  ]) {
-    const source = await readBounded(path);
-    if (source === undefined) continue;
+  const claudeJson = await readBounded(join(rootDir, ".claude.json"));
+  if (claudeJson !== undefined) {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(source) as unknown;
+      parsed = JSON.parse(claudeJson) as unknown;
     } catch {
       throw new Error(
         "a vendor MCP configuration is malformed; repair it before installing Agent Relay so no user configuration is rewritten or lost",
@@ -521,6 +577,19 @@ async function assertManualConfigurationDoesNotConflict(
     if (containsAgentRelayMcp(parsed)) {
       throw new Error(
         "an existing Agent Relay MCP declaration conflicts with the plugin declaration; remove or disable exactly one declaration before retrying",
+      );
+    }
+  }
+  const cursorMcp = await readBounded(join(rootDir, ".cursor", "mcp.json"));
+  if (cursorMcp !== undefined) {
+    if (
+      cursorUserMcpHasForeignAgentRelay(
+        cursorMcp,
+        join(rootDir, ".agent-relay", "bin", "agent-relay"),
+      )
+    ) {
+      throw new Error(
+        "an existing Agent Relay MCP declaration conflicts with the owned Cursor user MCP server; remove or disable exactly one declaration before retrying",
       );
     }
   }
@@ -551,7 +620,21 @@ async function assertManualConfigurationDoesNotConflict(
         "the Claude Code plugin registry is malformed; repair it through Claude Code before installing Agent Relay",
       );
     }
-    if (/agent[-_]relay/i.test(JSON.stringify(parsed))) {
+    const ids =
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      "plugins" in parsed &&
+      parsed.plugins !== null &&
+      typeof parsed.plugins === "object" &&
+      !Array.isArray(parsed.plugins)
+        ? Object.keys(parsed.plugins)
+        : [];
+    if (
+      ids.some(
+        (id) => /agent[-_]relay/i.test(id) && id !== CLAUDE_LOCAL_PLUGIN_ID,
+      )
+    ) {
       throw new Error(
         "an installed Claude Code Agent Relay plugin would duplicate the local plugin; remove exactly one through Claude Code before retrying",
       );
@@ -607,11 +690,8 @@ async function treeMatchesDigests(
   });
 }
 
-function nativeActivation(
-  harness: Harness,
-): VendorIntegrationResult["harnesses"][number]["nativeActivation"] {
-  if (harness === "codex") return "marketplace-review";
-  return "plugin-dir";
+function nativeActivation(): VendorIntegrationResult["harnesses"][number]["nativeActivation"] {
+  return "automatic";
 }
 
 function harnessCompatibility(
@@ -648,32 +728,55 @@ function activationRemediation(
     }
     if (harnesses.includes("claude")) {
       remediation.push(
-        "Stop passing the Claude Code Agent Relay --plugin-dir after disable or uninstall.",
+        "If the Claude Code snapshot is activated, remove it through the native action using agent-relay@agent-relay-local; remove the native marketplace registration after plugin removal when uninstalling.",
       );
     }
     if (harnesses.includes("cursor")) {
       remediation.push(
-        "Stop passing the Cursor Agent Relay --plugin-dir and restart native discovery after disable or uninstall.",
+        "Restart Cursor after disable or uninstall so native local-plugin discovery drops Agent Relay.",
       );
     }
     return remediation;
   }
   if (harnesses.includes("codex")) {
     remediation.push(
-      "Review the Agent Relay local marketplace, then install or refresh the plugin with Codex's native plugin action.",
+      "Launch codex as usual. Agent Relay wrote only its marketplace enablement tables in Codex user config.",
     );
   }
   if (harnesses.includes("claude")) {
     remediation.push(
-      "Load the reviewed Claude Code local plugin with the frozen CLI's native --plugin-dir option.",
-    );
-  }
-  if (harnesses.includes("cursor")) {
-    remediation.push(
-      "Load the reviewed Cursor local plugin with the frozen CLI's native --plugin-dir option.",
+      "Launch claude as usual. Agent Relay wrote only its marketplace enablement keys in Claude user settings.",
     );
   }
   return remediation;
+}
+
+function isOwnedRelayMarketplace(
+  raw: string,
+  marketplaceName: string,
+): boolean {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      return false;
+    }
+    const record = parsed as { name?: unknown; plugins?: unknown };
+    return (
+      record.name === marketplaceName &&
+      Array.isArray(record.plugins) &&
+      record.plugins.length === 1 &&
+      record.plugins[0] !== null &&
+      typeof record.plugins[0] === "object" &&
+      !Array.isArray(record.plugins[0]) &&
+      (record.plugins[0] as { name?: unknown }).name === "agent-relay"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function serializeManifest(manifest: LifecycleManifest): string {
@@ -701,6 +804,11 @@ export async function runVendorIntegrationLifecycle(
     paths.manifestPath,
     paths.launcherPath,
     paths.codexMarketplacePath,
+    paths.claudeMarketplacePath,
+    paths.claudeSettingsPath,
+    paths.legacyClaudeTarget,
+    paths.codexConfigPath,
+    paths.cursorMcpJsonPath,
     ...Object.values(paths.targets),
     ...Object.values(paths.disabledTargets),
   ]) {
@@ -713,8 +821,21 @@ export async function runVendorIntegrationLifecycle(
   await access(entryPath, constants.R_OK);
   await access(nodePath, constants.X_OK);
   const selected = [
-    ...new Set(options.harnesses ?? (["codex", "claude", "cursor"] as const)),
+    ...new Set(options.harnesses ?? DEFAULT_INTEGRATION_HARNESSES),
   ];
+  if (
+    CURSOR_MUTATING_OPERATIONS.has(operation) &&
+    selected.includes("cursor")
+  ) {
+    throw new Error(CURSOR_INTEGRATION_UNAVAILABLE);
+  }
+  const retireCursor =
+    (operation === "install" ||
+      operation === "reinstall" ||
+      operation === "upgrade" ||
+      operation === "repair" ||
+      operation === "uninstall") &&
+    !selected.includes("cursor");
   const now = (options.now ?? (() => new Date()))().toISOString();
   const priorManifest = await readManifest(paths.manifestPath);
 
@@ -797,6 +918,10 @@ export async function runVendorIntegrationLifecycle(
   }
   const marketplaceSnapshot = await readBounded(paths.codexMarketplacePath);
   const marketplacePathExists = await exists(paths.codexMarketplacePath);
+  const claudeMarketplaceSnapshot = await readBounded(
+    paths.claudeMarketplacePath,
+  );
+  const claudeMarketplacePathExists = await exists(paths.claudeMarketplacePath);
   if (
     selected.includes("codex") &&
     marketplacePathExists &&
@@ -809,11 +934,47 @@ export async function runVendorIntegrationLifecycle(
   if (
     selected.includes("codex") &&
     marketplaceSnapshot !== undefined &&
-    marketplaceSnapshot !== codexMarketplaceJson()
+    marketplaceSnapshot !== codexMarketplaceJson() &&
+    !isOwnedRelayMarketplace(marketplaceSnapshot, "agent-relay-local")
   ) {
     throw new Error(
       "the Codex local marketplace manifest contains drift or non-Agent Relay material; preserve it and reconcile that conflict before retrying",
     );
+  }
+  if (
+    selected.includes("claude") &&
+    claudeMarketplacePathExists &&
+    claudeMarketplaceSnapshot === undefined
+  ) {
+    throw new Error(
+      "the Claude Code local marketplace target is not a regular Agent Relay-owned manifest; preserve it and resolve the conflict before retrying",
+    );
+  }
+  if (
+    selected.includes("claude") &&
+    claudeMarketplaceSnapshot !== undefined &&
+    claudeMarketplaceSnapshot !== claudeMarketplaceJson() &&
+    !isOwnedRelayMarketplace(claudeMarketplaceSnapshot, "agent-relay-local")
+  ) {
+    throw new Error(
+      "the Claude Code local marketplace manifest contains drift or non-Agent Relay material; preserve it and reconcile that conflict before retrying",
+    );
+  }
+  const claudeSettingsSnapshot = selected.includes("claude")
+    ? await readBounded(paths.claudeSettingsPath)
+    : undefined;
+  if (selected.includes("claude")) {
+    parseClaudeUserSettings(claudeSettingsSnapshot);
+  }
+  const codexConfigSnapshot = selected.includes("codex")
+    ? await readBounded(paths.codexConfigPath)
+    : undefined;
+  const cursorMcpSnapshot =
+    selected.includes("cursor") || retireCursor
+      ? await readBounded(paths.cursorMcpJsonPath)
+      : undefined;
+  if (selected.includes("cursor") || retireCursor) {
+    parseCursorUserMcp(cursorMcpSnapshot);
   }
   if (options.dryRun) {
     let wouldChange = false;
@@ -829,6 +990,38 @@ export async function runVendorIntegrationLifecycle(
       }
       if (selected.includes("codex") && marketplaceSnapshot !== undefined)
         wouldChange = true;
+      if (
+        selected.includes("claude") &&
+        claudeMarketplaceSnapshot !== undefined
+      )
+        wouldChange = true;
+      if (
+        selected.includes("claude") &&
+        applyClaudePluginEnablement(
+          claudeSettingsSnapshot,
+          paths.claudeMarketplaceRoot,
+          "disable",
+        ) !== claudeSettingsSnapshot
+      )
+        wouldChange = true;
+      if (
+        selected.includes("codex") &&
+        applyCodexPluginEnablement(
+          codexConfigSnapshot,
+          paths.codexMarketplaceRoot,
+          "disable",
+        ) !== codexConfigSnapshot
+      )
+        wouldChange = true;
+      if (
+        selected.includes("cursor") &&
+        applyCursorPluginEnablement(
+          cursorMcpSnapshot,
+          paths.launcherPath,
+          "disable",
+        ) !== cursorMcpSnapshot
+      )
+        wouldChange = true;
     } else if (operation === "uninstall") {
       for (const harness of selected) {
         if (
@@ -842,6 +1035,38 @@ export async function runVendorIntegrationLifecycle(
         }
       }
       if (selected.includes("codex") && marketplaceSnapshot !== undefined)
+        wouldChange = true;
+      if (
+        selected.includes("claude") &&
+        claudeMarketplaceSnapshot !== undefined
+      )
+        wouldChange = true;
+      if (
+        selected.includes("claude") &&
+        applyClaudePluginEnablement(
+          claudeSettingsSnapshot,
+          paths.claudeMarketplaceRoot,
+          "uninstall",
+        ) !== claudeSettingsSnapshot
+      )
+        wouldChange = true;
+      if (
+        selected.includes("codex") &&
+        applyCodexPluginEnablement(
+          codexConfigSnapshot,
+          paths.codexMarketplaceRoot,
+          "uninstall",
+        ) !== codexConfigSnapshot
+      )
+        wouldChange = true;
+      if (
+        (selected.includes("cursor") || retireCursor) &&
+        applyCursorPluginEnablement(
+          cursorMcpSnapshot,
+          paths.launcherPath,
+          "uninstall",
+        ) !== cursorMcpSnapshot
+      )
         wouldChange = true;
     } else if (operation === "rollback") {
       wouldChange = selected.some(
@@ -873,13 +1098,46 @@ export async function runVendorIntegrationLifecycle(
       const expectsCodexMarketplace =
         selected.includes("codex") &&
         !(codexState?.disabled === true && operation !== "enable");
+      const claudeState = priorManifest?.harnesses.find(
+        (entry) => entry.harness === "claude",
+      );
+      const expectsClaudeMarketplace =
+        selected.includes("claude") &&
+        !(claudeState?.disabled === true && operation !== "enable");
       if (
         launcherSnapshot !== launcherContent(nodePath, entryPath) ||
         priorManifest?.agentRelayVersion !==
           (options.packageVersion ?? AGENT_RELAY_VERSION) ||
         (expectsCodexMarketplace
           ? marketplaceSnapshot !== codexMarketplaceJson()
-          : selected.includes("codex") && marketplaceSnapshot !== undefined)
+          : selected.includes("codex") && marketplaceSnapshot !== undefined) ||
+        (expectsClaudeMarketplace
+          ? claudeMarketplaceSnapshot !== claudeMarketplaceJson()
+          : selected.includes("claude") &&
+            claudeMarketplaceSnapshot !== undefined) ||
+        (selected.includes("claude") &&
+          applyClaudePluginEnablement(
+            claudeSettingsSnapshot,
+            paths.claudeMarketplaceRoot,
+            expectsClaudeMarketplace ? "enable" : "disable",
+          ) !== claudeSettingsSnapshot) ||
+        (selected.includes("codex") &&
+          applyCodexPluginEnablement(
+            codexConfigSnapshot,
+            paths.codexMarketplaceRoot,
+            expectsCodexMarketplace ? "enable" : "disable",
+          ) !== codexConfigSnapshot) ||
+        (retireCursor &&
+          (applyCursorPluginEnablement(
+            cursorMcpSnapshot,
+            paths.launcherPath,
+            "uninstall",
+          ) !== cursorMcpSnapshot ||
+            (await exists(paths.targets.cursor)) ||
+            (await exists(paths.disabledTargets.cursor)) ||
+            priorManifest?.harnesses.some(
+              (entry) => entry.harness === "cursor",
+            ) === true))
       ) {
         wouldChange = true;
       }
@@ -900,7 +1158,7 @@ export async function runVendorIntegrationLifecycle(
                   )?.disabled === true && operation !== "enable"
                 ? "disabled"
                 : "installed",
-        nativeActivation: nativeActivation(harness),
+        nativeActivation: nativeActivation(),
         compatibility: harnessCompatibility(
           harness,
           options.harnessVersions,
@@ -1083,6 +1341,158 @@ export async function runVendorIntegrationLifecycle(
         changed = true;
       }
     }
+    if (selected.includes("codex")) {
+      const configMode =
+        operation === "uninstall"
+          ? "uninstall"
+          : codexState?.disabled === true
+            ? "disable"
+            : "enable";
+      const desiredConfig = applyCodexPluginEnablement(
+        await readBounded(paths.codexConfigPath),
+        paths.codexMarketplaceRoot,
+        configMode,
+      );
+      const currentConfig = await readBounded(paths.codexConfigPath);
+      if (desiredConfig === undefined) {
+        if (currentConfig !== undefined) {
+          await rm(paths.codexConfigPath, { force: true });
+          changed = true;
+        }
+      } else if (currentConfig !== desiredConfig) {
+        await mkdir(dirname(paths.codexConfigPath), {
+          recursive: true,
+          mode: 0o700,
+        });
+        await writeFile(paths.codexConfigPath, desiredConfig, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+        changed = true;
+      }
+    }
+    const claudeState = manifest.harnesses.find(
+      (entry) => entry.harness === "claude",
+    );
+    if (
+      selected.includes("claude") &&
+      (operation === "uninstall" || claudeState?.disabled === true)
+    ) {
+      const currentClaudeMarketplace = await readBounded(
+        paths.claudeMarketplacePath,
+      );
+      if (currentClaudeMarketplace !== undefined) {
+        await rm(paths.claudeMarketplacePath, { force: true });
+        changed = true;
+      }
+    } else if (selected.includes("claude")) {
+      await mkdir(dirname(paths.claudeMarketplacePath), {
+        recursive: true,
+        mode: 0o700,
+      });
+      const desiredClaude = claudeMarketplaceJson();
+      if ((await readBounded(paths.claudeMarketplacePath)) !== desiredClaude) {
+        await writeFile(paths.claudeMarketplacePath, desiredClaude, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+        changed = true;
+      }
+    }
+    if (selected.includes("claude")) {
+      const settingsMode =
+        operation === "uninstall"
+          ? "uninstall"
+          : claudeState?.disabled === true
+            ? "disable"
+            : "enable";
+      const desiredSettings = applyClaudePluginEnablement(
+        await readBounded(paths.claudeSettingsPath),
+        paths.claudeMarketplaceRoot,
+        settingsMode,
+      );
+      const currentSettings = await readBounded(paths.claudeSettingsPath);
+      if (desiredSettings === undefined) {
+        if (currentSettings !== undefined) {
+          await rm(paths.claudeSettingsPath, { force: true });
+          changed = true;
+        }
+      } else if (currentSettings !== desiredSettings) {
+        await mkdir(dirname(paths.claudeSettingsPath), {
+          recursive: true,
+          mode: 0o700,
+        });
+        await writeFile(paths.claudeSettingsPath, desiredSettings, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+        changed = true;
+      }
+    }
+    const cursorState = manifest.harnesses.find(
+      (entry) => entry.harness === "cursor",
+    );
+    if (retireCursor) {
+      for (const target of [
+        paths.targets.cursor,
+        paths.disabledTargets.cursor,
+      ]) {
+        if (await exists(target)) {
+          if (!(await targetIsOwned(target, "cursor"))) {
+            throw new Error(
+              "integration uninstall lost ownership proof and stopped safely",
+            );
+          }
+          await rm(target, { recursive: true, force: true });
+          changed = true;
+        }
+      }
+      if (cursorState !== undefined) {
+        manifest.harnesses = manifest.harnesses.filter(
+          (entry) => entry.harness !== "cursor",
+        );
+        changed = true;
+      }
+    }
+    if (retireCursor || selected.includes("cursor")) {
+      const mcpMode =
+        retireCursor ||
+        operation === "uninstall" ||
+        operation === "disable" ||
+        cursorState?.disabled === true
+          ? "uninstall"
+          : "enable";
+      const desiredMcp = applyCursorPluginEnablement(
+        await readBounded(paths.cursorMcpJsonPath),
+        paths.launcherPath,
+        mcpMode,
+      );
+      const currentMcp = await readBounded(paths.cursorMcpJsonPath);
+      if (desiredMcp === undefined) {
+        if (currentMcp !== undefined) {
+          await rm(paths.cursorMcpJsonPath, { force: true });
+          changed = true;
+        }
+      } else if (currentMcp !== desiredMcp) {
+        await mkdir(dirname(paths.cursorMcpJsonPath), {
+          recursive: true,
+          mode: 0o700,
+        });
+        await writeFile(paths.cursorMcpJsonPath, desiredMcp, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+        changed = true;
+      }
+    }
+    if (
+      selected.includes("claude") &&
+      (await exists(paths.legacyClaudeTarget)) &&
+      (await targetIsOwned(paths.legacyClaudeTarget, "claude"))
+    ) {
+      await rm(paths.legacyClaudeTarget, { recursive: true, force: true });
+      changed = true;
+    }
     const launcher = launcherContent(nodePath, entryPath);
     if (manifest.harnesses.length > 0) {
       await mkdir(dirname(paths.launcherPath), {
@@ -1118,6 +1528,44 @@ export async function runVendorIntegrationLifecycle(
       if (launcherSnapshot !== undefined)
         await rm(paths.launcherPath, { force: true });
       await rm(paths.manifestPath, { force: true });
+    }
+    if (selected.includes("claude")) {
+      const claudeMode: NativePluginActivationMode =
+        operation === "uninstall"
+          ? "uninstall"
+          : operation === "disable" ||
+              manifest.harnesses.find((entry) => entry.harness === "claude")
+                ?.disabled === true
+            ? "disable"
+            : "enable";
+      await (
+        options.nativePluginActivator ??
+        (process.env["VITEST"] === "true"
+          ? async () => {}
+          : activateClaudeNativePlugin)
+      )({
+        rootDir: paths.rootDir,
+        mode: claudeMode,
+      });
+    }
+    if (selected.includes("codex")) {
+      const codexMode: NativePluginActivationMode =
+        operation === "uninstall"
+          ? "uninstall"
+          : operation === "disable" ||
+              manifest.harnesses.find((entry) => entry.harness === "codex")
+                ?.disabled === true
+            ? "disable"
+            : "enable";
+      await (
+        options.nativePluginActivator ??
+        (process.env["VITEST"] === "true"
+          ? async () => {}
+          : activateCodexNativePlugin)
+      )({
+        rootDir: paths.rootDir,
+        mode: codexMode,
+      });
     }
   } catch (error) {
     for (const [path, snapshot] of treeSnapshots)
@@ -1158,6 +1606,60 @@ export async function runVendorIntegrationLifecycle(
         mode: 0o600,
       });
     }
+    if (claudeMarketplaceSnapshot === undefined)
+      await rm(paths.claudeMarketplacePath, { force: true });
+    else {
+      await mkdir(dirname(paths.claudeMarketplacePath), {
+        recursive: true,
+        mode: 0o700,
+      });
+      await writeFile(paths.claudeMarketplacePath, claudeMarketplaceSnapshot, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
+    if (selected.includes("claude")) {
+      if (claudeSettingsSnapshot === undefined)
+        await rm(paths.claudeSettingsPath, { force: true });
+      else {
+        await mkdir(dirname(paths.claudeSettingsPath), {
+          recursive: true,
+          mode: 0o700,
+        });
+        await writeFile(paths.claudeSettingsPath, claudeSettingsSnapshot, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+      }
+    }
+    if (selected.includes("codex")) {
+      if (codexConfigSnapshot === undefined)
+        await rm(paths.codexConfigPath, { force: true });
+      else {
+        await mkdir(dirname(paths.codexConfigPath), {
+          recursive: true,
+          mode: 0o700,
+        });
+        await writeFile(paths.codexConfigPath, codexConfigSnapshot, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+      }
+    }
+    if (selected.includes("cursor")) {
+      if (cursorMcpSnapshot === undefined)
+        await rm(paths.cursorMcpJsonPath, { force: true });
+      else {
+        await mkdir(dirname(paths.cursorMcpJsonPath), {
+          recursive: true,
+          mode: 0o700,
+        });
+        await writeFile(paths.cursorMcpJsonPath, cursorMcpSnapshot, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
+      }
+    }
     throw new Error(
       "integration lifecycle transaction failed and was rolled back",
       { cause: error },
@@ -1172,7 +1674,7 @@ export async function runVendorIntegrationLifecycle(
       selected.map(async (harness) => ({
         harness,
         state: await observedIntegrationState(paths, manifest, harness),
-        nativeActivation: nativeActivation(harness),
+        nativeActivation: nativeActivation(),
         compatibility: harnessCompatibility(
           harness,
           options.harnessVersions,
@@ -1232,7 +1734,7 @@ async function integrationStatus(
       harnesses.map(async (harness) => ({
         harness,
         state: await observedIntegrationState(paths, manifest, harness),
-        nativeActivation: nativeActivation(harness),
+        nativeActivation: nativeActivation(),
         compatibility: harnessCompatibility(
           harness,
           harnessVersions,
@@ -1268,6 +1770,8 @@ export async function inspectVendorIntegrations(
           ...Object.values(paths.targets),
           ...Object.values(paths.disabledTargets),
           paths.codexMarketplacePath,
+          paths.claudeMarketplacePath,
+          paths.legacyClaudeTarget,
         ].map(exists),
       )
     ).some(Boolean);
@@ -1326,6 +1830,157 @@ export async function inspectVendorIntegrations(
       : marketplaceExpected
         ? "Codex local marketplace declaration is absent or drifted; preserve conflicts and reconcile it before repair"
         : "an unexpected Codex local marketplace declaration conflicts with lifecycle state; preserve it and reconcile the conflict",
+  });
+  const codexConfig = await readBounded(paths.codexConfigPath);
+  const codexEnablementExpected =
+    codexState === undefined
+      ? "absent"
+      : codexState.disabled
+        ? "disabled"
+        : "enabled";
+  const codexEnablementHealthy = codexPluginEnablementHealthy(
+    codexConfig,
+    paths.codexMarketplaceRoot,
+    codexEnablementExpected,
+  );
+  checks.push({
+    name: "integration-codex-enablement",
+    ok: codexEnablementHealthy,
+    level: codexEnablementHealthy ? "pass" : "fail",
+    detail: codexEnablementHealthy
+      ? codexEnablementExpected === "enabled"
+        ? "Codex user config enables the Agent Relay local marketplace without exposing session data"
+        : codexEnablementExpected === "disabled"
+          ? "Codex user config keeps the Agent Relay marketplace registered and disabled"
+          : "Codex user config does not enable Agent Relay while it is not selected"
+      : codexEnablementExpected === "enabled"
+        ? "Codex user config is missing Agent Relay marketplace enablement; run integrations repair"
+        : codexEnablementExpected === "disabled"
+          ? "Codex user config does not match the disabled Agent Relay enablement; run integrations repair"
+          : "Codex user config still enables Agent Relay; uninstall to remove only those tables",
+  });
+  const claudeInspectState = manifest.harnesses.find(
+    (entry) => entry.harness === "claude",
+  );
+  const claudeMarketplace = await readBounded(paths.claudeMarketplacePath);
+  const claudeMarketplaceExists = await exists(paths.claudeMarketplacePath);
+  const claudeMarketplaceExpected =
+    claudeInspectState !== undefined && !claudeInspectState.disabled;
+  const claudeMarketplaceHealthy = claudeMarketplaceExpected
+    ? claudeMarketplaceExists && claudeMarketplace === claudeMarketplaceJson()
+    : !claudeMarketplaceExists;
+  checks.push({
+    name: "integration-claude-marketplace",
+    ok: claudeMarketplaceHealthy,
+    level: claudeMarketplaceHealthy ? "pass" : "fail",
+    detail: claudeMarketplaceHealthy
+      ? claudeMarketplaceExpected
+        ? "Agent Relay-owned Claude Code local marketplace declaration is exact"
+        : "Claude Code local marketplace declaration is absent while not selected or disabled"
+      : claudeMarketplaceExpected
+        ? "Claude Code local marketplace declaration is absent or drifted; preserve conflicts and reconcile it before repair"
+        : "an unexpected Claude Code local marketplace declaration conflicts with lifecycle state; preserve it and reconcile the conflict",
+  });
+  const claudeSettings = await readBounded(paths.claudeSettingsPath);
+  const claudeEnablementExpected =
+    claudeInspectState === undefined
+      ? "absent"
+      : claudeInspectState.disabled
+        ? "disabled"
+        : "enabled";
+  const claudeEnablementHealthy = claudePluginEnablementHealthy(
+    claudeSettings,
+    paths.claudeMarketplaceRoot,
+    claudeEnablementExpected,
+  );
+  checks.push({
+    name: "integration-claude-enablement",
+    ok: claudeEnablementHealthy,
+    level: claudeEnablementHealthy ? "pass" : "fail",
+    detail: claudeEnablementHealthy
+      ? claudeEnablementExpected === "enabled"
+        ? "Claude user settings enable the Agent Relay local marketplace without exposing session data"
+        : claudeEnablementExpected === "disabled"
+          ? "Claude user settings keep the Agent Relay marketplace registered and disabled"
+          : "Claude user settings do not enable Agent Relay while it is not selected"
+      : claudeEnablementExpected === "enabled"
+        ? "Claude user settings are missing Agent Relay marketplace enablement; run integrations repair"
+        : claudeEnablementExpected === "disabled"
+          ? "Claude user settings do not match the disabled Agent Relay enablement; run integrations repair"
+          : "Claude user settings still enable Agent Relay; uninstall to remove only those keys",
+  });
+  const cursorInspectState = manifest.harnesses.find(
+    (entry) => entry.harness === "cursor",
+  );
+  const cursorMcp = await readBounded(paths.cursorMcpJsonPath);
+  const cursorEnablementExpected =
+    cursorInspectState === undefined
+      ? "absent"
+      : cursorInspectState.disabled
+        ? "disabled"
+        : "enabled";
+  const cursorEnablementHealthy = cursorPluginEnablementHealthy(
+    cursorMcp,
+    paths.launcherPath,
+    cursorEnablementExpected,
+  );
+  checks.push({
+    name: "integration-cursor-enablement",
+    ok: cursorEnablementHealthy,
+    level: cursorEnablementHealthy ? "pass" : "fail",
+    detail: cursorEnablementHealthy
+      ? cursorEnablementExpected === "enabled"
+        ? "Cursor user MCP config enables Agent Relay without exposing session data"
+        : cursorEnablementExpected === "disabled"
+          ? "Cursor user MCP config does not enable Agent Relay while it is disabled"
+          : "Cursor user MCP config does not enable Agent Relay while it is not selected"
+      : cursorEnablementExpected === "enabled"
+        ? "Cursor user MCP config is missing the owned Agent Relay server; run integrations repair"
+        : cursorEnablementExpected === "disabled"
+          ? "Cursor user MCP config still enables Agent Relay while it is disabled; run integrations repair"
+          : "Cursor user MCP config still enables Agent Relay; uninstall to remove only that server",
+  });
+  const claudeRegistry = await readBounded(
+    join(paths.rootDir, ".claude", "plugins", "installed_plugins.json"),
+  );
+  let claudeSnapshotIds: string[] | undefined;
+  if (claudeRegistry !== undefined) {
+    try {
+      const parsed: unknown = JSON.parse(claudeRegistry);
+      claudeSnapshotIds =
+        parsed !== null &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        "plugins" in parsed &&
+        parsed.plugins !== null &&
+        typeof parsed.plugins === "object" &&
+        !Array.isArray(parsed.plugins)
+          ? Object.keys(parsed.plugins)
+          : [];
+    } catch {
+      claudeSnapshotIds = undefined;
+    }
+  } else {
+    claudeSnapshotIds = [];
+  }
+  const claudeSnapshotHealthy =
+    claudeSnapshotIds !== undefined &&
+    (claudeEnablementExpected === "enabled"
+      ? claudeSnapshotIds.includes(CLAUDE_LOCAL_PLUGIN_ID)
+      : claudeEnablementExpected === "absent"
+        ? !claudeSnapshotIds.includes(CLAUDE_LOCAL_PLUGIN_ID)
+        : true);
+  checks.push({
+    name: "integration-claude-native-snapshot",
+    ok: claudeSnapshotHealthy,
+    level: claudeSnapshotHealthy ? "pass" : "fail",
+    detail: claudeSnapshotHealthy
+      ? claudeEnablementExpected === "enabled"
+        ? "Claude Code has snapshotted the Agent Relay plugin from the local marketplace"
+        : "Claude Code does not have an unexpected Agent Relay plugin snapshot"
+      : claudeEnablementExpected === "enabled"
+        ? "Claude Code has not snapshotted the Agent Relay plugin; run integrations repair"
+        : "the Claude Code plugin registry is malformed; repair it through Claude Code",
   });
   for (const bundle of vendorPluginBundles()) {
     const state = manifest.harnesses.find(
@@ -1508,8 +2163,7 @@ export async function inspectVendorIntegrations(
     ({ metadata }) =>
       metadata?.security.networking === "loopback-only" &&
       metadata.security.authorization === "native-harness-only" &&
-      metadata.security.exactSessionBinding ===
-        "AGENT_RELAY_MCP_BINDING inherited from Relay supervisor" &&
+      metadata.security.exactSessionBinding === EXACT_SESSION_BINDING &&
       metadata.security.embeddedCredentials === false,
   );
   checks.push({
@@ -1517,7 +2171,7 @@ export async function inspectVendorIntegrations(
     ok: securityBoundaryCompatible,
     level: securityBoundaryCompatible ? "pass" : "fail",
     detail: securityBoundaryCompatible
-      ? "loopback networking, exact supervisor binding, secret-free manifests, and native authorization are intact"
+      ? "loopback networking, exact native-session binding, secret-free manifests, and native authorization are intact"
       : "integration security metadata is incompatible; disable the bundle and reinstall or roll back before use",
   });
   const contractCompatible =

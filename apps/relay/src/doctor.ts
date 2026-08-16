@@ -405,6 +405,23 @@ export async function runDoctor(
             ? "MCP correlation handshake is ready; no exact active native session is bound"
             : "MCP correlation handshake is installed; live daemon readiness was not proven",
     });
+    const unsupervisedReady = checks
+      .filter(
+        (check) =>
+          check.name === "integration-security-boundary" ||
+          check.name === "integration-mcp-compatibility" ||
+          (check.name.startsWith("integration-") &&
+            check.name.endsWith("-artifacts")),
+      )
+      .every((check) => check.level !== "fail");
+    checks.push({
+      name: "relay-mcp-unsupervised-binding",
+      ok: unsupervisedReady,
+      level: unsupervisedReady ? "pass" : "fail",
+      detail: unsupervisedReady
+        ? "exact binding uses the harness-stated native session; agent-relay run is not required to ask"
+        : "unsupervised exact binding is not ready; repair the owned plugin bundle before asking from a normal harness launch",
+    });
   }
   if (options.transportReadiness !== undefined) {
     const readiness = options.transportReadiness;

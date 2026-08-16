@@ -9,6 +9,7 @@ import {
 import type { Harness } from "@agent-relay/protocol";
 
 import { officialAgentRelaySkillArtifacts } from "./agent-skills.js";
+import { EXACT_SESSION_BINDING, pluginMcpEnvironment } from "./mcp-binding.js";
 
 export const VENDOR_INTEGRATION_SCHEMA = "agent-relay-integration.v1" as const;
 export const VENDOR_INTEGRATION_VERSION = "1.0.0" as const;
@@ -57,17 +58,6 @@ const officialSources: Record<Harness, readonly string[]> = {
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
-}
-
-/** Claude/Cursor plugin MCP spawns a clean env; forward supervisor placeholders. */
-function supervisedMcpEnvironment(): Record<string, string> {
-  return {
-    AGENT_RELAY_MCP_HARNESS: "${AGENT_RELAY_MCP_HARNESS}",
-    AGENT_RELAY_MCP_BINDING: "${AGENT_RELAY_MCP_BINDING}",
-    AGENT_RELAY_MACHINE_ID: "${AGENT_RELAY_MACHINE_ID}",
-    AGENT_RELAY_BRIDGE_SESSION_ID: "${AGENT_RELAY_BRIDGE_SESSION_ID}",
-    AGENT_RELAY_DAEMON_URL: "${AGENT_RELAY_DAEMON_URL}",
-  };
 }
 
 function artifact(
@@ -174,8 +164,7 @@ function metadata(harness: Harness, nativeKind: string): string {
     security: {
       networking: "loopback-only",
       authorization: "native-harness-only",
-      exactSessionBinding:
-        "AGENT_RELAY_MCP_BINDING inherited from Relay supervisor",
+      exactSessionBinding: EXACT_SESSION_BINDING,
       embeddedCredentials: false,
     },
     officialSources: officialSources[harness],
@@ -225,8 +214,8 @@ function codexArtifacts(): VendorPluginArtifact[] {
           "agent-relay": {
             command: "./bin/agent-relay-plugin",
             args: ["mcp"],
-            cwd: "${PLUGIN_ROOT}",
-            env: supervisedMcpEnvironment(),
+            cwd: ".",
+            env: pluginMcpEnvironment("codex"),
           },
         },
       }),
@@ -311,7 +300,7 @@ function claudeArtifacts(): VendorPluginArtifact[] {
           "agent-relay": {
             command: `${commandRoot}`,
             args: ["mcp"],
-            env: supervisedMcpEnvironment(),
+            env: pluginMcpEnvironment("claude"),
           },
         },
       }),
@@ -393,19 +382,7 @@ function cursorArtifacts(): VendorPluginArtifact[] {
         keywords: ["agent-relay", "operator", "local-first"],
       }),
     ),
-    artifact(
-      "mcp.json",
-      json({
-        mcpServers: {
-          "agent-relay": {
-            command: `${commandRoot}`,
-            args: ["mcp"],
-            cwd: "${PLUGIN_ROOT}",
-            env: supervisedMcpEnvironment(),
-          },
-        },
-      }),
-    ),
+    artifact("mcp.json", json({ mcpServers: {} })),
     artifact(
       "hooks/hooks.json",
       json({
@@ -467,12 +444,15 @@ export function vendorPluginBundles(): readonly VendorPluginBundle[] {
     {
       harness: "claude",
       displayName: "Claude Code",
-      nativeKind: "Claude Code local plugin loaded with --plugin-dir",
+      nativeKind:
+        "Claude Code plugin in an Agent Relay-owned local marketplace",
       verifiedVersion: verifiedVersions.claude,
-      updateChannel: "agent-relay integrations upgrade",
+      updateChannel:
+        "agent-relay integrations upgrade; native marketplace refresh after review",
       disableBehavior:
-        "Agent Relay lifecycle disable; frozen CLI loads explicitly with --plugin-dir",
-      installLocation: ".agent-relay/vendor/claude/agent-relay",
+        "claude plugin uninstall or Agent Relay lifecycle disable",
+      installLocation:
+        ".agent-relay/vendor/claude-marketplace/plugins/agent-relay",
       artifacts: claudeArtifacts(),
     },
     {
@@ -482,7 +462,7 @@ export function vendorPluginBundles(): readonly VendorPluginBundle[] {
       verifiedVersion: verifiedVersions.cursor,
       updateChannel: "agent-relay integrations upgrade",
       disableBehavior:
-        "Agent Relay lifecycle disable; frozen CLI uses --plugin-dir when needed",
+        "Agent Relay lifecycle disable; Cursor loads the local plugin from plugins/local",
       installLocation: ".cursor/plugins/local/agent-relay",
       artifacts: cursorArtifacts(),
     },
@@ -508,6 +488,21 @@ export function codexMarketplaceJson(): string {
         source: { source: "local", path: "./plugins/agent-relay" },
         policy: { installation: "AVAILABLE", authentication: "ON_USE" },
         category: "Productivity",
+      },
+    ],
+  });
+}
+
+export function claudeMarketplaceJson(): string {
+  return json({
+    name: "agent-relay-local",
+    owner: { name: "Flow XO" },
+    plugins: [
+      {
+        name: "agent-relay",
+        source: "./plugins/agent-relay",
+        description:
+          "Local-first operator interaction and activity integration for Agent Relay.",
       },
     ],
   });

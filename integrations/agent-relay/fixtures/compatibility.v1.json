@@ -39,7 +39,7 @@
       ],
       "nativeValidation": "exact 0.145.0 local marketplace add, plugin add, enabled list, plugin@marketplace removal, and marketplace removal passed in isolated homes",
       "frozenActivityEvents": ["SessionStart", "UserPromptSubmit", "Stop"],
-      "localInstall": "Agent Relay-owned local marketplace plus native plugin action",
+      "localInstall": "Agent Relay-owned local marketplace; launch codex as usual after install writes enablement tables",
       "otherVersionPolicy": "compatible-unverified"
     },
     {
@@ -57,7 +57,7 @@
         "Stop",
         "StopFailure"
       ],
-      "localInstall": "official --plugin-dir local loading",
+      "localInstall": "Agent Relay-owned local marketplace; launch claude as usual after native plugin enablement",
       "otherVersionPolicy": "compatible-unverified"
     },
     {
@@ -68,10 +68,10 @@
         "cursor-agent plugin --help",
         "cursor-agent --help"
       ],
-      "nativeValidation": "exact frozen CLI accepted the documented --plugin-dir surface in an isolated home; no provider invocation was attempted",
+      "nativeValidation": "exact frozen CLI accepted the documented local plugin tree in an isolated home; no provider invocation was attempted",
       "frozenActivityEvents": ["stop"],
       "handshakeEvents": ["sessionStart"],
-      "localInstall": "local plugin directory; frozen CLI loads with --plugin-dir",
+      "localInstall": "not offered; Cursor does not state a conversation id to MCP",
       "otherVersionPolicy": "compatible-unverified"
     }
   ]

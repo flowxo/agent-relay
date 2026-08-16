@@ -37,6 +37,9 @@ describe("versioned Relay MCP contract", () => {
     expect(JSON.stringify(RELAY_MCP_TOOL_DEFINITIONS)).not.toContain(
       "relay_check",
     );
+    for (const tool of RELAY_MCP_TOOL_DEFINITIONS) {
+      expect(tool.outputSchema).toMatchObject({ type: "object" });
+    }
   });
 
   it("validates sanitized one-question and questionnaire fixtures", async () => {

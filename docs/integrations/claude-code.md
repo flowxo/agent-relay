@@ -1,34 +1,33 @@
 # Claude Code integration
 
 Agent Relay installs the official Claude Code plugin shape under
-`~/.agent-relay/vendor/claude/agent-relay`: `.claude-plugin/plugin.json`,
-`.mcp.json`, `hooks/hooks.json`, the canonical skill, commands, and one
-executable wrapper. The frozen CLI supports the official `--plugin-dir`
-development and local-test mechanism, so no marketplace or implicit
-personal-plugin claim is needed.
+`~/.agent-relay/vendor/claude-marketplace/plugins/agent-relay`:
+`.claude-plugin/plugin.json`, `.mcp.json`, `hooks/hooks.json`, the canonical
+skill, commands, and one executable wrapper. Install also writes an Agent
+Relay-owned local marketplace at `~/.agent-relay/vendor/claude-marketplace` so
+Claude Code can enable the plugin through its native marketplace action. After
+that, launch `claude` as usual.
 
 ## Install and trust
 
 ```sh
 agent-relay integrations install --harness claude
-agent-relay run claude -- claude --plugin-dir "$HOME/.agent-relay/vendor/claude/agent-relay"
+claude
 ```
 
-Inspect the plugin and approve its hooks through Claude's native trust path. The
-frozen `2.1.219 (Claude Code)` executable also exposes native plugin install,
-update, enable, disable, and uninstall commands for marketplace-backed plugins;
-this local bundle deliberately uses the smaller documented `--plugin-dir`
-mechanism.
+Install writes only Agent Relay's marketplace and `enabledPlugins` keys into
+`~/.claude/settings.json`, then launch `claude` as usual. Inspect the plugin and
+approve its hooks through Claude's native trust path. `--plugin-dir` remains a
+one-off development load, not the everyday path.
 
-The Relay supervisor supplies one opaque exact binding to the Claude process.
-The plugin `.mcp.json` forwards those supervisor placeholders into the MCP
-subprocess through the native `env` block; Claude's plugin MCP spawn does not
-inherit the process environment. Running the MCP entry point without that
-binding fails closed rather than correlating by path, process, timing, or
-session metadata.
+Exact binding uses Claude's harness-stated session ID. The plugin `.mcp.json`
+forwards `${CLAUDE_SESSION_ID}` into the MCP subprocess because Claude's plugin
+MCP spawn does not inherit the process environment. Missing or unsubstituted
+session identity fails closed rather than correlating by path, process, timing,
+or session metadata heuristics.
 
-Operator questions in a supervised Claude session are produced by the official
-skill calling `agent-relay-mcp.v1`. Claude's native `AskUserQuestion` remains a
+Operator questions in a Claude session are produced by the official skill
+calling `agent-relay-mcp.v1`. Claude's native `AskUserQuestion` remains a
 terminal prompt. Relay does not intercept it, including via PreToolUse.
 `ExitPlanMode` and `PermissionRequest` stay on Claude's native approval path.
 
@@ -52,9 +51,9 @@ agent-relay integrations rollback --harness claude
 ```
 
 Every operation is ownership checked. Manual Agent Relay MCP, hook, command, or
-skill material is reported before mutation. Unrelated Claude settings and their
-formatting remain byte-for-byte unchanged. Omit `--plugin-dir` after disable or
-uninstall, and use it again after enable.
+skill material is reported before mutation. Unrelated Claude settings keys are
+preserved. Install, disable, enable, and uninstall rewrite only Agent Relay's
+marketplace enablement keys in `~/.claude/settings.json`.
 
 ## Uninstall
 
@@ -62,9 +61,9 @@ uninstall, and use it again after enable.
 agent-relay integrations uninstall --harness claude
 ```
 
-Only the owned plugin tree and its lifecycle record are removed. Relay data,
-delivery configuration, and other Claude plugins, MCP servers, hooks, commands,
-skills, and settings remain.
+Only the owned plugin tree, local marketplace declaration, and lifecycle record
+are removed. Relay data, delivery configuration, and other Claude plugins, MCP
+servers, hooks, commands, skills, and settings remain.
 
 Source contracts:
 [plugin reference](https://code.claude.com/docs/en/plugins-reference),

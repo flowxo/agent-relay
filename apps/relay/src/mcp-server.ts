@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Readable } from "node:stream";
 
 import {
@@ -19,6 +21,16 @@ import type {
 import { z } from "zod";
 
 import { RelayClient, RelayClientError } from "./client.js";
+import {
+  deriveNativeMcpBindingToken,
+  isMcpBindingToken,
+  resolveMcpHarness,
+  nativeSessionIdFromMcpParams,
+  resolveNativeSessionId,
+  resolvedNativeSessionId,
+  UNSUPERVISED_BRIDGE_SESSION_ID,
+} from "./mcp-binding.js";
+import { loadOrCreateMachineId } from "./machine-id.js";
 
 const LOCAL_FALLBACK =
   "Ask the operator locally with the harness's native question mechanism." as const;
@@ -45,7 +57,12 @@ const rpcNotificationSchema = z
   .passthrough();
 
 export interface RelayMcpServerOptions {
-  bindingToken: string;
+  bindingToken?: string;
+  nativeSession?: {
+    machineId: string;
+    harness: Harness;
+    sessionId: string;
+  };
   machineId: string;
   bridgeSessionId: string;
   harness: Harness;
@@ -198,6 +215,7 @@ function requestError(
 export class RelayMcpServer {
   private readonly now: () => number;
   private readonly pause: (milliseconds: number) => Promise<void>;
+  private callSessionId: string | undefined;
 
   public constructor(private readonly options: RelayMcpServerOptions) {
     this.now = options.now ?? Date.now;
@@ -210,20 +228,64 @@ export class RelayMcpServer {
       });
   }
 
+  private authority():
+    | string
+    | {
+        machineId: string;
+        harness: Harness;
+        sessionId: string;
+      } {
+    if (this.options.bindingToken !== undefined) {
+      return this.options.bindingToken;
+    }
+    const sessionId =
+      this.callSessionId ?? this.options.nativeSession?.sessionId;
+    if (sessionId !== undefined) {
+      return {
+        machineId:
+          this.options.nativeSession?.machineId ?? this.options.machineId,
+        harness: this.options.nativeSession?.harness ?? this.options.harness,
+        sessionId,
+      };
+    }
+    throw new Error("MCP server requires a binding token or native session");
+  }
+
   private async registerBinding(): Promise<void> {
-    await this.options.client.registerMcpBinding(this.options.bindingToken, {
-      machineId: this.options.machineId,
+    const identity = {
+      machineId:
+        this.options.nativeSession?.machineId ?? this.options.machineId,
       bridgeSessionId: this.options.bridgeSessionId,
-      harness: this.options.harness,
+      harness: this.options.nativeSession?.harness ?? this.options.harness,
+    };
+    if (this.options.bindingToken !== undefined) {
+      await this.options.client.registerMcpBinding(
+        this.options.bindingToken,
+        identity,
+      );
+      return;
+    }
+    const sessionId =
+      this.callSessionId ?? this.options.nativeSession?.sessionId;
+    if (sessionId === undefined) {
+      return;
+    }
+    const token = deriveNativeMcpBindingToken({
+      ...identity,
+      sessionId,
+    });
+    await this.options.client.registerMcpBinding(token, identity);
+    await this.options.client.claimMcpBinding(token, {
+      ...identity,
+      sessionId,
     });
   }
 
   private async awaitBound(deadline: number) {
     for (;;) {
-      const status = await this.options.client.mcpStatus(
-        this.options.bindingToken,
-        { schema: "agent-relay-mcp-status.v1" },
-      );
+      const status = await this.options.client.mcpStatus(this.authority(), {
+        schema: "agent-relay-mcp-status.v1",
+      });
       if (status.bindingState !== "pending" || this.now() >= deadline) {
         return status;
       }
@@ -244,7 +306,7 @@ export class RelayMcpServer {
       return bindingError(binding.bindingState);
     }
     const opened = await this.options.client.openMcpInteraction(
-      this.options.bindingToken,
+      this.authority(),
       input,
     );
     if (opened.outcome !== "opened" && opened.outcome !== "duplicate") {
@@ -274,7 +336,7 @@ export class RelayMcpServer {
       return bindingError(binding.bindingState);
     }
     const opened = await this.options.client.openMcpInteraction(
-      this.options.bindingToken,
+      this.authority(),
       input,
     );
     if (opened.outcome !== "opened" && opened.outcome !== "duplicate") {
@@ -294,10 +356,10 @@ export class RelayMcpServer {
     deadline: number,
   ): Promise<RelayMcpToolResultV1> {
     for (;;) {
-      const status = await this.options.client.mcpStatus(
-        this.options.bindingToken,
-        { schema: "agent-relay-mcp-status.v1", requestId },
-      );
+      const status = await this.options.client.mcpStatus(this.authority(), {
+        schema: "agent-relay-mcp-status.v1",
+        requestId,
+      });
       if (status.bindingState !== "bound") {
         return bindingError(status.bindingState);
       }
@@ -335,7 +397,7 @@ export class RelayMcpServer {
     }
     await this.registerBinding();
     const result = await this.options.client.cancelMcpInteraction(
-      this.options.bindingToken,
+      this.authority(),
       parsed.data,
     );
     if (result.outcome === "cancelled") {
@@ -366,7 +428,7 @@ export class RelayMcpServer {
     }
     await this.registerBinding();
     const status = await this.options.client.mcpStatus(
-      this.options.bindingToken,
+      this.authority(),
       parsed.data,
     );
     if (status.bindingState === "missing") {
@@ -411,6 +473,15 @@ export class RelayMcpServer {
   ): Promise<object> {
     const name = params?.["name"];
     const argumentsValue = params?.["arguments"] ?? {};
+    this.callSessionId = nativeSessionIdFromMcpParams(params);
+    if (
+      this.options.bindingToken === undefined &&
+      this.options.nativeSession === undefined &&
+      this.callSessionId === undefined
+    ) {
+      this.callSessionId = undefined;
+      return toolResult(bindingError("missing"));
+    }
     let value: RelayMcpToolResultV1;
     try {
       switch (name) {
@@ -435,6 +506,8 @@ export class RelayMcpServer {
         (error.code === "daemon-timeout" || error.code === "daemon-unavailable")
           ? errorResult("daemon-unavailable", true)
           : errorResult("internal-error", false);
+    } finally {
+      this.callSessionId = undefined;
     }
     return toolResult(value);
   }
@@ -549,17 +622,39 @@ export function assertLocalMcpDaemonUrl(value: string): string {
 }
 
 export async function runRelayMcpServer(): Promise<void> {
-  const harness = z
-    .enum(["codex", "claude", "cursor"])
-    .parse(requiredEnvironment("AGENT_RELAY_MCP_HARNESS"));
-  const bindingToken = requiredEnvironment("AGENT_RELAY_MCP_BINDING");
+  const harness =
+    resolveMcpHarness(process.env) ??
+    z
+      .enum(["codex", "claude", "cursor"])
+      .parse(requiredEnvironment("AGENT_RELAY_MCP_HARNESS"));
+  const bindingToken = isMcpBindingToken(process.env["AGENT_RELAY_MCP_BINDING"])
+    ? process.env["AGENT_RELAY_MCP_BINDING"]
+    : undefined;
+  const nativeSessionId = resolveNativeSessionId(process.env);
+  const stateDir =
+    process.env["AGENT_RELAY_STATE_DIR"] ?? join(homedir(), ".agent-relay");
+  const machineId =
+    resolvedNativeSessionId(process.env["AGENT_RELAY_MACHINE_ID"]) ??
+    (await loadOrCreateMachineId(join(stateDir, "machine-id")));
+  const bridgeSessionId =
+    resolvedNativeSessionId(process.env["AGENT_RELAY_BRIDGE_SESSION_ID"]) ??
+    UNSUPERVISED_BRIDGE_SESSION_ID;
   const daemonUrl = assertLocalMcpDaemonUrl(
     process.env["AGENT_RELAY_DAEMON_URL"] ?? "http://127.0.0.1:4317",
   );
   const server = new RelayMcpServer({
-    bindingToken,
-    machineId: requiredEnvironment("AGENT_RELAY_MACHINE_ID"),
-    bridgeSessionId: requiredEnvironment("AGENT_RELAY_BRIDGE_SESSION_ID"),
+    ...(bindingToken === undefined ? {} : { bindingToken }),
+    ...(bindingToken !== undefined || nativeSessionId === undefined
+      ? {}
+      : {
+          nativeSession: {
+            machineId,
+            harness,
+            sessionId: nativeSessionId,
+          },
+        }),
+    machineId,
+    bridgeSessionId,
     harness,
     client: new RelayClient({
       baseUrl: daemonUrl,

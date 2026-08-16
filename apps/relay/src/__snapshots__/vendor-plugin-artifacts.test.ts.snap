@@ -12,7 +12,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": ".mcp.json",
-        "sha256": "c3f73e152a9c5c4ff50ab1662f43ac8cfaa4ab7965788bb6154965a3f3362c16",
+        "sha256": "715a1c19223c618781d907aab097bf03f66ef723d2d6a3e5f872b3f4e887c9e4",
       },
       {
         "mode": "600",
@@ -47,7 +47,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "agent-relay.integration.json",
-        "sha256": "371488a2a1453fb40a8da56b9476448f92124eaeeb31acce61c593eb42244ac3",
+        "sha256": "576494f45fdff7d807391c85e876a69d74ded0b29419fec66a42d5f90c8e9ae4",
       },
     ],
     "harness": "codex",
@@ -65,7 +65,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": ".mcp.json",
-        "sha256": "c8bf78df55639392417d21427d16b7809631677f7eec1945839a676c6758b5dd",
+        "sha256": "a668a79f3836c6d8bdf32a1d2dc464dcce7e211863569ddc34ee8cff1f79a5c3",
       },
       {
         "mode": "600",
@@ -100,12 +100,12 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "agent-relay.integration.json",
-        "sha256": "949cb618d6c48fe9f645aee73c6c136b7a7c8060fcae9e9d8bf5e7d628ed0be1",
+        "sha256": "08f2806bbd300022086ac8f2672515d82590d58ff601d0cf4264352e21235651",
       },
     ],
     "harness": "claude",
-    "installLocation": ".agent-relay/vendor/claude/agent-relay",
-    "nativeKind": "Claude Code local plugin loaded with --plugin-dir",
+    "installLocation": ".agent-relay/vendor/claude-marketplace/plugins/agent-relay",
+    "nativeKind": "Claude Code plugin in an Agent Relay-owned local marketplace",
     "verifiedVersion": "2.1.219 (Claude Code)",
   },
   {
@@ -118,7 +118,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "mcp.json",
-        "sha256": "07d8042d3e3edcdb85cf68c47b518996ab17ea9bb12eb8e0d467e3d4be2d71ab",
+        "sha256": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02",
       },
       {
         "mode": "600",
@@ -153,7 +153,7 @@ exports[`vendor-native Agent Relay plugin artifacts > matches the reviewed nativ
       {
         "mode": "600",
         "path": "agent-relay.integration.json",
-        "sha256": "df8e6c61ee7e437456260a486c1ca29dadfe75cf35dd003ac8355710a563d1f2",
+        "sha256": "c604e18dd58b74e7e2aa0e2629b7742fed970ba2a9947438fb6f5a5dccad5bbb",
       },
     ],
     "harness": "cursor",

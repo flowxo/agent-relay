@@ -59,6 +59,7 @@ import type {
   BrowserResolutionResult,
   BrowserSessionActionResult,
   IngestResult,
+  McpBindingAuthority,
   McpSessionBindingMutationResult,
   McpSessionBindingRecord,
   PendingRequestRecord,
@@ -1241,12 +1242,18 @@ export class RelayService {
   }
 
   public mcpInteractionStatus(
-    token: string,
+    authority: McpBindingAuthority,
     requestId?: string,
   ): McpInteractionStatus {
     const checkedAt = this.now().toISOString();
     this.store.expireRequests(checkedAt);
-    const binding = this.store.verifyMcpSessionBinding(token, checkedAt);
+    const binding =
+      typeof authority === "string"
+        ? this.store.verifyMcpSessionBinding(authority, checkedAt)
+        : this.store.verifyMcpSessionBindingByNativeSession(
+            authority,
+            checkedAt,
+          );
     if (binding?.state !== "bound" || binding.sessionId === undefined) {
       return {
         ...(binding === undefined ? {} : { binding }),
@@ -1311,14 +1318,14 @@ export class RelayService {
   }
 
   public openMcpInteraction(
-    token: string,
+    authority: McpBindingAuthority,
     input: RelayMcpAskV1 | RelayMcpQuestionnaireV1,
   ): McpInteractionOpenResult {
     input =
       input.schema === "agent-relay-mcp-ask.v1"
         ? RelayMcpAskV1Schema.parse(input)
         : RelayMcpQuestionnaireV1Schema.parse(input);
-    const status = this.mcpInteractionStatus(token);
+    const status = this.mcpInteractionStatus(authority);
     const binding = status.binding;
     if (binding === undefined) {
       return { outcome: "binding-missing" };
@@ -1471,10 +1478,10 @@ export class RelayService {
   }
 
   public cancelMcpInteraction(
-    token: string,
+    authority: McpBindingAuthority,
     requestId: string,
   ): McpInteractionCancelResult {
-    const status = this.mcpInteractionStatus(token, requestId);
+    const status = this.mcpInteractionStatus(authority, requestId);
     const binding = status.binding;
     if (binding === undefined) {
       return { outcome: "binding-missing" };
