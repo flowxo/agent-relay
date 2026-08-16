@@ -306,8 +306,13 @@ Its authenticated read models and resumable stream can also be exercised with
 Open the authenticated project dashboard with:
 
 ```sh
+agent-relay dashboard
 agent-relay dashboard --web
 ```
+
+The bare command opens the [terminal dashboard](./terminal-dashboard.md) and
+runs on the Node.js 22 product floor. `--web` remains the authenticated browser
+launch.
 
 The command checks daemon/web readiness and protected asset/API compatibility,
 reads the private local authority without printing it, creates a 60-second
@@ -356,17 +361,21 @@ diagnosed rather than hidden.
 
 ### Try the board without Telegram credentials
 
-Use the separate synthetic demo to see four concurrent lanes and actionable
-forms without a bot token, account ID, private transcript, or hosted service:
+Use the separate synthetic demo to see five concurrent lanes and actionable
+forms, including a questionnaire, without a bot token, account ID, private
+transcript, or hosted service:
 
 ```sh
 pnpm build
 node apps/relay/dist/cli.js web-demo
 ```
 
-Open `http://127.0.0.1:4318/ui/` and use
-`~/.agent-relay/web-demo/web-credential.json`; `web.demo-started` names the
-credential file without logging either value. The demo always selects the fake
+Do not open `http://127.0.0.1:4318/ui/` directly. In another terminal run
+`agent-relay dashboard --web --demo` (browser) or `agent-relay dashboard --demo`
+(TUI). Those commands use the demo credential under `~/.agent-relay/web-demo/`
+and do not touch the everyday daemon on 4317. Restarting `web-demo` replaces the
+previous fake sessions. `web.demo-started` names the credential file without
+logging either value. The demo always selects the fake
 transport even if Telegram variables exist in the calling shell. Stop it with
 `Ctrl-C`.
 

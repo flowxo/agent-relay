@@ -29,9 +29,11 @@ as separately versioned packages would expose internal APIs and workspace
 coordination without helping an operator.
 
 The release build bundles all internal runtime TypeScript into one executable
-JavaScript file. Only `better-sqlite3` and `zod` remain runtime dependencies.
-The packed manifest contains no `workspace:*` links, development dependencies,
-lifecycle scripts, TypeScript source, or repository-relative imports.
+JavaScript file. Runtime dependencies are `better-sqlite3`, `zod`, `ink@7.1.1`,
+and `react@19.2.8`. Ink runs on the product Node.js 22 floor with no native FFI
+and no experimental Node flags. The packed manifest contains no `workspace:*`
+links, development dependencies, lifecycle scripts, TypeScript source, or
+repository-relative imports.
 
 The experimental runner bridge CLI/status and private local-adoption peer are
 bundled, but the bridge is disabled by default and the candidate contains no

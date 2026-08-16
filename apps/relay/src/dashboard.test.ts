@@ -197,6 +197,96 @@ describe("authenticated local dashboard launcher", () => {
     expect(await replay.text()).not.toContain(grant);
   });
 
+  it("keeps the machine-readable dashboard entry on --json", async () => {
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await main(["dashboard", "--json"], {
+      openBrowser: async () => {
+        throw new Error("json path opened a browser");
+      },
+      launchTerminalDashboard: async () => {
+        throw new Error("json path opened the TUI");
+      },
+    });
+    const printed = JSON.parse(String(stdout.mock.calls[0]?.[0])) as {
+      schema: string;
+      instruction: string;
+    };
+    expect(printed.schema).toBe("agent-relay-dashboard-entry.v1");
+    expect(printed.instruction).toContain("dashboard --json");
+  });
+
+  it("points --demo at the isolated web-demo URL and state directory", async () => {
+    const seen: Array<{ daemonUrl: string; stateDirectory: string }> = [];
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const originalStateDirectory = process.env["AGENT_RELAY_STATE_DIR"];
+    const originalDaemonUrl = process.env["AGENT_RELAY_DAEMON_URL"];
+    delete process.env["AGENT_RELAY_DAEMON_URL"];
+    process.env["AGENT_RELAY_STATE_DIR"] = "/synthetic/agent-relay";
+    try {
+      await main(["dashboard", "--json", "--demo"]);
+      const printed = JSON.parse(String(stdout.mock.calls[0]?.[0])) as {
+        url: string;
+      };
+      expect(printed.url).toBe("http://127.0.0.1:4318/ui/");
+      stdout.mockClear();
+      await main(["dashboard", "--demo"], {
+        stdoutIsTty: true,
+        stdinIsTty: true,
+        launchTerminalDashboard: async (options) => {
+          seen.push({
+            daemonUrl: options.daemonUrl,
+            stateDirectory: options.stateDirectory,
+          });
+          return {
+            schema: "agent-relay-dashboard-tui.v1",
+            opened: true,
+            host: "ink",
+            networking: "loopback-only",
+          };
+        },
+      });
+    } finally {
+      if (originalStateDirectory === undefined) {
+        delete process.env["AGENT_RELAY_STATE_DIR"];
+      } else {
+        process.env["AGENT_RELAY_STATE_DIR"] = originalStateDirectory;
+      }
+      if (originalDaemonUrl === undefined) {
+        delete process.env["AGENT_RELAY_DAEMON_URL"];
+      } else {
+        process.env["AGENT_RELAY_DAEMON_URL"] = originalDaemonUrl;
+      }
+    }
+    expect(seen).toEqual([
+      {
+        daemonUrl: "http://127.0.0.1:4318",
+        stateDirectory: "/synthetic/agent-relay/web-demo",
+      },
+    ]);
+  });
+
+  it("opens the terminal dashboard from a TTY and leaves --web on the browser path", async () => {
+    const opened: string[] = [];
+    await main(["dashboard"], {
+      stdoutIsTty: true,
+      stdinIsTty: true,
+      launchTerminalDashboard: async () => {
+        opened.push("tui");
+        return {
+          schema: "agent-relay-dashboard-tui.v1",
+          opened: true,
+          host: "node-host",
+          networking: "loopback-only",
+        };
+      },
+    });
+    expect(opened).toEqual(["tui"]);
+  });
+
   it("routes the CLI --web command through the canonical launcher without printing grants", async () => {
     const active = await runtime();
     const originalStateDirectory = process.env["AGENT_RELAY_STATE_DIR"];

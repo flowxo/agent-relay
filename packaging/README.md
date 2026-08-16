@@ -70,8 +70,13 @@ For a normal daemon started with the default web companion, open its protected
 local dashboard with:
 
 ```sh
+agent-relay dashboard
 agent-relay dashboard --web
 ```
+
+The bare command opens the terminal console on the Node.js 22 product floor.
+`--web` opens the authenticated browser session. `--json` prints the
+machine-readable loopback entry. `--demo` targets the isolated web-demo.
 
 The command opens a 60-second single-use loopback bootstrap, not the persistent
 web bearer or CSRF. Refresh/reopen uses a 30-minute-idle, eight-hour-absolute

@@ -126,7 +126,7 @@ describe("CLI help boundary", () => {
     });
     try {
       await main(["--version"], { openBrowser });
-      await main(["dashboard"], { openBrowser });
+      await main(["dashboard", "--json"], { openBrowser });
       await main(["dashboard", "--web", "--help"], { openBrowser });
       expect(
         output.mock.calls.map(([value]) => String(value)).join("\n"),

@@ -7,6 +7,8 @@ The Agent Relay distribution depends at runtime on the following packages:
 | `better-sqlite3` | 13.0.1  | MIT     |
 | `node-addon-api` | 8.9.0   | MIT     |
 | `zod`            | 4.4.3   | MIT     |
+| `ink`            | 7.1.1   | MIT     |
+| `react`          | 19.2.8  | MIT     |
 
 Their license texts and source are available from their respective package
 distributions and repositories. Agent Relay's own license is in `LICENSE`.

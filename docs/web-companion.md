@@ -11,9 +11,9 @@ pnpm build
 node apps/relay/dist/cli.js web-demo
 ```
 
-Open `http://127.0.0.1:4318/ui/`. The demo uses a separate local database, fake
-Telegram, and bounded synthetic sessions. It ignores real Telegram and daemon
-credentials.
+Run `agent-relay dashboard --web --demo`. The demo uses a separate local
+database, fake Telegram, and bounded synthetic sessions. It ignores real
+Telegram and daemon credentials.
 
 The command creates a synthetic `web-credential.json` beside the demo database.
 Open **Advanced recovery: connect manually** to use its bearer and CSRF fields.
@@ -81,7 +81,11 @@ case.
 
 ## What the dashboard shows
 
-The authenticated route is one project view, not a flat session list.
+The terminal console is `agent-relay dashboard`. It mirrors this information
+architecture on the same protected API. See the
+[terminal dashboard guide](terminal-dashboard.md) for keys, restore behavior,
+and the Ink runtime inventory. The authenticated browser route is one project
+view, not a flat session list.
 
 ### Project rail
 

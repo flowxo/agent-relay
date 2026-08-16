@@ -8,6 +8,14 @@ breaking changes and required operator action.
 
 ### Added
 
+- Add `agent-relay dashboard` as a full-screen real-time terminal console on the
+  same protected project API as the browser board. `--web` stays the
+  authenticated browser launch. `--json` keeps the
+  `agent-relay-dashboard-entry.v1` script path. Ink 7 is pinned and isolated
+  behind an adapter so the TUI stays on the Node.js 22 product floor. The
+  terminal restores on every controllable exit path. `--demo` targets the
+  isolated web-demo board so the browser launcher does not open the everyday
+  daemon.
 - Make operator questions work end to end across supervised Codex, Claude Code,
   and Cursor sessions through the official skill and `agent-relay-mcp.v1`.
   Native Ask User Question tools stay terminal-only. Cursor installs a
