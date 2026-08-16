@@ -46,7 +46,7 @@ const packageManifest = JSON.parse(
 );
 assert(
   JSON.stringify(Object.keys(packageManifest.dependencies).sort()) ===
-    JSON.stringify(["better-sqlite3", "zod"]),
+    JSON.stringify(["better-sqlite3", "ink", "react", "zod"]),
   "vendor integration introduced an unexpected runtime dependency",
 );
 
@@ -54,7 +54,7 @@ const unrelated = resolve(isolatedHome, "unrelated-vendor-material.txt");
 await writeFile(unrelated, "preserve exactly\n", "utf8");
 const installed = run(["integrations", "install", "--root", isolatedHome]);
 assert(installed.changed === true, "packaged vendor install made no change");
-const dashboard = run(["dashboard"]);
+const dashboard = run(["dashboard", "--json"]);
 assert(
   dashboard.schema === "agent-relay-dashboard-entry.v1" &&
     dashboard.url === "http://127.0.0.1:4317/ui/" &&

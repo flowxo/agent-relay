@@ -54,7 +54,8 @@ await build({
   define: {
     __AGENT_RELAY_BUILD_VERSION__: JSON.stringify(release.version),
   },
-  external: ["better-sqlite3", "zod"],
+  jsx: "automatic",
+  external: ["better-sqlite3", "zod", "ink", "react", "react-reconciler"],
   alias: {
     "@agent-relay/core": resolve(root, "packages/core/src/index.ts"),
     "@agent-relay/harnesses": resolve(root, "packages/harnesses/src/index.ts"),
@@ -82,7 +83,24 @@ await build({
   },
   logLevel: "warning",
 });
-await chmod(resolve(stage, "dist/cli.js"), 0o755);
+
+const cliPath = resolve(stage, "dist/cli.js");
+let packedCli = await readFile(cliPath, "utf8");
+// Lazy TUI evaluation records source paths as __esm keys; strip them so the
+// packed-content gate does not treat the bundle as a repository tree.
+let esmModule = 0;
+packedCli = packedCli.replace(/__esm\(\{"([^"]+)"\(\)/g, () => {
+  const name = `m${String(esmModule)}`;
+  esmModule += 1;
+  return `__esm({"${name}"()`;
+});
+const leakedRepositoryPath =
+  /(?:apps\/relay|packages\/(?:core|protocol|runner-bridge)|packages\/harnesses\/(?!fixtures\/))/;
+if (leakedRepositoryPath.test(packedCli)) {
+  throw new Error("packed CLI still contains a repository implementation path");
+}
+await writeFile(cliPath, packedCli);
+await chmod(cliPath, 0o755);
 
 const webAssets = [
   "app.js",

@@ -1790,4 +1790,11 @@ model.clockTimer = setInterval(() => {
   }
 }, 5_000);
 
+if (location.port === "4318" && elements.dashboardCommand) {
+  const command = elements.dashboardCommand.querySelector("code");
+  const launch = "agent-relay dashboard --web --demo";
+  if (command) command.textContent = launch;
+  else elements.dashboardCommand.textContent = launch;
+}
+
 void initializeAuthentication();

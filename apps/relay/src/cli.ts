@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -43,6 +43,8 @@ import {
 import { startDaemon } from "./daemon.js";
 import { launchWebDashboard } from "./dashboard.js";
 import type { DashboardBrowserOpener } from "./dashboard.js";
+import { dashboardEntry, launchTerminalDashboard } from "./tui/launch.js";
+import type { TerminalDashboardOptions } from "./tui/launch.js";
 import {
   observeAppleSiliconHardware,
   observeHarnessVersions,
@@ -85,7 +87,7 @@ import {
 } from "./transport-config.js";
 import { WEBHOOK_COMMAND_USAGE, runWebhookCommand } from "./webhook-command.js";
 import { resolveWebhookConfiguration } from "./webhook-config.js";
-import { seedWebDemo } from "./web-demo.js";
+import { resetWebDemoDatabase, seedWebDemo } from "./web-demo.js";
 
 const USAGE = `Agent Relay
 
@@ -100,7 +102,7 @@ Commands:
   mcp                Serve typed operator interactions over local stdio MCP
   run <harness>      Supervise a harness CLI process
   status             Show daemon and delivery status
-  dashboard          Inspect or open the canonical loopback dashboard; use --web
+  dashboard          Open the terminal dashboard; --web opens the browser; --json prints the loopback entry; --demo targets the isolated web-demo
   drain              Deliver queued events
   replay-fallback    Replay the hook fallback spool
   maintain           Apply retention policy
@@ -267,6 +269,11 @@ function installEntryPath(args: string[]): string {
 export interface CliDependencies {
   fetch?: typeof fetch;
   openBrowser?: DashboardBrowserOpener;
+  launchTerminalDashboard?: (
+    options: TerminalDashboardOptions,
+  ) => ReturnType<typeof launchTerminalDashboard>;
+  stdoutIsTty?: boolean;
+  stdinIsTty?: boolean;
 }
 
 export async function main(
@@ -483,6 +490,9 @@ export async function main(
             ),
           )
         : undefined;
+    if (demo) {
+      await resetWebDemoDatabase(databasePath);
+    }
     const daemon = await startDaemon({
       databasePath,
       activityPolicy: {
@@ -625,6 +635,7 @@ export async function main(
           details: {
             url: `http://127.0.0.1:${flag(args, "--port") ?? "4318"}/ui/`,
             credentialFile: "web-credential.json beside the demo database",
+            dashboardCommand: "agent-relay dashboard --web --demo",
             sessions: seed.sessionIds.length,
             externalCredentials: false,
           },
@@ -1040,35 +1051,65 @@ export async function main(
 
   const daemonToken = environment("AGENT_RELAY_DAEMON_TOKEN");
   if (command === "dashboard") {
+    const demo = args.includes("--demo");
     const daemonUrl = assertLocalMcpDaemonUrl(
-      environment("AGENT_RELAY_DAEMON_URL") ?? "http://127.0.0.1:4317",
+      environment("AGENT_RELAY_DAEMON_URL") ??
+        (demo ? "http://127.0.0.1:4318" : "http://127.0.0.1:4317"),
     );
-    if (args.length === 0) {
-      output({
-        schema: "agent-relay-dashboard-entry.v1",
-        url: `${daemonUrl}/ui/`,
-        networking: "loopback-only",
-        instruction:
-          "Run agent-relay dashboard --web for an authenticated browser session.",
-      });
+    const dashboardStateDir = demo
+      ? basename(stateDir) === "web-demo"
+        ? stateDir
+        : join(stateDir, "web-demo")
+      : stateDir;
+    const web = args.includes("--web");
+    const json = args.includes("--json");
+    const unknown = args.filter(
+      (argument) =>
+        argument !== "--web" && argument !== "--json" && argument !== "--demo",
+    );
+    if (unknown.length > 0) {
+      throw new Error("dashboard accepts only --web, --json, and --demo");
+    }
+    if (web && json) {
+      throw new Error("dashboard --web and --json cannot be combined");
+    }
+    if (
+      json ||
+      (!web && (dependencies.stdoutIsTty ?? process.stdout.isTTY) !== true)
+    ) {
+      output(dashboardEntry(daemonUrl));
       return;
     }
-    if (args.length !== 1 || args[0] !== "--web") {
-      throw new Error("dashboard accepts only --web");
+    if (web) {
+      output(
+        await launchWebDashboard({
+          daemonUrl,
+          stateDirectory: dashboardStateDir,
+          ...(daemonToken === undefined ? {} : { daemonToken }),
+          ...(dependencies.fetch === undefined
+            ? {}
+            : { fetch: dependencies.fetch }),
+          ...(dependencies.openBrowser === undefined
+            ? {}
+            : { openBrowser: dependencies.openBrowser }),
+        }),
+      );
+      return;
     }
-    output(
-      await launchWebDashboard({
-        daemonUrl,
-        stateDirectory: stateDir,
-        ...(daemonToken === undefined ? {} : { daemonToken }),
-        ...(dependencies.fetch === undefined
-          ? {}
-          : { fetch: dependencies.fetch }),
-        ...(dependencies.openBrowser === undefined
-          ? {}
-          : { openBrowser: dependencies.openBrowser }),
-      }),
-    );
+    if ((dependencies.stdinIsTty ?? process.stdin.isTTY) !== true) {
+      output(dashboardEntry(daemonUrl));
+      return;
+    }
+    const result = await (
+      dependencies.launchTerminalDashboard ?? launchTerminalDashboard
+    )({
+      daemonUrl,
+      stateDirectory: dashboardStateDir,
+      ...(dependencies.fetch === undefined
+        ? {}
+        : { fetch: dependencies.fetch }),
+    });
+    output(result);
     return;
   }
   const client = new RelayClient({

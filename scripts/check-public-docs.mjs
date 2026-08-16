@@ -9,6 +9,7 @@ const focusedDocuments = [
   "docs/install-upgrade-uninstall.md",
   "docs/telegram.md",
   "docs/web-companion.md",
+  "docs/terminal-dashboard.md",
   "docs/troubleshooting.md",
   "docs/compatibility.md",
   "docs/packaging.md",

@@ -31,7 +31,7 @@ mutation is authorized by this record.
   its final post-merge candidate and new digests are recorded externally before
   FXO-1164 execution rather than self-referenced from this source file.
 - The frozen package manager is `pnpm@11.17.0`; `pnpm-lock.yaml` has SHA-256
-  `bb64bd2050d8f05f973e47785ee3806cf3ae931394e027ffd41f80e36e939723`.
+  `4f69deeb6111da1fe003414ab100347796ddc6f996384e8c3503db9db33c7d69`.
 - Development-only security overrides pin `brace-expansion@5.0.9`,
   `fast-uri@3.1.5`, and `postcss@8.5.26`. They clear GHSA-rgw5-rvv9-x895,
   GHSA-7p8r-x3mc-p8w7, and GHSA-fxqj-rqcc-2cmp without changing the

@@ -13,7 +13,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["**/*.ts"],
+    files: ["**/*.{ts,tsx}"],
     rules: {
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-explicit-any": "error",

@@ -15,12 +15,12 @@ HTTP and browser-behavior reference.
 
 The built-in project dashboard is served at `http://127.0.0.1:4317/ui/`. Its
 static shell is public on loopback and contains no relay data or credential. The
-normal entry is `agent-relay dashboard --web`: the CLI verifies the protected
-app, creates a 60-second single-use grant, and opens an authenticated browser
-session. Direct `/ui/` access shows that command first; persistent manual bearer
-and CSRF fields are behind **Advanced recovery** and remain page-memory-only.
-Authenticated API responses remain the only source of session and attention
-data.
+terminal entry is `agent-relay dashboard`. The browser entry is
+`agent-relay dashboard --web`: the CLI verifies the protected app, creates a
+60-second single-use grant, and opens an authenticated browser session. Direct
+`/ui/` access shows that command first; persistent manual bearer and CSRF fields
+are behind **Advanced recovery** and remain page-memory-only. Authenticated API
+responses remain the only source of session and attention data.
 
 The companion is enabled by default for loopback development. Set
 `AGENT_RELAY_WEB_ENABLED=0` or pass `agent-relay daemon --no-web` to disable the
@@ -386,15 +386,18 @@ node apps/relay/dist/cli.js web-demo
 ```
 
 The command uses `127.0.0.1:4318`, the fake Telegram transport, a fixed
-dedicated demo SQLite file and log beneath `~/.agent-relay/web-demo/`, and four
-bounded synthetic lanes across Working, Needs input, Idle, and Failed. It
-ignores provider and daemon bearer environment credentials, never contains
-assistant transcript content, and does not log either generated local credential
-value. Open `http://127.0.0.1:4318/ui/` and copy the two fields from
-`~/.agent-relay/web-demo/web-credential.json`. Only `--port` is configurable;
-the command rejects `--db`, `--log`, and `--host` so a demo cannot read another
-database, write another log, or leave the loopback boundary. Stop an existing
-demo before reusing its fixed state directory.
+dedicated demo SQLite file and log beneath `~/.agent-relay/web-demo/`, and five
+bounded synthetic lanes across Working, Needs input, Idle, and Failed, including
+a questionnaire. It ignores provider and daemon bearer environment credentials,
+never contains assistant transcript content, and does not log either generated
+local credential value. Run `agent-relay dashboard --web --demo` rather than
+opening `http://127.0.0.1:4318/ui/` directly. Advanced recovery can still copy
+the two fields from `~/.agent-relay/web-demo/web-credential.json`.
+
+<!-- prettier-ignore -->
+Only `--port` is configurable; the command rejects `--db`, `--log`, and `--host` so a demo cannot read another database, write another log, or leave the loopback boundary.
+Stop the running demo, then start `web-demo` again. Each start replaces the
+previous synthetic lanes so the board matches this build.
 
 ### Automated package and browser proof
 

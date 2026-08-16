@@ -36,7 +36,9 @@ credential retention, live-provider work, or any later release.
 - One private Telegram topic for each agent session.
 - One [durable shared activity model](docs/session-activity.md) in topic titles,
   Telegram status, and the web board: Working, Needs input, Background work,
-  Idle, Done, Failed, Unknown, or Ended. Muting remains independent.
+  Idle, Done, Failed, Unknown, or Ended. Muting remains independent. The same
+  states appear in Telegram, the web board, and the
+  [terminal dashboard](docs/terminal-dashboard.md).
 - Clear alerts when an agent stops, asks a question, or has a proven crash.
 - Quiet lifecycle updates when a session starts or the operator sends more work,
   so an unattended topic does not look falsely paused.
@@ -393,9 +395,23 @@ request, active continuation, pending delivery, or newly arrived work. See the
 [Telegram cleanup and pruning rules](docs/telegram.md) before relying on it for
 retention.
 
+### Use the terminal or web dashboard
+
+With the loopback daemon running, the terminal console is the default:
+
+```sh
+agent-relay dashboard
+```
+
+The TUI runs on the Node.js 22 product floor. `agent-relay dashboard --web`
+still opens the authenticated browser session. `agent-relay dashboard --json`
+prints the machine-readable loopback entry for scripts. See the
+[terminal dashboard guide](docs/terminal-dashboard.md) for keys, connection
+states, restore behavior, and accessibility limits.
+
 ### Use the local web board
 
-With the loopback daemon running, use the normal authenticated entry point:
+With the loopback daemon running, the authenticated browser entry is:
 
 ```sh
 agent-relay dashboard --web
@@ -427,11 +443,12 @@ To explore the UI with synthetic data and no Telegram account:
 node apps/relay/dist/cli.js web-demo
 ```
 
-The demo runs separately at `http://127.0.0.1:4318/ui/`. Read the
-[web companion guide](docs/web-companion.md) for its security model and API.
-Keep the listener on loopback. A tunnel or public listener adds reachability but
-does not add remote authentication, TLS, proxy validation, or a safe public
-trust boundary; both remain unsupported.
+Open the demo with `agent-relay dashboard --web --demo` or
+`agent-relay dashboard --demo`. Direct `http://127.0.0.1:4318/ui/` visits need
+that launcher. Read the [web companion guide](docs/web-companion.md) for its
+security model and API. Keep the listener on loopback. A tunnel or public
+listener adds reachability but does not add remote authentication, TLS, proxy
+validation, or a safe public trust boundary; both remain unsupported.
 
 ### Supervise a CLI when exits matter
 

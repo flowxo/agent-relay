@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +11,11 @@ import {
   RelayStore,
 } from "@agent-relay/core";
 
-import { makeWebDemoEvents, seedWebDemo } from "./web-demo.js";
+import {
+  makeWebDemoEvents,
+  resetWebDemoDatabase,
+  seedWebDemo,
+} from "./web-demo.js";
 import { startDaemon } from "./daemon.js";
 import { fakeOnlyTransportReadiness } from "./transport-config.js";
 
@@ -38,10 +42,10 @@ describe("credential-free local web demo data", () => {
       runId: "synthetic123",
     });
 
-    expect(seed.sessionIds).toHaveLength(4);
-    expect(store.listSessions()).toHaveLength(4);
-    expect(store.listPendingRequests()).toHaveLength(2);
-    expect(transport.deliveries).toHaveLength(4);
+    expect(seed.sessionIds).toHaveLength(5);
+    expect(store.listSessions()).toHaveLength(5);
+    expect(store.listPendingRequests()).toHaveLength(3);
+    expect(transport.deliveries).toHaveLength(5);
     expect(
       new Set(
         store
@@ -76,6 +80,17 @@ describe("credential-free local web demo data", () => {
     expect(() => makeWebDemoEvents({ runId: "../../private" })).toThrow(
       "web demo run ID",
     );
+  });
+
+  it("removes a previous demo database so a restart is a fresh board", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-relay-web-demo-reset-"));
+    temporaryDirectories.push(root);
+    const databasePath = join(root, "relay.sqlite");
+    await writeFile(databasePath, "stale-demo");
+    await writeFile(`${databasePath}-wal`, "stale-wal");
+    await resetWebDemoDatabase(databasePath);
+    await expect(stat(databasePath)).rejects.toMatchObject({ code: "ENOENT" });
+    await resetWebDemoDatabase(databasePath);
   });
 
   it("keeps provider configuration out of demo status, UI, and logs", async () => {

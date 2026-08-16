@@ -22,7 +22,7 @@ local daemon ─── SQLite queue, requests, claims, diagnostics
     │                         ▲
     │ bounded card            │ correlated answer
     ▼                         │
-fake / Telegram / signed webhook / optional WhooshBang / local web
+fake / Telegram / signed webhook / optional WhooshBang / local web / TUI
           │
           ▼
 inline native hook response OR one owned late-resume command

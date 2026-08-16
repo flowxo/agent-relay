@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { unlink } from "node:fs/promises";
 
 import type { RelayService } from "@agent-relay/core";
 import {
@@ -50,6 +51,7 @@ export function makeWebDemoEvents(
     `session_demo_running_${runId}`,
     `session_demo_waiting_${runId}`,
     `session_demo_select_${runId}`,
+    `session_demo_questions_${runId}`,
     `session_demo_crashed_${runId}`,
   ];
   const candidates: AgentAttentionEventV1[] = [
@@ -128,15 +130,74 @@ export function makeWebDemoEvents(
     },
     {
       schema: "agent-attention.v1",
-      eventId: `evt_demo_crashed_${runId}`,
+      eventId: `evt_demo_questions_${runId}`,
       occurredAt,
       sequence: 4,
+      machineId,
+      bridgeSessionId: `bridge_demo_questions_${runId}`,
+      harness: "claude",
+      surface: "cli",
+      harnessVersion: "synthetic-demo",
+      sessionId: sessionIds[3] ?? "",
+      turnId: `turn_demo_questions_${runId}`,
+      project: demoProject("release-worker", "demo/release-policy"),
+      type: "input.required",
+      summary: "Synthetic questionnaire is waiting",
+      request: {
+        correlationId: `request_demo_questions_${runId}`,
+        kind: "question-set",
+        question: "Synthetic release questionnaire",
+        interaction: {
+          schema: "agent-interaction-request.v1",
+          requestId: `request_demo_questions_${runId}`,
+          createdAt: occurredAt,
+          expiresAt,
+          title: "Synthetic release questionnaire",
+          lifecycle: "pending",
+          questions: [
+            {
+              questionId: `question_demo_confirm_${runId}`,
+              kind: "confirm",
+              prompt: "Proceed with the synthetic release?",
+              confirm: {
+                optionId: `option_demo_proceed_${runId}`,
+                label: "Proceed",
+              },
+              decline: {
+                optionId: `option_demo_stop_${runId}`,
+                label: "Stop",
+              },
+            },
+            {
+              questionId: `question_demo_note_${runId}`,
+              kind: "free-text",
+              prompt: "Add a synthetic release note",
+              minLength: 3,
+              maxLength: 80,
+              multiline: false,
+            },
+          ],
+          fallback: {
+            preferredMode: "buttons",
+            alternativeModes: ["direct-text"],
+            whenUnavailable: "use-alternative",
+          },
+        },
+        expiresAt,
+      },
+      capabilities,
+    },
+    {
+      schema: "agent-attention.v1",
+      eventId: `evt_demo_crashed_${runId}`,
+      occurredAt,
+      sequence: 5,
       machineId,
       bridgeSessionId: `bridge_demo_crashed_${runId}`,
       harness: "cursor",
       surface: "cli",
       harnessVersion: "synthetic-demo",
-      sessionId: sessionIds[3] ?? "",
+      sessionId: sessionIds[4] ?? "",
       project: demoProject("indexer", "demo/recovery"),
       type: "process.exited",
       summary: "Synthetic supervised child exited unexpectedly",
@@ -180,4 +241,26 @@ export async function seedWebDemo(
   }
   await service.drain(events.length);
   return seed;
+}
+
+export async function resetWebDemoDatabase(
+  databasePath: string,
+): Promise<void> {
+  for (const path of [
+    databasePath,
+    `${databasePath}-wal`,
+    `${databasePath}-shm`,
+  ]) {
+    try {
+      await unlink(path);
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        error.code !== "ENOENT"
+      ) {
+        throw error;
+      }
+    }
+  }
 }
