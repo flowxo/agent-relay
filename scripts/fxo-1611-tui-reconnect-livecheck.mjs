@@ -25,9 +25,7 @@ const resultPath = resolve(
   "machine/tui-reconnect-livecheck.json",
 );
 const cli = resolve(root, "apps/relay/dist/cli.js");
-const nativeNode =
-  process.env.AGENT_RELAY_NATIVE_NODE ??
-  "/Users/nathan/.local/share/session-workspace/node-v22.23.1-darwin-arm64/bin/node";
+const nativeNode = process.env.AGENT_RELAY_NATIVE_NODE ?? process.execPath;
 const demoPort = 4318;
 const demoUrl = `http://127.0.0.1:${demoPort}`;
 const stateDirectory = resolve(process.env.HOME ?? "", ".agent-relay/web-demo");
