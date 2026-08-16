@@ -326,8 +326,18 @@ try {
     );
     await run(
       "pnpm",
-      ["--dir", dirname(dependency.manifestPath), "pack", "--out", tarball],
-      { temporaryRoot, timeoutMs: 180_000 },
+      [
+        "--dir",
+        dirname(dependency.manifestPath),
+        "pack",
+        "--config.ignore-scripts=true",
+        "--out",
+        tarball,
+      ],
+      {
+        temporaryRoot,
+        timeoutMs: 180_000,
+      },
     );
     dependencyOverrides[dependency.name] = `file:${tarball}`;
   }

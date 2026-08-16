@@ -1510,6 +1510,7 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
           "--dir",
           dirname(dependency.manifestPath),
           "pack",
+          "--config.ignore-scripts=true",
           "--out",
           dependencyTarball,
         ],
