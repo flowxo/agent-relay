@@ -66,9 +66,15 @@ const targets = {
     isolatedHome,
     ".agent-relay/vendor/codex-marketplace/plugins/agent-relay",
   ),
-  claude: resolve(isolatedHome, ".agent-relay/vendor/claude/agent-relay"),
-  cursor: resolve(isolatedHome, ".cursor/plugins/local/agent-relay"),
+  claude: resolve(
+    isolatedHome,
+    ".agent-relay/vendor/claude-marketplace/plugins/agent-relay",
+  ),
 };
+const leftoverCursor = resolve(
+  isolatedHome,
+  ".cursor/plugins/local/agent-relay",
+);
 for (const [harness, target] of Object.entries(targets)) {
   const metadata = JSON.parse(
     await readFile(resolve(target, "agent-relay.integration.json"), "utf8"),
@@ -85,19 +91,23 @@ for (const [harness, target] of Object.entries(targets)) {
     `packaged ${harness} wrapper is not executable and private`,
   );
 }
+assert(
+  !(await exists(leftoverCursor)),
+  "packaged install wrote a Cursor plugin that is not offered",
+);
 
 assert(
   run(["integrations", "install", "--root", isolatedHome]).changed === false,
   "packaged repeat install was not idempotent",
 );
 await writeFile(
-  resolve(targets.cursor, "commands/agent-relay-doctor.md"),
+  resolve(targets.claude, "commands/agent-relay-doctor.md"),
   "drift\n",
   "utf8",
 );
 assert(
   run(["integrations", "status", "--root", isolatedHome]).harnesses.some(
-    (entry) => entry.harness === "cursor" && entry.state === "drifted",
+    (entry) => entry.harness === "claude" && entry.state === "drifted",
   ),
   "packaged status did not detect owned drift",
 );
@@ -128,7 +138,7 @@ run(["integrations", "uninstall", "--root", isolatedHome]);
 assert(
   !(await exists(targets.codex)) &&
     !(await exists(targets.claude)) &&
-    !(await exists(targets.cursor)),
+    !(await exists(leftoverCursor)),
   "packaged uninstall left an owned plugin target",
 );
 assert(

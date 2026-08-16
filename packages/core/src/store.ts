@@ -249,6 +249,14 @@ export interface McpSessionBindingRecord {
   endedAt?: string;
 }
 
+export interface NativeMcpSessionIdentity {
+  machineId: string;
+  harness: Harness;
+  sessionId: string;
+}
+
+export type McpBindingAuthority = string | NativeMcpSessionIdentity;
+
 export type McpSessionBindingMutationResult =
   | {
       outcome: "created" | "bound" | "ended" | "duplicate";
@@ -2997,6 +3005,90 @@ export class RelayStore {
         )
         .run(now, tokenDigest);
       return this.mcpBindingFromRow(this.getMcpSessionBindingRow(token)!);
+    })();
+  }
+
+  public verifyMcpSessionBindingByNativeSession(
+    identity: NativeMcpSessionIdentity,
+    now: string,
+  ): McpSessionBindingRecord | undefined {
+    assertIsoCutoff(now, "MCP native-session verification time");
+    return this.database.transaction(() => {
+      const rows = this.database
+        .prepare(
+          `
+          SELECT * FROM mcp_session_bindings
+          WHERE machine_id = ?
+            AND harness = ?
+            AND session_id = ?
+            AND state IN ('pending', 'bound')
+        `,
+        )
+        .all(
+          identity.machineId,
+          identity.harness,
+          identity.sessionId,
+        ) as McpSessionBindingRow[];
+      if (rows.length === 0) {
+        return undefined;
+      }
+      if (rows.length > 1) {
+        this.database
+          .prepare(
+            `
+            UPDATE mcp_session_bindings
+            SET state = 'ambiguous', updated_at = ?
+            WHERE machine_id = ?
+              AND harness = ?
+              AND session_id = ?
+              AND state IN ('pending', 'bound')
+          `,
+          )
+          .run(now, identity.machineId, identity.harness, identity.sessionId);
+        const ambiguous = this.database
+          .prepare(
+            `
+            SELECT * FROM mcp_session_bindings
+            WHERE machine_id = ? AND harness = ? AND session_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+          `,
+          )
+          .get(identity.machineId, identity.harness, identity.sessionId) as
+          McpSessionBindingRow | undefined;
+        return ambiguous === undefined
+          ? undefined
+          : this.mcpBindingFromRow(ambiguous);
+      }
+      const row = rows[0]!;
+      if (row.state !== "bound" || row.session_id === null) {
+        return this.mcpBindingFromRow(row);
+      }
+      const session = this.getSession({
+        machineId: row.machine_id,
+        harness: row.harness,
+        sessionId: row.session_id,
+      });
+      if (
+        session !== undefined &&
+        session.bridgeSessionId === row.bridge_session_id
+      ) {
+        return this.mcpBindingFromRow(row);
+      }
+      this.database
+        .prepare(
+          `
+          UPDATE mcp_session_bindings
+          SET state = 'ambiguous', updated_at = ?
+          WHERE token_digest = ? AND state = 'bound'
+        `,
+        )
+        .run(now, row.token_digest);
+      return this.mcpBindingFromRow(
+        this.database
+          .prepare("SELECT * FROM mcp_session_bindings WHERE token_digest = ?")
+          .get(row.token_digest) as McpSessionBindingRow,
+      );
     })();
   }
 

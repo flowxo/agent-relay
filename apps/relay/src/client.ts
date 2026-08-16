@@ -263,8 +263,23 @@ export class RelayClient {
     return await this.request<RelayDaemonStatus>("/v1/status");
   }
 
-  private mcpHeaders(bindingToken: string): Record<string, string> {
-    return { "x-agent-relay-mcp-binding": bindingToken };
+  public mcpHeaders(
+    authority:
+      | string
+      | {
+          machineId: string;
+          harness: Harness;
+          sessionId: string;
+        },
+  ): Record<string, string> {
+    if (typeof authority === "string") {
+      return { "x-agent-relay-mcp-binding": authority };
+    }
+    return {
+      "x-agent-relay-mcp-native-session": authority.sessionId,
+      "x-agent-relay-machine-id": authority.machineId,
+      "x-agent-relay-harness": authority.harness,
+    };
   }
 
   public async registerMcpBinding(
@@ -315,34 +330,52 @@ export class RelayClient {
   }
 
   public async openMcpInteraction(
-    bindingToken: string,
+    authority:
+      | string
+      | {
+          machineId: string;
+          harness: Harness;
+          sessionId: string;
+        },
     input: RelayMcpAskV1 | RelayMcpQuestionnaireV1,
   ): Promise<McpInteractionResponse> {
     return await this.request<McpInteractionResponse>("/v1/mcp/interactions", {
       method: "POST",
-      headers: this.mcpHeaders(bindingToken),
+      headers: this.mcpHeaders(authority),
       body: JSON.stringify(input),
     });
   }
 
   public async cancelMcpInteraction(
-    bindingToken: string,
+    authority:
+      | string
+      | {
+          machineId: string;
+          harness: Harness;
+          sessionId: string;
+        },
     input: RelayMcpCancelV1,
   ): Promise<McpInteractionResponse> {
     return await this.request<McpInteractionResponse>("/v1/mcp/cancel", {
       method: "POST",
-      headers: this.mcpHeaders(bindingToken),
+      headers: this.mcpHeaders(authority),
       body: JSON.stringify(input),
     });
   }
 
   public async mcpStatus(
-    bindingToken: string,
+    authority:
+      | string
+      | {
+          machineId: string;
+          harness: Harness;
+          sessionId: string;
+        },
     input: RelayMcpStatusV1,
   ): Promise<McpStatusResponse> {
     return await this.request<McpStatusResponse>("/v1/mcp/status", {
       method: "POST",
-      headers: this.mcpHeaders(bindingToken),
+      headers: this.mcpHeaders(authority),
       body: JSON.stringify(input),
     });
   }

@@ -382,4 +382,80 @@ describe("local Relay stdio MCP protocol", () => {
       ),
     ).resolves.toMatchObject({ error: { code: -32601 } });
   });
+
+  it("handshakes without a spawn-time session and binds an ask to tools/call thread metadata", async () => {
+    const unsupervised = new RelayMcpServer({
+      machineId: "machine_mcp_server_12345678",
+      bridgeSessionId: "bridge_local_hooks",
+      harness: "codex",
+      client: {} as RelayClient,
+    });
+    await expect(
+      unsupervised.handle(
+        request(8, "initialize", { protocolVersion: "2025-11-25" }),
+      ),
+    ).resolves.toMatchObject({
+      result: { serverInfo: { name: "agent-relay" } },
+    });
+    const missing = await unsupervised.handle(
+      request(9, "tools/call", {
+        name: "relay_ask",
+        arguments: askArguments(),
+      }),
+    );
+    expect(structured(missing)).toMatchObject({ code: "binding-missing" });
+
+    const client = {
+      registerMcpBinding: vi.fn().mockResolvedValue({ outcome: "registered" }),
+      claimMcpBinding: vi.fn().mockResolvedValue({ outcome: "bound" }),
+      mcpStatus: vi.fn().mockResolvedValue({
+        bindingState: "bound",
+        harness: "codex",
+        activityState: "needs_input",
+        openRequestCount: 0,
+        delivery: "available",
+        requestId: "request_mcp_server_12345678",
+        requestState: "answered",
+        answer: {
+          schema: "agent-interaction-answer.v1",
+          answerId: "answer_mcp_server_12345678",
+          requestId: "request_mcp_server_12345678",
+          submittedAt: "2026-08-13T12:00:01.000Z",
+          answers: [
+            {
+              questionId: "question_mcp_server_12345678",
+              kind: "confirm",
+              optionId: "option_mcp_confirm_12345678",
+            },
+          ],
+        },
+      }),
+      openMcpInteraction: vi
+        .fn()
+        .mockResolvedValue({ outcome: "opened", requestState: "open" }),
+    };
+    const bound = new RelayMcpServer({
+      machineId: "machine_mcp_server_12345678",
+      bridgeSessionId: "bridge_local_hooks",
+      harness: "codex",
+      client: client as unknown as RelayClient,
+    });
+    await bound.handle(
+      request(10, "tools/call", {
+        name: "relay_ask",
+        arguments: askArguments(),
+        _meta: { threadId: "019bbb20-bff6-7130-83aa-bf45ab33250e" },
+      }),
+    );
+    expect(client.registerMcpBinding).toHaveBeenCalled();
+    expect(client.claimMcpBinding).toHaveBeenCalled();
+    expect(client.openMcpInteraction).toHaveBeenCalledWith(
+      {
+        machineId: "machine_mcp_server_12345678",
+        harness: "codex",
+        sessionId: "019bbb20-bff6-7130-83aa-bf45ab33250e",
+      },
+      expect.objectContaining({ schema: "agent-relay-mcp-ask.v1" }),
+    );
+  });
 });

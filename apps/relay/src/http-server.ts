@@ -316,19 +316,61 @@ function assertAuthorized(
   }
 }
 
-function mcpBindingToken(request: IncomingMessage): string {
-  const token = request.headers["x-agent-relay-mcp-binding"];
+function headerValue(
+  request: IncomingMessage,
+  name: string,
+): string | undefined {
+  const value = request.headers[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+function mcpBindingAuthority(request: IncomingMessage):
+  | string
+  | {
+      machineId: string;
+      harness: "codex" | "claude" | "cursor";
+      sessionId: string;
+    } {
+  const token = headerValue(request, "x-agent-relay-mcp-binding");
+  if (token !== undefined && /^mcpbind_[A-Za-z0-9_-]{32,96}$/u.test(token)) {
+    return token;
+  }
+  const sessionId = headerValue(request, "x-agent-relay-mcp-native-session");
+  const machineId = headerValue(request, "x-agent-relay-machine-id");
+  const harness = headerValue(request, "x-agent-relay-harness");
+  const parsedHarness = z
+    .enum(["codex", "claude", "cursor"])
+    .safeParse(harness);
   if (
-    typeof token !== "string" ||
-    !/^mcpbind_[A-Za-z0-9_-]{32,96}$/u.test(token)
+    sessionId !== undefined &&
+    opaqueId.safeParse(sessionId).success &&
+    machineId !== undefined &&
+    opaqueId.safeParse(machineId).success &&
+    parsedHarness.success
   ) {
+    return {
+      machineId,
+      harness: parsedHarness.data,
+      sessionId,
+    };
+  }
+  throw new HttpRequestError(
+    401,
+    "mcp-binding-missing",
+    "a valid local MCP session binding is required",
+  );
+}
+
+function mcpBindingToken(request: IncomingMessage): string {
+  const authority = mcpBindingAuthority(request);
+  if (typeof authority !== "string") {
     throw new HttpRequestError(
       401,
       "mcp-binding-missing",
       "a valid local MCP session binding is required",
     );
   }
-  return token;
+  return authority;
 }
 
 function secretsMatch(actual: string | undefined, expected: string): boolean {
@@ -1481,7 +1523,7 @@ export function createRelayHttpServer(
           await readJson(request, maxBodyBytes),
         );
         const result = service.openMcpInteraction(
-          mcpBindingToken(request),
+          mcpBindingAuthority(request),
           command,
         );
         sendJson(response, 200, {
@@ -1503,7 +1545,7 @@ export function createRelayHttpServer(
           await readJson(request, maxBodyBytes),
         );
         const result = service.cancelMcpInteraction(
-          mcpBindingToken(request),
+          mcpBindingAuthority(request),
           command.requestId,
         );
         sendJson(response, 200, {
@@ -1522,7 +1564,7 @@ export function createRelayHttpServer(
           await readJson(request, maxBodyBytes),
         );
         const result = service.mcpInteractionStatus(
-          mcpBindingToken(request),
+          mcpBindingAuthority(request),
           command.requestId,
         );
         sendJson(response, 200, {

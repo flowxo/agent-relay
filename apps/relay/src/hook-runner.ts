@@ -14,6 +14,10 @@ import type { Harness, Surface } from "@agent-relay/protocol";
 
 import { RelayClient } from "./client.js";
 import { appendFallbackRecord } from "./fallback-spool.js";
+import {
+  deriveNativeMcpBindingToken,
+  isMcpBindingToken,
+} from "./mcp-binding.js";
 
 export interface HookRunOptions {
   harness: Harness;
@@ -262,43 +266,48 @@ export async function runHook(options: HookRunOptions): Promise<HookRunResult> {
     });
   try {
     await client.ingest(event);
-    if (options.mcpBindingToken !== undefined) {
-      const identity = {
-        machineId: event.machineId,
-        bridgeSessionId: event.bridgeSessionId,
-        harness: event.harness,
-      };
-      let bindingReady = false;
-      try {
-        const registration = await client.registerMcpBinding(
-          options.mcpBindingToken,
-          identity,
-        );
-        const claim = await client.claimMcpBinding(options.mcpBindingToken, {
-          ...identity,
+    const mcpBindingToken = isMcpBindingToken(options.mcpBindingToken)
+      ? options.mcpBindingToken
+      : deriveNativeMcpBindingToken({
+          machineId: event.machineId,
+          harness: event.harness,
           sessionId: event.sessionId,
         });
-        bindingReady =
-          registration.bindingState !== "ambiguous" &&
-          (claim.outcome === "bound" || claim.outcome === "duplicate");
-      } catch {
-        bindingReady = false;
-      }
-      if (!bindingReady) {
-        const message =
-          "native session could not establish an exact local MCP binding";
-        const fallbackRecorded = await recordFallback(
-          fallbackPath,
-          "diagnostic",
-          { code: "mcp-binding-failed", message },
-          occurredAt,
-        );
-        sequenceDiagnostic = {
-          code: "mcp-binding-failed",
-          message,
-          fallbackRecorded,
-        };
-      }
+    const identity = {
+      machineId: event.machineId,
+      bridgeSessionId: event.bridgeSessionId,
+      harness: event.harness,
+    };
+    let bindingReady = false;
+    try {
+      const registration = await client.registerMcpBinding(
+        mcpBindingToken,
+        identity,
+      );
+      const claim = await client.claimMcpBinding(mcpBindingToken, {
+        ...identity,
+        sessionId: event.sessionId,
+      });
+      bindingReady =
+        registration.bindingState !== "ambiguous" &&
+        (claim.outcome === "bound" || claim.outcome === "duplicate");
+    } catch {
+      bindingReady = false;
+    }
+    if (!bindingReady) {
+      const message =
+        "native session could not establish an exact local MCP binding";
+      const fallbackRecorded = await recordFallback(
+        fallbackPath,
+        "diagnostic",
+        { code: "mcp-binding-failed", message },
+        occurredAt,
+      );
+      sequenceDiagnostic = {
+        code: "mcp-binding-failed",
+        message,
+        fallbackRecorded,
+      };
     }
     if (event.request !== undefined && shouldWait) {
       const request = await client.waitForAnswer(

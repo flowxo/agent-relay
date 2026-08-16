@@ -452,4 +452,41 @@ describe("durable local MCP interactions", () => {
     expect(serialized).not.toContain("question_mcp_private_12345678");
     store.close();
   });
+
+  it("binds MCP by harness-stated native session and fails closed across concurrent sessions", () => {
+    const store = new RelayStore();
+    registerSession(store, "a");
+    registerSession(store, "b");
+    bind(store, bindingA, "a");
+    bind(store, bindingB, "b");
+    const service = new RelayService(store, new FakeNotificationTransport(), {
+      now: () => new Date(baseAt),
+    });
+    const nativeA = {
+      machineId,
+      harness: "codex" as const,
+      sessionId: sessionId("a"),
+    };
+    const nativeB = {
+      machineId,
+      harness: "codex" as const,
+      sessionId: sessionId("b"),
+    };
+    expect(service.openMcpInteraction(nativeA, ask())).toMatchObject({
+      outcome: "opened",
+    });
+    const other = service.mcpInteractionStatus(nativeB, ask().requestId);
+    expect(other.request).toBeUndefined();
+    expect(other.binding).toMatchObject({
+      state: "bound",
+      sessionId: sessionId("b"),
+    });
+    expect(
+      store.verifyMcpSessionBindingByNativeSession(nativeA, baseAt),
+    ).toMatchObject({
+      state: "bound",
+      sessionId: sessionId("a"),
+    });
+    store.close();
+  });
 });

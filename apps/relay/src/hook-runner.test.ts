@@ -67,6 +67,56 @@ function options(fallbackPath: string) {
   };
 }
 
+function ingestAndBindFetch(service: InstanceType<typeof RelayService>) {
+  return async (input: string | URL | Request, init?: RequestInit) => {
+    const pathname = new URL(String(input)).pathname;
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (pathname === "/v1/events") {
+      const result = service.ingest(
+        body as Parameters<typeof service.ingest>[0],
+      );
+      return new Response(JSON.stringify(result), {
+        status: result.inserted ? 202 : 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    const identity = body as {
+      machineId: string;
+      bridgeSessionId: string;
+      harness: "codex" | "claude" | "cursor";
+      sessionId?: string;
+    };
+    const tokenHeader = new Headers(init?.headers).get(
+      "x-agent-relay-mcp-binding",
+    );
+    const token = tokenHeader ?? `mcpbind_${"Z".repeat(43)}`;
+    const result =
+      pathname === "/v1/mcp/bindings/register"
+        ? service.registerMcpSessionBinding({
+            token,
+            machineId: identity.machineId,
+            bridgeSessionId: identity.bridgeSessionId,
+            harness: identity.harness,
+          })
+        : service.claimMcpSessionBinding({
+            token,
+            machineId: identity.machineId,
+            bridgeSessionId: identity.bridgeSessionId,
+            harness: identity.harness,
+            sessionId: identity.sessionId ?? "missing",
+          });
+    return new Response(
+      JSON.stringify({
+        outcome: result.outcome,
+        ...(result.binding === undefined
+          ? {}
+          : { bindingState: result.binding.state }),
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+}
+
 describe("hook entrypoint", () => {
   it("claims the inherited MCP authority only for the exact parsed native session", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
@@ -127,6 +177,36 @@ describe("hook entrypoint", () => {
       machineId: "machine_hook_12345678",
       bridgeSessionId: "bridge_hook_12345678",
       harness: "codex",
+      sessionId: "codex-hook-session-0001",
+    });
+    store.close();
+  });
+
+  it("derives an exact unsupervised binding from the harness-stated native session", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-relay-hook-"));
+    const store = new RelayStore();
+    const service = new RelayService(store, new FakeNotificationTransport());
+    const client = new RelayClient({
+      fetch: ingestAndBindFetch(service),
+    });
+
+    const result = await runHook({
+      ...options(join(directory, "fallback.ndjson")),
+      client,
+    });
+
+    expect(result).toMatchObject({ daemonAccepted: true });
+    expect(
+      store.verifyMcpSessionBindingByNativeSession(
+        {
+          machineId: "machine_hook_12345678",
+          harness: "codex",
+          sessionId: "codex-hook-session-0001",
+        },
+        "2026-07-24T12:00:00.000Z",
+      ),
+    ).toMatchObject({
+      state: "bound",
       sessionId: "codex-hook-session-0001",
     });
     store.close();
@@ -225,16 +305,7 @@ describe("hook entrypoint", () => {
     const transport = new FakeNotificationTransport();
     const service = new RelayService(store, transport);
     const client = new RelayClient({
-      fetch: async (_input, init) => {
-        const event = JSON.parse(String(init?.body)) as Parameters<
-          typeof service.ingest
-        >[0];
-        const result = service.ingest(event);
-        return new Response(JSON.stringify(result), {
-          status: result.inserted ? 202 : 200,
-          headers: { "content-type": "application/json" },
-        });
-      },
+      fetch: ingestAndBindFetch(service),
     });
 
     const result = await runHook({
@@ -260,16 +331,15 @@ describe("hook entrypoint", () => {
     let ingested: Parameters<typeof service.ingest>[0] | undefined;
     let fetchCalls = 0;
     const client = new RelayClient({
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         fetchCalls += 1;
-        ingested = JSON.parse(String(init?.body)) as Parameters<
-          typeof service.ingest
-        >[0];
-        const result = service.ingest(ingested);
-        return new Response(JSON.stringify(result), {
-          status: result.inserted ? 202 : 200,
-          headers: { "content-type": "application/json" },
-        });
+        const pathname = new URL(String(input)).pathname;
+        if (pathname === "/v1/events") {
+          ingested = JSON.parse(String(init?.body)) as Parameters<
+            typeof service.ingest
+          >[0];
+        }
+        return ingestAndBindFetch(service)(input, init);
       },
     });
 
@@ -293,7 +363,7 @@ describe("hook entrypoint", () => {
       stdout: "{}\n",
       daemonAccepted: true,
     });
-    expect(fetchCalls).toBe(1);
+    expect(fetchCalls).toBe(3);
     expect(ingested).toMatchObject({
       type: "turn.activity",
       backgroundWork: {
@@ -318,17 +388,17 @@ describe("hook entrypoint", () => {
     const events: Array<Parameters<typeof service.ingest>[0]> = [];
     const inserted: boolean[] = [];
     const client = new RelayClient({
-      fetch: async (_input, init) => {
-        const event = JSON.parse(String(init?.body)) as Parameters<
-          typeof service.ingest
-        >[0];
-        events.push(event);
-        const result = service.ingest(event);
-        inserted.push(result.inserted);
-        return new Response(JSON.stringify(result), {
-          status: result.inserted ? 202 : 200,
-          headers: { "content-type": "application/json" },
-        });
+      fetch: async (input, init) => {
+        const pathname = new URL(String(input)).pathname;
+        if (pathname === "/v1/events") {
+          const event = JSON.parse(String(init?.body)) as Parameters<
+            typeof service.ingest
+          >[0];
+          events.push(event);
+          const result = service.ingest(event);
+          inserted.push(result.inserted);
+        }
+        return ingestAndBindFetch(service)(input, init);
       },
     });
     const shared = {
@@ -407,6 +477,9 @@ describe("hook entrypoint", () => {
     const client = new RelayClient({
       fetch: async (input, init) => {
         const path = new URL(String(input)).pathname;
+        if (path.startsWith("/v1/mcp/")) {
+          return ingestAndBindFetch(service)(input, init);
+        }
         if (path === "/v1/events") {
           const result = service.ingest(
             JSON.parse(String(init?.body)) as Parameters<
@@ -467,17 +540,7 @@ describe("hook entrypoint", () => {
     const store = new RelayStore();
     const service = new RelayService(store, new FakeNotificationTransport());
     const client = new RelayClient({
-      fetch: async (_input, init) => {
-        const result = service.ingest(
-          JSON.parse(String(init?.body)) as Parameters<
-            typeof service.ingest
-          >[0],
-        );
-        return new Response(JSON.stringify(result), {
-          status: result.inserted ? 202 : 200,
-          headers: { "content-type": "application/json" },
-        });
-      },
+      fetch: ingestAndBindFetch(service),
     });
     const result = await runHook({
       harness: "codex",
@@ -563,6 +626,9 @@ describe("hook entrypoint", () => {
     const client = new RelayClient({
       fetch: async (input, init) => {
         const path = new URL(String(input)).pathname;
+        if (path.startsWith("/v1/mcp/")) {
+          return ingestAndBindFetch(service)(input, init);
+        }
         if (path === "/v1/events") {
           ingested = JSON.parse(String(init?.body)) as Parameters<
             typeof service.ingest
@@ -627,6 +693,9 @@ describe("hook entrypoint", () => {
     const client = new RelayClient({
       fetch: async (input, init) => {
         const path = new URL(String(input)).pathname;
+        if (path.startsWith("/v1/mcp/")) {
+          return ingestAndBindFetch(service)(input, init);
+        }
         if (path === "/v1/events") {
           const result = service.ingest(
             JSON.parse(String(init?.body)) as Parameters<
@@ -673,15 +742,14 @@ describe("hook entrypoint", () => {
     });
     let ingested: Parameters<typeof service.ingest>[0] | undefined;
     const client = new RelayClient({
-      fetch: async (_input, init) => {
-        ingested = JSON.parse(String(init?.body)) as Parameters<
-          typeof service.ingest
-        >[0];
-        const result = service.ingest(ingested);
-        return new Response(JSON.stringify(result), {
-          status: 202,
-          headers: { "content-type": "application/json" },
-        });
+      fetch: async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path === "/v1/events") {
+          ingested = JSON.parse(String(init?.body)) as Parameters<
+            typeof service.ingest
+          >[0];
+        }
+        return ingestAndBindFetch(service)(input, init);
       },
     });
 
@@ -712,17 +780,17 @@ describe("hook entrypoint", () => {
     const service = new RelayService(store, new FakeNotificationTransport());
     const inserted: boolean[] = [];
     const client = new RelayClient({
-      fetch: async (_input, init) => {
-        const result = service.ingest(
-          JSON.parse(String(init?.body)) as Parameters<
-            typeof service.ingest
-          >[0],
-        );
-        inserted.push(result.inserted);
-        return new Response(JSON.stringify(result), {
-          status: result.inserted ? 202 : 200,
-          headers: { "content-type": "application/json" },
-        });
+      fetch: async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path === "/v1/events") {
+          const result = service.ingest(
+            JSON.parse(String(init?.body)) as Parameters<
+              typeof service.ingest
+            >[0],
+          );
+          inserted.push(result.inserted);
+        }
+        return ingestAndBindFetch(service)(input, init);
       },
     });
     const parsedPayload = JSON.parse(codexStop) as unknown;

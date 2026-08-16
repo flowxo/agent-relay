@@ -9,24 +9,20 @@ skill, three command-like auxiliary skills, and one executable wrapper.
 
 ```sh
 agent-relay integrations install --harness codex
-codex plugin marketplace add ~/.agent-relay/vendor/codex-marketplace
-codex plugin add agent-relay@agent-relay-local
+codex
 ```
 
-The first command never edits Codex configuration. The next two are Codex's
-native marketplace and install actions for the frozen `codex-cli 0.145.0`
-surface. Review the local marketplace source, MCP server, skills, and hooks in
-Codex before enabling them, then start a new thread. Codex may withhold hooks
-until native trust is granted; Agent Relay does not bypass that decision.
+Install writes only Agent Relay's marketplace and plugin enablement tables into
+`~/.codex/config.toml`, then snapshots the plugin with Codex's native install
+action. Launch `codex` as usual. Review the plugin and approve its hooks through
+Codex's native trust path. Agent Relay does not bypass that decision. Plugin MCP
+uses a plugin-root `cwd` of `.` because Codex does not expand `${PLUGIN_ROOT}`
+in `.mcp.json`.
 
-For exact MCP/native-session binding, launch the installed plugin in a
-supervised Codex process:
-
-```sh
-agent-relay run codex -- codex
-```
-
-Without the supervisor-issued opaque binding, the MCP server fails closed.
+Exact binding uses Codex's harness-stated session ID when the vendor process
+provides one. Missing session identity fails closed rather than correlating by
+path, process, timing, or session metadata heuristics. `agent-relay run` remains
+available for owned-child evidence and resume; it is not required to ask.
 
 Operator questions in a supervised Codex session are produced by the official
 skill calling `agent-relay-mcp.v1`. Codex's native `request_user_input` remains
@@ -42,10 +38,11 @@ approvals, sandboxing, authentication, and security confirmations remain native.
 
 ## Updates, conflicts, and recovery
 
-Run `agent-relay integrations upgrade --harness codex`, review the new owned
-bundle, and repeat `codex plugin add agent-relay@agent-relay-local` to refresh
-Codex's installed snapshot. `status` detects drift; `repair` restores only owned
-files; `rollback` swaps the last owned bundle snapshot back. A manually declared
+Run `agent-relay integrations upgrade --harness codex` and review the new owned
+bundle. `status` detects drift; `repair` restores only owned files; `rollback`
+swaps the last owned bundle snapshot back. Unrelated Codex config tables are
+preserved. Install, disable, enable, and uninstall rewrite only Agent Relay's
+marketplace enablement tables in `~/.codex/config.toml`. A manually declared
 Agent Relay MCP server, hook, skill, marketplace, or unowned target is reported
 as a conflict before any write. Remove or disable exactly one declaration rather
 than running duplicate servers or hooks.
@@ -54,21 +51,13 @@ than running duplicate servers or hooks.
 
 ```sh
 agent-relay integrations disable --harness codex
-codex plugin remove agent-relay@agent-relay-local
 agent-relay integrations enable --harness codex
-```
-
-Disable removes the owned source bundle from discovery but cannot silently
-change an already installed Codex snapshot; use the native removal action too.
-To uninstall permanently, run
-`codex plugin remove agent-relay@agent-relay-local` first, then
-`codex plugin marketplace remove agent-relay-local`, then:
-
-```sh
 agent-relay integrations uninstall --harness codex
 ```
 
-Relay data and unrelated Codex material are preserved.
+Disable keeps the marketplace registered and sets the owned plugin table to
+disabled. Uninstall removes only those owned tables. Relay data and unrelated
+Codex material are preserved.
 
 Source contracts: [plugins](https://developers.openai.com/codex/plugins),
 [MCP](https://developers.openai.com/codex/mcp), and

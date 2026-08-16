@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { applyCursorPluginEnablement } from "./cursor-user-mcp.js";
 import { runDoctor } from "./doctor.js";
 import {
   inspectVendorIntegrations,
@@ -57,11 +58,17 @@ describe("vendor integration isolated-home lifecycle", () => {
     expect(installed.harnesses.map((entry) => entry.state)).toEqual([
       "installed",
       "installed",
-      "installed",
     ]);
     expect(
       installed.harnesses.map((entry) => entry.compatibility.classification),
-    ).toEqual(["verified", "verified", "verified"]);
+    ).toEqual(["verified", "verified"]);
+    expect(
+      await readFile(join(runtime.rootDir, ".codex", "config.toml"), "utf8"),
+    ).toContain(`[plugins."agent-relay@agent-relay-local"]\nenabled = true`);
+    expect(await missing(join(runtime.rootDir, ".cursor", "mcp.json"))).toBe(
+      true,
+    );
+    expect(await missing(runtime.paths.targets.cursor)).toBe(true);
     expect((await stat(runtime.paths.launcherPath)).mode & 0o777).toBe(0o700);
     expect(
       (
@@ -76,7 +83,7 @@ describe("vendor integration isolated-home lifecycle", () => {
     ).resolves.toMatchObject({ changed: false });
 
     const driftPath = join(
-      runtime.paths.targets.cursor,
+      runtime.paths.targets.claude,
       "commands",
       "agent-relay-doctor.md",
     );
@@ -85,7 +92,7 @@ describe("vendor integration isolated-home lifecycle", () => {
       runVendorIntegrationLifecycle("status", options),
     ).resolves.toMatchObject({
       harnesses: expect.arrayContaining([
-        expect.objectContaining({ harness: "cursor", state: "drifted" }),
+        expect.objectContaining({ harness: "claude", state: "drifted" }),
       ]),
     });
     await runVendorIntegrationLifecycle("repair", options);
@@ -95,6 +102,12 @@ describe("vendor integration isolated-home lifecycle", () => {
     expect(await missing(runtime.paths.targets.claude)).toBe(true);
     expect(await missing(runtime.paths.disabledTargets.claude)).toBe(false);
     expect(await missing(runtime.paths.codexMarketplacePath)).toBe(true);
+    expect(
+      await readFile(join(runtime.rootDir, ".codex", "config.toml"), "utf8"),
+    ).toContain(`[plugins."agent-relay@agent-relay-local"]\nenabled = false`);
+    expect(await missing(join(runtime.rootDir, ".cursor", "mcp.json"))).toBe(
+      true,
+    );
     await expect(
       runVendorIntegrationLifecycle("disable", { ...options, dryRun: true }),
     ).resolves.toMatchObject({ changed: false, dryRun: true });
@@ -108,7 +121,7 @@ describe("vendor integration isolated-home lifecycle", () => {
     });
 
     const disabledDrift = join(
-      runtime.paths.disabledTargets.cursor,
+      runtime.paths.disabledTargets.claude,
       "commands",
       "agent-relay-doctor.md",
     );
@@ -117,7 +130,7 @@ describe("vendor integration isolated-home lifecycle", () => {
       runVendorIntegrationLifecycle("status", options),
     ).resolves.toMatchObject({
       harnesses: expect.arrayContaining([
-        expect.objectContaining({ harness: "cursor", state: "drifted" }),
+        expect.objectContaining({ harness: "claude", state: "drifted" }),
       ]),
     });
     await runVendorIntegrationLifecycle("repair", options);
@@ -177,11 +190,32 @@ describe("vendor integration isolated-home lifecycle", () => {
     await runVendorIntegrationLifecycle("uninstall", options);
     expect(await missing(runtime.paths.targets.codex)).toBe(true);
     expect(await missing(runtime.paths.targets.claude)).toBe(true);
+    expect(await missing(join(runtime.rootDir, ".codex", "config.toml"))).toBe(
+      true,
+    );
     expect(await missing(runtime.paths.targets.cursor)).toBe(true);
+    expect(await missing(join(runtime.rootDir, ".cursor", "mcp.json"))).toBe(
+      true,
+    );
     expect(await missing(runtime.paths.manifestPath)).toBe(true);
     expect(await readFile(join(runtime.rootDir, "unrelated.txt"), "utf8")).toBe(
       "preserve\n",
     );
+  });
+
+  it("asks Claude Code to snapshot the plugin after writing enablement", async () => {
+    const runtime = await setup();
+    const activations: Array<{ mode: string }> = [];
+    await runVendorIntegrationLifecycle("install", {
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      harnesses: ["claude"],
+      now,
+      nativePluginActivator: async (request) => {
+        activations.push({ mode: request.mode });
+      },
+    });
+    expect(activations).toEqual([{ mode: "enable" }]);
   });
 
   it("preserves unrelated vendor configuration byte-for-byte", async () => {
@@ -189,6 +223,8 @@ describe("vendor integration isolated-home lifecycle", () => {
     const claudeSettings = '{\n  "permissions": { "allow": ["Read"] }\n}\n';
     const cursorHooks =
       '{"version":1,"hooks":{"stop":[{"command":"user-hook"}]}}\n';
+    const cursorMcp =
+      '{\n  "mcpServers": {\n    "linear": {\n      "command": "safe-server"\n    }\n  }\n}\n';
     const codexConfig =
       '[mcp_servers.unrelated]\ncommand = "safe-server"\n\n[plugins.agent-relay]\nenabled = true\n';
     const claudeConfig =
@@ -197,6 +233,7 @@ describe("vendor integration isolated-home lifecycle", () => {
       [join(runtime.rootDir, ".claude", "settings.json"), claudeSettings],
       [join(runtime.rootDir, ".claude.json"), claudeConfig],
       [join(runtime.rootDir, ".cursor", "hooks.json"), cursorHooks],
+      [join(runtime.rootDir, ".cursor", "mcp.json"), cursorMcp],
       [join(runtime.rootDir, ".codex", "config.toml"), codexConfig],
     ] as const) {
       await mkdir(dirname(path), { recursive: true });
@@ -216,15 +253,44 @@ describe("vendor integration isolated-home lifecycle", () => {
       entryPath: runtime.entryPath,
       now,
     });
-    expect(
+    const mergedClaudeSettings = JSON.parse(
       await readFile(join(runtime.rootDir, ".claude", "settings.json"), "utf8"),
-    ).toBe(claudeSettings);
+    ) as {
+      permissions: { allow: string[] };
+      extraKnownMarketplaces: Record<string, unknown>;
+      enabledPlugins: Record<string, boolean>;
+    };
+    expect(mergedClaudeSettings.permissions).toEqual({ allow: ["Read"] });
+    expect(
+      mergedClaudeSettings.enabledPlugins["agent-relay@agent-relay-local"],
+    ).toBe(true);
+    expect(
+      mergedClaudeSettings.extraKnownMarketplaces["agent-relay-local"],
+    ).toMatchObject({
+      source: { source: "directory" },
+    });
     expect(
       await readFile(join(runtime.rootDir, ".cursor", "hooks.json"), "utf8"),
     ).toBe(cursorHooks);
-    expect(
-      await readFile(join(runtime.rootDir, ".codex", "config.toml"), "utf8"),
-    ).toBe(codexConfig);
+    const mergedCursorMcp = JSON.parse(
+      await readFile(join(runtime.rootDir, ".cursor", "mcp.json"), "utf8"),
+    ) as {
+      mcpServers: Record<string, { command?: string }>;
+    };
+    expect(mergedCursorMcp.mcpServers["linear"]).toEqual({
+      command: "safe-server",
+    });
+    expect(mergedCursorMcp.mcpServers["agent-relay"]).toBeUndefined();
+    const mergedCodexConfig = await readFile(
+      join(runtime.rootDir, ".codex", "config.toml"),
+      "utf8",
+    );
+    expect(mergedCodexConfig).toContain("[mcp_servers.unrelated]");
+    expect(mergedCodexConfig).toContain("[plugins.agent-relay]");
+    expect(mergedCodexConfig).toContain("[marketplaces.agent-relay-local]");
+    expect(mergedCodexConfig).toContain(
+      `[plugins."agent-relay@agent-relay-local"]\nenabled = true`,
+    );
     expect(await readFile(join(runtime.rootDir, ".claude.json"), "utf8")).toBe(
       claudeConfig,
     );
@@ -236,6 +302,61 @@ describe("vendor integration isolated-home lifecycle", () => {
     expect(await readFile(unrelatedPlugin, "utf8")).toBe(
       '{"name":"user-plugin"}\n',
     );
+    expect(
+      JSON.parse(
+        await readFile(
+          join(runtime.rootDir, ".claude", "settings.json"),
+          "utf8",
+        ),
+      ),
+    ).toMatchObject({
+      permissions: { allow: ["Read"] },
+    });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(runtime.rootDir, ".claude", "settings.json"),
+          "utf8",
+        ),
+      ).enabledPlugins,
+    ).toBeUndefined();
+    expect(
+      await readFile(join(runtime.rootDir, ".codex", "config.toml"), "utf8"),
+    ).toBe(codexConfig);
+    expect(
+      JSON.parse(
+        await readFile(join(runtime.rootDir, ".cursor", "mcp.json"), "utf8"),
+      ),
+    ).toEqual({
+      mcpServers: { linear: { command: "safe-server" } },
+    });
+  });
+
+  it("refuses to install Cursor and removes a leftover owned Cursor MCP server", async () => {
+    const runtime = await setup();
+    const leftover = applyCursorPluginEnablement(
+      undefined,
+      runtime.paths.launcherPath,
+      "enable",
+    );
+    await mkdir(dirname(runtime.paths.cursorMcpJsonPath), { recursive: true });
+    await writeFile(runtime.paths.cursorMcpJsonPath, leftover ?? "", "utf8");
+    await expect(
+      runVendorIntegrationLifecycle("install", {
+        rootDir: runtime.rootDir,
+        entryPath: runtime.entryPath,
+        harnesses: ["cursor"],
+        now,
+      }),
+    ).rejects.toThrow(/not offered/u);
+    expect(await missing(runtime.paths.manifestPath)).toBe(true);
+    await runVendorIntegrationLifecycle("install", {
+      rootDir: runtime.rootDir,
+      entryPath: runtime.entryPath,
+      now,
+    });
+    expect(await missing(runtime.paths.cursorMcpJsonPath)).toBe(true);
+    expect(await missing(runtime.paths.targets.cursor)).toBe(true);
   });
 
   it("fails before mutation for manual duplicates, unowned targets, and malformed configuration", async () => {
@@ -349,16 +470,22 @@ describe("vendor integration isolated-home lifecycle", () => {
 
   it("requires installed lifecycle state before disable or enable", async () => {
     const runtime = await setup();
-    for (const operation of ["disable", "enable"] as const) {
-      await expect(
-        runVendorIntegrationLifecycle(operation, {
-          rootDir: runtime.rootDir,
-          entryPath: runtime.entryPath,
-          harnesses: ["cursor"],
-          now,
-        }),
-      ).rejects.toThrow("no Agent Relay lifecycle state");
-    }
+    await expect(
+      runVendorIntegrationLifecycle("disable", {
+        rootDir: runtime.rootDir,
+        entryPath: runtime.entryPath,
+        harnesses: ["cursor"],
+        now,
+      }),
+    ).rejects.toThrow("no Agent Relay lifecycle state");
+    await expect(
+      runVendorIntegrationLifecycle("enable", {
+        rootDir: runtime.rootDir,
+        entryPath: runtime.entryPath,
+        harnesses: ["cursor"],
+        now,
+      }),
+    ).rejects.toThrow(/not offered/u);
   });
 
   it("refuses a symlinked isolated-home root before mutation", async () => {
@@ -455,7 +582,7 @@ describe("vendor integration isolated-home lifecycle", () => {
     await runVendorIntegrationLifecycle("install", options);
     await runVendorIntegrationLifecycle("disable", {
       ...options,
-      harnesses: ["cursor"],
+      harnesses: ["claude"],
     });
     await writeFile(
       join(runtime.paths.targets.codex, "hooks", "hooks.json"),
@@ -505,12 +632,8 @@ describe("vendor integration isolated-home lifecycle", () => {
           level: "warn",
         }),
         expect.objectContaining({
-          name: "integration-cursor-disabled",
+          name: "integration-claude-disabled",
           level: "warn",
-        }),
-        expect.objectContaining({
-          name: "integration-cursor-compatibility",
-          level: "fail",
         }),
         expect.objectContaining({
           name: "integration-contract-compatibility",

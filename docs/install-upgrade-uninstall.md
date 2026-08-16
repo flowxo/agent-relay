@@ -138,12 +138,11 @@ node apps/relay/dist/cli.js integrations install
 node apps/relay/dist/cli.js doctor
 ```
 
-Follow the [vendor-native integration guide](vendor-integrations.md) for Codex's
-native local-marketplace activation, Claude Code's skills-directory discovery,
-Cursor's frozen `--plugin-dir` fallback, trust, updates, conflicts, disable,
-rollback, and uninstall. Do not run this path alongside the legacy direct-hook
-installation: preflight reports duplicate Agent Relay hooks, MCP servers, or
-skills rather than creating ambiguous ownership.
+Follow the [vendor-native integration guide](vendor-integrations.md) for Codex
+and Claude Code local-marketplace activation, trust, updates, conflicts,
+disable, rollback, and uninstall. Cursor is not offered. Do not run this path
+alongside the legacy direct-hook installation: preflight reports duplicate Agent
+Relay hooks, MCP servers, or skills rather than creating ambiguous ownership.
 
 ## Legacy direct-hook installation
 
@@ -195,7 +194,8 @@ identifiers, or secrets. Harness checks include safe evidence IDs.
 
 The behavior and compatibility boundary is documented in the
 [official Agent Relay skill guide](agent-relay-skills.md). The installer does
-not add or mutate user MCP server configuration.
+not install into Cursor. A leftover owned Cursor `agent-relay` user MCP server
+is removed; unrelated MCP server configuration is not mutated.
 
 Inspect the transcript-free source record directly:
 

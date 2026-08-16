@@ -95,25 +95,29 @@ The supported entrypoint is:
 agent-relay mcp
 ```
 
-It uses newline-delimited JSON-RPC on stdin/stdout and opens no listener. The
-supervised runtime supplies `AGENT_RELAY_MCP_BINDING`,
-`AGENT_RELAY_MCP_HARNESS`, the exact machine and bridge IDs, and loopback daemon
-connection values. Official plugin manifests forward those placeholders through
-the native MCP `env` block so a harness that spawns a clean environment still
-receives them. Do not create or copy these values manually. The installer adds
-the official harness skill artifacts but does not add, replace, or delete any
-user MCP configuration. A harness without the exact compatible surface uses its
-native local question mechanism.
+It uses newline-delimited JSON-RPC on stdin/stdout and opens no listener. A
+normal harness launch supplies a harness-stated native session ID. Official
+plugin manifests set a literal harness name; Claude forwards
+`${CLAUDE_SESSION_ID}` because its plugin MCP spawn is a clean environment.
+Codex plugin MCP often has no thread id at spawn; the server stays up and binds
+each `tools/call` to Codex's harness-stated `_meta.threadId`. Cursor CLI states
+`CURSOR_CONVERSATION_ID` to shell children and hook payloads, not to MCP stdio
+or `tools/call` `_meta`; missing identity still fail-closes. `agent-relay run`
+may still supply `AGENT_RELAY_MCP_BINDING` for owned-child evidence. Do not
+create or copy binding values manually. The installer adds the official Claude
+and Codex skill artifacts. It does not install into Cursor: `cursor-agent` does
+not state a conversation id to MCP. A harness without the exact compatible
+surface uses its native local question mechanism.
 
-Run `agent-relay doctor` to check that the packaged MCP entrypoint exists. In a
-supervised child environment it also safely reports whether correlation is
-pending, bound, ended, revoked, or ambiguous. It also reports
-`interaction-production` (MCP, correlation, official skills, plugins, and the
-Cursor `sessionStart` handshake) and `configured-surfaces` (selected delivery
-transport plus whether the local web companion is enabled). The report never
-includes the binding authority, native session ID, request contents, answers,
-paths, provider IDs, or credentials. `ambiguous` and `revoked` are failures; an
-unbound but available handshake is a warning.
+Run `agent-relay doctor` to check that the packaged MCP entrypoint exists and
+that unsupervised exact binding is ready. In a live environment it also safely
+reports whether correlation is pending, bound, ended, revoked, or ambiguous. It
+also reports `interaction-production` (MCP, correlation, official skills,
+plugins, and the Cursor `sessionStart` handshake) and `configured-surfaces`
+(selected delivery transport plus whether the local web companion is enabled).
+The report never includes the binding authority, native session ID, request
+contents, answers, paths, provider IDs, or credentials. `ambiguous` and
+`revoked` are failures; an unbound but available handshake is a warning.
 
 Do not use Relay MCP for permission, privilege, credential, or security approval
 prompts. Those stay on the harness's native approval path. Tool descriptions and
