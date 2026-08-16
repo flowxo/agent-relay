@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, resolve } from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -42,8 +43,9 @@ function sanitize(text) {
   for (const pattern of secretPatterns) {
     cleaned = cleaned.replace(pattern, "<redacted>");
   }
-  cleaned = cleaned.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
-  return cleaned.replaceAll("\x1b", "");
+  const escape = String.fromCharCode(27);
+  cleaned = cleaned.split(escape).join("");
+  return cleaned;
 }
 
 async function portInUse(port) {

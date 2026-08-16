@@ -215,6 +215,7 @@ export async function activateClaudeNativePlugin(
   } catch (error) {
     throw new Error(
       activationFailureMessage("claude", request.mode, execErrorDetail(error)),
+      { cause: error },
     );
   }
 }
@@ -240,6 +241,7 @@ export async function activateCodexNativePlugin(
   } catch (error) {
     throw new Error(
       activationFailureMessage("codex", request.mode, execErrorDetail(error)),
+      { cause: error },
     );
   }
 }
