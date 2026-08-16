@@ -68,7 +68,7 @@ transcripts):
 
 ## Acceptance mapping
 
-- Repository gate: run `pnpm check:pr` after these fixes (see evidence below).
+- Repository gate: `pnpm check:pr` passed (16 checks) after these fixes.
 - Each frozen harness journey: provisioned exact versions; vendor package
   lifecycle exercised against them.
 - Web/TUI same projects/attention/states: parity evidence pass.
