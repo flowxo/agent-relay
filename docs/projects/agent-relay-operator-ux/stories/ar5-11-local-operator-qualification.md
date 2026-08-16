@@ -1,9 +1,10 @@
 # AR5.11: Qualify the complete local operator experience
 
 - **Linear:** FXO-1611
-- **Status:** In progress (local qualification evidence retained; repository
-  gate pending)
+- **Status:** Local qualification complete; `pnpm check:pr` green; ready for PR
+  when authorized
 - **Started:** 2026-08-16
+- **Completed (local):** 2026-08-16
 - **Platform:** native macOS arm64 (Darwin 25.5.0), Node.js 22.23.1 arm64 for
   livechecks; everyday toolchain Node 23.10.0 x64 for Vitest/Playwright matching
   installed optional deps
