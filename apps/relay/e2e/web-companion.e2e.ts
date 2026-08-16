@@ -252,7 +252,7 @@ test("shows sanitized concurrent fake sessions and requires a new launch after d
   await expect(page.locator("[data-connection-label]")).toHaveText("Live");
 
   await expect(page.locator("[data-current-list] .session-card")).toHaveCount(
-    4,
+    5,
   );
   await expect(page.locator("[data-rail-list]")).toContainText("payments-api");
   await expect(page.locator("[data-attention-list]")).toContainText("Failed");
