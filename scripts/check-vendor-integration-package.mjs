@@ -101,13 +101,13 @@ assert(
   "packaged repeat install was not idempotent",
 );
 await writeFile(
-  resolve(targets.codex, "commands/agent-relay-doctor.md"),
+  resolve(targets.claude, "commands/agent-relay-doctor.md"),
   "drift\n",
   "utf8",
 );
 assert(
   run(["integrations", "status", "--root", isolatedHome]).harnesses.some(
-    (entry) => entry.harness === "codex" && entry.state === "drifted",
+    (entry) => entry.harness === "claude" && entry.state === "drifted",
   ),
   "packaged status did not detect owned drift",
 );
