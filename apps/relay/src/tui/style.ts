@@ -39,5 +39,8 @@ export function paint(value: string, tone: Tone, enabled: boolean): string {
 }
 
 export function stripAnsi(value: string): string {
-  return value.replace(/\u001b\[[0-9;]*m/g, "");
+  return value.replaceAll(
+    new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"),
+    "",
+  );
 }

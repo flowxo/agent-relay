@@ -245,12 +245,17 @@ async function readPackage(path) {
   return value;
 }
 
+function enclosingNodeModules(packageDirectory) {
+  const parent = dirname(packageDirectory);
+  return basename(parent).startsWith("@") ? dirname(parent) : parent;
+}
+
 async function resolveInstalledDependency(root, parentManifestPath, name) {
   const resolvedParentManifest = await realpath(parentManifestPath);
   const parentPackageDirectory = dirname(resolvedParentManifest);
   const candidates = [
     resolve(parentPackageDirectory, "node_modules", name, "package.json"),
-    resolve(dirname(parentPackageDirectory), name, "package.json"),
+    resolve(enclosingNodeModules(parentPackageDirectory), name, "package.json"),
     resolve(root, "node_modules", name, "package.json"),
   ];
   for (const candidate of candidates) {

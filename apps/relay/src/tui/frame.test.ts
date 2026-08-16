@@ -119,7 +119,9 @@ describe("terminal dashboard frames", () => {
     expect(frame).toContain(
       "Screen readers are an explicit current limitation",
     );
-    expect(frame).toContain("Ctrl-C       Always quit and restore the terminal");
+    expect(frame).toContain(
+      "Ctrl-C       Always quit and restore the terminal",
+    );
   });
 
   it("shows a filter field and a cursor on the focused unselected project", () => {

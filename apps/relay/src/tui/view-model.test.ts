@@ -144,8 +144,7 @@ describe("terminal dashboard view-model", () => {
     });
     const first = fields[0];
     expect(first?.kind).toBe("option");
-    const selected =
-      first?.kind === "option" ? applyFormToggle({}, first) : {};
+    const selected = first?.kind === "option" ? applyFormToggle({}, first) : {};
     const values = withFocusedChoice(
       item.form,
       { ...selected, question_note_tui01: "ship" },

@@ -46,12 +46,7 @@ const packageManifest = JSON.parse(
 );
 assert(
   JSON.stringify(Object.keys(packageManifest.dependencies).sort()) ===
-    JSON.stringify([
-      "better-sqlite3",
-      "ink",
-      "react",
-      "zod",
-    ]),
+    JSON.stringify(["better-sqlite3", "ink", "react", "zod"]),
   "vendor integration introduced an unexpected runtime dependency",
 );
 

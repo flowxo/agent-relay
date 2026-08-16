@@ -62,7 +62,11 @@ function titledBar(title: string, width: number): string {
   return truncate(`${label}${"─".repeat(rest)}`, width);
 }
 
-function cell(line: LayoutLine | undefined, width: number, enabled: boolean): string {
+function cell(
+  line: LayoutLine | undefined,
+  width: number,
+  enabled: boolean,
+): string {
   const text = pad(truncate(line?.text ?? "", width), width);
   return paint(text, line?.tone ?? "default", enabled);
 }
@@ -76,7 +80,11 @@ function splitTop(
   leftFocus: boolean,
   rightFocus: boolean,
 ): string {
-  const left = paint(titledBar(leftTitle, leftWidth), leftFocus ? "focus" : "border", enabled);
+  const left = paint(
+    titledBar(leftTitle, leftWidth),
+    leftFocus ? "focus" : "border",
+    enabled,
+  );
   const right = paint(
     titledBar(rightTitle, rightWidth),
     rightFocus ? "focus" : "border",
@@ -95,7 +103,11 @@ function splitRow(
   return `│${cell(left, leftWidth, enabled)}│${cell(right, rightWidth, enabled)}│`;
 }
 
-function splitJoin(leftWidth: number, rightWidth: number, enabled: boolean): string {
+function splitJoin(
+  leftWidth: number,
+  rightWidth: number,
+  enabled: boolean,
+): string {
   return paint(
     `├${"─".repeat(leftWidth)}┴${"─".repeat(rightWidth)}┤`,
     "border",
@@ -103,7 +115,11 @@ function splitJoin(leftWidth: number, rightWidth: number, enabled: boolean): str
   );
 }
 
-function splitBottom(leftWidth: number, rightWidth: number, enabled: boolean): string {
+function splitBottom(
+  leftWidth: number,
+  rightWidth: number,
+  enabled: boolean,
+): string {
   return paint(
     `└${"─".repeat(leftWidth)}┴${"─".repeat(rightWidth)}┘`,
     "border",
@@ -111,11 +127,20 @@ function splitBottom(leftWidth: number, rightWidth: number, enabled: boolean): s
   );
 }
 
-function fullTop(title: string, width: number, enabled: boolean, focused: boolean): string {
+function fullTop(
+  title: string,
+  width: number,
+  enabled: boolean,
+  focused: boolean,
+): string {
   return `┌${paint(titledBar(title, Math.max(0, width - 2)), focused ? "focus" : "border", enabled)}┐`;
 }
 
-function fullRow(line: LayoutLine | undefined, width: number, enabled: boolean): string {
+function fullRow(
+  line: LayoutLine | undefined,
+  width: number,
+  enabled: boolean,
+): string {
   return `│${cell(line, Math.max(0, width - 2), enabled)}│`;
 }
 
@@ -167,13 +192,7 @@ function renderDashboard(
     );
     for (let index = 0; index < innerRows; index += 1) {
       lines.push(
-        splitRow(
-          rail[index],
-          sessions[index],
-          railWidth,
-          bodyWidth,
-          enabled,
-        ),
+        splitRow(rail[index], sessions[index], railWidth, bodyWidth, enabled),
       );
     }
     if (layout.detail === undefined || metrics.detailHeight === 0) {

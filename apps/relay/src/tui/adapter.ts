@@ -47,7 +47,5 @@ export function restoreTerminal(
 export function enterAlternateScreen(
   output: NodeJS.WriteStream = process.stdout,
 ): void {
-  output.write(
-    `${RESET_PRIVATE_MODES}${ALTERNATE_SCREEN_ENTER}${HIDE_CURSOR}`,
-  );
+  output.write(`${RESET_PRIVATE_MODES}${ALTERNATE_SCREEN_ENTER}${HIDE_CURSOR}`);
 }

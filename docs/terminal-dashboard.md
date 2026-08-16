@@ -35,24 +35,24 @@ targets the isolated `web-demo` on `127.0.0.1:4318` and
 
 ## Keys
 
-| Key               | Action                                                 |
-| ----------------- | ------------------------------------------------------ |
-| `↑` `↓` / `j` `k` | Move in the focused list                               |
-| `←` `→` / `h` `l` | Move between projects, the session list, and detail    |
-| `Tab`             | Cycle focus                                            |
+| Key               | Action                                                            |
+| ----------------- | ----------------------------------------------------------------- |
+| `↑` `↓` / `j` `k` | Move in the focused list                                          |
+| `←` `→` / `h` `l` | Move between projects, the session list, and detail               |
+| `Tab`             | Cycle focus                                                       |
 | `Enter`           | Select a project, open detail without leaving the list, or submit |
-| `/`               | Filter already loaded sessions; arrows still move      |
-| `p`               | Focus the project list                                 |
-| `r`               | Refresh or reconnect from a fresh snapshot             |
-| `n`               | Load more recent history                               |
-| `a`               | Answer the selected question                           |
-| `Space`           | Toggle the focused option in an answer form            |
-| `c` / `m` / `e`   | Continue, mute, or end when the API proves the control |
-| `u`               | Apply updates that were held so focus did not jump     |
-| `?`               | Help                                                   |
-| `Esc`             | Leave help, detail, or an unsent answer; clear filter  |
-| `q`               | Quit, except while typing an answer or filter          |
-| `Ctrl-C`          | Always quit and restore the terminal                   |
+| `/`               | Filter already loaded sessions; arrows still move                 |
+| `p`               | Focus the project list                                            |
+| `r`               | Refresh or reconnect from a fresh snapshot                        |
+| `n`               | Load more recent history                                          |
+| `a`               | Answer the selected question                                      |
+| `Space`           | Toggle the focused option in an answer form                       |
+| `c` / `m` / `e`   | Continue, mute, or end when the API proves the control            |
+| `u`               | Apply updates that were held so focus did not jump                |
+| `?`               | Help                                                              |
+| `Esc`             | Leave help, detail, or an unsent answer; clear filter             |
+| `q`               | Quit, except while typing an answer or filter                     |
+| `Ctrl-C`          | Always quit and restore the terminal                              |
 
 End asks for a second `e` before it closes the relay lane. It never terminates a
 harness process.
@@ -97,10 +97,10 @@ click selected dashboard text, `Ctrl-C` copies in some terminal hosts; press
 ## Accessibility
 
 Keyboard-only operation and an obvious `>` / `*` focus marker are required.
-Color is part of the visual hierarchy (pane borders, activity state, connection).
-Honor `NO_COLOR` when the environment requests it. Upstream Ink screen-reader
-support is an explicit current limitation. Use `--json` or `--web` when a
-screen reader is required.
+Color is part of the visual hierarchy (pane borders, activity state,
+connection). Honor `NO_COLOR` when the environment requests it. Upstream Ink
+screen-reader support is an explicit current limitation. Use `--json` or `--web`
+when a screen reader is required.
 
 The TUI never renders prompts, transcripts, raw tool arguments, command output,
 credentials, OAuth URLs, or private identifiers.
@@ -111,8 +111,8 @@ Answers bind to the exact pending `requestId` and `sessionKey`. A second submit
 is ignored while one is in flight. Cancel, timeout, stale question, late answer,
 and delivery failure are shown as status text. Native permission authorization
 stays on the existing protected path. Questionnaires walk fields with arrows;
-Space selects an option; typing fills free-text; Enter submits the whole set.
-A missing required field stays on the form and names that field.
+Space selects an option; typing fills free-text; Enter submits the whole set. A
+missing required field stays on the form and names that field.
 
 ## Renderer inventory
 

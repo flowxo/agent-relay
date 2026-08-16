@@ -515,7 +515,10 @@ export type FormField =
 type ResponseForm = NonNullable<WebAttentionItemV1["form"]>;
 
 function questionOptions(
-  question: Extract<ResponseForm, { kind: "question-set" }>["questions"][number],
+  question: Extract<
+    ResponseForm,
+    { kind: "question-set" }
+  >["questions"][number],
 ): Array<{ optionId: string; label: string }> {
   if (question.kind === "confirm") {
     return [question.confirm, question.decline];

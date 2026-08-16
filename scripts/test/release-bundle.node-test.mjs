@@ -9,10 +9,11 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import process from "node:process";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -25,6 +26,7 @@ import {
   readGitSourceInputRecords,
   releaseArtifactNames,
   run as runReleaseCommand,
+  runtimeDependencyGraph,
   verifyReleaseBundle,
 } from "../lib/release-bundle.mjs";
 
@@ -102,6 +104,66 @@ function digest(algorithm, value) {
 async function fileDigest(algorithm, path) {
   return digest(algorithm, await readFile(path));
 }
+
+async function writeManifest(path, name, version, dependencies = {}) {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(
+    path,
+    `${JSON.stringify({ name, version, dependencies }, null, 2)}\n`,
+  );
+}
+
+test("resolves a scoped package's sibling from the enclosing node_modules", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-relay-pnpm-graph-"));
+  try {
+    await writeManifest(join(root, "package.json"), "workspace", "1.0.0", {
+      ink: "7.1.1",
+    });
+    const inkStore = join(root, "node_modules/.pnpm/ink@7.1.1/node_modules");
+    const tokenizeStore = join(
+      root,
+      "node_modules/.pnpm/@scope+tokenize@1.0.0/node_modules",
+    );
+    const stylesStore = join(
+      root,
+      "node_modules/.pnpm/ansi-styles@1.0.0/node_modules",
+    );
+    await writeManifest(join(inkStore, "ink/package.json"), "ink", "7.1.1", {
+      "@scope/tokenize": "1.0.0",
+    });
+    await writeManifest(
+      join(tokenizeStore, "@scope/tokenize/package.json"),
+      "@scope/tokenize",
+      "1.0.0",
+      { "ansi-styles": "1.0.0" },
+    );
+    await writeManifest(
+      join(stylesStore, "ansi-styles/package.json"),
+      "ansi-styles",
+      "1.0.0",
+    );
+    await mkdir(join(root, "node_modules"), { recursive: true });
+    await mkdir(join(inkStore, "@scope"), { recursive: true });
+    await symlink(join(inkStore, "ink"), join(root, "node_modules/ink"));
+    await symlink(
+      join(tokenizeStore, "@scope/tokenize"),
+      join(inkStore, "@scope/tokenize"),
+    );
+    await symlink(
+      join(stylesStore, "ansi-styles"),
+      join(tokenizeStore, "ansi-styles"),
+    );
+    const graph = await runtimeDependencyGraph(root, {
+      dependencies: { ink: "7.1.1" },
+    });
+    assert.deepEqual(
+      graph.packages.map((entry) => `${entry.name}@${entry.version}`).sort(),
+      ["@scope/tokenize@1.0.0", "ansi-styles@1.0.0", "ink@7.1.1"],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("normalizes platform-specific gzip headers to identical archive bytes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "release-gzip-header-"));

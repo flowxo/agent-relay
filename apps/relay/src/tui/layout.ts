@@ -110,7 +110,8 @@ export function dashboardPaneMetrics(
     sessionWidth,
     splitInner: Math.max(1, splitHeight - 2),
     detailHeight,
-    detailInner: layout.detail === undefined ? 0 : Math.max(1, detailHeight - 2),
+    detailInner:
+      layout.detail === undefined ? 0 : Math.max(1, detailHeight - 2),
     bodyInner: 0,
   };
 }
@@ -125,9 +126,7 @@ function marker(
   return " ";
 }
 
-function connectionTone(
-  connection: DashboardViewState["connection"],
-): Tone {
+function connectionTone(connection: DashboardViewState["connection"]): Tone {
   switch (connection) {
     case "online":
       return "ok";
@@ -190,7 +189,8 @@ function listLabel(
     session === undefined
       ? entry.sessionKey.slice(0, 8)
       : sessionTitle(session);
-  const tone = session === undefined ? "default" : stateTone(session.activity.state);
+  const tone =
+    session === undefined ? "default" : stateTone(session.activity.state);
   if (entry.section === "attention" && request !== undefined) {
     return {
       text: `${title}  ${request.promptPreview}`,

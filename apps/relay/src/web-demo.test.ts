@@ -11,7 +11,11 @@ import {
   RelayStore,
 } from "@agent-relay/core";
 
-import { makeWebDemoEvents, resetWebDemoDatabase, seedWebDemo } from "./web-demo.js";
+import {
+  makeWebDemoEvents,
+  resetWebDemoDatabase,
+  seedWebDemo,
+} from "./web-demo.js";
 import { startDaemon } from "./daemon.js";
 import { fakeOnlyTransportReadiness } from "./transport-config.js";
 

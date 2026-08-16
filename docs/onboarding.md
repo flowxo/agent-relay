@@ -375,9 +375,8 @@ Do not open `http://127.0.0.1:4318/ui/` directly. In another terminal run
 (TUI). Those commands use the demo credential under `~/.agent-relay/web-demo/`
 and do not touch the everyday daemon on 4317. Restarting `web-demo` replaces the
 previous fake sessions. `web.demo-started` names the credential file without
-logging either value. The demo always selects the fake
-transport even if Telegram variables exist in the calling shell. Stop it with
-`Ctrl-C`.
+logging either value. The demo always selects the fake transport even if
+Telegram variables exist in the calling shell. Stop it with `Ctrl-C`.
 
 ### Disable the companion
 

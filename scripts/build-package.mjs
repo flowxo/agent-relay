@@ -55,13 +55,7 @@ await build({
     __AGENT_RELAY_BUILD_VERSION__: JSON.stringify(release.version),
   },
   jsx: "automatic",
-  external: [
-    "better-sqlite3",
-    "zod",
-    "ink",
-    "react",
-    "react-reconciler",
-  ],
+  external: ["better-sqlite3", "zod", "ink", "react", "react-reconciler"],
   alias: {
     "@agent-relay/core": resolve(root, "packages/core/src/index.ts"),
     "@agent-relay/harnesses": resolve(root, "packages/harnesses/src/index.ts"),

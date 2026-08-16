@@ -2,7 +2,7 @@ import { render } from "ink";
 import type { Instance } from "ink";
 
 import { RESET_PRIVATE_MODES, restoreTerminal } from "./adapter.js";
-import type { TerminalHost, TerminalSize } from "./adapter.js";
+import type { TerminalHost } from "./adapter.js";
 import type { DashboardStore } from "./store.js";
 
 export function createInkHost(

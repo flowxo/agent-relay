@@ -131,9 +131,7 @@ function questionSetRequest(): WebAttentionItemV1 {
   };
 }
 
-function bundle(
-  item: WebAttentionItemV1 = request(),
-): DashboardSnapshotBundle {
+function bundle(item: WebAttentionItemV1 = request()): DashboardSnapshotBundle {
   return {
     snapshot: snapshot(),
     requests: [item],
@@ -581,7 +579,9 @@ describe("terminal dashboard store", () => {
     await waitUntil(() => store.state.connection === "disconnected");
     expect(store.state.snapshot).toBeUndefined();
     expect(store.state.selectedSession).toBeUndefined();
-    expect(store.state.status).toContain("rejected the private local credential");
+    expect(store.state.status).toContain(
+      "rejected the private local credential",
+    );
     expect(polls).toBeGreaterThan(0);
     await store.close();
   });

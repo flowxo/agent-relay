@@ -11,6 +11,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const relayManifest = JSON.parse(
   readFileSync(join(here, "../../package.json"), "utf8"),
 ) as { dependencies: Record<string, string> };
+const rootManifest = JSON.parse(
+  readFileSync(join(here, "../../../../package.json"), "utf8"),
+) as { dependencies: Record<string, string> };
 const release = JSON.parse(
   readFileSync(join(here, "../../../../packaging/release.json"), "utf8"),
 ) as { dependencies: Record<string, string> };
@@ -30,6 +33,12 @@ describe("Ink runtime inventory", () => {
       INK_RUNTIME_REQUIREMENTS.frameworkVersion,
     );
     expect(relayManifest.dependencies["react"]).toBe(
+      INK_RUNTIME_REQUIREMENTS.reactVersion,
+    );
+    expect(rootManifest.dependencies["ink"]).toBe(
+      INK_RUNTIME_REQUIREMENTS.frameworkVersion,
+    );
+    expect(rootManifest.dependencies["react"]).toBe(
       INK_RUNTIME_REQUIREMENTS.reactVersion,
     );
     expect(release.dependencies["ink"]).toBe(
