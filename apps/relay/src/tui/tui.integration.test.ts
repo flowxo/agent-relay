@@ -12,6 +12,7 @@ import { readWebCredential } from "../web-credential.js";
 
 import { createDashboardClient } from "./client.js";
 import { containsSecret, renderDashboardFrame } from "./frame.js";
+import { handleDashboardKey } from "./input.js";
 import { DashboardStore } from "./store.js";
 
 const daemons: RunningDaemon[] = [];
@@ -117,6 +118,71 @@ describe("terminal dashboard integration", () => {
     expect(frame).toContain("reconnecting");
     expect(frame).toContain("All projects");
     expect(frame).toContain("last safe snapshot");
+    await store.close();
+  });
+
+  it("recovers online after daemon restart when refresh is pressed", async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), "agent-relay-tui-"));
+    directories.push(stateDirectory);
+    const databasePath = join(stateDirectory, "relay.sqlite");
+    const first = await startDaemon({
+      databasePath,
+      port: 0,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    daemons.push(first);
+    const seeded = makeWebDemoEvents({ runId: "tuirec01" });
+    for (const event of seeded.events) {
+      first.service.ingest(event);
+    }
+    await first.service.drain(seeded.events.length);
+    const address = first.server.address() as AddressInfo;
+    const port = address.port;
+    const client = await createDashboardClient({
+      daemonUrl: `http://127.0.0.1:${String(port)}`,
+      stateDirectory,
+    });
+    const store = new DashboardStore({ client, pollIntervalMs: 40 });
+    await store.start();
+    expect(store.state.connection).toBe("online");
+    const selectedBefore = store.state.selectedSession?.sessionKey;
+    expect(selectedBefore).toBeTypeOf("string");
+
+    await first.close();
+    daemons.splice(daemons.indexOf(first), 1);
+    const disconnectedAt = Date.now();
+    while (store.state.connection === "online") {
+      if (Date.now() - disconnectedAt > 5_000) {
+        throw new Error("store stayed online after the daemon closed");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(store.state.connection).toBe("reconnecting");
+    expect(store.state.selectedSession?.sessionKey).toBe(selectedBefore);
+
+    const second = await startDaemon({
+      databasePath,
+      port,
+      drainIntervalMs: 60_000,
+      retentionIntervalMs: 60_000,
+    });
+    daemons.push(second);
+    const reseeds = makeWebDemoEvents({ runId: "tuirec02" });
+    for (const event of reseeds.events) {
+      second.service.ingest(event);
+    }
+    await second.service.drain(reseeds.events.length);
+
+    expect(await handleDashboardKey(store, { name: "char", value: "r" })).toBe(
+      "continue",
+    );
+    expect(store.state.connection).toBe("online");
+    const frame = renderDashboardFrame(store.state, 80, 24);
+    expect(frame).toContain("online");
+    expect(frame).toContain("All projects");
+    expect(frame).toContain("Needs attention");
+    expect(store.state.snapshot).toBeDefined();
     await store.close();
   });
 });

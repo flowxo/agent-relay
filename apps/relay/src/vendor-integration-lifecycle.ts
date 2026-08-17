@@ -1546,6 +1546,7 @@ export async function runVendorIntegrationLifecycle(
       )({
         rootDir: paths.rootDir,
         mode: claudeMode,
+        claudeMarketplaceRoot: paths.claudeMarketplaceRoot,
       });
     }
     if (selected.includes("codex")) {
