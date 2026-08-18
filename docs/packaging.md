@@ -169,8 +169,8 @@ before reconciliation, then proves:
 - install dry runs do not mutate configuration;
 - an install followed by a repeat install is idempotent;
 - SQLite migrates the retained prior fixture from schema `5` to the current
-  schema `11`, preserving answers and durable delivery state;
-- a schema newer than `11` (the lifecycle proof uses `12`) is refused without
+  schema `12`, preserving answers and durable delivery state;
+- a schema newer than `12` (the lifecycle proof uses `13`) is refused without
   modification;
 - the answer, web credential, diagnostic log, explicit retained files, and
   installer backups survive;
