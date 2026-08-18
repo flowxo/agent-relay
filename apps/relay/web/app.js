@@ -10,7 +10,6 @@ import {
   buildResponse,
   describeHoldReason,
   describeTerminalRequest,
-  filterLoadedSessions,
   harnessLabel,
   historySummary,
   indexSnapshotSessions,
@@ -577,7 +576,7 @@ function renderCurrent() {
 }
 
 function visibleHistory() {
-  return filterLoadedSessions(model.history, model.query);
+  return model.history;
 }
 
 function renderHistory() {
@@ -596,11 +595,13 @@ function renderHistoryFooter(visibleCount) {
   if (!empty && visibleCount === 0) {
     elements.historyEmpty.hidden = false;
     elements.historyEmpty.textContent =
-      "No loaded history matches this filter.";
+      "No retained history matches this search.";
   } else if (empty) {
     elements.historyEmpty.hidden = false;
     elements.historyEmpty.textContent =
-      "No finished sessions have been retained for this project.";
+      model.query.trim().length > 0
+        ? "No retained history matches this search."
+        : "No finished sessions have been retained for this project.";
   } else {
     elements.historyEmpty.hidden = true;
   }
@@ -645,6 +646,7 @@ function scopeKey() {
     model.selectedProjectKey,
     model.filters.harness,
     model.filters.state,
+    model.query.trim(),
   ].join("|");
 }
 
@@ -666,6 +668,8 @@ function snapshotQuery(cursor) {
     params.set("harness", model.filters.harness);
   }
   if (model.filters.state !== "all") params.set("state", model.filters.state);
+  const search = model.query.trim();
+  if (search.length > 0) params.set("q", search);
   if (cursor !== undefined) params.set("cursor", cursor);
   return params.toString();
 }
@@ -1428,10 +1432,15 @@ for (const [element, key] of [
   });
 }
 
+let searchReloadTimer = 0;
 elements.search.addEventListener("input", () => {
   model.query = elements.search.value;
   elements.searchNote.hidden = model.query.trim().length === 0;
-  renderHistory();
+  window.clearTimeout(searchReloadTimer);
+  searchReloadTimer = window.setTimeout(() => {
+    resetHistoryState();
+    void loadDashboard({ force: true, resetHistory: true });
+  }, 250);
 });
 
 elements.applyUpdates.addEventListener("click", () => {

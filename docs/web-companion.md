@@ -180,9 +180,9 @@ well as in a tooltip.
 
 State and harness filters are applied by the protected server read, so they
 narrow the complete current and attention sets as well as history. The text box
-is labelled **Filter loaded sessions** because the protected read contract has
-no server-side search: it narrows only what is already on the page, and says so
-whenever a query is active.
+is labelled **Search sessions** and sends a bounded `q` parameter on the same
+project-read surface, so it searches retained history rather than only rows
+already paged into the browser.
 
 ### States you will see
 

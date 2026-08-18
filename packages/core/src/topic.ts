@@ -2,6 +2,7 @@ import type { AgentAttentionEventV1, Harness } from "@agent-relay/protocol";
 import { sha256 } from "@agent-relay/protocol";
 
 import { redactText } from "./redaction.js";
+import { sessionName } from "./session-name.js";
 import type { SessionActivityState } from "./activity.js";
 
 export type SessionLifecycleState =
@@ -161,16 +162,6 @@ function boundDisplayedTopicName(
   return `${statePrefix} ${prefix}…${suffix}`;
 }
 
-function shortSessionIdentity(event: AgentAttentionEventV1): string {
-  const readableSuffix = event.sessionId
-    .slice(-8)
-    .replace(/[^A-Za-z0-9]/g, "_");
-  const collisionSuffix = sha256(
-    [event.machineId, event.harness, event.sessionId].join("\u001f"),
-  ).slice(0, 6);
-  return `${readableSuffix}-${collisionSuffix}`;
-}
-
 export function sessionPublicKey(input: {
   machineId: string;
   harness: string;
@@ -179,6 +170,22 @@ export function sessionPublicKey(input: {
   return sha256(
     `${input.machineId}\u001f${input.harness}\u001f${input.sessionId}`,
   ).slice(0, 24);
+}
+
+/**
+ * Operator-facing session identity for Telegram topic titles and status.
+ * Replaces the former native-session-id suffix with the shared readable name
+ * derived only from the opaque public session key, so Telegram matches web
+ * and TUI by eye. Existing topics are retitled on the next reconcile drain.
+ */
+function shortSessionIdentity(event: AgentAttentionEventV1): string {
+  return sessionName(
+    sessionPublicKey({
+      machineId: event.machineId,
+      harness: event.harness,
+      sessionId: event.sessionId,
+    }),
+  );
 }
 
 export function sessionLanePresentation(

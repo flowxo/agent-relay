@@ -28,7 +28,7 @@ Question: Continue this stopped turn?
 
 Waiting for your next instruction · time unknown
 
-turn.stopped · codex/cli · bad branch · session 12345678-c40235",
+turn.stopped · codex/cli · bad branch · session brisk-island-02",
   "title": "Codex · example",
 }
 `;
@@ -53,7 +53,7 @@ Question: Synthetic input.required question?
 
 Input required · 1m ago
 
-input.required · codex/cli · codex/compact-cards · session 12345678-c40235",
+input.required · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "permission.required": {
@@ -74,7 +74,7 @@ Question: Synthetic permission.required question?
 
 Approval required · 1m ago
 
-permission.required · codex/cli · codex/compact-cards · session 12345678-c40235",
+permission.required · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "process.exited": {
@@ -83,7 +83,7 @@ permission.required · codex/cli · codex/compact-cards · session 12345678-c402
 
 Process exited · 1m ago
 
-process.exited · codex/cli · codex/compact-cards · session 12345678-c40235",
+process.exited · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "process.stale": {
@@ -103,7 +103,7 @@ process.exited · codex/cli · codex/compact-cards · session 12345678-c40235",
 
 Process may be stale · 1m ago
 
-process.stale · codex/cli · codex/compact-cards · session 12345678-c40235",
+process.stale · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "session.ended": {
@@ -112,7 +112,7 @@ process.stale · codex/cli · codex/compact-cards · session 12345678-c40235",
 
 Session ended · 1m ago
 
-session.ended · codex/cli · codex/compact-cards · session 12345678-c40235",
+session.ended · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "session.started": {
@@ -132,7 +132,7 @@ session.ended · codex/cli · codex/compact-cards · session 12345678-c40235",
 
 Session started · 1m ago
 
-session.started · codex/cli · codex/compact-cards · session 12345678-c40235",
+session.started · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "turn.activity": {
@@ -152,7 +152,7 @@ session.started · codex/cli · codex/compact-cards · session 12345678-c40235",
 
 Activity · 1m ago
 
-turn.activity · codex/cli · codex/compact-cards · session 12345678-c40235",
+turn.activity · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "turn.failed": {
@@ -172,7 +172,7 @@ turn.activity · codex/cli · codex/compact-cards · session 12345678-c40235",
 
 Turn failed · 1m ago
 
-turn.failed · codex/cli · codex/compact-cards · session 12345678-c40235",
+turn.failed · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "turn.started": {
@@ -192,7 +192,7 @@ turn.failed · codex/cli · codex/compact-cards · session 12345678-c40235",
 
 Working · 1m ago
 
-turn.started · codex/cli · codex/compact-cards · session 12345678-c40235",
+turn.started · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
   "turn.stopped": {
@@ -218,7 +218,7 @@ Question: Continue this stopped turn?
 
 Waiting for your next instruction · 1m ago
 
-turn.stopped · codex/cli · codex/compact-cards · session 12345678-c40235",
+turn.stopped · codex/cli · codex/compact-cards · session brisk-island-02",
     "title": "Codex · example",
   },
 }
@@ -231,24 +231,24 @@ Question: Synthetic input.required question?
 
 Answered · 1m ago
 
-input.required · codex/cli · codex/compact-cards · session 12345678-c40235",
+input.required · codex/cli · codex/compact-cards · session brisk-island-02",
   "Summary: Synthetic input.required summary.
 Question: Synthetic input.required question?
 
 Expired · 1m ago
 
-input.required · codex/cli · codex/compact-cards · session 12345678-c40235",
+input.required · codex/cli · codex/compact-cards · session brisk-island-02",
   "Summary: Synthetic input.required summary.
 Question: Synthetic input.required question?
 
 Superseded · 1m ago
 
-input.required · codex/cli · codex/compact-cards · session 12345678-c40235",
+input.required · codex/cli · codex/compact-cards · session brisk-island-02",
   "Summary: Synthetic input.required summary.
 Question: Synthetic input.required question?
 
 Failed · 1m ago
 
-input.required · codex/cli · codex/compact-cards · session 12345678-c40235",
+input.required · codex/cli · codex/compact-cards · session brisk-island-02",
 ]
 `;

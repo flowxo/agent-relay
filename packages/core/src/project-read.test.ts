@@ -678,4 +678,119 @@ describe("project-centric read model", () => {
     expect(Buffer.byteLength(JSON.stringify(snapshot))).toBeLessThan(350_000);
     store.close();
   });
+
+  it("filters current, attention, and history by bounded safe-field search", () => {
+    const store = new RelayStore();
+    const billing = register(store, {
+      suffix: "search_billing_12345678",
+      projectPath: "/synthetic/search/billing",
+      harness: "claude",
+    });
+    const checkout = register(store, {
+      suffix: "search_checkout_12345678",
+      projectPath: "/synthetic/search/checkout",
+      harness: "codex",
+    });
+    const finished = register(store, {
+      suffix: "search_finished_12345678",
+      projectPath: "/synthetic/search/billing",
+      harness: "cursor",
+    });
+    const finishedTwo = register(store, {
+      suffix: "search_finished_two_12345678",
+      projectPath: "/synthetic/search/billing",
+      harness: "cursor",
+    });
+    applyState(store, billing, "working", "2026-08-13T12:09:50.000Z");
+    applyState(store, checkout, "working", "2026-08-13T12:09:51.000Z");
+    applyState(store, finished, "ended", "2026-08-13T12:09:40.000Z");
+    applyState(store, finishedTwo, "ended", "2026-08-13T12:09:39.000Z");
+
+    const unfiltered = store.readProjectSnapshot({
+      historyLimit: 10,
+      now: READ_AT,
+    });
+    expect(
+      unfiltered.currentByHarness.flatMap((group) => group.sessions),
+    ).toHaveLength(2);
+    expect(unfiltered.recent.items.length).toBeGreaterThanOrEqual(2);
+
+    const byHarness = store.readProjectSnapshot({
+      search: "claude",
+      historyLimit: 10,
+      now: READ_AT,
+    });
+    expect(byHarness.filters.search).toBe("claude");
+    const current = byHarness.currentByHarness.flatMap(
+      (group) => group.sessions,
+    );
+    expect(current).toHaveLength(1);
+    expect(current[0]?.harness).toBe("claude");
+    expect(current[0]?.projectLabel).toBe("billing");
+    expect(current[0]?.sessionName).toMatch(/^[a-z]+-[a-z]+-\d{2}$/u);
+    expect(byHarness.recent.items).toHaveLength(0);
+
+    const byLabel = store.readProjectSnapshot({
+      search: "checkout",
+      historyLimit: 10,
+      now: READ_AT,
+    });
+    expect(
+      byLabel.currentByHarness.flatMap((group) => group.sessions),
+    ).toHaveLength(1);
+    expect(
+      byLabel.currentByHarness.flatMap((group) => group.sessions)[0]
+        ?.projectLabel,
+    ).toBe("checkout");
+
+    const recentPage = store.readProjectSnapshot({
+      search: unfiltered.recent.items[0]!.sessionName,
+      historyLimit: 1,
+      now: READ_AT,
+    });
+    expect(recentPage.filters.search).toBe(
+      unfiltered.recent.items[0]!.sessionName,
+    );
+    expect(recentPage.recent.items).toHaveLength(1);
+    expect(recentPage.recent.items[0]?.sessionKey).toBe(
+      unfiltered.recent.items[0]?.sessionKey,
+    );
+
+    expect(() =>
+      store.readProjectSnapshot({
+        search: "a".repeat(65),
+        now: READ_AT,
+      }),
+    ).toThrow(/project search query is invalid/u);
+
+    const first = store.readProjectSnapshot({
+      search: "cursor",
+      historyLimit: 1,
+      now: READ_AT,
+    });
+    expect(
+      first.recent.items.length + first.currentByHarness.length,
+    ).toBeGreaterThan(0);
+    expect(first.filters.search).toBe("cursor");
+    if (first.recent.nextCursor !== undefined) {
+      const searchCursor = first.recent.nextCursor;
+      expect(() =>
+        store.readProjectSnapshot({
+          historyLimit: 1,
+          historyCursor: searchCursor,
+          now: READ_AT,
+        }),
+      ).toThrow(/project cursor does not match/u);
+      const second = store.readProjectSnapshot({
+        search: "cursor",
+        historyLimit: 1,
+        historyCursor: searchCursor,
+        now: READ_AT,
+      });
+      expect(second.recent.items[0]?.sessionKey).not.toBe(
+        first.recent.items[0]?.sessionKey,
+      );
+    }
+    store.close();
+  });
 });

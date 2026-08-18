@@ -30,12 +30,16 @@ import {
   NOOP_LOGGER,
   PROJECT_CHANGE_MAX_BATCH_SIZE,
   PROJECT_HISTORY_MAX_PAGE_SIZE,
+  PROJECT_SEARCH_MAX_LENGTH,
+  PROJECT_SEARCH_MAX_TERMS,
   ProjectKeySchema,
   ProjectReadError,
   SessionActivityStateSchema,
+  normalizeProjectSearch,
   redactDiagnosticText,
   redactText,
   renderDeliveryMessage,
+  sessionName,
   sessionPublicKey,
 } from "@agent-relay/core";
 import type { TelegramReplyRouter } from "@agent-relay/telegram-transport";
@@ -101,6 +105,29 @@ const projectKeySchema = ProjectKeySchema;
 const projectStateSchema = SessionActivityStateSchema;
 const projectHarnessSchema = HarnessSchema;
 const opaqueProjectCursorSchema = z.string().min(16).max(1_024);
+const projectSearchSchema = z
+  .string()
+  .max(PROJECT_SEARCH_MAX_LENGTH)
+  .transform((value, context) => {
+    try {
+      return normalizeProjectSearch(value);
+    } catch (error) {
+      if (error instanceof ProjectReadError) {
+        context.addIssue({
+          code: "custom",
+          message: "project search query is invalid",
+        });
+        return z.NEVER;
+      }
+      throw error;
+    }
+  })
+  .refine(
+    (value) =>
+      value === undefined ||
+      value.split(/\s+/u).filter(Boolean).length <= PROJECT_SEARCH_MAX_TERMS,
+    { message: "project search query is invalid" },
+  );
 
 const retentionSchema = z
   .object({
@@ -763,14 +790,11 @@ function toWebSession(
   attentionCount: number,
 ): WebSessionSummaryV2 {
   const key = sessionPublicKey(session);
-  const readableSuffix = session.sessionId
-    .slice(-8)
-    .replace(/[^A-Za-z0-9]/g, "_");
   const actions = sessionActions(service, session, activity, attentionCount);
   return WebSessionSummaryV2Schema.parse({
     schema: "agent-relay-web-session.v2",
     sessionKey: key,
-    displayId: `${readableSuffix}-${key.slice(0, 6)}`,
+    displayId: sessionName(key),
     harness: session.harness,
     surface: session.surface,
     repository: redactText(session.project.displayName, 120),
@@ -1035,6 +1059,11 @@ export function createRelayHttpServer(
         const harnessValue = url.searchParams.get("harness");
         const stateValue = url.searchParams.get("state");
         const cursorValue = url.searchParams.get("cursor");
+        const searchValue = url.searchParams.get("q");
+        const search =
+          searchValue === null
+            ? undefined
+            : projectSearchSchema.parse(searchValue);
         sendJson(
           response,
           200,
@@ -1046,6 +1075,7 @@ export function createRelayHttpServer(
             ...(stateValue === null
               ? {}
               : { state: projectStateSchema.parse(stateValue) }),
+            ...(search === undefined ? {} : { search }),
             historyLimit: projectHistoryLimitSchema.parse(
               url.searchParams.get("limit") ?? "50",
             ),

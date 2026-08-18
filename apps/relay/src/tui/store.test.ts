@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ProjectReadSnapshotV1 } from "@agent-relay/core";
+import { sessionName } from "@agent-relay/core";
 
 import type { WebAttentionItemV1 } from "../web-contract.js";
 
@@ -15,6 +16,7 @@ function snapshot(): ProjectReadSnapshotV1 {
   const session = {
     schema: "agent-relay-project-session.v1" as const,
     sessionKey: SESSION_KEY,
+    sessionName: sessionName(SESSION_KEY),
     projectKey: `prj_${"a".repeat(48)}`,
     projectLabel: "checkout-service",
     harness: "codex" as const,
@@ -185,16 +187,42 @@ describe("terminal dashboard store", () => {
     await store.close();
   });
 
-  it("filters attention and current rows, not only recent history", async () => {
+  it("sends search to the protected project read instead of filtering locally", async () => {
+    const calls: Array<{ search?: string }> = [];
+    const emptySnapshot = {
+      ...snapshot(),
+      needsAttention: [],
+      currentByHarness: [],
+      recent: { items: [] },
+      empty: true,
+    };
     const store = new DashboardStore({
-      client: client(),
+      client: client({
+        loadSnapshot: async (query) => {
+          calls.push({
+            ...(query.search === undefined ? {} : { search: query.search }),
+          });
+          if (query.search === "zzz-no-match") {
+            return {
+              snapshot: emptySnapshot,
+              requests: [],
+              capabilities: new Map(),
+            };
+          }
+          return bundle();
+        },
+      }),
       pollIntervalMs: 60_000,
     });
     await store.start();
-    expect(store.state.list.length).toBeGreaterThan(0);
+    expect(calls.at(-1)).toEqual({});
     store.setQuery("zzz-no-match");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(calls.at(-1)).toEqual({ search: "zzz-no-match" });
     expect(store.state.list).toEqual([]);
     store.setQuery("checkout");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(calls.at(-1)).toEqual({ search: "checkout" });
     expect(store.state.list.length).toBeGreaterThan(0);
     await store.close();
   });

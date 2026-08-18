@@ -79,7 +79,7 @@ describe("durable session topic registry", () => {
         provider: "codex",
         repository: "example",
         branch: "codex/topic-registry",
-        shortSessionId: expect.stringMatching(/^12345678-[a-f0-9]{6}$/),
+        shortSessionId: expect.stringMatching(/^[a-z]+-[a-z]+-\d{2}$/u),
         lifecycleState: "waiting",
         activity: expect.objectContaining({ state: "idle" }),
         provisioningStatus: "ready",
@@ -593,7 +593,7 @@ describe("durable session topic registry", () => {
     const topics = store.listSessionTopics();
     expect(new Set(topics.map((topic) => topic.topicName)).size).toBe(2);
     for (const topic of topics) {
-      expect(topic.shortSessionId).toMatch(/^12345678-[a-f0-9]{6}$/);
+      expect(topic.shortSessionId).toMatch(/^[a-z]+-[a-z]+-\d{2}$/u);
       expect(topic.topicName.endsWith(topic.shortSessionId)).toBe(true);
       expect([...topic.topicName].length).toBeLessThanOrEqual(128);
     }

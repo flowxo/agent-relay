@@ -78,6 +78,8 @@ import {
   PROJECT_HISTORY_MAX_PAGE_SIZE,
   PROJECT_INVALIDATION_SCHEMA,
   PROJECT_READ_SCHEMA,
+  PROJECT_SEARCH_MAX_LENGTH,
+  PROJECT_SEARCH_SCAN_MAX,
   PROJECT_SUMMARY_MAX,
   ProjectReadChangesV1Schema,
   ProjectKeySchema,
@@ -85,6 +87,9 @@ import {
   ProjectReadSessionV1Schema,
   ProjectReadSnapshotV1Schema,
   ProjectSummaryV1Schema,
+  normalizeProjectSearch,
+  parseProjectSearchTerms,
+  projectSessionMatchesSearch,
 } from "./project-read.js";
 import type {
   ProjectKey,
@@ -97,6 +102,7 @@ import type {
 } from "./project-read.js";
 import { PROJECT_READ_SCHEMA_UP_SQL } from "./project-read-schema.js";
 import { redactDiagnosticText } from "./redaction.js";
+import { sessionName } from "./session-name.js";
 import { sessionPublicKey, sessionTopicDisplayName } from "./topic.js";
 
 export type DeliveryStatus =
@@ -1340,6 +1346,7 @@ const ProjectHistoryCursorPayloadSchema = z
         projectKey: ProjectKeySchema,
         harness: HarnessSchema.optional(),
         state: SessionActivityStateSchema.optional(),
+        search: z.string().min(1).max(PROJECT_SEARCH_MAX_LENGTH).optional(),
       })
       .strict(),
     position: z
@@ -10093,9 +10100,11 @@ export class RelayStore {
       sessionId: row.session_id,
     };
     const activity = this.getSessionActivity(identity, projectionAt);
+    const sessionKey = sessionPublicKey(identity);
     return ProjectReadSessionV1Schema.parse({
       schema: "agent-relay-project-session.v1",
-      sessionKey: sessionPublicKey(identity),
+      sessionKey,
+      sessionName: sessionName(sessionKey),
       projectKey: row.project_key,
       projectLabel,
       harness: row.harness,
@@ -10192,6 +10201,9 @@ export class RelayStore {
       query.state === undefined
         ? undefined
         : SessionActivityStateSchema.parse(query.state);
+    const search = normalizeProjectSearch(query.search);
+    const searchTerms =
+      search === undefined ? [] : parseProjectSearchTerms(search);
     const historyLimit =
       query.historyLimit ?? PROJECT_HISTORY_DEFAULT_PAGE_SIZE;
     if (
@@ -10207,6 +10219,7 @@ export class RelayStore {
       projectKey,
       ...(harness === undefined ? {} : { harness }),
       ...(state === undefined ? {} : { state }),
+      ...(search === undefined ? {} : { search }),
     };
     const historyCursor =
       query.historyCursor === undefined
@@ -10262,34 +10275,71 @@ export class RelayStore {
         (session) =>
           session.activity.state !== "done" &&
           session.activity.state !== "ended" &&
-          (state === undefined || session.activity.state === state),
+          (state === undefined || session.activity.state === state) &&
+          projectSessionMatchesSearch(session, searchTerms),
       );
       const needsAttention = exactCurrent.filter((session) =>
         ["needs_input", "failed", "unknown"].includes(session.activity.state),
       );
-      const recentRows = this.queryProjectSessions({
-        ...(projectCwdHash === undefined ? {} : { projectCwdHash }),
-        ...(harness === undefined ? {} : { harness }),
-        ...(state === undefined ? {} : { state }),
-        category: "recent",
-        limit: historyLimit + 1,
-        ...(historyCursor === undefined
-          ? {}
-          : { position: historyCursor.position }),
-        projectionAt: historyProjectionAt,
-      });
-      const pageRows = recentRows.slice(0, historyLimit);
-      const recentItems = pageRows.map((row) =>
-        this.toProjectReadSession(
-          row,
-          historyProjectionAt,
-          summaries.labels.get(row.project_key) ??
-            `Project · ${row.project_key.slice(-6)}`,
-        ),
-      );
-      const lastPageRow = pageRows.at(-1);
+      const recentMatched: Array<{
+        row: ProjectSessionRow;
+        session: ProjectReadSessionV1;
+      }> = [];
+      let recentPosition = historyCursor?.position;
+      let recentScanned = 0;
+      let recentExhausted = false;
+      while (recentMatched.length < historyLimit + 1 && !recentExhausted) {
+        const remainingBudget = PROJECT_SEARCH_SCAN_MAX - recentScanned;
+        if (remainingBudget <= 0) {
+          throw new ProjectReadError(
+            "complete_set_capacity_exceeded",
+            "complete current and attention sets exceed the supported capacity",
+          );
+        }
+        const batchLimit = Math.min(
+          Math.max(historyLimit * 4, 50),
+          remainingBudget,
+        );
+        const recentRows = this.queryProjectSessions({
+          ...(projectCwdHash === undefined ? {} : { projectCwdHash }),
+          ...(harness === undefined ? {} : { harness }),
+          ...(state === undefined ? {} : { state }),
+          category: "recent",
+          limit: batchLimit,
+          ...(recentPosition === undefined ? {} : { position: recentPosition }),
+          projectionAt: historyProjectionAt,
+        });
+        if (recentRows.length === 0) {
+          break;
+        }
+        for (const row of recentRows) {
+          recentScanned += 1;
+          const session = this.toProjectReadSession(
+            row,
+            historyProjectionAt,
+            summaries.labels.get(row.project_key) ??
+              `Project · ${row.project_key.slice(-6)}`,
+          );
+          if (!projectSessionMatchesSearch(session, searchTerms)) continue;
+          recentMatched.push({ row, session });
+          if (recentMatched.length >= historyLimit + 1) break;
+        }
+        const lastBatchRow = recentRows.at(-1)!;
+        recentPosition = {
+          lastSeenAt: lastBatchRow.last_seen_at,
+          machineId: lastBatchRow.machine_id,
+          harness: lastBatchRow.harness,
+          sessionId: lastBatchRow.session_id,
+        };
+        if (recentRows.length < batchLimit) {
+          recentExhausted = true;
+        }
+      }
+      const pageMatched = recentMatched.slice(0, historyLimit);
+      const recentItems = pageMatched.map((entry) => entry.session);
+      const lastPageRow = pageMatched.at(-1)?.row;
       const nextCursor =
-        recentRows.length <= historyLimit || lastPageRow === undefined
+        recentMatched.length <= historyLimit || lastPageRow === undefined
           ? undefined
           : this.sealProjectCursor({
               version: 1,
@@ -10319,6 +10369,7 @@ export class RelayStore {
         filters: {
           ...(harness === undefined ? {} : { harness }),
           ...(state === undefined ? {} : { state }),
+          ...(search === undefined ? {} : { search }),
         },
         changeCursor: this.sealProjectCursor({
           version: 1,

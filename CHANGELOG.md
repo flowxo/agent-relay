@@ -59,6 +59,16 @@ breaking changes and required operator action.
 
 ### Changed
 
+- Share one human-friendly session name across Telegram, web, and TUI. The name
+  is derived only from the opaque public session key in shared core, returned on
+  `agent-relay-project-session.v1` as `sessionName`, and used as the Telegram
+  topic identity suffix (replacing the native session-id suffix plus collision
+  digest). Existing topics retitle on the next reconcile drain. Collision space
+  is 409,600 names; exact correlation still uses the opaque key.
+- Add bounded server-side session search (`q`) to `agent-relay-project-read.v1`.
+  It matches only safe projected fields, participates in history cursor scope,
+  and is used by the browser and TUI dashboards (web API version 4 / asset
+  version 7).
 - Rebuild the authenticated local dashboard around projects instead of a flat
   session list. A project rail carries **All projects** plus one item per exact
   opaque worktree identity with attention and current counts; the selected pane

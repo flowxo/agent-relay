@@ -18,7 +18,7 @@ export const HELP_LINES = [
   "  ←→ / h l     Move between projects, list, and detail",
   "  Tab          Cycle focus",
   "  Enter        Select project, open detail, or submit",
-  "  /            Filter loaded sessions; Esc leaves and clears",
+  "  /            Search sessions; Esc leaves and clears",
   "  p            Focus the project list",
   "  r            Refresh or reconnect",
   "  n            Load more recent history",

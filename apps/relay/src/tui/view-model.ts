@@ -3,6 +3,7 @@ import type {
   ProjectReadSessionV1,
   ProjectReadSnapshotV1,
 } from "@agent-relay/core";
+import { sessionName } from "@agent-relay/core";
 
 import type { WebAttentionItemV1, WebSessionAction } from "../web-contract.js";
 
@@ -37,140 +38,6 @@ export const STATE_EXPLANATIONS = {
   ended: "The durable relay lane was explicitly closed.",
 } as const;
 
-const NAME_ADJECTIVES = [
-  "amber",
-  "bright",
-  "brisk",
-  "calm",
-  "clear",
-  "clever",
-  "coastal",
-  "copper",
-  "crisp",
-  "curious",
-  "daring",
-  "dawn",
-  "deft",
-  "dusty",
-  "eager",
-  "early",
-  "easy",
-  "fair",
-  "fleet",
-  "fond",
-  "frosty",
-  "gentle",
-  "glad",
-  "golden",
-  "grand",
-  "green",
-  "hardy",
-  "hazel",
-  "humble",
-  "ivory",
-  "jolly",
-  "keen",
-  "kind",
-  "level",
-  "lively",
-  "lucid",
-  "lunar",
-  "mellow",
-  "merry",
-  "mild",
-  "misty",
-  "neat",
-  "nimble",
-  "noble",
-  "olive",
-  "patient",
-  "plain",
-  "prime",
-  "quiet",
-  "rapid",
-  "ready",
-  "rustic",
-  "sage",
-  "sandy",
-  "sharp",
-  "silver",
-  "smooth",
-  "solar",
-  "spry",
-  "steady",
-  "sunny",
-  "tidy",
-  "vivid",
-  "warm",
-] as const;
-
-const NAME_NOUNS = [
-  "acorn",
-  "alder",
-  "anchor",
-  "arbor",
-  "aspen",
-  "badger",
-  "basin",
-  "beacon",
-  "birch",
-  "bluff",
-  "bramble",
-  "breeze",
-  "brook",
-  "canyon",
-  "cedar",
-  "cobble",
-  "compass",
-  "coral",
-  "cove",
-  "crane",
-  "delta",
-  "dune",
-  "elder",
-  "ember",
-  "fjord",
-  "forest",
-  "fossil",
-  "garnet",
-  "glade",
-  "grove",
-  "harbor",
-  "heron",
-  "hollow",
-  "island",
-  "juniper",
-  "kestrel",
-  "lantern",
-  "ledge",
-  "lichen",
-  "maple",
-  "meadow",
-  "mesa",
-  "moss",
-  "otter",
-  "pebble",
-  "pine",
-  "prairie",
-  "quarry",
-  "reef",
-  "ridge",
-  "river",
-  "sequoia",
-  "shale",
-  "shore",
-  "sparrow",
-  "spruce",
-  "summit",
-  "thicket",
-  "thistle",
-  "trail",
-  "tundra",
-  "valley",
-  "willow",
-  "wren",
-] as const;
-
 export type SessionCapability = {
   supportedActions: WebSessionAction[];
   latestEventId?: string;
@@ -199,21 +66,13 @@ export type CurrentGroupView = {
   }>;
 };
 
-function keySlice(sessionKey: string, start: number, length: number): number {
-  const value = Number.parseInt(sessionKey.slice(start, start + length), 16);
-  return Number.isFinite(value) ? value : 0;
-}
+export { sessionName };
 
-export function sessionName(sessionKey: string): string {
-  const adjective =
-    NAME_ADJECTIVES[keySlice(sessionKey, 0, 4) % NAME_ADJECTIVES.length];
-  const noun = NAME_NOUNS[keySlice(sessionKey, 4, 4) % NAME_NOUNS.length];
-  const number = String(keySlice(sessionKey, 8, 4) % 100).padStart(2, "0");
-  return `${adjective}-${noun}-${number}`;
-}
-
-export function sessionTitle(session: { sessionKey: string }): string {
-  return sessionName(session.sessionKey);
+export function sessionTitle(session: {
+  sessionKey: string;
+  sessionName?: string;
+}): string {
+  return session.sessionName ?? sessionName(session.sessionKey);
 }
 
 export function harnessLabel(harness: string): string {

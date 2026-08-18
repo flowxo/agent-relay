@@ -100,12 +100,14 @@ through 500. The project read routes have narrower bounds documented below.
 | `POST /v1/web/sessions/:key/actions`       | Exact-event Continue, Mute, or End command                                           |
 
 Session summaries use a stable 24-character key instead of returning the machine
-or harness session ID. Their display ID matches Telegram's readable
-eight-character session suffix plus a six-character collision digest, so the
-operator can correlate the same lane across surfaces. Event detail omits
-`lastAssistantMessage`, working-directory hashes, process IDs and arguments,
-option callback tokens, stored answers, and structured draft content. Prompt,
-label, summary, and failure previews are secret-redacted and bounded.
+or harness session ID. Project-read sessions also carry a shared readable
+`sessionName` such as `brisk-otter-42`, derived only from that opaque key. The
+same name is the Telegram topic identity suffix and the TUI label, so the
+operator can correlate one lane across surfaces by eye. Exact correlation still
+uses the opaque key. Event detail omits `lastAssistantMessage`,
+working-directory hashes, process IDs and arguments, option callback tokens,
+stored answers, and structured draft content. Prompt, label, summary, and
+failure previews are secret-redacted and bounded.
 
 The v2 session summary schema is `agent-relay-web-session.v2`. Its `activity`
 field is the canonical `agent-relay-session-activity.v1` record. Its state is
@@ -152,8 +154,14 @@ The current and needs-attention sets are never truncated by `limit`. Their
 explicit safety capacity is 1,000 sessions; exceeding it returns
 `503 complete_set_capacity_exceeded` instead of a misleading partial result.
 Only recent history is paginated. `limit` defaults to 50 and is bounded from 1
-through 100. Optional `harness` and canonical `state` filters apply consistently
-to the returned session sets and history; `project` selects one opaque project.
+through 100. Optional `harness`, canonical `state`, and bounded text `q` filters
+apply consistently to the complete current and attention sets and to history
+paging. `q` matches only already-safe fields: the shared readable session name,
+sanitized project label, harness id/label, canonical state/label, and opaque
+session key. Query length and term count are bounded; invalid queries fail
+closed without echoing the input. Search participates in the sealed history
+cursor scope exactly as `harness` and `state` do. `project` selects one opaque
+project.
 
 Recent history sorts newest first by server receive-clock `lastSeenAt`, then by
 a stable internal lane tuple. The tuple is held only inside the authenticated
@@ -165,14 +173,15 @@ history from omitting or repeating sessions. A changed database returns
 `400 invalid_cursor`; cursors older than 24 hours return `409 stale_cursor`.
 Fetch a fresh first page in either stale case.
 
-Each session exposes only its opaque session and project keys, safe label,
-harness/surface, canonical activity state/confidence/safe reason and last
-activity, bounded known in-flight count, bounded pending-interaction
-state/count, and orthogonal muted delivery health. It does not expose absolute
-paths, home directories, remotes, branches, prompts, transcripts, answers,
-credentials, OAuth URLs, machine IDs, native session IDs, bridge IDs, path
-digests, or the private pagination tie-break values. A presentation client must
-not read SQLite or derive another activity state from events.
+Each session exposes only its opaque session and project keys, shared readable
+`sessionName`, safe label, harness/surface, canonical activity
+state/confidence/safe reason and last activity, bounded known in-flight count,
+bounded pending-interaction state/count, and orthogonal muted delivery health.
+It does not expose absolute paths, home directories, remotes, branches, prompts,
+transcripts, answers, credentials, OAuth URLs, machine IDs, native session IDs,
+bridge IDs, path digests, or the private pagination tie-break values. A
+presentation client must not read SQLite or derive another activity state from
+events.
 
 ### Project change and reconnect protocol
 
@@ -255,8 +264,8 @@ path. Its exact per-refresh call set is `GET /v1/web/meta`,
 - `/v1/web/attention` supplies open request forms. A request whose `sessionKey`
   is absent from the snapshot is out of the selected scope and is not rendered.
 
-History pages request `limit=25` and reuse the exact `project`, `harness`, and
-`state` scope bound into the cursor. A `409 stale_cursor` or
+History pages request `limit=25` and reuse the exact `project`, `harness`,
+`state`, and `q` scope bound into the cursor. A `409 stale_cursor` or
 `400 invalid_cursor` discards accumulated pages and reloads the newest first
 page. Change polling uses `GET /v1/web/project-changes` every three seconds,
 pauses while the tab is hidden, and forces a fresh snapshot at least once per

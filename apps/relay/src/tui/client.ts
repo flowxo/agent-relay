@@ -73,6 +73,7 @@ export interface DashboardClient {
     projectKey: ProjectKey;
     harness?: string;
     state?: string;
+    search?: string;
     historyCursor?: string;
   }): Promise<DashboardSnapshotBundle>;
   pollChanges(cursor: string): Promise<ProjectReadChangesV1>;
@@ -233,6 +234,9 @@ export async function createDashboardClient(options: {
       params.set("limit", String(HISTORY_PAGE_SIZE));
       if (query.harness !== undefined) params.set("harness", query.harness);
       if (query.state !== undefined) params.set("state", query.state);
+      if (query.search !== undefined && query.search.trim().length > 0) {
+        params.set("q", query.search.trim());
+      }
       if (query.historyCursor !== undefined) {
         params.set("cursor", query.historyCursor);
       }

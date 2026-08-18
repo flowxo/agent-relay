@@ -174,7 +174,7 @@ The strict v1 envelope is:
   "message": {
     "eventId": "event_fixture_webhook_12345678",
     "title": "Codex · agent-relay",
-    "text": "Summary: Synthetic fixture notification\n\nSession ended · now\n\nsession.ended · codex/cli · main · session 12345678-ca21fd"
+    "text": "Summary: Synthetic fixture notification\n\nSession ended · now\n\nsession.ended · codex/cli · main · session level-basin-41"
   },
   "source": {
     "occurredAt": "2026-07-28T14:00:00.000Z",
@@ -184,7 +184,7 @@ The strict v1 envelope is:
     "repository": "agent-relay",
     "branch": "main",
     "sessionKey": "ca21fd46c699bc5492244186",
-    "shortSessionId": "12345678-ca21fd"
+    "shortSessionId": "level-basin-41"
   }
 }
 ```
