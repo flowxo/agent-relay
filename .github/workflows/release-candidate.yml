@@ -87,7 +87,7 @@ jobs:
             test -n "$run_id" || continue
             directory=".artifacts/prior-qualification-${run_id}"
             if gh run download "$run_id" --name "agent-relay-qualification-${CANDIDATE_SHA}" --dir "$directory" 2>/dev/null; then
-              prior="$(find "$directory" -path '*/.artifacts/sdlc/qualification.json' -print -quit)"
+              prior="$(find "$directory" \( -path '*/.artifacts/sdlc/qualification.json' -o -path '*/sdlc/qualification.json' \) -print -quit)"
               if test -n "$prior" && test "$(node -p "require('./${prior}').qualificationKey")" = "$key"; then
                 echo "Qualification already exists for these exact inputs in run ${run_id}; reuse that immutable evidence."
                 exit 1
