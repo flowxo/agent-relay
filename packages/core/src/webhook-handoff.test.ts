@@ -170,7 +170,7 @@ describe("provider-neutral outbound metadata and local web handoff", () => {
         repository: "agent-relay",
         branch: "codex/webhook-handoff",
         sessionKey: sessionPublicKey(event),
-        shortSessionId: expect.stringMatching(/12345678-[a-f0-9]{6}$/),
+        shortSessionId: expect.stringMatching(/^[a-z]+-[a-z]+-\d{2}$/u),
       },
       handoff: {
         mode: "local-web",

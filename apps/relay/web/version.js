@@ -1,2 +1,2 @@
-export const WEB_API_VERSION = "3";
-export const WEB_ASSET_VERSION = "6";
+export const WEB_API_VERSION = "4";
+export const WEB_ASSET_VERSION = "7";

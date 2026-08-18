@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { sessionName } from "@agent-relay/core";
+
 import { containsSecret, displayWidth, renderDashboardFrame } from "./frame.js";
 import type { DashboardViewState } from "./store.js";
 
@@ -154,7 +156,7 @@ describe("terminal dashboard frames", () => {
       80,
       24,
     );
-    expect(frame).toContain("Filter  check_");
+    expect(frame).toContain("Search  check_");
     expect(frame).toContain("Esc leave");
     const rail = renderDashboardFrame(
       state({
@@ -192,6 +194,7 @@ describe("terminal dashboard frames", () => {
     const session = {
       schema: "agent-relay-project-session.v1" as const,
       sessionKey: "0123456789abcdef01234567",
+      sessionName: "lucid-maple-43",
       projectKey: `prj_${"a".repeat(48)}`,
       projectLabel: "checkout-service",
       harness: "codex" as const,
@@ -311,6 +314,7 @@ describe("terminal dashboard frames", () => {
       return {
         schema: "agent-relay-project-session.v1" as const,
         sessionKey,
+        sessionName: sessionName(sessionKey),
         projectKey: `prj_${"a".repeat(48)}`,
         projectLabel: "checkout-service",
         harness: "codex" as const,

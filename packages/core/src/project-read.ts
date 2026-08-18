@@ -24,6 +24,19 @@ export const PROJECT_SUMMARY_MAX = 200;
 export const PROJECT_CHANGE_DEFAULT_BATCH_SIZE = 100;
 export const PROJECT_CHANGE_MAX_BATCH_SIZE = 200;
 export const PROJECT_CURSOR_MAX_AGE_MS = 24 * 60 * 60_000;
+export const PROJECT_SEARCH_MAX_LENGTH = 64;
+export const PROJECT_SEARCH_MAX_TERMS = 8;
+/** Upper bound on recent rows scanned while filling one search page. */
+export const PROJECT_SEARCH_SCAN_MAX = 5_000;
+
+const PROJECT_SEARCH_HARNESS_LABELS: Record<
+  z.infer<typeof HarnessSchema>,
+  string
+> = {
+  codex: "Codex",
+  claude: "Claude Code",
+  cursor: "Cursor",
+};
 
 export const ProjectKeySchema = z.union([
   z.literal("all"),
@@ -82,6 +95,11 @@ export const ProjectReadSessionV1Schema = z
   .object({
     schema: z.literal("agent-relay-project-session.v1"),
     sessionKey: z.string().regex(/^[a-f0-9]{24}$/u),
+    /** Shared readable name; pure function of sessionKey across all surfaces. */
+    sessionName: z
+      .string()
+      .regex(/^[a-z]+-[a-z]+-\d{2}$/u)
+      .max(48),
     projectKey: z.string().regex(/^prj_[a-f0-9]{48}$/u),
     projectLabel: z.string().min(1).max(96),
     harness: HarnessSchema,
@@ -117,6 +135,7 @@ export const ProjectReadSnapshotV1Schema = z
       .object({
         harness: HarnessSchema.optional(),
         state: SessionActivityStateSchema.optional(),
+        search: z.string().min(1).max(PROJECT_SEARCH_MAX_LENGTH).optional(),
       })
       .strict(),
     changeCursor: z.string().min(16).max(1_024),
@@ -196,6 +215,8 @@ export interface ProjectReadQuery {
   projectKey?: ProjectKey;
   harness?: z.infer<typeof HarnessSchema>;
   state?: z.infer<typeof SessionActivityStateSchema>;
+  /** Normalized whitespace-collapsed search; omit when unused. */
+  search?: string;
   historyLimit?: number;
   historyCursor?: string;
   now?: string;
@@ -205,7 +226,8 @@ export type ProjectReadErrorCode =
   | "invalid_cursor"
   | "stale_cursor"
   | "project_not_found"
-  | "complete_set_capacity_exceeded";
+  | "complete_set_capacity_exceeded"
+  | "invalid_search";
 
 export class ProjectReadError extends Error {
   public override readonly name = "ProjectReadError";
@@ -216,4 +238,60 @@ export class ProjectReadError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * Normalize an operator search string for cursor scope. Empty input clears
+ * search. Invalid bounds throw without echoing the query.
+ */
+export function normalizeProjectSearch(
+  raw: string | undefined,
+): string | undefined {
+  if (raw === undefined) return undefined;
+  const collapsed = raw.trim().replace(/\s+/gu, " ");
+  if (collapsed.length === 0) return undefined;
+  if (collapsed.length > PROJECT_SEARCH_MAX_LENGTH) {
+    throw new ProjectReadError(
+      "invalid_search",
+      "project search query is invalid",
+    );
+  }
+  const terms = parseProjectSearchTerms(collapsed);
+  if (terms.length > PROJECT_SEARCH_MAX_TERMS) {
+    throw new ProjectReadError(
+      "invalid_search",
+      "project search query is invalid",
+    );
+  }
+  return collapsed;
+}
+
+export function parseProjectSearchTerms(search: string): string[] {
+  return search
+    .toLocaleLowerCase()
+    .split(/\s+/u)
+    .filter((term) => term.length > 0);
+}
+
+/**
+ * Match only already-safe projected fields. Never matches paths, remotes,
+ * branches, prompts, transcripts, or private identifiers.
+ */
+export function projectSessionMatchesSearch(
+  session: ProjectReadSessionV1,
+  terms: string[],
+): boolean {
+  if (terms.length === 0) return true;
+  const haystack = [
+    session.sessionName,
+    session.projectLabel,
+    session.harness,
+    PROJECT_SEARCH_HARNESS_LABELS[session.harness],
+    session.activity.state,
+    session.activity.stateLabel,
+    session.sessionKey,
+  ]
+    .map((value) => value.toLocaleLowerCase())
+    .join(" ");
+  return terms.every((term) => haystack.includes(term));
 }

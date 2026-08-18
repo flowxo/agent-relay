@@ -69,7 +69,11 @@ function session(overrides = {}) {
     deliveryHealth: { muted: false },
     ...overrides,
   };
-  return { ...merged, activity: activity(overrides.activity ?? {}) };
+  return {
+    ...merged,
+    sessionName: merged.sessionName ?? sessionName(merged.sessionKey),
+    activity: activity(overrides.activity ?? {}),
+  };
 }
 
 function summary(overrides = {}) {

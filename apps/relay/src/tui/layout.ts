@@ -339,8 +339,8 @@ export function buildDashboardLayout(
       ? {
           text:
             state.pane === "filter"
-              ? `Filter  ${state.query}_   Esc leave  Enter keep`
-              : `Filter  ${state.query}`,
+              ? `Search  ${state.query}_   Esc leave  Enter keep`
+              : `Search  ${state.query}`,
           tone: "focus",
         }
       : undefined;

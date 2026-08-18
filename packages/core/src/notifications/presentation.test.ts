@@ -220,7 +220,7 @@ describe("compact attention cards", () => {
       card.text.indexOf("turn.stopped ·"),
     );
     expect(card.text.trimEnd()).toMatch(
-      /turn\.stopped · codex\/cli · codex\/compact-cards · session 12345678-[a-f0-9]{6}$/u,
+      /turn\.stopped · codex\/cli · codex\/compact-cards · session [a-z]+-[a-z]+-\d{2}$/u,
     );
     expect(card.text.split("\n").slice(0, 2).join("\n")).not.toContain(
       "session ",

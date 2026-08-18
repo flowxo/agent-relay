@@ -6,5 +6,6 @@ export * from "./project-read.js";
 export * from "./project-read-schema.js";
 export * from "./redaction.js";
 export * from "./service.js";
+export * from "./session-name.js";
 export * from "./store.js";
 export * from "./topic.js";

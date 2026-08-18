@@ -26,6 +26,7 @@ describe("terminal dashboard view-model", () => {
       {
         schema: "agent-relay-project-session.v1" as const,
         sessionKey: "0123456789abcdef01234567",
+        sessionName: sessionName("0123456789abcdef01234567"),
         projectKey: `prj_${"a".repeat(48)}`,
         projectLabel: "checkout-service",
         harness: "codex" as const,

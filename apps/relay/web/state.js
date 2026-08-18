@@ -44,8 +44,9 @@ const STATE_EXPLANATIONS = {
 
 /**
  * Neutral words used to render an opaque session key as a readable name. The
- * lists are fixed so the same opaque key always produces the same name, and
- * nothing about the underlying session influences the choice.
+ * lists must stay identical to the shared core session-name module so the
+ * browser matches Telegram and the TUI. Prefer `session.sessionName` from the
+ * protected project-read payload when present.
  */
 const NAME_ADJECTIVES = [
   "amber",
@@ -214,6 +215,7 @@ function keySlice(sessionKey, start, length) {
  * Safe, stable, readable session name. It is a fixed rendering of the already
  * opaque public session key, so it never contains a path, a harness session ID,
  * or any other private identifier, and it never changes for a given session.
+ * Keep this algorithm identical to the shared core `sessionName` helper.
  */
 export function sessionName(sessionKey) {
   const adjective =
@@ -224,7 +226,7 @@ export function sessionName(sessionKey) {
 }
 
 export function sessionTitle(session) {
-  return sessionName(session.sessionKey);
+  return session.sessionName ?? sessionName(session.sessionKey);
 }
 
 /** The exact opaque key, shown where precise correlation matters. */
@@ -392,10 +394,8 @@ export function appendHistoryPage(existing, incoming) {
 }
 
 /**
- * Secondary client-side narrowing of already loaded rows. The protected read
- * contract has no server-side text search, so this never claims to cover
- * history that has not been paged in. Every whitespace-separated term must
- * match one of the safe fields.
+ * Local narrowing helper retained for unit tests of safe-field matching.
+ * Live dashboards send `q` to the protected project read instead.
  */
 export function filterLoadedSessions(sessions, query) {
   const terms = query

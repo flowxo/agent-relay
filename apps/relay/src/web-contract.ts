@@ -14,8 +14,8 @@ import {
   SessionActivityStateSchema,
 } from "@agent-relay/core";
 
-export const WEB_API_VERSION = "3";
-export const WEB_ASSET_VERSION = "6";
+export const WEB_API_VERSION = "4";
+export const WEB_ASSET_VERSION = "7";
 
 const opaqueId = z
   .string()
@@ -66,7 +66,10 @@ export const WebSessionSummaryV2Schema = z
   .object({
     schema: z.literal("agent-relay-web-session.v2"),
     sessionKey: z.string().length(24),
-    displayId: z.string().regex(/^[A-Za-z0-9_]{8}-[a-f0-9]{6}$/),
+    displayId: z
+      .string()
+      .regex(/^[a-z]+-[a-z]+-\d{2}$/u)
+      .max(48),
     harness: z.enum(["codex", "claude", "cursor"]),
     surface: z.enum(["cli", "ide", "sdk", "app-server"]),
     repository: z.string().min(1).max(120),

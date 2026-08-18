@@ -315,15 +315,15 @@ describe("relay HTTP daemon", () => {
     expect(appText).not.toContain("sessionStorage");
     const version = await fetch(`${runtime.baseUrl}/ui/version.js`);
     expect(version.status).toBe(200);
-    expect(await version.text()).toContain('WEB_API_VERSION = "3"');
+    expect(await version.text()).toContain('WEB_API_VERSION = "4"');
     const meta = await fetch(`${runtime.baseUrl}/v1/web/meta`, {
       headers: webHeaders(runtime),
     });
     expect(meta.status).toBe(200);
     await expect(meta.json()).resolves.toEqual({
       schema: "agent-relay-web-meta.v1",
-      apiVersion: "3",
-      assetVersion: "6",
+      apiVersion: "4",
+      assetVersion: "7",
       commandSchemas: [
         "agent-relay-web-resolve.v1",
         "agent-relay-web-session-action.v1",
@@ -790,8 +790,8 @@ describe("relay HTTP daemon", () => {
     });
     await expect(meta.json()).resolves.toMatchObject({
       schema: "agent-relay-web-meta.v1",
-      apiVersion: "3",
-      assetVersion: "6",
+      apiVersion: "4",
+      assetVersion: "7",
     });
     await runtime.close();
   });

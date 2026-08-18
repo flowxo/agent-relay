@@ -156,16 +156,18 @@ name containing:
 - harness;
 - sanitized repository display name;
 - optional branch; and
-- a readable short session suffix plus collision digest.
+- the shared readable session name derived from the opaque public session key
+  (for example `brisk-otter-42`), matching web and TUI.
 
-The absolute working path, transcript, bot identity, and full session ID are not
-used in the topic name. SQLite retains the provider topic mapping across
-restarts. The displayed title adds one state prefix without changing that
-identity using the shared activity projection: 🟢 Working, 🟡 Needs input, 🔵
-Background work, ⚪ Idle, ✅ Done, 🔴 Failed, 🟠 Unknown, or ⚫ Ended. Muting is
-shown independently in `/status`. Title edits are leased and retried from
-SQLite, recovered after a daemon restart, and diagnosed if Telegram rejects
-them.
+The absolute working path, transcript, bot identity, native harness session ID,
+and full session ID are not used in the topic name. Existing topics are retitled
+on the next reconcile drain when the desired title changes. SQLite retains the
+provider topic mapping across restarts. The displayed title adds one state
+prefix without changing that identity using the shared activity projection: 🟢
+Working, 🟡 Needs input, 🔵 Background work, ⚪ Idle, ✅ Done, 🔴 Failed, 🟠
+Unknown, or ⚫ Ended. Muting is shown independently in `/status`. Title edits
+are leased and retried from SQLite, recovered after a daemon restart, and
+diagnosed if Telegram rejects them.
 
 Cards are literal text bounded below Telegram's message limit. Trusted headings,
 labels, state, and the final event footer use explicit Bot API message entities;

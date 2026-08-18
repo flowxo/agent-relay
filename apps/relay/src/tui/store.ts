@@ -12,10 +12,8 @@ import {
   buildResponse,
   describeHoldReason,
   describeTerminalRequest,
-  filterLoadedSessions,
   formFields,
   incompleteFormStatus,
-  matchesLoadedQuery,
   historySummary,
   indexSnapshotSessions,
   isActionAvailable,
@@ -105,6 +103,7 @@ export class DashboardStore {
   private closed = false;
   private changeCursor = "";
   private pendingBundle: DashboardSnapshotBundle | undefined;
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
   public revision = 0;
   public state: DashboardViewState;
 
@@ -160,8 +159,10 @@ export class DashboardStore {
     this.generation += 1;
     if (this.pollTimer !== undefined) clearTimeout(this.pollTimer);
     if (this.clockTimer !== undefined) clearInterval(this.clockTimer);
+    if (this.searchTimer !== undefined) clearTimeout(this.searchTimer);
     this.pollTimer = undefined;
     this.clockTimer = undefined;
+    this.searchTimer = undefined;
   }
 
   public async refresh(
@@ -200,6 +201,9 @@ export class DashboardStore {
         ...(this.state.filters.state === "all"
           ? {}
           : { state: this.state.filters.state }),
+        ...(this.state.query.trim().length === 0
+          ? {}
+          : { search: this.state.query.trim() }),
       });
       if (generation !== this.generation) return;
       this.lastContact(this.now());
@@ -251,8 +255,13 @@ export class DashboardStore {
 
   public setQuery(query: string): void {
     this.state.query = query;
-    this.rebuildList();
     this.emit();
+    if (this.searchTimer !== undefined) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = undefined;
+      this.state.listIndex = 0;
+      void this.refresh({ force: true, resetHistory: true });
+    }, 250);
   }
 
   public setPane(pane: DashboardPane): void {
@@ -493,6 +502,9 @@ export class DashboardStore {
         ...(this.state.filters.state === "all"
           ? {}
           : { state: this.state.filters.state }),
+        ...(this.state.query.trim().length === 0
+          ? {}
+          : { search: this.state.query.trim() }),
       });
       const merged = appendHistoryPage(
         this.state.history,
@@ -585,23 +597,14 @@ export class DashboardStore {
       known,
     );
     const current = buildCurrentGroups(this.state.snapshot);
-    const recent = filterLoadedSessions(this.state.history, this.state.query);
+    const recent = this.state.history;
     const list: ListEntry[] = [];
     for (const row of attention.items) {
       if (row.requests.length === 0) {
-        if (!matchesLoadedQuery(row.session, this.state.query)) continue;
         list.push({ section: "attention", sessionKey: row.session.sessionKey });
         continue;
       }
       for (const request of row.requests) {
-        if (
-          !matchesLoadedQuery(row.session, this.state.query, [
-            request.requestKind,
-            request.promptPreview,
-          ])
-        ) {
-          continue;
-        }
         list.push({
           section: "attention",
           sessionKey: row.session.sessionKey,
@@ -611,7 +614,6 @@ export class DashboardStore {
     }
     for (const group of current) {
       for (const item of group.sessions) {
-        if (!matchesLoadedQuery(item.session, this.state.query)) continue;
         list.push({
           section: "current",
           sessionKey: item.session.sessionKey,
@@ -814,7 +816,7 @@ export class DashboardStore {
               this.state.history.length,
               this.state.historyCursor === undefined,
               this.state.historyCapped,
-              filterLoadedSessions(this.state.history, this.state.query).length,
+              this.state.history.length,
             )
           : this.state.status;
     }

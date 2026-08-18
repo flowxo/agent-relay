@@ -114,13 +114,14 @@ and reuses that mapping after reopen. Tests cover repeated events, competing
 first deliveries, separate concurrent sessions, retryable and non-retryable
 topic failures, path/secret sanitization, and restart reuse.
 
-The readable session suffix now carries a six-character digest of the full
-machine/harness/session identity, and the 128-character name bound preserves
-that suffix. Fixtures prove that two sessions ending in the same eight
-characters still receive distinguishable names. Schema 8 keeps the stable base
-name separate from the applied and desired display title; state changes schedule
-bounded leased edits, and file-backed fixtures prove retry and restart recovery.
-Schema 10 replaces the earlier broad topic-lane projection with the
+The readable session suffix is now the shared human-friendly name derived only
+from the opaque public session key (for example `brisk-otter-42`), and the
+128-character name bound preserves that suffix. The former native
+eight-character session-id suffix plus six-character digest is no longer
+rendered on operator surfaces. Schema 8 keeps the stable base name separate from
+the applied and desired display title; state changes schedule bounded leased
+edits, and file-backed fixtures prove retry and restart recovery. Schema 10
+replaces the earlier broad topic-lane projection with the
 [privacy-bounded durable shared activity model](session-activity.md). Topic
 records, Telegram status, and the local web API now consume the same eight-state
 record and keep mute independent. Existing SQLite files receive a conservative
