@@ -46,10 +46,14 @@ jobs:
           test "$(printf '%s' "$QUALIFICATION_RUN_ID" | tr -d '0-9')" = ""
           gh run download "$QUALIFICATION_RUN_ID" --name "agent-relay-qualification-${GITHUB_SHA}" --dir .artifacts/qualification-download
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${QUALIFICATION_RUN_ID}" > .artifacts/sdlc/qualification-run.json
-          cp -R .artifacts/qualification-download/.artifacts/release .artifacts/release
-          cp -R .artifacts/qualification-download/.artifacts/release-evidence .artifacts/release-evidence
-          cp -R .artifacts/qualification-download/.artifacts/release-exit .artifacts/release-exit
-          cp .artifacts/qualification-download/.artifacts/sdlc/qualification.json .artifacts/sdlc/qualification.json
+          download_root=".artifacts/qualification-download"
+          if test -d "$download_root/.artifacts"; then
+            download_root="$download_root/.artifacts"
+          fi
+          cp -R "$download_root/release" .artifacts/release
+          cp -R "$download_root/release-evidence" .artifacts/release-evidence
+          cp -R "$download_root/release-exit" .artifacts/release-exit
+          cp "$download_root/sdlc/qualification.json" .artifacts/sdlc/qualification.json
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
