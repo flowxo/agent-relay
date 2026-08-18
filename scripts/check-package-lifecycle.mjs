@@ -267,6 +267,27 @@ async function installTarball(prefix, tarball, temporaryRoot) {
   });
 }
 
+async function writeConsumerPrefix(prefix, dependencyOverrides) {
+  await mkdir(prefix, { recursive: true });
+  await writeJson(resolve(prefix, "package.json"), {
+    name: "agent-relay-lifecycle-check",
+    private: true,
+  });
+  await writeFile(
+    resolve(prefix, "pnpm-workspace.yaml"),
+    [
+      "packages: []",
+      "overrides:",
+      ...Object.entries(dependencyOverrides).map(
+        ([name, value]) =>
+          `  ${JSON.stringify(name)}: ${JSON.stringify(value)}`,
+      ),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+}
+
 function ownerMarkerCount(value) {
   return JSON.stringify(value).split("AGENT_RELAY_HOOK_OWNER").length - 1;
 }
@@ -360,30 +381,15 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       timeoutMs: 180_000,
     });
 
-    const prefix = resolve(temporaryRoot, "consumer");
+    const priorPrefix = resolve(temporaryRoot, "consumer-prior");
+    const currentPrefix = resolve(temporaryRoot, "consumer-current");
     const isolatedHome = resolve(temporaryRoot, "home with ' quote");
-    const harnessBin = resolve(prefix, "harness-bin");
+    const harnessBin = resolve(temporaryRoot, "harness-bin");
     const stateDir = resolve(isolatedHome, ".agent-relay");
-    await mkdir(prefix, { recursive: true });
+    await writeConsumerPrefix(priorPrefix, dependencyOverrides);
+    await writeConsumerPrefix(currentPrefix, dependencyOverrides);
     await mkdir(isolatedHome, { recursive: true, mode: 0o700 });
     await mkdir(harnessBin, { recursive: true, mode: 0o700 });
-    await writeJson(resolve(prefix, "package.json"), {
-      name: "agent-relay-lifecycle-check",
-      private: true,
-    });
-    await writeFile(
-      resolve(prefix, "pnpm-workspace.yaml"),
-      [
-        "packages: []",
-        "overrides:",
-        ...Object.entries(dependencyOverrides).map(
-          ([name, value]) =>
-            `  ${JSON.stringify(name)}: ${JSON.stringify(value)}`,
-        ),
-        "",
-      ].join("\n"),
-      "utf8",
-    );
 
     for (const [name, version] of [
       ["codex", "codex-cli 0.145.0"],
@@ -398,17 +404,30 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       await chmod(path, 0o700);
     }
 
-    const environment = safePackedRuntimeEnvironment({
+    const systemPath = process.env.PATH ?? "/usr/bin:/bin";
+    const priorEnvironment = safePackedRuntimeEnvironment({
       home: isolatedHome,
       pathEntries: packedRuntimePathEntries({
-        prefix,
+        prefix: priorPrefix,
         harnessBin,
-        systemPath: process.env.PATH ?? "/usr/bin:/bin",
+        systemPath,
       }),
       stateDirectory: stateDir,
       temporaryRoot,
       webEnabled: true,
     });
+    const currentEnvironment = safePackedRuntimeEnvironment({
+      home: isolatedHome,
+      pathEntries: packedRuntimePathEntries({
+        prefix: currentPrefix,
+        harnessBin,
+        systemPath,
+      }),
+      stateDirectory: stateDir,
+      temporaryRoot,
+      webEnabled: true,
+    });
+    let environment = priorEnvironment;
 
     const codexConfig = resolve(isolatedHome, ".codex/hooks.json");
     const claudeConfig = resolve(isolatedHome, ".claude/settings.json");
@@ -450,8 +469,8 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       });
     }
 
-    await installTarball(prefix, priorTarball, temporaryRoot);
-    const binary = resolve(prefix, "node_modules/.bin/agent-relay");
+    await installTarball(priorPrefix, priorTarball, temporaryRoot);
+    let binary = resolve(priorPrefix, "node_modules/.bin/agent-relay");
     const priorVersion = await run(binary, ["--version"], {
       env: environment,
       temporaryRoot,
@@ -669,7 +688,13 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
     priorDatabase.pragma("user_version = 5");
     priorDatabase.close();
 
-    await installTarball(prefix, currentTarball, temporaryRoot);
+    // pnpm cannot offline-upgrade a different version of the same package in
+    // one consumer after rebuild: subsequent adds look for registry metadata
+    // even when overrides remain. Install the current artifact into a sibling
+    // consumer and keep pointing both at the same retained state directory.
+    await installTarball(currentPrefix, currentTarball, temporaryRoot);
+    binary = resolve(currentPrefix, "node_modules/.bin/agent-relay");
+    environment = currentEnvironment;
     const currentVersion = await run(binary, ["--version"], {
       env: environment,
       temporaryRoot,
@@ -978,13 +1003,15 @@ if (!isSupportedReleaseRuntime(release, currentReleaseRuntime())) {
       assert(await exists(path), "uninstall removed an installer backup");
     }
 
-    await run("pnpm", ["--dir", prefix, "remove", release.name], {
+    await run("pnpm", ["--dir", currentPrefix, "remove", release.name], {
       temporaryRoot,
       timeoutMs: 180_000,
     });
     assert(
       !(await exists(binary)) &&
-        !(await exists(resolve(prefix, "node_modules/@flowxo/agent-relay"))),
+        !(await exists(
+          resolve(currentPrefix, "node_modules/@flowxo/agent-relay"),
+        )),
       "package-manager removal left the installed package or executable",
     );
     for (const configPath of [codexConfig, claudeConfig, cursorConfig]) {
