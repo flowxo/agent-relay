@@ -164,9 +164,9 @@ The lifecycle check derives a sanitized `0.1.0-alpha.2` prior-package fixture
 from the exact current artifact, installs it with scripts disabled into one
 consumer prefix, records a durable answered request, then installs
 `0.1.0-alpha.3` into a sibling consumer that reuses the same retained state
-directory. Sibling installs avoid a pnpm offline-upgrade limitation after
-native rebuild. It requires doctor to expose the stale package/entry mismatch
-before reconciliation, then proves:
+directory. Sibling installs avoid a pnpm offline-upgrade limitation after native
+rebuild. It requires doctor to expose the stale package/entry mismatch before
+reconciliation, then proves:
 
 - install dry runs do not mutate configuration;
 - an install followed by a repeat install is idempotent;
