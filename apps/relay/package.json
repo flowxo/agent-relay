@@ -31,7 +31,7 @@
     "@agent-relay/whooshbang-transport": "workspace:*",
     "ink": "7.1.1",
     "react": "19.2.8",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@whooshbang/contract-mock": "file:../../vendor/whooshbang-rc12-rc13-rc15/whooshbang-contract-mock-1.0.0-rc.15.tgz"
